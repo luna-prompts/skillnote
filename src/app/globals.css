@@ -1,0 +1,360 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@plugin "@tailwindcss/typography";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --font-sans: var(--font-dm-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+:root {
+  --radius: 0.625rem;
+  --background: #f7f7f8;
+  --foreground: #111318;
+  --card: #ffffff;
+  --card-foreground: #111318;
+  --popover: #ffffff;
+  --popover-foreground: #111318;
+  --primary: #111318;
+  --primary-foreground: #ffffff;
+  --secondary: #f0f0f2;
+  --secondary-foreground: #111318;
+  --muted: #f0f0f2;
+  --muted-foreground: #7a7a8a;
+  --accent: #0d9488;
+  --accent-foreground: #ffffff;
+  --destructive: #dc2626;
+  --border: #e4e4e8;
+  --input: #e4e4e8;
+  --ring: #0d9488;
+  --chart-1: oklch(0.646 0.222 41.116);
+  --chart-2: oklch(0.6 0.118 184.704);
+  --chart-3: oklch(0.398 0.07 227.392);
+  --chart-4: oklch(0.828 0.189 84.429);
+  --chart-5: oklch(0.769 0.188 70.08);
+  --sidebar: #ffffff;
+  --sidebar-foreground: #111318;
+  --sidebar-primary: #111318;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #f0f0f2;
+  --sidebar-accent-foreground: #111318;
+  --sidebar-border: #e4e4e8;
+  --sidebar-ring: #0d9488;
+}
+
+.dark {
+  --background: #0f1117;
+  --foreground: #e8e8ed;
+  --card: #16181f;
+  --card-foreground: #e8e8ed;
+  --popover: #16181f;
+  --popover-foreground: #e8e8ed;
+  --primary: #e8e8ed;
+  --primary-foreground: #0f1117;
+  --secondary: #1e2029;
+  --secondary-foreground: #e8e8ed;
+  --muted: #1e2029;
+  --muted-foreground: #8b8b9e;
+  --accent: #0d9488;
+  --accent-foreground: #ffffff;
+  --destructive: #ef4444;
+  --border: #252832;
+  --input: #252832;
+  --ring: #0d9488;
+  --chart-1: oklch(0.488 0.243 264.376);
+  --chart-2: oklch(0.696 0.17 162.48);
+  --chart-3: oklch(0.769 0.188 70.08);
+  --chart-4: oklch(0.627 0.265 303.9);
+  --chart-5: oklch(0.645 0.246 16.439);
+  --sidebar: #13151c;
+  --sidebar-foreground: #e8e8ed;
+  --sidebar-primary: #e8e8ed;
+  --sidebar-primary-foreground: #0f1117;
+  --sidebar-accent: #1e2029;
+  --sidebar-accent-foreground: #e8e8ed;
+  --sidebar-border: #252832;
+  --sidebar-ring: #0d9488;
+}
+
+* {
+  border-color: var(--border);
+  outline-color: var(--ring);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-dm-sans), ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  transition: background-color 0.2s ease, color 0.2s ease;
+  overflow-x: hidden;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Touch feedback for interactive elements on mobile */
+@media (hover: none) and (pointer: coarse) {
+  button:active, a:active, [role="button"]:active {
+    opacity: 0.75;
+    transition: opacity 0.1s ease;
+  }
+}
+
+code, kbd, pre, .font-mono {
+  font-family: var(--font-jetbrains-mono), ui-monospace, monospace;
+}
+
+/* Subtle dot grid pattern for main content area */
+.dark .dot-grid {
+  background-image: radial-gradient(circle, #ffffff06 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+.dot-grid {
+  background-image: radial-gradient(circle, #00000006 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+/* Consistent focus-visible ring styling */
+*:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Smooth theme transition for key elements */
+header, aside, main, .bg-card, .bg-muted {
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+/* Subtle gradient overlay to differentiate sidebar sections */
+.sidebar-gradient {
+  background: linear-gradient(180deg, transparent 0%, hsl(0 0% 0% / 0.02) 100%);
+}
+.dark .sidebar-gradient {
+  background: linear-gradient(180deg, transparent 0%, hsl(0 0% 100% / 0.02) 100%);
+}
+
+/* Metadata panel subtle top gradient */
+.panel-gradient {
+  background: linear-gradient(180deg, hsl(0 0% 0% / 0.015) 0%, transparent 120px);
+}
+.dark .panel-gradient {
+  background: linear-gradient(180deg, hsl(0 0% 100% / 0.02) 0%, transparent 120px);
+}
+
+/* Touch manipulation — eliminate 300ms tap delay on all interactive elements */
+button, a, input, textarea, select, [role="button"], [role="tab"] {
+  touch-action: manipulation;
+}
+
+/* Reduced motion — respect user preference */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Smooth scroll on mobile content areas */
+.overflow-auto, .overflow-y-auto, .overflow-x-auto {
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+}
+
+/* Hide scrollbar for pill-style tabs and toolbars */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* Safe area inset for notched phones */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  .safe-area-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+/* Hide sidebar when editing a skill */
+body.skill-editing .sidebar-wrapper {
+  transform: translateX(-100%) !important;
+  transition: transform 0.2s ease;
+}
+body.skill-editing .content-wrapper {
+  margin-left: 0 !important;
+  transition: margin-left 0.2s ease;
+}
+
+/* ── Tiptap / ProseMirror core ─────────────────────────────────────────── */
+.ProseMirror {
+  outline: none !important;
+  caret-color: var(--accent);
+  min-height: 100%;
+  padding: 1.25rem 1rem;
+  font-size: 15px;
+  line-height: 1.75;
+  color: var(--foreground);
+}
+@media (min-width: 640px) {
+  .ProseMirror {
+    padding: 2rem 3rem;
+  }
+}
+.ProseMirror:focus {
+  outline: none !important;
+}
+.ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: color-mix(in srgb, var(--muted-foreground) 40%, transparent);
+  pointer-events: none;
+  height: 0;
+  font-style: normal;
+  font-size: 1.25rem;
+}
+/* Headings */
+.ProseMirror h1 { font-size: 2em; font-weight: 700; margin: 1.5rem 0 0.5rem; letter-spacing: -0.02em; color: var(--foreground); }
+/* Hide the first H1 in edit mode — title is shown separately in the header */
+.ProseMirror h2 { font-size: 1.5em; font-weight: 600; margin: 1.25rem 0 0.5rem; letter-spacing: -0.01em; border-bottom: 1px solid color-mix(in srgb, var(--border) 30%, transparent); padding-bottom: 0.25rem; }
+.ProseMirror h3 { font-size: 1.2em; font-weight: 600; margin: 1rem 0 0.25rem; }
+.ProseMirror h4, .ProseMirror h5, .ProseMirror h6 { font-size: 1.05em; font-weight: 600; margin: 0.75rem 0 0.25rem; }
+/* Paragraphs */
+.ProseMirror p { margin-top: 0; margin-bottom: 0.75rem; }
+.ProseMirror p:last-child { margin-bottom: 0; }
+/* Inline code */
+.ProseMirror code:not(pre code) {
+  font-family: var(--font-jetbrains-mono), 'JetBrains Mono', monospace;
+  font-size: 12px;
+  background: var(--muted);
+  color: #a6e3a1;
+  padding: 2px 6px;
+  border-radius: 5px;
+  white-space: pre;
+}
+/* Code blocks */
+.ProseMirror pre {
+  background: #011627;
+  border-radius: 12px;
+  padding: 1rem 1rem;
+  margin: 1.25rem 0;
+  overflow-x: auto;
+  position: relative;
+  max-width: 100%;
+}
+@media (max-width: 639px) {
+  .ProseMirror pre {
+    max-width: calc(100vw - 2.5rem);
+  }
+}
+@media (min-width: 640px) {
+  .ProseMirror pre {
+    padding: 1.25rem 1.5rem;
+  }
+}
+.ProseMirror pre code {
+  background: transparent;
+  color: #d6deeb;
+  padding: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  font-family: var(--font-jetbrains-mono), 'JetBrains Mono', monospace;
+  white-space: pre;
+}
+/* Blockquote */
+.ProseMirror blockquote {
+  border-left: 3px solid color-mix(in srgb, var(--accent) 50%, transparent);
+  margin: 1rem 0;
+  padding: 0.25rem 0 0.25rem 1rem;
+  color: var(--muted-foreground);
+}
+/* Lists */
+.ProseMirror ul { list-style: disc; padding-left: 1.5rem; margin: 0.5rem 0; }
+.ProseMirror ol { list-style: decimal; padding-left: 1.5rem; margin: 0.5rem 0; }
+.ProseMirror li { margin: 0.15rem 0; }
+.ProseMirror ul li::marker { color: var(--accent); }
+.ProseMirror ol li::marker { color: var(--accent); font-weight: 600; }
+/* HR */
+.ProseMirror hr {
+  border: none;
+  border-top: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
+  margin: 1.5rem 0;
+}
+/* Selection */
+.ProseMirror ::selection { background: color-mix(in srgb, var(--accent) 20%, transparent); }
+/* Links */
+.ProseMirror a { color: var(--accent); text-decoration: none; border-bottom: 1px solid color-mix(in srgb, var(--accent) 30%, transparent); }
+.ProseMirror a:hover { border-color: var(--accent); }
+/* Images */
+.ProseMirror img { max-width: 100%; border-radius: 8px; margin: 1rem 0; }
+/* Tables — GitHub-style */
+.ProseMirror table { border-collapse: collapse; width: 100%; margin: 1.25rem 0; font-size: 14px; overflow-x: auto; display: block; }
+.ProseMirror table thead tr { border-bottom: 2px solid var(--border); }
+.ProseMirror table th { padding: 10px 16px; text-align: left; font-size: 12px; font-weight: 600; color: var(--muted-foreground); text-transform: uppercase; letter-spacing: 0.05em; white-space: nowrap; }
+.ProseMirror table td { padding: 10px 16px; border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent); vertical-align: top; }
+.ProseMirror table tr:hover td { background: color-mix(in srgb, var(--muted) 40%, transparent); }
+.ProseMirror table tr:last-child td { border-bottom: none; }
+
+/* Light mode overrides */
+:root:not(.dark) .ProseMirror code:not(pre code) { color: #166534; background: #f0fdf4; }
+:root:not(.dark) .ProseMirror pre { background: #f0f1f3; border: 1px solid #dde0e4; }
+:root:not(.dark) .ProseMirror pre code { color: #1e293b; }
+
+/* ── Skill view (read-only) — inherits ProseMirror styles via class ────── */
+.skill-view-content ::selection { background: color-mix(in srgb, var(--accent) 20%, transparent); }
+.skill-view-content h2 { margin-top: 2rem; margin-bottom: 0.75rem; padding-bottom: 0.35rem; border-bottom: 1px solid color-mix(in srgb, var(--border) 40%, transparent); }
+.skill-view-content h3 { margin-top: 1.5rem; margin-bottom: 0.5rem; }
+.skill-view-content p { margin-bottom: 0.875rem; }
+.skill-view-content ul, .skill-view-content ol { margin: 0.5rem 0 1rem; }
+.skill-view-content blockquote { margin: 1.25rem 0; }
+
+/* Bubble menu animation */
+.tippy-box[data-animation='shift-away'][data-state='hidden'] {
+  opacity: 0;
+  transform: translateY(4px) scale(0.97);
+}
+.tippy-box[data-animation='shift-away'][data-state='visible'] {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+

@@ -1,0 +1,78 @@
+'use client'
+import Link from 'next/link'
+import { usePathname } from 'next/navigation'
+import { BookOpen, FolderOpen, Tag, Boxes, Settings, HelpCircle, X } from 'lucide-react'
+import { cn } from '@/lib/utils'
+import { mockSkills, mockCollections, mockTags } from '@/lib/mock-data'
+
+const navItems = [
+  { href: '/', label: 'Skills', icon: BookOpen, count: mockSkills.length },
+  { href: '/collections', label: 'Collections', icon: FolderOpen, count: mockCollections.length },
+  { href: '/tags', label: 'Tags', icon: Tag, count: mockTags.length },
+]
+
+export function Sidebar({ onClose }: { onClose?: () => void }) {
+  const pathname = usePathname()
+
+  return (
+    <aside className="w-[220px] h-screen flex flex-col bg-[var(--sidebar)] border-r border-[var(--sidebar-border)]">
+      {/* Logo */}
+      <div className="h-14 px-4 flex items-center gap-2.5 border-b border-[var(--sidebar-border)]">
+        <div className="w-7 h-7 rounded-lg bg-accent flex items-center justify-center shrink-0">
+          <Boxes className="h-4 w-4 text-white" />
+        </div>
+        <span className="text-[13px] font-semibold text-[var(--sidebar-foreground)] tracking-tight">SkillNote</span>
+        {onClose && (
+          <button onClick={onClose} className="ml-auto p-1 rounded-md text-[var(--muted-foreground)] hover:text-[var(--sidebar-foreground)] lg:hidden min-h-[44px] min-w-[44px] flex items-center justify-center" aria-label="Close sidebar">
+            <X className="h-4 w-4" />
+          </button>
+        )}
+      </div>
+
+      {/* Nav */}
+      <nav className="flex-1 px-2 py-3 space-y-0.5 overflow-y-auto sidebar-gradient">
+        <p className="text-[10px] font-semibold text-[var(--muted-foreground)] uppercase tracking-widest px-2 mb-2">Workspace</p>
+        {navItems.map(({ href, label, icon: Icon, count }) => {
+          const isActive = pathname === href || (href !== '/' && pathname.startsWith(href))
+          return (
+            <Link
+              key={href}
+              href={href}
+              className={cn(
+                'flex items-center gap-2.5 px-2.5 py-2 rounded-md text-[13px] font-medium transition-all duration-150',
+                isActive
+                  ? 'bg-accent/12 text-accent border-l-2 border-accent -ml-px'
+                  : 'text-[var(--muted-foreground)] hover:text-[var(--sidebar-foreground)] hover:bg-[var(--sidebar-accent)]'
+              )}
+            >
+              <Icon className={cn('h-[15px] w-[15px] shrink-0', isActive ? 'text-accent' : '')} />
+              {label}
+              <span className={cn(
+                'ml-auto text-[11px] tabular-nums',
+                isActive ? 'text-accent/70' : 'text-[var(--muted-foreground)]/50'
+              )}>
+                {count}
+              </span>
+            </Link>
+          )
+        })}
+      </nav>
+
+      {/* Footer */}
+      <div className="px-2 py-2 border-t border-[var(--sidebar-border)] space-y-0.5">
+        <Link href="/settings" aria-label="Settings" className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-md text-[13px] font-medium text-[var(--muted-foreground)] hover:text-[var(--sidebar-foreground)] hover:bg-[var(--sidebar-accent)] transition-all duration-150">
+          <Settings className="h-[15px] w-[15px] shrink-0" />
+          Settings
+        </Link>
+        <button aria-label="Help" className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-md text-[13px] font-medium text-[var(--muted-foreground)] hover:text-[var(--sidebar-foreground)] hover:bg-[var(--sidebar-accent)] transition-all duration-150">
+          <HelpCircle className="h-[15px] w-[15px] shrink-0" />
+          Help
+        </button>
+        <div className="flex items-center gap-1.5 px-2.5 pt-2" title="Running locally">
+          <div className="w-1.5 h-1.5 rounded-full bg-teal-500 shrink-0" />
+          <p className="text-[10px] text-[var(--muted-foreground)]/40">Local</p>
+        </div>
+      </div>
+    </aside>
+  )
+}

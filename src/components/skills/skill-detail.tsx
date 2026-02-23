@@ -1,0 +1,501 @@
+'use client'
+import { useState, useCallback, useEffect, useRef } from 'react'
+import { TopBar } from '@/components/layout/topbar'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Download, Pencil, History, Check, BookOpen, ArrowLeft, Hash, Link2, Star, Command, X, Keyboard, FileText, Search, FolderOpen, Share2, MoreHorizontal } from 'lucide-react'
+import { Skill } from '@/lib/mock-data'
+import { getSkills, updateSkill } from '@/lib/skills-store'
+import { generateMarkdown, triggerDownload } from '@/lib/markdown-utils'
+import { toast } from 'sonner'
+import { formatRelative } from '@/lib/format'
+import { cn } from '@/lib/utils'
+import { useRouter } from 'next/navigation'
+import { SkillViewTab } from './tabs/SkillViewTab'
+import { SkillEditTab } from './tabs/SkillEditTab'
+
+type PaletteAction = {
+  icon: React.ComponentType<{ className?: string }>
+  label: string
+  shortcut: string
+  group: string
+  action: () => void
+}
+
+function CommandPalette({ actions, onClose }: { actions: PaletteAction[]; onClose: () => void }) {
+  const [query, setQuery] = useState('')
+  const [selectedIdx, setSelectedIdx] = useState(0)
+
+  const filtered = query
+    ? actions.filter(a => a.label.toLowerCase().includes(query.toLowerCase()))
+    : actions
+
+  const groups = filtered.reduce<Record<string, PaletteAction[]>>((acc, a) => {
+    ;(acc[a.group] ??= []).push(a)
+    return acc
+  }, {})
+
+  const flatItems = Object.values(groups).flat()
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setSelectedIdx(prev => (prev + 1) % flatItems.length)
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setSelectedIdx(prev => (prev - 1 + flatItems.length) % flatItems.length)
+    } else if (e.key === 'Enter' && flatItems[selectedIdx]) {
+      e.preventDefault()
+      flatItems[selectedIdx].action()
+    } else if (e.key === 'Escape') {
+      onClose()
+    }
+  }
+
+  useEffect(() => { setSelectedIdx(0) }, [query])
+
+  let itemIndex = 0
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh] bg-black/50 animate-in fade-in duration-150" onClick={onClose}>
+      <div className="w-full max-w-lg bg-card border border-border rounded-xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-2 px-4 py-3 border-b border-border/60">
+          <Search className="h-4 w-4 text-muted-foreground shrink-0" />
+          <input
+            className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
+            placeholder="Search commands, skills..."
+            autoFocus
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={handleKeyDown}
+          />
+          <kbd className="text-[10px] font-mono text-muted-foreground/50 bg-muted px-1.5 py-0.5 rounded">esc</kbd>
+        </div>
+        <div className="max-h-[50vh] overflow-y-auto p-2">
+          {Object.entries(groups).map(([group, items]) => (
+            <div key={group}>
+              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest px-3 py-2">{group}</p>
+              {items.map((item) => {
+                const idx = itemIndex++
+                return (
+                  <button
+                    key={`${group}-${item.label}`}
+                    onClick={item.action}
+                    onMouseEnter={() => setSelectedIdx(idx)}
+                    className={cn(
+                      'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors',
+                      idx === selectedIdx ? 'bg-accent/10 text-accent' : 'text-foreground hover:bg-muted'
+                    )}
+                  >
+                    <item.icon className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <span className="flex-1 text-left truncate">{item.label}</span>
+                    {item.shortcut && <kbd className="text-[11px] font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded shrink-0">{item.shortcut}</kbd>}
+                  </button>
+                )
+              })}
+            </div>
+          ))}
+          {flatItems.length === 0 && (
+            <p className="text-[13px] text-muted-foreground text-center py-6">No results found</p>
+          )}
+        </div>
+        <div className="px-4 py-2 border-t border-border/60 flex items-center gap-3 text-[10px] text-muted-foreground">
+          <span><kbd className="font-mono bg-muted px-1 py-0.5 rounded">↑↓</kbd> Navigate</span>
+          <span><kbd className="font-mono bg-muted px-1 py-0.5 rounded">↵</kbd> Execute</span>
+          <span><kbd className="font-mono bg-muted px-1 py-0.5 rounded">esc</kbd> Close</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export function SkillDetail({ skill }: { skill: Skill }) {
+  const [activeTab, setActiveTab] = useState('view')
+  const [editorContent, setEditorContent] = useState(skill.content_md)
+  const [titleValue, setTitleValue] = useState(skill.title)
+  const [starred, setStarred] = useState(false)
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
+  const [showDiscardConfirm, setShowDiscardConfirm] = useState(false)
+  const router = useRouter()
+  const mainRef = useRef<HTMLElement>(null)
+
+  // Swipe gesture for prev/next skill navigation
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null)
+  const allSkills = getSkills()
+  const currentIdx = allSkills.findIndex(s => s.slug === skill.slug)
+  const prevSkill = allSkills[(currentIdx - 1 + allSkills.length) % allSkills.length]
+  const nextSkill = allSkills[(currentIdx + 1) % allSkills.length]
+
+  useEffect(() => {
+    const el = mainRef.current
+    if (!el) return
+    const onTouchStart = (e: TouchEvent) => {
+      touchStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }
+    }
+    const onTouchEnd = (e: TouchEvent) => {
+      if (!touchStartRef.current) return
+      const dx = e.changedTouches[0].clientX - touchStartRef.current.x
+      const dy = e.changedTouches[0].clientY - touchStartRef.current.y
+      touchStartRef.current = null
+      // Only trigger if horizontal swipe > 80px and more horizontal than vertical
+      if (Math.abs(dx) > 80 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+        if (dx > 0) router.push(`/skills/${prevSkill.slug}`)
+        else router.push(`/skills/${nextSkill.slug}`)
+      }
+    }
+    el.addEventListener('touchstart', onTouchStart, { passive: true })
+    el.addEventListener('touchend', onTouchEnd, { passive: true })
+    return () => {
+      el.removeEventListener('touchstart', onTouchStart)
+      el.removeEventListener('touchend', onTouchEnd)
+    }
+  }, [prevSkill.slug, nextSkill.slug, router])
+
+  const editorDirty = editorContent !== skill.content_md
+
+  useEffect(() => {
+    const saved = localStorage.getItem(`starred-${skill.slug}`)
+    if (saved === 'true') setStarred(true)
+  }, [skill.slug])
+
+  const toggleStar = useCallback(() => {
+    setStarred(prev => {
+      localStorage.setItem(`starred-${skill.slug}`, String(!prev))
+      return !prev
+    })
+  }, [skill.slug])
+
+  const [showHelp, setShowHelp] = useState(false)
+  const [saveToast, setSaveToast] = useState<'saving' | 'saved' | false>(false)
+  const [showMoreMenu, setShowMoreMenu] = useState(false)
+
+  const handleDiscard = useCallback(() => {
+    setShowDiscardConfirm(true)
+  }, [])
+
+  const confirmDiscard = useCallback(() => {
+    setEditorContent(skill.content_md)
+    setShowDiscardConfirm(false)
+  }, [skill.content_md])
+
+  const handleSave = useCallback(() => {
+    setSaveToast('saving')
+    updateSkill(skill.slug, { title: titleValue, content_md: editorContent })
+    setTimeout(() => {
+      setSaveToast('saved')
+      setActiveTab('view')
+      setTimeout(() => setSaveToast(false), 1500)
+    }, 400)
+  }, [skill.slug, titleValue, editorContent])
+
+  const handleCancel = useCallback(() => {
+    setActiveTab('view')
+  }, [])
+
+  const handleExport = useCallback(() => {
+    const md = generateMarkdown(skill)
+    const blob = new Blob([md], { type: 'text/markdown' })
+    triggerDownload(blob, `${skill.slug}.md`)
+    toast.success(`Exported ${skill.slug}.md`)
+  }, [skill])
+
+  useEffect(() => {
+    function handleKey(e: KeyboardEvent) {
+      const target = e.target as HTMLElement
+      const inInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable
+
+      if (e.key === '?' && !inInput) {
+        e.preventDefault()
+        setShowHelp(prev => !prev)
+        return
+      }
+      if (e.key === 'Escape') {
+        if (commandPaletteOpen) { setCommandPaletteOpen(false); return }
+        if (showHelp) { setShowHelp(false); return }
+        if (!inInput) { router.push('/'); return }
+        return
+      }
+      if (e.key === 'e' && !inInput && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault()
+        setActiveTab('edit')
+        return
+      }
+      if (e.key === 'v' && !inInput && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault()
+        setActiveTab('view')
+        return
+      }
+      if (e.key === 'k' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault()
+        setCommandPaletteOpen(prev => !prev)
+        return
+      }
+      if (e.key === 's' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault()
+        handleSave()
+        return
+      }
+    }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [commandPaletteOpen, showHelp, router, handleSave])
+
+  // Hide sidebar when in edit mode
+  useEffect(() => {
+    if (activeTab === 'edit') {
+      document.body.classList.add('skill-editing')
+    } else {
+      document.body.classList.remove('skill-editing')
+    }
+    return () => document.body.classList.remove('skill-editing')
+  }, [activeTab])
+
+  return (
+    <>
+      <TopBar showFab={false} />
+      <div className="flex flex-1 overflow-hidden">
+        <main ref={mainRef} className="flex-1 overflow-auto flex flex-col min-w-0">
+          {/* Header */}
+          <div className="px-4 sm:px-6 py-4 sm:py-5 border-b border-border/60 shrink-0">
+            <div className="flex flex-col sm:flex-row items-start justify-between gap-3 sm:gap-4">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 mb-1">
+                  <button onClick={() => router.back()} className="text-muted-foreground hover:text-foreground transition-colors p-0.5 -ml-1 shrink-0" aria-label="Go back">
+                    <ArrowLeft className="h-4 w-4" />
+                  </button>
+                  <input
+                    value={titleValue}
+                    onChange={(e) => setTitleValue(e.target.value)}
+                    className="flex-1 min-w-0 text-xl font-semibold text-foreground bg-transparent border-none outline-none focus:outline-none ring-0 focus:ring-0 shadow-none focus:shadow-none cursor-text hover:opacity-80 transition-opacity"
+                    style={{ outline: 'none', boxShadow: 'none', border: 'none' }}
+                    title="Click to edit title"
+                    size={titleValue.length || 1}
+                  />
+                  <button onClick={toggleStar} className="p-1 -m-1 transition-colors shrink-0" aria-label={starred ? 'Unstar' : 'Star'}>
+                    <Star className={cn('h-4 w-4', starred ? 'fill-amber-400 text-amber-400' : 'text-muted-foreground hover:text-amber-400')} />
+                  </button>
+                  {editorDirty && <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" title="Unsaved changes" />}
+                </div>
+                <div className="flex items-center gap-1.5 mt-1 mb-1.5">
+                  <FolderOpen className="h-3 w-3 text-muted-foreground/40 shrink-0" />
+                  <code className="font-mono text-[11px] text-muted-foreground/50 tracking-wide">{skill.slug.replace(/-/g, '_')}/SKILLS.md</code>
+                </div>
+                <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                  <div className="w-4 h-4 rounded-full bg-accent flex items-center justify-center text-[8px] font-bold text-white">NV</div>
+                  Last edited by Nova Vex · {formatRelative(skill.updated_at)}
+                  {skill.collections.length > 0 && (
+                    <>
+                      <span className="text-muted-foreground/40">·</span>
+                      {skill.collections.map(c => <Badge key={c} variant="outline" className="text-[10px] py-0 h-4">{c}</Badge>)}
+                    </>
+                  )}
+                </div>
+                <div className="flex gap-1.5 mt-2 flex-wrap">
+                  {skill.tags.map(tag => (
+                    <span key={tag} className="text-[11px] font-mono font-medium text-zinc-600 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded-md">
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                {/* Presence indicators - hidden at lg, shown at xl+ */}
+                <div className="hidden xl:flex items-center -space-x-1.5 mr-2 relative">
+                  {[
+                    { initials: 'P', color: '#8b5cf6', name: 'Pat', status: 'viewing now' },
+                    { initials: 'R', color: '#ef4444', name: 'Rudra', status: 'edited 5m ago' },
+                    { initials: 'T', color: '#3b82f6', name: 'Tyler', status: 'commenting' },
+                  ].map((user, i) => (
+                    <div key={user.initials} className="relative group/presence" style={{ zIndex: 3 - i }}>
+                      <div
+                        className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold text-white border-2 border-card animate-[pulse_3s_ease-in-out_infinite]"
+                        style={{ backgroundColor: user.color, animationDelay: `${i * 0.5}s` }}
+                        title={`${user.name} — ${user.status}`}
+                      >
+                        {user.initials}
+                      </div>
+                      <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 opacity-0 group-hover/presence:opacity-100 pointer-events-none transition-opacity z-50">
+                        <div className="bg-popover border border-border rounded-md px-2 py-1 text-[10px] text-popover-foreground whitespace-nowrap shadow-lg">
+                          {user.name} — {user.status}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  <div className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-green-500 border border-card z-10" />
+                </div>
+
+                <Button variant="outline" size="sm" className="h-8 sm:h-8 min-h-[44px] sm:min-h-0 gap-1.5 text-[13px]" onClick={() => setCommandPaletteOpen(true)}>
+                  <Command className="h-3.5 w-3.5" />
+                  <kbd className="text-[10px] font-mono text-muted-foreground hidden xl:inline">⌘K</kbd>
+                </Button>
+                <Button variant="outline" size="sm" className="h-8 sm:h-8 min-h-[44px] sm:min-h-0 gap-1.5 text-[13px]" onClick={() => router.push(`/skills/${skill.slug}/history`)}>
+                  <History className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">History</span>
+                </Button>
+                <Button variant="outline" size="sm" className="h-8 sm:h-8 min-h-[44px] sm:min-h-0 gap-1.5 text-[13px]" onClick={() => setActiveTab('edit')}>
+                  <Pencil className="h-3.5 w-3.5" />
+                  Edit
+                </Button>
+                <Button variant="outline" size="sm" className="h-8 sm:h-8 min-h-[44px] sm:min-h-0 gap-1.5 text-[13px] hidden xl:flex" onClick={handleExport}>
+                  <Download className="h-3.5 w-3.5" />
+                  Export
+                </Button>
+                {/* ⋯ More menu */}
+                <div className="relative">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 sm:h-8 min-h-[44px] sm:min-h-0 text-[13px] px-2"
+                    onClick={() => setShowMoreMenu(prev => !prev)}
+                    aria-label="More options"
+                  >
+                    <MoreHorizontal className="h-4 w-4" />
+                  </Button>
+                  {showMoreMenu && (
+                    <>
+                      {/* Backdrop to close on outside click */}
+                      <div className="fixed inset-0 z-20" onClick={() => setShowMoreMenu(false)} />
+                      <div className="absolute right-0 top-full mt-1 z-30 bg-popover border border-border rounded-lg shadow-lg overflow-hidden min-w-[180px] py-1">
+                        <button
+                          onClick={() => { router.push(`/skills/${skill.slug}/history`); setShowMoreMenu(false) }}
+                          className="flex items-center gap-2.5 px-3 py-2 text-[13px] hover:bg-muted w-full text-left text-foreground min-h-[44px] sm:min-h-[36px]"
+                        >
+                          <History className="h-3.5 w-3.5 text-muted-foreground" />
+                          View History
+                        </button>
+                        <button
+                          onClick={() => { navigator.clipboard.writeText(window.location.href); setShowMoreMenu(false) }}
+                          className="flex items-center gap-2.5 px-3 py-2 text-[13px] hover:bg-muted w-full text-left text-foreground min-h-[44px] sm:min-h-[36px]"
+                        >
+                          <Link2 className="h-3.5 w-3.5 text-muted-foreground" />
+                          Copy Link
+                        </button>
+                        <button
+                          onClick={() => { handleExport(); setShowMoreMenu(false) }}
+                          className="flex items-center gap-2.5 px-3 py-2 text-[13px] hover:bg-muted w-full text-left text-foreground min-h-[44px] sm:min-h-[36px] xl:hidden"
+                        >
+                          <Download className="h-3.5 w-3.5 text-muted-foreground" />
+                          Export
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Command Palette */}
+          {commandPaletteOpen && (() => {
+            const actions: PaletteAction[] = [
+              { icon: Pencil, label: 'Edit skill', shortcut: 'E', group: 'Actions', action: () => { setActiveTab('edit'); setCommandPaletteOpen(false) } },
+              { icon: History, label: 'View history', shortcut: '', group: 'Actions', action: () => { router.push(`/skills/${skill.slug}/history`); setCommandPaletteOpen(false) } },
+              { icon: Download, label: 'Export as Markdown', shortcut: '⌘E', group: 'Actions', action: () => { handleExport(); setCommandPaletteOpen(false) } },
+              { icon: Link2, label: 'Copy link', shortcut: '⌘L', group: 'Actions', action: () => { navigator.clipboard.writeText(window.location.href); setCommandPaletteOpen(false) } },
+              { icon: Star, label: starred ? 'Unstar skill' : 'Star skill', shortcut: '', group: 'Actions', action: () => { toggleStar(); setCommandPaletteOpen(false) } },
+              { icon: Share2, label: 'Share', shortcut: '', group: 'Actions', action: () => { navigator.clipboard.writeText(window.location.href); setCommandPaletteOpen(false) } },
+              { icon: BookOpen, label: 'Skills', shortcut: '', group: 'Navigate', action: () => { router.push('/'); setCommandPaletteOpen(false) } },
+              { icon: FolderOpen, label: 'Collections', shortcut: '', group: 'Navigate', action: () => { router.push('/collections'); setCommandPaletteOpen(false) } },
+              { icon: Hash, label: 'Tags', shortcut: '', group: 'Navigate', action: () => { router.push('/tags'); setCommandPaletteOpen(false) } },
+              ...allSkills.map(s => ({
+                icon: FileText, label: s.title, shortcut: '', group: 'Skills',
+                action: () => { router.push(`/skills/${s.slug}`); setCommandPaletteOpen(false) },
+              })),
+            ]
+            return <CommandPalette actions={actions} onClose={() => setCommandPaletteOpen(false)} />
+          })()}
+
+          {/* Content — no tab bar; edit is fullscreen overlay, comments inline in view */}
+          <div className="flex-1 flex flex-col min-h-0">
+            {activeTab !== 'edit' && (
+              <SkillViewTab skill={skill} />
+            )}
+            {activeTab === 'edit' && (
+              <SkillEditTab
+                editorContent={editorContent}
+                setEditorContent={setEditorContent}
+                editorDirty={editorDirty}
+                onDiscard={handleDiscard}
+                onSave={handleSave}
+                onCancel={handleCancel}
+                skillTitle={titleValue}
+                setSkillTitle={setTitleValue}
+                openFullscreen={true}
+              />
+            )}
+          </div>
+        </main>
+
+      </div>
+
+      {/* Keyboard shortcut footer hint — hidden on mobile/tablet (touch devices) */}
+      <div className="px-4 sm:px-6 py-2 border-t border-border/60 bg-muted/30 hidden lg:flex items-center gap-2 sm:gap-4 text-[11px] text-muted-foreground shrink-0 overflow-x-auto scrollbar-hide">
+        <span className="flex items-center gap-1"><Keyboard className="h-3 w-3" /> Shortcuts:</span>
+        <span><kbd className="font-mono bg-muted px-1 py-0.5 rounded text-[10px]">E</kbd> Edit</span>
+        <span><kbd className="font-mono bg-muted px-1 py-0.5 rounded text-[10px]">⌘K</kbd> Commands</span>
+        <span><kbd className="font-mono bg-muted px-1 py-0.5 rounded text-[10px]">⌘S</kbd> Save</span>
+        <span><kbd className="font-mono bg-muted px-1 py-0.5 rounded text-[10px]">Esc</kbd> Back</span>
+        <span><kbd className="font-mono bg-muted px-1 py-0.5 rounded text-[10px]">?</kbd> Help</span>
+      </div>
+
+      {/* Save toast */}
+      {saveToast && (
+        <div className="fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] lg:bottom-6 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 bg-accent text-white text-sm font-medium rounded-lg shadow-lg flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2 duration-200">
+          {saveToast === 'saving' ? (
+            <>
+              <div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              Saving...
+            </>
+          ) : (
+            <>
+              <Check className="h-4 w-4" />
+              Saved
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Discard confirm dialog */}
+      {showDiscardConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowDiscardConfirm(false)}>
+          <div className="w-full max-w-sm bg-card border border-border rounded-xl shadow-2xl p-6" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-sm font-semibold text-foreground mb-2">Discard changes?</h3>
+            <p className="text-[13px] text-muted-foreground mb-5">All unsaved changes will be lost. This cannot be undone.</p>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" size="sm" className="h-8 min-h-[44px] sm:min-h-0 text-[13px]" onClick={() => setShowDiscardConfirm(false)}>Cancel</Button>
+              <Button variant="destructive" size="sm" className="h-8 min-h-[44px] sm:min-h-0 text-[13px]" onClick={confirmDiscard}>Discard</Button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Keyboard help panel */}
+      {showHelp && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowHelp(false)}>
+          <div className="w-full max-w-sm bg-card border border-border rounded-xl shadow-2xl p-6" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                <Keyboard className="h-4 w-4 text-muted-foreground" />
+                Keyboard Shortcuts
+              </h3>
+              <button onClick={() => setShowHelp(false)} className="text-muted-foreground hover:text-foreground min-h-[44px] min-w-[44px] flex items-center justify-center" aria-label="Close help"><X className="h-4 w-4" /></button>
+            </div>
+            <div className="space-y-2.5">
+              {[
+                { keys: 'E', desc: 'Open fullscreen editor' },
+                { keys: 'Esc', desc: 'Go back to home / close modal' },
+                { keys: '⌘K', desc: 'Open command palette' },
+                { keys: '⌘S', desc: 'Save changes' },
+                { keys: '?', desc: 'Toggle this help panel' },
+                { keys: 'Ctrl+Enter', desc: 'Submit comment' },
+              ].map(({ keys, desc }) => (
+                <div key={keys} className="flex items-center justify-between">
+                  <span className="text-[13px] text-foreground/80">{desc}</span>
+                  <kbd className="text-[11px] font-mono text-muted-foreground bg-muted px-2 py-1 rounded">{keys}</kbd>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
