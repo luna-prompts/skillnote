@@ -3,6 +3,7 @@ name: skillnote
 services:
   skillnote:
     build: .
+    container_name: skillnote
     ports:
       - "3000:3000"
     environment:
