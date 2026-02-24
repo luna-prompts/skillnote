@@ -11,10 +11,17 @@ dependencies = [
   "alembic>=1.14.0",
   "pydantic>=2.9.0",
   "pydantic-settings>=2.6.0",
+  "pytest>=8.3.0",
+  "httpx>=0.28.0",
 ]
 
 [tool.setuptools]
 packages = ["app"]
+
+[project.optional-dependencies]
+test = [
+  "pytest>=8.3.0",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

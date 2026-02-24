@@ -5,6 +5,8 @@ node_modules/
 audit-screenshots/
 test-results/
 tests/
+!backend/tests/
+!backend/tests/**
 qa-*.mjs
 audit*.mjs
 mobile-audit*.js
