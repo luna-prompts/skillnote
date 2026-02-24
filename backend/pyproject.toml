@@ -15,8 +15,8 @@ dependencies = [
   "httpx>=0.28.0",
 ]
 
-[tool.setuptools]
-packages = ["app"]
+[tool.setuptools.packages.find]
+include = ["app*"]
 
 [project.optional-dependencies]
 test = [
