@@ -1,6 +1,7 @@
 'use client'
 
-import { Skill, mockSkills } from './mock-data'
+import { Skill } from './mock-data'
+import { fetchSkills } from './api/skills'
 
 const STORAGE_KEY = 'skillnote:skills'
 
@@ -23,11 +24,13 @@ function writeStorage(skills: Skill[]): void {
 }
 
 export function getSkills(): Skill[] {
-  const stored = readStorage()
-  if (stored && stored.length > 0) return stored
-  // Seed from mock data on first load
-  writeStorage(mockSkills)
-  return [...mockSkills]
+  return readStorage() || []
+}
+
+export async function syncSkillsFromApi(): Promise<Skill[]> {
+  const skills = await fetchSkills()
+  writeStorage(skills)
+  return skills
 }
 
 export function saveSkills(skills: Skill[]): void {
@@ -55,5 +58,4 @@ export function deleteSkill(slug: string): void {
 
 export function clearAndReseed(): void {
   localStorage.removeItem(STORAGE_KEY)
-  writeStorage(mockSkills)
 }

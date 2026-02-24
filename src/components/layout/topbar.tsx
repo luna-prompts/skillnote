@@ -6,8 +6,7 @@ import { Search, Upload, Plus, LayoutList, LayoutGrid, Moon, Sun, ChevronRight, 
 import { Button } from '@/components/ui/button'
 import { useTheme } from 'next-themes'
 import { cn } from '@/lib/utils'
-import { mockCollections } from '@/lib/mock-data'
-import { getSkills } from '@/lib/skills-store'
+import { getSkills, syncSkillsFromApi } from '@/lib/skills-store'
 import { useSidebar } from '@/lib/sidebar-context'
 import { ImportModal } from '@/components/import/ImportModal'
 
@@ -34,8 +33,8 @@ function Breadcrumbs() {
     crumbs.push({ label: skill?.title ?? segments[1] })
   } else if (segments[0] === 'collections' && segments[1]) {
     crumbs.push({ label: 'Collections', href: '/collections' })
-    const col = mockCollections.find(c => c.name.toLowerCase().replace(/\s+/g, '-') === segments[1])
-    crumbs.push({ label: col?.name ?? segments[1] })
+    const label = decodeURIComponent(segments[1]).replace(/-/g, ' ')
+    crumbs.push({ label })
   } else if (segments[0] === 'collections') {
     crumbs.push({ label: 'Collections' })
   } else if (segments[0] === 'tags') {
@@ -67,6 +66,10 @@ export function TopBar({ view = 'list', onViewChange, showViewToggle = false, se
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
   const router = useRouter()
+
+  useEffect(() => {
+    syncSkillsFromApi().catch(() => {})
+  }, [])
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
