@@ -2,9 +2,9 @@ services:
   postgres:
     image: postgres:16
     environment:
-      POSTGRES_DB: yourskills
-      POSTGRES_USER: yourskills
-      POSTGRES_PASSWORD: yourskills
+      POSTGRES_DB: skillnote
+      POSTGRES_USER: skillnote
+      POSTGRES_PASSWORD: skillnote
     ports:
       - "5433:5432"
     volumes:
@@ -13,10 +13,10 @@ services:
   api:
     build: .
     environment:
-      YOURSKILLS_DATABASE_URL: postgresql+psycopg://yourskills:yourskills@postgres:5432/yourskills
-      YOURSKILLS_TOKEN_PEPPER: dev-pepper-change-me
+      SKILLNOTE_DATABASE_URL: postgresql+psycopg://skillnote:skillnote@postgres:5432/skillnote
+      SKILLNOTE_TOKEN_PEPPER: dev-pepper-change-me
     ports:
-      - "${YOURSKILLS_API_PORT:-8082}:8080"
+      - "${SKILLNOTE_API_PORT:-8082}:8080"
     depends_on:
       - postgres
 

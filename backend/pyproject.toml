@@ -1,5 +1,5 @@
 [project]
-name = "yourskills-backend"
+name = "skillnote-backend"
 version = "0.1.0"
 description = "Self-hosted skills registry backend"
 requires-python = ">=3.12"
