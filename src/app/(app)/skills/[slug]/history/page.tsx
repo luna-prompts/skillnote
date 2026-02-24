@@ -3,12 +3,17 @@ import { useParams, useRouter } from 'next/navigation'
 import { ArrowLeft, History } from 'lucide-react'
 import { TopBar } from '@/components/layout/topbar'
 import { SkillHistoryTab } from '@/components/skills/tabs/SkillHistoryTab'
-import { mockSkills } from '@/lib/mock-data'
+import { getSkills, syncSkillsFromApi } from '@/lib/skills-store'
+import { useEffect, useState } from 'react'
 
 export default function SkillHistoryPage() {
   const { slug } = useParams<{ slug: string }>()
   const router = useRouter()
-  const skill = mockSkills.find(s => s.slug === slug)
+  const [skill, setSkill] = useState(() => getSkills().find(s => s.slug === slug) || null)
+
+  useEffect(() => {
+    syncSkillsFromApi().then(s => setSkill(s.find(x => x.slug === slug) || null)).catch(() => {})
+  }, [slug])
 
   if (!skill) {
     return (
@@ -24,15 +29,9 @@ export default function SkillHistoryPage() {
   return (
     <div className="flex flex-col flex-1 min-h-screen">
       <TopBar showFab={false} />
-
-      {/* Page header */}
       <div className="px-4 sm:px-6 py-4 border-b border-border/60 bg-card/50 shrink-0">
         <div className="flex items-center gap-3 max-w-4xl mx-auto">
-          <button
-            onClick={() => router.back()}
-            className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-            aria-label="Back"
-          >
+          <button onClick={() => router.back()} className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors" aria-label="Back">
             <ArrowLeft className="h-4 w-4" />
           </button>
           <div className="min-w-0">
@@ -44,8 +43,6 @@ export default function SkillHistoryPage() {
           </div>
         </div>
       </div>
-
-      {/* Full history content */}
       <div className="flex-1 overflow-auto">
         <div className="max-w-4xl mx-auto">
           <SkillHistoryTab revisions={skill.revisions ?? []} />
