@@ -15,10 +15,14 @@ services:
     environment:
       SKILLNOTE_DATABASE_URL: postgresql+psycopg://skillnote:skillnote@postgres:5432/skillnote
       SKILLNOTE_TOKEN_PEPPER: dev-pepper-change-me
+      SKILLNOTE_BUNDLE_STORAGE_DIR: /app/data/bundles
     ports:
       - "${SKILLNOTE_API_PORT:-8082}:8080"
+    volumes:
+      - bundles:/app/data/bundles
     depends_on:
       - postgres
 
 volumes:
   pgdata:
+  bundles:
