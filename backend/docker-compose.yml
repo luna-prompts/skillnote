@@ -15,8 +15,6 @@ services:
     environment:
       YOURSKILLS_DATABASE_URL: postgresql+psycopg://yourskills:yourskills@postgres:5432/yourskills
       YOURSKILLS_TOKEN_PEPPER: dev-pepper-change-me
-    ports:
-      - "8080:8080"
     depends_on:
       - postgres
 
