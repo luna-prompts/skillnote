@@ -14,7 +14,7 @@ from app.db.models import AccessToken, Skill, SkillVersion, TokenSkillGrant
 from app.db.session import SessionLocal
 
 
-PLAINTEXT_TOKEN = "ysk_dev_demo_token"
+PLAINTEXT_TOKEN = "skn_dev_demo_token"
 
 
 def hash_token(token: str) -> str:

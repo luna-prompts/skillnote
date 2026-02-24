@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
+from app.core.errors import api_error
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_token
@@ -58,7 +59,7 @@ def list_versions(
         .first()
     )
     if not skill_row:
-        raise HTTPException(status_code=404, detail="Skill not found")
+        raise api_error(404, "SKILL_NOT_FOUND", "Skill not found")
 
     versions = (
         db.query(SkillVersion)
