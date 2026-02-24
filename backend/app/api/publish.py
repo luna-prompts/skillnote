@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 import hashlib
 from pathlib import Path
+import re
 import shutil
 import tempfile
 
@@ -15,6 +16,9 @@ from app.db.session import get_db
 from app.validators.bundle_validator import validate_zip_and_extract_metadata
 
 router = APIRouter(prefix="/v1", tags=["publish"])
+
+ALLOWED_STATUS = {"active", "deprecated", "disabled"}
+SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$")
 
 
 @router.post("/publish")
@@ -33,6 +37,10 @@ def publish_skill(
 
     if not bundle.filename or not bundle.filename.endswith(".zip"):
         raise api_error(400, "BUNDLE_INVALID", "Only .zip bundle is supported")
+    if status not in ALLOWED_STATUS:
+        raise api_error(400, "STATUS_INVALID", "Invalid status")
+    if not SEMVER_RE.match(version):
+        raise api_error(400, "VERSION_INVALID", "Version must be semver (e.g. 1.2.3)")
 
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_zip = Path(tmpdir) / "upload.zip"
@@ -46,52 +54,57 @@ def publish_skill(
 
         storage_key = f"skills/{slug}/{version}.zip"
         dst = Path(settings.bundle_storage_dir) / storage_key
+
+        skill = db.query(Skill).filter(Skill.slug == slug).first()
+        if not skill:
+            skill = Skill(name=name, slug=slug, description=description)
+            db.add(skill)
+            db.flush()
+
+        existing = (
+            db.query(SkillVersion)
+            .filter(SkillVersion.skill_id == skill.id, SkillVersion.version == version)
+            .first()
+        )
+        if existing or dst.exists():
+            raise api_error(409, "VERSION_EXISTS", "Version already exists")
+
         dst.parent.mkdir(parents=True, exist_ok=True)
-
-        if dst.exists():
-            raise api_error(409, "VERSION_EXISTS", "Version bundle already exists")
-
         shutil.copy2(tmp_zip, dst)
         checksum = hashlib.sha256(dst.read_bytes()).hexdigest()
 
-    skill = db.query(Skill).filter(Skill.slug == slug).first()
-    if not skill:
-        skill = Skill(name=name, slug=slug, description=description)
-        db.add(skill)
-        db.flush()
+    try:
+        row = SkillVersion(
+            skill_id=skill.id,
+            version=version,
+            checksum_sha256=checksum,
+            bundle_storage_key=storage_key,
+            release_notes=release_notes,
+            status=status,
+            channel=channel,
+            published_at=datetime.now(timezone.utc),
+        )
+        db.add(row)
 
-    existing = (
-        db.query(SkillVersion)
-        .filter(SkillVersion.skill_id == skill.id, SkillVersion.version == version)
-        .first()
-    )
-    if existing:
-        raise api_error(409, "VERSION_EXISTS", "Version already exists")
+        if grant_all_tokens:
+            tokens = db.query(AccessToken).filter(AccessToken.status == "active").all()
+            for t in tokens:
+                exists = (
+                    db.query(TokenSkillGrant)
+                    .filter(TokenSkillGrant.token_id == t.id, TokenSkillGrant.skill_id == skill.id)
+                    .first()
+                )
+                if not exists:
+                    db.add(TokenSkillGrant(token_id=t.id, skill_id=skill.id))
 
-    row = SkillVersion(
-        skill_id=skill.id,
-        version=version,
-        checksum_sha256=checksum,
-        bundle_storage_key=storage_key,
-        release_notes=release_notes,
-        status=status,
-        channel=channel,
-        published_at=datetime.now(timezone.utc),
-    )
-    db.add(row)
-
-    if grant_all_tokens:
-        tokens = db.query(AccessToken).filter(AccessToken.status == "active").all()
-        for t in tokens:
-            exists = (
-                db.query(TokenSkillGrant)
-                .filter(TokenSkillGrant.token_id == t.id, TokenSkillGrant.skill_id == skill.id)
-                .first()
-            )
-            if not exists:
-                db.add(TokenSkillGrant(token_id=t.id, skill_id=skill.id))
-
-    db.commit()
+        db.commit()
+    except Exception:
+        db.rollback()
+        # avoid orphan bundle on DB failure
+        bundle_path = Path(settings.bundle_storage_dir) / storage_key
+        if bundle_path.exists():
+            bundle_path.unlink()
+        raise
 
     return {
         "skill": skill.slug,

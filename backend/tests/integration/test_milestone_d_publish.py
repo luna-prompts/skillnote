@@ -11,17 +11,26 @@ ADMIN_TOKEN = "skn_admin_demo_token"
 USER_TOKEN = "skn_dev_demo_token"
 
 
-def _multipart_publish(token: str, name: str, version: str):
+def _multipart_publish(
+    token: str,
+    name: str,
+    version: str,
+    status: str = "active",
+    with_skill_md: bool = True,
+):
     boundary = "----skillnote-boundary-pytest"
     buff = io.BytesIO()
     with zipfile.ZipFile(buff, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr(
-            "SKILL.md",
-            f"---\nname: {name}\ndescription: test publish\n---\n\n# {name}\n",
-        )
+        if with_skill_md:
+            zf.writestr(
+                "SKILL.md",
+                f"---\nname: {name}\ndescription: test publish\n---\n\n# {name}\n",
+            )
+        else:
+            zf.writestr("README.md", "no skill file")
 
     body = io.BytesIO()
-    for k, v in {"version": version}.items():
+    for k, v in {"version": version, "status": status}.items():
         body.write(f"--{boundary}\r\n".encode())
         body.write(f"Content-Disposition: form-data; name=\"{k}\"\r\n\r\n".encode())
         body.write(v.encode())
@@ -64,3 +73,28 @@ def test_publish_with_admin_success():
     assert body["skill"] == "admin-published-skill"
     assert body["version"] == "0.1.0"
     assert body["checksumSha256"]
+
+
+def test_publish_rejects_bad_semver_and_status():
+    status, body = _multipart_publish(ADMIN_TOKEN, "bad-semver", "1.0")
+    assert status == 400
+    assert body["error"]["code"] == "VERSION_INVALID"
+
+    status, body = _multipart_publish(ADMIN_TOKEN, "bad-status", "1.0.0", status="broken")
+    assert status == 400
+    assert body["error"]["code"] == "STATUS_INVALID"
+
+
+def test_publish_rejects_missing_skill_md():
+    status, body = _multipart_publish(ADMIN_TOKEN, "missing-skill-md", "1.0.0", with_skill_md=False)
+    assert status == 400
+    assert body["error"]["code"] == "BUNDLE_INVALID"
+
+
+def test_publish_rejects_duplicate_version():
+    status, _ = _multipart_publish(ADMIN_TOKEN, "dup-skill", "1.2.3")
+    assert status == 200
+
+    status, body = _multipart_publish(ADMIN_TOKEN, "dup-skill", "1.2.3")
+    assert status == 409
+    assert body["error"]["code"] == "VERSION_EXISTS"
