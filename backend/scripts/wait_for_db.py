@@ -2,7 +2,7 @@ import time
 
 import psycopg
 
-DSN = "postgresql://yourskills:yourskills@postgres:5432/yourskills"
+DSN = "postgresql://skillnote:skillnote@postgres:5432/skillnote"
 
 
 def main() -> None:

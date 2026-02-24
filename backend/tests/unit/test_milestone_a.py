@@ -34,4 +34,4 @@ def test_smoke_script_has_required_steps():
 
 def test_compose_has_default_api_port_mapping():
     compose = (ROOT / "docker-compose.yml").read_text()
-    assert "${YOURSKILLS_API_PORT:-8082}:8080" in compose
+    assert "${SKILLNOTE_API_PORT:-8082}:8080" in compose

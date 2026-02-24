@@ -1,4 +1,4 @@
-# YourSkills Backend (Milestone A Scaffold)
+# SkillNote Backend (Milestone A Scaffold)
 
 ## Includes
 - FastAPI app with `/health`
@@ -15,11 +15,11 @@ make up
 ```
 
 ## API Port
-API is exposed on host port `${YOURSKILLS_API_PORT:-8082}` by default.
+API is exposed on host port `${SKILLNOTE_API_PORT:-8082}` by default.
 
 Example override:
 ```bash
-YOURSKILLS_API_PORT=8090 docker compose up --build -d
+SKILLNOTE_API_PORT=8090 docker compose up --build -d
 ```
 
 ## Apply migration (with DB wait)
