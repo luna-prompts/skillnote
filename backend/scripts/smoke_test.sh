@@ -50,7 +50,15 @@ with urllib.request.urlopen(req) as r:
     versions = json.loads(r.read().decode())
 assert len(versions) >= 1
 
-print('milestone B checks passed')
+req = urllib.request.Request(f"{base}/v1/skills/secure-migrations/0.1.0/download", headers={"Authorization": "Bearer skn_dev_demo_token"})
+with urllib.request.urlopen(req) as r:
+    payload = r.read()
+    assert r.status == 200
+    assert r.headers.get("Content-Type", "").startswith("application/zip")
+    assert r.headers.get("X-Checksum-Sha256")
+    assert len(payload) > 0
+
+print('milestone B+C checks passed')
 PY
 
 echo "smoke test passed"

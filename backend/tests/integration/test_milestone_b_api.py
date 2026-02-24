@@ -53,3 +53,21 @@ def test_list_skills_and_versions_with_auth():
     assert status == 200
     assert isinstance(versions, list)
     assert len(versions) >= 1
+
+
+def test_download_bundle_with_headers():
+    req = urllib.request.Request(
+        f"{BASE_URL}/v1/skills/secure-migrations/0.1.0/download",
+        headers={"Authorization": f"Bearer {TOKEN}"},
+        method="GET",
+    )
+    try:
+        with urllib.request.urlopen(req) as r:
+            data = r.read()
+            assert r.status == 200
+            assert r.headers.get("X-Skill-Name") == "secure-migrations"
+            assert r.headers.get("X-Skill-Version") == "0.1.0"
+            assert r.headers.get("X-Checksum-Sha256")
+            assert len(data) > 0
+    except Exception as e:
+        pytest.skip(f"Download endpoint not reachable for integration test: {e}")

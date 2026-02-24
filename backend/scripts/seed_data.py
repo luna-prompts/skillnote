@@ -2,6 +2,7 @@ import hashlib
 from datetime import datetime, timezone
 from pathlib import Path
 import sys
+import zipfile
 
 from sqlalchemy import text
 
@@ -22,11 +23,34 @@ def hash_token(token: str) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
+def ensure_seed_bundle() -> tuple[str, str]:
+    storage_key = "skills/secure-migrations/0.1.0.zip"
+    bundle_path = Path(settings.bundle_storage_dir) / storage_key
+    bundle_path.parent.mkdir(parents=True, exist_ok=True)
+
+    skill_md = """---
+name: secure-migrations
+description: DB migration safety checklist
+---
+
+# Secure Migrations
+
+- Review backwards compatibility
+- Run migration on staging first
+"""
+
+    with zipfile.ZipFile(bundle_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("SKILL.md", skill_md)
+
+    checksum = hashlib.sha256(bundle_path.read_bytes()).hexdigest()
+    return storage_key, checksum
+
+
 def main():
     db = SessionLocal()
     try:
-        # quick connection check
         db.execute(text("SELECT 1"))
+        storage_key, checksum = ensure_seed_bundle()
 
         skill = db.query(Skill).filter(Skill.slug == "secure-migrations").first()
         if not skill:
@@ -47,14 +71,17 @@ def main():
             version = SkillVersion(
                 skill_id=skill.id,
                 version="0.1.0",
-                checksum_sha256="0" * 64,
-                bundle_storage_key="skills/secure-migrations/0.1.0.zip",
+                checksum_sha256=checksum,
+                bundle_storage_key=storage_key,
                 release_notes="Initial seed version",
                 status="active",
                 channel="stable",
                 published_at=datetime.now(timezone.utc),
             )
             db.add(version)
+        else:
+            version.checksum_sha256 = checksum
+            version.bundle_storage_key = storage_key
 
         token_hash = hash_token(PLAINTEXT_TOKEN)
         token = db.query(AccessToken).filter(AccessToken.token_hash == token_hash).first()
@@ -80,6 +107,7 @@ def main():
         db.commit()
         print("Seed complete")
         print(f"Plain token (dev only): {PLAINTEXT_TOKEN}")
+        print(f"Bundle: {storage_key}")
     except Exception:
         db.rollback()
         raise
