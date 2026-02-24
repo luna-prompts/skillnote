@@ -61,4 +61,63 @@ with urllib.request.urlopen(req) as r:
 print('milestone B+C checks passed')
 PY
 
+echo "[7/7] milestone D publish check"
+docker compose exec -T api python - <<'PY'
+import io
+import json
+import zipfile
+import urllib.request
+
+base='http://127.0.0.1:8080'
+
+def post_multipart(path, fields, file_field, filename, file_bytes, token):
+    boundary = '----skillnote-boundary-123'
+    body = io.BytesIO()
+    for k, v in fields.items():
+        body.write(f'--{boundary}\r\n'.encode())
+        body.write(f'Content-Disposition: form-data; name="{k}"\r\n\r\n'.encode())
+        body.write(str(v).encode())
+        body.write(b'\r\n')
+    body.write(f'--{boundary}\r\n'.encode())
+    body.write(f'Content-Disposition: form-data; name="{file_field}"; filename="{filename}"\r\n'.encode())
+    body.write(b'Content-Type: application/zip\r\n\r\n')
+    body.write(file_bytes)
+    body.write(b'\r\n')
+    body.write(f'--{boundary}--\r\n'.encode())
+
+    req = urllib.request.Request(
+        f"{base}{path}",
+        data=body.getvalue(),
+        method='POST',
+        headers={
+            'Authorization': f'Bearer {token}',
+            'Content-Type': f'multipart/form-data; boundary={boundary}',
+        },
+    )
+    with urllib.request.urlopen(req) as r:
+        return r.status, json.loads(r.read().decode())
+
+buff = io.BytesIO()
+with zipfile.ZipFile(buff, 'w', compression=zipfile.ZIP_DEFLATED) as zf:
+    zf.writestr('SKILL.md', '---\nname: api-reviewer\ndescription: API review checklist\n---\n\n# API Reviewer')
+
+status, body = post_multipart(
+    '/v1/publish',
+    fields={'version': '0.1.0', 'release_notes': 'seed publish from smoke'},
+    file_field='bundle',
+    filename='api-reviewer.zip',
+    file_bytes=buff.getvalue(),
+    token='skn_admin_demo_token',
+)
+assert status == 200
+assert body.get('skill') == 'api-reviewer'
+
+req = urllib.request.Request(f"{base}/v1/skills", headers={'Authorization': 'Bearer skn_dev_demo_token'})
+with urllib.request.urlopen(req) as r:
+    skills = json.loads(r.read().decode())
+assert any(s.get('slug') == 'api-reviewer' for s in skills)
+
+print('milestone D publish check passed')
+PY
+
 echo "smoke test passed"
