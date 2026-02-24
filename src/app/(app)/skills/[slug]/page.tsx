@@ -1,31 +1,25 @@
 'use client'
 
-import { use, useState, useEffect } from 'react'
-import { getSkills } from '@/lib/skills-store'
+import { use, useEffect, useState } from 'react'
+import { getSkills, syncSkillsFromApi } from '@/lib/skills-store'
 import { SkillDetail } from '@/components/skills/skill-detail'
-import { notFound } from 'next/navigation'
 
 export default function SkillPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params)
-  const [skill, setSkill] = useState(() => {
-    if (typeof window === 'undefined') return null
-    const skills = getSkills()
-    return skills.find(s => s.slug === slug) ?? null
-  })
+  const [skill, setSkill] = useState(() => getSkills().find(s => s.slug === slug) ?? null)
 
   useEffect(() => {
-    const skills = getSkills()
-    const found = skills.find(s => s.slug === slug)
-    setSkill(found ?? null)
+    syncSkillsFromApi()
+      .then(skills => setSkill(skills.find(s => s.slug === slug) ?? null))
+      .catch(() => {})
   }, [slug])
 
   if (skill === null) {
-    if (typeof window !== 'undefined') {
-      const skills = getSkills()
-      const found = skills.find(s => s.slug === slug)
-      if (!found) notFound()
-    }
-    return null
+    return (
+      <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
+        Skill not found.
+      </div>
+    )
   }
 
   return <SkillDetail skill={skill} />
