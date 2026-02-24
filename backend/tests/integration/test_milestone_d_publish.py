@@ -1,5 +1,6 @@
 import io
 import json
+import os
 import urllib.error
 import urllib.request
 import zipfile
@@ -17,6 +18,7 @@ def _multipart_publish(
     version: str,
     status: str = "active",
     with_skill_md: bool = True,
+    huge_payload: bool = False,
 ):
     boundary = "----skillnote-boundary-pytest"
     buff = io.BytesIO()
@@ -28,6 +30,8 @@ def _multipart_publish(
             )
         else:
             zf.writestr("README.md", "no skill file")
+        if huge_payload:
+            zf.writestr("huge.bin", os.urandom(6 * 1024 * 1024))
 
     body = io.BytesIO()
     for k, v in {"version": version, "status": status}.items():
@@ -98,3 +102,9 @@ def test_publish_rejects_duplicate_version():
     status, body = _multipart_publish(ADMIN_TOKEN, "dup-skill", "1.2.3")
     assert status == 409
     assert body["error"]["code"] == "VERSION_EXISTS"
+
+
+def test_publish_rejects_too_large_bundle():
+    status, body = _multipart_publish(ADMIN_TOKEN, "too-large", "2.0.0", huge_payload=True)
+    assert status == 413
+    assert body["error"]["code"] == "BUNDLE_TOO_LARGE"
