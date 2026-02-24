@@ -24,4 +24,6 @@ docker compose exec api python scripts/seed_data.py
 ```
 
 ## Health
-- `http://localhost:8080/health`
+```bash
+docker compose exec api python -c "import urllib.request;print(urllib.request.urlopen('http://127.0.0.1:8080/health').read().decode())"
+```
