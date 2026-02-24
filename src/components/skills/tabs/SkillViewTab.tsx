@@ -1,7 +1,7 @@
 'use client'
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { ArrowUp, Check, Copy, Hash, FileText, MessageSquare } from 'lucide-react'
-import { Skill, mockSkills } from '@/lib/mock-data'
+import { Skill } from '@/lib/mock-data'
 import { cn } from '@/lib/utils'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -156,7 +156,6 @@ export function SkillViewTab({ skill }: SkillViewTabProps) {
   const viewContentRef = useRef<HTMLDivElement>(null)
 
   const headings = useMemo(() => extractHeadings(skill.content_md), [skill.content_md])
-  const currentIdx = mockSkills.findIndex(s => s.slug === skill.slug)
 
   return (
     <div className="flex-1 mt-0 overflow-y-auto overflow-x-hidden scroll-smooth animate-in fade-in duration-200" ref={viewContentRef}>
