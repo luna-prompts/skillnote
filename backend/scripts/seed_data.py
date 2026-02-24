@@ -16,6 +16,7 @@ from app.db.session import SessionLocal
 
 
 PLAINTEXT_TOKEN = "skn_dev_demo_token"
+ADMIN_TOKEN = "skn_admin_demo_token"
 
 
 def hash_token(token: str) -> str:
@@ -96,17 +97,32 @@ def main():
             db.add(token)
             db.flush()
 
-        grant = (
-            db.query(TokenSkillGrant)
-            .filter(TokenSkillGrant.token_id == token.id, TokenSkillGrant.skill_id == skill.id)
-            .first()
-        )
-        if not grant:
-            db.add(TokenSkillGrant(token_id=token.id, skill_id=skill.id))
+        admin_hash = hash_token(ADMIN_TOKEN)
+        admin = db.query(AccessToken).filter(AccessToken.token_hash == admin_hash).first()
+        if not admin:
+            admin = AccessToken(
+                token_hash=admin_hash,
+                label="admin-seed-token",
+                status="active",
+                subject_type="admin",
+                subject_id="seed-admin",
+            )
+            db.add(admin)
+            db.flush()
+
+        for t in (token, admin):
+            grant = (
+                db.query(TokenSkillGrant)
+                .filter(TokenSkillGrant.token_id == t.id, TokenSkillGrant.skill_id == skill.id)
+                .first()
+            )
+            if not grant:
+                db.add(TokenSkillGrant(token_id=t.id, skill_id=skill.id))
 
         db.commit()
         print("Seed complete")
         print(f"Plain token (dev only): {PLAINTEXT_TOKEN}")
+        print(f"Admin token (dev only): {ADMIN_TOKEN}")
         print(f"Bundle: {storage_key}")
     except Exception:
         db.rollback()
