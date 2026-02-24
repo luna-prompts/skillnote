@@ -2,7 +2,10 @@ import json
 import urllib.error
 import urllib.request
 
+import psycopg
 import pytest
+
+from app.core.config import settings
 
 BASE_URL = "http://127.0.0.1:8080"
 TOKEN = "skn_dev_demo_token"
@@ -71,3 +74,29 @@ def test_download_bundle_with_headers():
             assert len(data) > 0
     except Exception as e:
         pytest.skip(f"Download endpoint not reachable for integration test: {e}")
+
+
+def test_download_detects_checksum_mismatch():
+    try:
+        with psycopg.connect(settings.database_url.replace("+psycopg", "")) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    update skill_versions sv
+                    set checksum_sha256 = %s
+                    from skills s
+                    where sv.skill_id = s.id and s.slug = %s and sv.version = %s
+                    """,
+                    ("0" * 64, "secure-migrations", "0.1.0"),
+                )
+            conn.commit()
+    except Exception as e:
+        pytest.skip(f"DB not reachable for checksum mismatch test: {e}")
+
+    status, body = _request(
+        "GET",
+        "/v1/skills/secure-migrations/0.1.0/download",
+        headers={"Authorization": f"Bearer {TOKEN}"},
+    )
+    assert status == 409
+    assert body["error"]["code"] == "CHECKSUM_MISMATCH"

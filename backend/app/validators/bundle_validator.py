@@ -4,6 +4,8 @@ import zipfile
 
 import yaml
 
+from app.core.config import settings
+
 
 FRONTMATTER_RE = re.compile(r"^---\n(.*?)\n---\n", re.DOTALL)
 
@@ -19,11 +21,17 @@ def slugify(value: str) -> str:
 def validate_zip_and_extract_metadata(zip_path: str) -> tuple[str, str, str]:
     with zipfile.ZipFile(zip_path, "r") as zf:
         names = zf.namelist()
+        if len(names) > settings.max_zip_entries:
+            raise ValueError("Archive has too many entries")
 
-        for name in names:
-            p = PurePosixPath(name)
+        total_uncompressed = 0
+        for info in zf.infolist():
+            p = PurePosixPath(info.filename)
             if p.is_absolute() or ".." in p.parts:
                 raise ValueError("Unsafe path in archive")
+            total_uncompressed += info.file_size
+            if total_uncompressed > settings.max_uncompressed_bytes:
+                raise ValueError("Archive exceeds uncompressed size limit")
 
         skill_path = next((n for n in names if n.endswith("SKILL.md")), None)
         if not skill_path:

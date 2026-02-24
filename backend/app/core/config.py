@@ -7,6 +7,10 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://skillnote:skillnote@postgres:5432/skillnote"
     token_pepper: str = "change-me"
     bundle_storage_dir: str = "/app/data/bundles"
+    max_bundle_size_bytes: int = 5 * 1024 * 1024
+    max_zip_entries: int = 500
+    max_uncompressed_bytes: int = 25 * 1024 * 1024
+    enforce_https_in_prod: bool = True
 
     model_config = SettingsConfigDict(env_file=".env", env_prefix="SKILLNOTE_")
 

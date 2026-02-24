@@ -1,3 +1,5 @@
+import hashlib
+
 from fastapi import APIRouter, Depends
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
@@ -45,6 +47,10 @@ def download_skill_bundle(
 
     if not file_path.exists():
         raise api_error(404, "BUNDLE_NOT_FOUND", "Bundle file not found")
+
+    actual_checksum = hashlib.sha256(file_path.read_bytes()).hexdigest()
+    if actual_checksum != version_row.checksum_sha256:
+        raise api_error(409, "CHECKSUM_MISMATCH", "Stored checksum does not match bundle")
 
     headers = {
         "X-Skill-Name": skill_row.slug,
