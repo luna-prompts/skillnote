@@ -47,3 +47,33 @@ def test_validate_zip_rejects_unsafe_paths(tmp_path: Path):
     )
     with pytest.raises(ValueError, match="Unsafe path"):
         validate_zip_and_extract_metadata(str(zpath))
+
+
+def test_validate_zip_rejects_too_many_entries(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    from app.validators import bundle_validator
+
+    monkeypatch.setattr(bundle_validator.settings, "max_zip_entries", 1)
+    zpath = _write_zip(
+        tmp_path,
+        {
+            "SKILL.md": "---\nname: x\ndescription: y\n---\n",
+            "extra.txt": "boom",
+        },
+    )
+    with pytest.raises(ValueError, match="too many entries"):
+        validate_zip_and_extract_metadata(str(zpath))
+
+
+def test_validate_zip_rejects_large_uncompressed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    from app.validators import bundle_validator
+
+    monkeypatch.setattr(bundle_validator.settings, "max_uncompressed_bytes", 20)
+    zpath = _write_zip(
+        tmp_path,
+        {
+            "SKILL.md": "---\nname: x\ndescription: y\n---\n",
+            "big.txt": "x" * 100,
+        },
+    )
+    with pytest.raises(ValueError, match="uncompressed size"):
+        validate_zip_and_extract_metadata(str(zpath))

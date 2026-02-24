@@ -47,6 +47,10 @@ def publish_skill(
         with tmp_zip.open("wb") as f:
             shutil.copyfileobj(bundle.file, f)
 
+        upload_size = tmp_zip.stat().st_size
+        if upload_size > settings.max_bundle_size_bytes:
+            raise api_error(413, "BUNDLE_TOO_LARGE", "Bundle exceeds size limit")
+
         try:
             name, slug, description = validate_zip_and_extract_metadata(str(tmp_zip))
         except ValueError as e:

@@ -2,11 +2,25 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from app.api.auth import router as auth_router
+from app.core.config import settings
 from app.api.skills import router as skills_router
 from app.api.downloads import router as downloads_router
 from app.api.publish import router as publish_router
 
 app = FastAPI(title="SkillNote Backend", version="0.1.0")
+
+
+@app.middleware("http")
+async def enforce_https(request: Request, call_next):
+    if settings.app_env == "prod" and settings.enforce_https_in_prod:
+        proto = request.headers.get("x-forwarded-proto", request.url.scheme)
+        host = request.headers.get("host", "")
+        if proto != "https" and not host.startswith("localhost") and not host.startswith("127.0.0.1"):
+            return JSONResponse(
+                status_code=400,
+                content={"error": {"code": "HTTPS_REQUIRED", "message": "HTTPS is required in production"}},
+            )
+    return await call_next(request)
 
 
 @app.exception_handler(HTTPException)
