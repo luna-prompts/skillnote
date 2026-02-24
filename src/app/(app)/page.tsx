@@ -4,8 +4,8 @@ import { useSearchParams } from 'next/navigation'
 import { TopBar } from '@/components/layout/topbar'
 import { SkillListItem } from '@/components/skills/skill-list-item'
 import { SkillCard } from '@/components/skills/skill-card'
-import { mockTags, mockCollections, Skill } from '@/lib/mock-data'
-import { getSkills } from '@/lib/skills-store'
+import { Skill } from '@/lib/mock-data'
+import { getSkills, syncSkillsFromApi } from '@/lib/skills-store'
 import { cn } from '@/lib/utils'
 import { SearchX, SlidersHorizontal, X } from 'lucide-react'
 
@@ -22,13 +22,25 @@ function SkillsPageInner() {
 
   useEffect(() => {
     setSkills(getSkills())
+    syncSkillsFromApi().then(setSkills).catch(() => {})
   }, [])
 
+  const tagCounts = skills.reduce<Record<string, number>>((acc, s) => {
+    for (const t of s.tags || []) acc[t] = (acc[t] || 0) + 1
+    return acc
+  }, {})
+  const collectionCounts = skills.reduce<Record<string, number>>((acc, s) => {
+    for (const c of s.collections || []) acc[c] = (acc[c] || 0) + 1
+    return acc
+  }, {})
+  const tags = Object.entries(tagCounts).map(([name, count], i) => ({ id: String(i + 1), name, skill_count: count }))
+  const collections = Object.entries(collectionCounts).map(([name, count], i) => ({ id: String(i + 1), name, skill_count: count }))
+
   useEffect(() => {
-    if (tagFromUrl && mockTags.some(t => t.name === tagFromUrl)) {
+    if (tagFromUrl && tags.some(t => t.name === tagFromUrl)) {
       setSelectedTags([tagFromUrl])
     }
-  }, [tagFromUrl])
+  }, [tagFromUrl, tags])
 
   const filtered = skills.filter(s => {
     if (selectedTags.length && !selectedTags.some(t => s.tags.includes(t))) return false
@@ -51,7 +63,7 @@ function SkillsPageInner() {
     <>
       <p className="text-[10px] font-semibold text-muted-foreground/60 uppercase tracking-widest px-2 mb-2">Tags</p>
       <div className="space-y-px mb-5">
-        {mockTags.map(tag => {
+        {tags.map(tag => {
           const active = selectedTags.includes(tag.name)
           return (
             <button
@@ -74,7 +86,7 @@ function SkillsPageInner() {
 
       <p className="text-[10px] font-semibold text-muted-foreground/60 uppercase tracking-widest px-2 mb-2">Collections</p>
       <div className="space-y-px">
-        {mockCollections.map(col => {
+        {collections.map(col => {
           const active = selectedCollections.includes(col.name)
           return (
             <button

@@ -6,7 +6,7 @@ import { Upload, Download, RotateCcw, ExternalLink, Sun, Moon, Monitor } from 'l
 import { TopBar } from '@/components/layout/topbar'
 import { ImportModal } from '@/components/import/ImportModal'
 import { exportAllAsZip } from '@/lib/export-utils'
-import { mockSkills } from '@/lib/mock-data'
+import { getSkills, syncSkillsFromApi } from '@/lib/skills-store'
 import { toast } from 'sonner'
 
 const ACCENT_COLORS = [
@@ -189,6 +189,11 @@ function SwitchControl({ storageKey, defaultValue = false }: { storageKey: strin
 export default function SettingsPage() {
   const [importOpen, setImportOpen] = useState(false)
   const [exporting, setExporting] = useState(false)
+  const [skillsCount, setSkillsCount] = useState(getSkills().length)
+
+  useEffect(() => {
+    syncSkillsFromApi().then(s => setSkillsCount(s.length)).catch(() => {})
+  }, [])
 
   const handleExportAll = useCallback(async () => {
     setExporting(true)
@@ -258,14 +263,14 @@ export default function SettingsPage() {
                 Import
               </button>
             </Row>
-            <Row label="Export All Skills" desc={`Download all ${mockSkills.length} skills as a ZIP archive`}>
+            <Row label="Export All Skills" desc={`Download all ${skillsCount} skills as a ZIP archive`}>
               <button
                 onClick={handleExportAll}
                 disabled={exporting}
                 className="flex items-center gap-1.5 h-8 px-3 text-[13px] font-medium bg-muted hover:bg-muted-foreground/15 border border-border/60 rounded-lg text-foreground transition-colors disabled:opacity-50"
               >
                 <Download className="h-3.5 w-3.5" />
-                {exporting ? 'Exporting...' : `Export ${mockSkills.length} Skills`}
+                {exporting ? 'Exporting...' : `Export ${skillsCount} Skills`}
               </button>
             </Row>
             <Row label="Reset to Defaults" desc="Clears all local preferences and reloads">
