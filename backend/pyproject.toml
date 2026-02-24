@@ -1,0 +1,20 @@
+[project]
+name = "yourskills-backend"
+version = "0.1.0"
+description = "Self-hosted skills registry backend"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.116.0",
+  "uvicorn[standard]>=0.35.0",
+  "sqlalchemy>=2.0.36",
+  "psycopg[binary]>=3.2.0",
+  "alembic>=1.14.0",
+  "pydantic>=2.9.0",
+  "pydantic-settings>=2.6.0",
+]
+
+[tool.setuptools]
+packages = ["app"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
