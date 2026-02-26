@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Download, Pencil, History, Check, BookOpen, ArrowLeft, Hash, Link2, Star, Command, X, Keyboard, FileText, Search, FolderOpen, Share2, MoreHorizontal, Trash2 } from 'lucide-react'
 import { Skill } from '@/lib/mock-data'
-import { getSkills, updateSkill, deleteSkillById } from '@/lib/skills-store'
+import { getSkills, updateSkill, deleteSkillById, saveSkillEdit } from '@/lib/skills-store'
 import { generateMarkdown, triggerDownload } from '@/lib/markdown-utils'
 import { createCommentApi } from '@/lib/api/skills'
 import { toast } from 'sonner'
@@ -179,14 +179,17 @@ export function SkillDetail({ skill }: { skill: Skill }) {
     setShowDiscardConfirm(false)
   }, [skill.content_md])
 
-  const handleSave = useCallback(() => {
+  const handleSave = useCallback(async () => {
     setSaveToast('saving')
-    updateSkill(skill.slug, { title: titleValue, content_md: editorContent })
-    setTimeout(() => {
+    try {
+      await saveSkillEdit(skill.slug, { title: titleValue, content_md: editorContent })
       setSaveToast('saved')
       setActiveTab('view')
       setTimeout(() => setSaveToast(false), 1500)
-    }, 400)
+    } catch {
+      setSaveToast(false)
+      toast.error('Failed to save')
+    }
   }, [skill.slug, titleValue, editorContent])
 
   const handleCancel = useCallback(() => {
