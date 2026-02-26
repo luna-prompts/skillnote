@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { FileText, Maximize2, RotateCcw, Save } from 'lucide-react'
+import { DESC_MAX } from '@/lib/skill-validation'
 import { Button } from '@/components/ui/button'
 import { WysiwygEditor } from '@/components/skills/WysiwygEditor'
 
@@ -13,10 +14,12 @@ type SkillEditTabProps = {
   onCancel: () => void
   skillTitle: string
   setSkillTitle: (title: string) => void
+  skillDescription: string
+  setSkillDescription: (desc: string) => void
   openFullscreen?: boolean
 }
 
-export function SkillEditTab({ editorContent, setEditorContent, editorDirty, onDiscard, onSave, onCancel, skillTitle, setSkillTitle, openFullscreen }: SkillEditTabProps) {
+export function SkillEditTab({ editorContent, setEditorContent, editorDirty, onDiscard, onSave, onCancel, skillTitle, setSkillTitle, skillDescription, setSkillDescription, openFullscreen }: SkillEditTabProps) {
   const [fullscreen, setFullscreen] = useState(false)
 
   // Auto-open fullscreen when requested on mount
@@ -96,9 +99,26 @@ export function SkillEditTab({ editorContent, setEditorContent, editorDirty, onD
         </div>
 
         {/* File bar */}
-        <div className="flex items-center gap-2 px-6 sm:px-10 pb-3 shrink-0">
+        <div className="flex items-center gap-2 px-6 sm:px-10 pb-2 shrink-0">
           <FileText className="h-3.5 w-3.5 text-muted-foreground/50 shrink-0" />
-          <span className="font-mono text-[12px] text-muted-foreground/50 shrink-0">SKILLS.md</span>
+          <span className="font-mono text-[12px] text-muted-foreground/50 shrink-0">SKILL.md</span>
+        </div>
+        {/* Description input */}
+        <div className="px-6 sm:px-10 pb-3 shrink-0">
+          <div className="flex items-center justify-between mb-1">
+            <label className="text-[11px] font-medium text-muted-foreground/60">Description</label>
+            <span className={`text-[10px] tabular-nums ${skillDescription.length > DESC_MAX * 0.9 ? 'text-destructive' : 'text-muted-foreground/40'}`}>
+              {skillDescription.length}/{DESC_MAX}
+            </span>
+          </div>
+          <textarea
+            value={skillDescription}
+            onChange={(e) => setSkillDescription(e.target.value)}
+            placeholder="What this skill does and when Claude should use it..."
+            rows={2}
+            maxLength={DESC_MAX}
+            className="w-full px-3 py-2 text-[13px] bg-muted/40 border border-border/40 rounded-lg focus:outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/30 resize-none"
+          />
         </div>
         <hr className="border-border/40 shrink-0" />
 
@@ -121,7 +141,7 @@ export function SkillEditTab({ editorContent, setEditorContent, editorDirty, onD
       <div className="flex items-center justify-between px-4 py-2 shrink-0">
         <div className="flex items-center gap-3">
           <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
-          <span className="font-mono text-[13px] text-muted-foreground shrink-0">SKILLS.md</span>
+          <span className="font-mono text-[13px] text-muted-foreground shrink-0">SKILL.md</span>
         </div>
         {/* Fullscreen button */}
         <button

@@ -1,8 +1,9 @@
 'use client'
 import { useState, useCallback, useEffect, KeyboardEvent } from 'react'
-import { Plus, X, BookOpen, Loader2 } from 'lucide-react'
+import { Plus, X, BookOpen, Loader2, AlertCircle, Info } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { createSkill } from '@/lib/skills-store'
+import { validateSkillName, validateDescription, NAME_MAX, DESC_MAX, type ValidationError } from '@/lib/skill-validation'
 import { toast } from 'sonner'
 import { useRouter } from 'next/navigation'
 
@@ -11,13 +12,37 @@ type NewSkillModalProps = {
   collections: string[]
 }
 
+function FieldError({ errors }: { errors: ValidationError[] }) {
+  if (errors.length === 0) return null
+  return (
+    <div className="mt-1 space-y-0.5">
+      {errors.map((e, i) => (
+        <p key={i} className="text-[11px] text-destructive flex items-center gap-1">
+          <AlertCircle className="h-3 w-3 shrink-0" />
+          {e.message}
+        </p>
+      ))}
+    </div>
+  )
+}
+
+function CharCounter({ current, max }: { current: number; max: number }) {
+  const pct = current / max
+  return (
+    <span className={`text-[10px] tabular-nums ${pct > 0.9 ? 'text-destructive' : pct > 0.75 ? 'text-amber-500' : 'text-muted-foreground/50'}`}>
+      {current}/{max}
+    </span>
+  )
+}
+
 export function NewSkillModal({ onClose, collections }: NewSkillModalProps) {
-  const [title, setTitle] = useState('')
+  const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [tagInput, setTagInput] = useState('')
   const [tags, setTags] = useState<string[]>([])
   const [selectedCollections, setSelectedCollections] = useState<string[]>([])
   const [saving, setSaving] = useState(false)
+  const [touched, setTouched] = useState<Record<string, boolean>>({})
   const router = useRouter()
 
   useEffect(() => {
@@ -25,6 +50,10 @@ export function NewSkillModal({ onClose, collections }: NewSkillModalProps) {
     document.addEventListener('keydown', handler)
     return () => document.removeEventListener('keydown', handler)
   }, [onClose])
+
+  const nameErrors = touched.name ? validateSkillName(name) : []
+  const descErrors = touched.description ? validateDescription(description) : []
+  const isValid = validateSkillName(name).length === 0 && validateDescription(description).length === 0
 
   const addTag = useCallback(() => {
     const t = tagInput.trim().toLowerCase().replace(/\s+/g, '-')
@@ -37,17 +66,18 @@ export function NewSkillModal({ onClose, collections }: NewSkillModalProps) {
     if (e.key === 'Backspace' && !tagInput && tags.length) setTags(prev => prev.slice(0, -1))
   }
 
-  const toggleCollection = (name: string) =>
-    setSelectedCollections(prev => prev.includes(name) ? prev.filter(c => c !== name) : [...prev, name])
+  const toggleCollection = (col: string) =>
+    setSelectedCollections(prev => prev.includes(col) ? prev.filter(c => c !== col) : [...prev, col])
 
   const handleSubmit = useCallback(async () => {
-    if (!title.trim()) { toast.error('Title is required'); return }
+    setTouched({ name: true, description: true })
+    if (!isValid) return
     setSaving(true)
     try {
       const skill = await createSkill({
-        title: title.trim(),
+        title: name.trim(),
         description: description.trim(),
-        content_md: `# ${title.trim()}\n\n`,
+        content_md: `---\nname: ${name.trim()}\ndescription: ${description.trim()}\n---\n\n# ${name.trim()}\n\n`,
         tags,
         collections: selectedCollections,
       })
@@ -59,7 +89,11 @@ export function NewSkillModal({ onClose, collections }: NewSkillModalProps) {
     } finally {
       setSaving(false)
     }
-  }, [title, description, tags, selectedCollections, router, onClose])
+  }, [name, description, tags, selectedCollections, isValid, router, onClose])
+
+  const previewSlug = name.trim()
+    ? name.trim().toLowerCase().replace(/[^a-z0-9\s-]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '')
+    : ''
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose} role="presentation">
@@ -75,28 +109,61 @@ export function NewSkillModal({ onClose, collections }: NewSkillModalProps) {
         </div>
 
         <div className="px-6 py-5 space-y-4">
+          {/* Name field */}
           <div>
-            <label className="block text-[12px] font-medium text-foreground mb-1.5">Title <span className="text-destructive">*</span></label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="block text-[12px] font-medium text-foreground">Name <span className="text-destructive">*</span></label>
+              <CharCounter current={name.length} max={NAME_MAX} />
+            </div>
             <input
               autoFocus
-              value={title}
-              onChange={e => setTitle(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && handleSubmit()}
-              placeholder="e.g. React Hooks Guide"
-              className="w-full h-9 px-3 text-[13px] bg-muted/60 border border-border/60 rounded-lg focus:outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/60"
+              value={name}
+              onChange={e => setName(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
+              onBlur={() => setTouched(prev => ({ ...prev, name: true }))}
+              placeholder="e.g. react-hooks-guide"
+              maxLength={NAME_MAX}
+              className={`w-full h-9 px-3 text-[13px] font-mono bg-muted/60 border rounded-lg focus:outline-none focus:ring-1 placeholder:text-muted-foreground/60 ${
+                nameErrors.length > 0 ? 'border-destructive focus:ring-destructive' : 'border-border/60 focus:ring-ring'
+              }`}
             />
+            <FieldError errors={nameErrors} />
+            {previewSlug && nameErrors.length === 0 && (
+              <p className="mt-1 text-[11px] text-muted-foreground/60">
+                Slug: <code className="font-mono">{previewSlug}</code>
+              </p>
+            )}
+            <p className="mt-1 text-[10px] text-muted-foreground/50">
+              Lowercase letters, numbers, and hyphens only. Max {NAME_MAX} chars.
+            </p>
           </div>
 
+          {/* Description field */}
           <div>
-            <label className="block text-[12px] font-medium text-foreground mb-1.5">Description</label>
-            <input
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="block text-[12px] font-medium text-foreground">Description <span className="text-destructive">*</span></label>
+              <CharCounter current={description.length} max={DESC_MAX} />
+            </div>
+            <textarea
               value={description}
               onChange={e => setDescription(e.target.value)}
-              placeholder="Brief description of this skill"
-              className="w-full h-9 px-3 text-[13px] bg-muted/60 border border-border/60 rounded-lg focus:outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/60"
+              onBlur={() => setTouched(prev => ({ ...prev, description: true }))}
+              placeholder={'Describe what this skill does AND when Claude should use it. Be specific \u2014 e.g. "Use whenever the user mentions PDFs, forms, document extraction, or any file-processing task."'}
+              maxLength={DESC_MAX}
+              rows={3}
+              className={`w-full px-3 py-2 text-[13px] bg-muted/60 border rounded-lg focus:outline-none focus:ring-1 placeholder:text-muted-foreground/60 resize-none ${
+                descErrors.length > 0 ? 'border-destructive focus:ring-destructive' : 'border-border/60 focus:ring-ring'
+              }`}
             />
+            <FieldError errors={descErrors} />
+            <div className="mt-1.5 flex items-start gap-1.5 p-2 bg-blue-500/5 border border-blue-500/10 rounded-lg">
+              <Info className="h-3 w-3 text-blue-500 mt-0.5 shrink-0" />
+              <p className="text-[10px] text-blue-600 dark:text-blue-400 leading-relaxed">
+                Include both <strong>what</strong> the skill does and <strong>when</strong> Claude should use it. Be pushy — Claude tends to under-trigger.
+              </p>
+            </div>
           </div>
 
+          {/* Tags */}
           <div>
             <label className="block text-[12px] font-medium text-foreground mb-1.5">Tags</label>
             <div className="flex flex-wrap gap-1.5 p-2 bg-muted/60 border border-border/60 rounded-lg min-h-[36px]">
@@ -117,6 +184,7 @@ export function NewSkillModal({ onClose, collections }: NewSkillModalProps) {
             </div>
           </div>
 
+          {/* Collections */}
           {collections.length > 0 && (
             <div>
               <label className="block text-[12px] font-medium text-foreground mb-1.5">Collection</label>
@@ -144,7 +212,7 @@ export function NewSkillModal({ onClose, collections }: NewSkillModalProps) {
           <Button
             size="sm"
             className="h-8 text-[13px] gap-1.5 bg-foreground text-background hover:bg-foreground/90"
-            disabled={!title.trim() || saving}
+            disabled={!isValid || saving}
             onClick={handleSubmit}
           >
             {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}

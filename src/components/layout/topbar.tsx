@@ -9,7 +9,6 @@ import { cn } from '@/lib/utils'
 import { getSkills, syncSkillsFromApi } from '@/lib/skills-store'
 import { useSidebar } from '@/lib/sidebar-context'
 import { ImportModal } from '@/components/import/ImportModal'
-import { NewSkillModal } from '@/components/skills/NewSkillModal'
 
 type TopBarProps = {
   view?: 'list' | 'grid'
@@ -66,16 +65,7 @@ export function TopBar({ view = 'list', onViewChange, showViewToggle = false, se
   const searchRef = useRef<HTMLInputElement>(null)
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
-  const [newSkillOpen, setNewSkillOpen] = useState(false)
-  const [availableCollections, setAvailableCollections] = useState<string[]>([])
   const router = useRouter()
-
-  useEffect(() => {
-    syncSkillsFromApi().then(skills => {
-      const cols = [...new Set(skills.flatMap(s => s.collections || []))]
-      setAvailableCollections(cols)
-    }).catch(() => {})
-  }, [])
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -91,7 +81,7 @@ export function TopBar({ view = 'list', onViewChange, showViewToggle = false, se
         (e.target as Element).hasAttribute('contenteditable')
       if (e.key === 'n' && !inInput && !e.metaKey && !e.ctrlKey) {
         e.preventDefault()
-        setNewSkillOpen(true)
+        router.push('/skills/new')
       }
     }
     document.addEventListener('keydown', handler)
@@ -183,7 +173,7 @@ export function TopBar({ view = 'list', onViewChange, showViewToggle = false, se
               </Button>
 
               {/* New Skill - hidden on mobile (becomes FAB) */}
-              <Button size="sm" className="h-8 gap-1.5 text-[13px] font-medium bg-foreground text-background hover:bg-foreground/90 border-0 hidden lg:flex" onClick={() => setNewSkillOpen(true)}>
+              <Button size="sm" className="h-8 gap-1.5 text-[13px] font-medium bg-foreground text-background hover:bg-foreground/90 border-0 hidden lg:flex" onClick={() => router.push('/skills/new')}>
                 <Plus className="h-3.5 w-3.5" />
                 New Skill
               </Button>
@@ -206,7 +196,7 @@ export function TopBar({ view = 'list', onViewChange, showViewToggle = false, se
         <button
           className="fixed bottom-[calc(4rem+env(safe-area-inset-bottom)+0.75rem)] right-6 z-40 w-14 h-14 rounded-full bg-accent text-white shadow-lg hover:bg-accent/90 active:scale-95 flex items-center justify-center transition-all lg:hidden"
           aria-label="New Skill"
-          onClick={() => setNewSkillOpen(true)}
+          onClick={() => router.push('/skills/new')}
         >
           <Plus className="h-6 w-6" />
         </button>
@@ -216,13 +206,6 @@ export function TopBar({ view = 'list', onViewChange, showViewToggle = false, se
         <ImportModal
           onClose={() => setImportOpen(false)}
           onImported={() => router.refresh()}
-        />
-      )}
-
-      {newSkillOpen && (
-        <NewSkillModal
-          onClose={() => setNewSkillOpen(false)}
-          collections={availableCollections}
         />
       )}
     </>
