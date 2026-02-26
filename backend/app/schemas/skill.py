@@ -8,6 +8,8 @@ class SkillListItem(BaseModel):
     name: str
     slug: str
     description: str
+    tags: List[str] = []
+    collections: List[str] = []
     latestVersion: Optional[str] = None
     status: Optional[str] = None
     channel: Optional[str] = None

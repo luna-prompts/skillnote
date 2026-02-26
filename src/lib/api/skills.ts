@@ -5,6 +5,8 @@ type ApiSkillListItem = {
   name: string
   slug: string
   description: string
+  tags?: string[]
+  collections?: string[]
   latestVersion?: string
 }
 
@@ -35,8 +37,8 @@ function listItemToSkill(item: ApiSkillListItem): Skill {
     title: item.name,
     description: item.description,
     content_md: '',
-    tags: [],
-    collections: [],
+    tags: item.tags || [],
+    collections: item.collections || [],
     created_at: now,
     updated_at: now,
   }

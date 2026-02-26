@@ -36,8 +36,30 @@ description: DB migration safety checklist
 
 # Secure Migrations
 
-- Review backwards compatibility
-- Run migration on staging first
+A checklist for safely deploying database migrations in production.
+
+## Before You Migrate
+
+- Review backwards compatibility — ensure old app version works with new schema
+- Test the migration on staging first
+- Have a rollback plan (down migration or snapshot)
+- Communicate planned downtime if schema locks are expected
+
+## Running the Migration
+
+```bash
+# Always dry-run first
+alembic upgrade head --sql | less
+
+# Apply
+alembic upgrade head
+```
+
+## After Migration
+
+- Verify row counts on critical tables
+- Run smoke tests against the updated schema
+- Monitor error rates for 15 minutes post-deploy
 """
 
     with zipfile.ZipFile(bundle_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
@@ -54,14 +76,25 @@ def main():
         storage_key, checksum = ensure_seed_bundle()
 
         skill = db.query(Skill).filter(Skill.slug == "secure-migrations").first()
+        content = """# Secure Migrations\n\nA checklist for safely deploying database migrations in production.\n\n## Before You Migrate\n\n- Review backwards compatibility — ensure old app version works with new schema\n- Test the migration on staging first\n- Have a rollback plan (down migration or snapshot)\n- Communicate planned downtime if schema locks are expected\n\n## Running the Migration\n\n```bash\n# Always dry-run first\nalembic upgrade head --sql | less\n\n# Apply\nalembic upgrade head\n```\n\n## After Migration\n\n- Verify row counts on critical tables\n- Run smoke tests against the updated schema\n- Monitor error rates for 15 minutes post-deploy\n"""
         if not skill:
             skill = Skill(
                 name="secure-migrations",
                 slug="secure-migrations",
                 description="DB migration safety checklist",
+                content_md=content,
+                tags=["database", "devops"],
+                collections=["DevOps"],
             )
             db.add(skill)
             db.flush()
+        else:
+            if not skill.tags:
+                skill.tags = ["database", "devops"]
+            if not skill.collections:
+                skill.collections = ["DevOps"]
+            if not skill.content_md:
+                skill.content_md = content
 
         version = (
             db.query(SkillVersion)
