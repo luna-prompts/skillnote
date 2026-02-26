@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { Sidebar } from '@/components/layout/sidebar'
+import { ConnectionBanner } from '@/components/layout/connection-banner'
 import { BookOpen, FolderOpen, Hash } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { SidebarContext } from '@/lib/sidebar-context'
@@ -35,6 +36,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       </div>
 
       <div className="content-wrapper flex-1 ml-0 lg:ml-[220px] flex flex-col min-h-screen overflow-hidden dot-grid pb-16 lg:pb-0">
+        <ConnectionBanner />
         {children}
       </div>
 
