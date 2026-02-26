@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useTheme } from 'next-themes'
-import { Upload, Download, RotateCcw, ExternalLink, Sun, Moon, Monitor } from 'lucide-react'
+import { Upload, Download, RotateCcw, ExternalLink, Sun, Moon, Monitor, CheckCircle2, XCircle, Loader2 } from 'lucide-react'
 import { TopBar } from '@/components/layout/topbar'
 import { ImportModal } from '@/components/import/ImportModal'
 import { exportAllAsZip } from '@/lib/export-utils'
@@ -186,6 +186,85 @@ function SwitchControl({ storageKey, defaultValue = false }: { storageKey: strin
   )
 }
 
+function BackendConfig() {
+  const [apiUrl, setApiUrl] = useState(() =>
+    typeof window !== 'undefined' ? (localStorage.getItem('skillnote:api-url') || '') : ''
+  )
+  const [token, setToken] = useState(() =>
+    typeof window !== 'undefined' ? (localStorage.getItem('skillnote:token') || '') : ''
+  )
+  const [testing, setTesting] = useState(false)
+  const [testResult, setTestResult] = useState<'idle' | 'ok' | 'fail'>('idle')
+
+  function save() {
+    localStorage.setItem('skillnote:api-url', apiUrl.trim())
+    localStorage.setItem('skillnote:token', token.trim())
+    toast.success('Backend config saved — reload to reconnect')
+  }
+
+  async function testConnection() {
+    setTesting(true)
+    setTestResult('idle')
+    try {
+      const base = (apiUrl.trim() || 'http://localhost:8082').replace(/\/$/, '')
+      const res = await fetch(`${base}/auth/validate-token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: token.trim() }),
+      })
+      const data = await res.json()
+      setTestResult(data.valid ? 'ok' : 'fail')
+    } catch {
+      setTestResult('fail')
+    } finally {
+      setTesting(false)
+    }
+  }
+
+  return (
+    <>
+      <Row label="API Base URL" desc="URL of your SkillNote backend (e.g. http://localhost:8082)">
+        <input
+          type="url"
+          value={apiUrl}
+          onChange={e => setApiUrl(e.target.value)}
+          placeholder="http://localhost:8082"
+          className="h-8 px-3 text-[13px] bg-muted border border-border/60 rounded-lg text-foreground focus:outline-none focus:ring-1 focus:ring-ring w-56"
+        />
+      </Row>
+      <Row label="Access Token" desc="Bearer token for API authentication">
+        <input
+          type="password"
+          value={token}
+          onChange={e => setToken(e.target.value)}
+          placeholder="skn_live_..."
+          className="h-8 px-3 text-[13px] bg-muted border border-border/60 rounded-lg text-foreground focus:outline-none focus:ring-1 focus:ring-ring w-56"
+        />
+      </Row>
+      <Row label="Connection" desc="Validate token against the backend">
+        <div className="flex items-center gap-2">
+          {testResult === 'ok' && <span className="flex items-center gap-1 text-[12px] text-emerald-600 dark:text-emerald-400"><CheckCircle2 className="h-3.5 w-3.5" /> Connected</span>}
+          {testResult === 'fail' && <span className="flex items-center gap-1 text-[12px] text-destructive"><XCircle className="h-3.5 w-3.5" /> Failed</span>}
+          <button
+            onClick={testConnection}
+            disabled={testing || !token}
+            className="flex items-center gap-1.5 h-8 px-3 text-[13px] font-medium bg-muted hover:bg-muted-foreground/15 border border-border/60 rounded-lg text-foreground transition-colors disabled:opacity-50"
+          >
+            {testing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+            Test Connection
+          </button>
+          <button
+            onClick={save}
+            className="flex items-center gap-1.5 h-8 px-3 text-[13px] font-medium bg-foreground text-background hover:bg-foreground/90 rounded-lg transition-colors"
+          >
+            Save
+          </button>
+        </div>
+      </Row>
+    </>
+  )
+}
+
 export default function SettingsPage() {
   const [importOpen, setImportOpen] = useState(false)
   const [exporting, setExporting] = useState(false)
@@ -210,7 +289,9 @@ export default function SettingsPage() {
 
   const handleReset = useCallback(() => {
     if (window.confirm('Reset all local preferences and reload? This cannot be undone.')) {
-      localStorage.clear()
+      const preserve = ['skillnote:skills', 'skillnote:token', 'skillnote:api-url', 'skillnote:collections-meta']
+      const toRemove = Object.keys(localStorage).filter(k => !preserve.includes(k) && k.startsWith('skillnote:'))
+      toRemove.forEach(k => localStorage.removeItem(k))
       window.location.reload()
     }
   }, [])
@@ -285,6 +366,11 @@ export default function SettingsPage() {
             </Row>
           </Section>
 
+          {/* Backend */}
+          <Section title="Backend">
+            <BackendConfig />
+          </Section>
+
           {/* About */}
           <section className="mb-10">
             <h2 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-4">About</h2>
@@ -293,10 +379,10 @@ export default function SettingsPage() {
               <p className="text-[13px] text-muted-foreground">Open-source self-hostable Skill CMS</p>
               <p className="text-[12px] text-muted-foreground">Built with Next.js, Tiptap, Tailwind CSS</p>
               <div className="flex items-center gap-4 pt-2">
-                <a href="#" className="text-[13px] text-accent hover:underline inline-flex items-center gap-1">
+                <a href="https://github.com/luna-prompts/skillnote" target="_blank" rel="noopener noreferrer" className="text-[13px] text-accent hover:underline inline-flex items-center gap-1">
                   View on GitHub <ExternalLink className="h-3 w-3" />
                 </a>
-                <a href="#" className="text-[13px] text-accent hover:underline inline-flex items-center gap-1">
+                <a href="https://github.com/luna-prompts/skillnote#readme" target="_blank" rel="noopener noreferrer" className="text-[13px] text-accent hover:underline inline-flex items-center gap-1">
                   Documentation <ExternalLink className="h-3 w-3" />
                 </a>
               </div>
