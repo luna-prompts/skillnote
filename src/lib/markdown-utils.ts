@@ -3,9 +3,8 @@ import { Skill } from './mock-data'
 export function generateMarkdown(skill: Skill): string {
   const frontmatter = [
     '---',
-    `title: ${skill.title}`,
-    `tags: [${skill.tags.join(', ')}]`,
-    `created: ${skill.created_at}`,
+    `name: ${skill.slug}`,
+    `description: ${skill.description}`,
     '---',
     '',
   ].join('\n')
@@ -24,8 +23,11 @@ export function parseMarkdown(raw: string, filename: string): Omit<Skill, 'comme
     const fm = fmMatch[1]
     content = raw.slice(fmMatch[0].length)
 
+    // Support both "name" (SKILL.md spec) and "title" (legacy) frontmatter
+    const nameMatch = fm.match(/^name:\s*(.+)$/m)
+    if (nameMatch) title = nameMatch[1].trim()
     const titleMatch = fm.match(/^title:\s*(.+)$/m)
-    if (titleMatch) title = titleMatch[1].trim()
+    if (titleMatch && !nameMatch) title = titleMatch[1].trim()
 
     const tagsMatch = fm.match(/^tags:\s*\[([^\]]*)\]$/m)
     if (tagsMatch) {

@@ -46,8 +46,15 @@ def validate_zip_and_extract_metadata(zip_path: str) -> tuple[str, str, str]:
     frontmatter = yaml.safe_load(m.group(1)) or {}
     name = (frontmatter.get("name") or "").strip()
     description = (frontmatter.get("description") or "").strip()
-    if not name or not description:
-        raise ValueError("Frontmatter requires name and description")
+
+    from app.validators.skill_validator import validate_skill_name, validate_skill_description
+    name_errors = validate_skill_name(name)
+    if name_errors:
+        raise ValueError(f"Invalid skill name: {'; '.join(name_errors)}")
+
+    desc_errors = validate_skill_description(description)
+    if desc_errors:
+        raise ValueError(f"Invalid skill description: {'; '.join(desc_errors)}")
 
     slug = slugify(name)
     if not slug:

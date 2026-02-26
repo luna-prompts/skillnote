@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Download, Pencil, History, Check, BookOpen, ArrowLeft, Hash, Link2, Star, Command, X, Keyboard, FileText, Search, FolderOpen, Share2, MoreHorizontal, Trash2 } from 'lucide-react'
 import { Skill, type Comment } from '@/lib/mock-data'
 import { getSkills, updateSkill, deleteSkillById, saveSkillEdit } from '@/lib/skills-store'
+import { validateSkillName, validateDescription } from '@/lib/skill-validation'
 import { generateMarkdown, triggerDownload } from '@/lib/markdown-utils'
 import { createCommentApi } from '@/lib/api/skills'
 import { toast } from 'sonner'
@@ -113,6 +114,7 @@ export function SkillDetail({ skill }: { skill: Skill }) {
   const [activeTab, setActiveTab] = useState('view')
   const [editorContent, setEditorContent] = useState(skill.content_md)
   const [titleValue, setTitleValue] = useState(skill.title)
+  const [descriptionValue, setDescriptionValue] = useState(skill.description)
   const [starred, setStarred] = useState(false)
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false)
@@ -151,7 +153,7 @@ export function SkillDetail({ skill }: { skill: Skill }) {
     }
   }, [prevSkill, nextSkill, router])
 
-  const editorDirty = editorContent !== skill.content_md
+  const editorDirty = editorContent !== skill.content_md || titleValue !== skill.title || descriptionValue !== skill.description
 
   useEffect(() => {
     const saved = localStorage.getItem(`starred-${skill.slug}`)
@@ -182,7 +184,7 @@ export function SkillDetail({ skill }: { skill: Skill }) {
   const handleSave = useCallback(async () => {
     setSaveToast('saving')
     try {
-      await saveSkillEdit(skill.slug, { title: titleValue, content_md: editorContent })
+      await saveSkillEdit(skill.slug, { title: titleValue, description: descriptionValue, content_md: editorContent })
       setSaveToast('saved')
       setActiveTab('view')
       setTimeout(() => setSaveToast(false), 1500)
@@ -299,7 +301,7 @@ export function SkillDetail({ skill }: { skill: Skill }) {
                 </div>
                 <div className="flex items-center gap-1.5 mt-1 mb-1.5">
                   <FolderOpen className="h-3 w-3 text-muted-foreground/40 shrink-0" />
-                  <code className="font-mono text-[11px] text-muted-foreground/50 tracking-wide">{skill.slug.replace(/-/g, '_')}/SKILLS.md</code>
+                  <code className="font-mono text-[11px] text-muted-foreground/50 tracking-wide">{skill.slug}/SKILL.md</code>
                 </div>
                 <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
                   <div className="w-4 h-4 rounded-full bg-accent flex items-center justify-center text-[8px] font-bold text-white">NV</div>
@@ -311,6 +313,11 @@ export function SkillDetail({ skill }: { skill: Skill }) {
                     </>
                   )}
                 </div>
+                {skill.description && (
+                  <p className="text-[12px] text-muted-foreground/70 mt-1.5 leading-relaxed max-w-xl">
+                    {skill.description}
+                  </p>
+                )}
                 <div className="flex gap-1.5 mt-2 flex-wrap">
                   {skill.tags.map(tag => (
                     <span key={tag} className="text-[11px] font-mono font-medium text-zinc-600 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded-md">
@@ -433,6 +440,8 @@ export function SkillDetail({ skill }: { skill: Skill }) {
                 onCancel={handleCancel}
                 skillTitle={titleValue}
                 setSkillTitle={setTitleValue}
+                skillDescription={descriptionValue}
+                setSkillDescription={setDescriptionValue}
                 openFullscreen={true}
               />
             )}

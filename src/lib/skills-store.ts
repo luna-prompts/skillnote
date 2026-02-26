@@ -3,6 +3,7 @@
 import { Skill } from './mock-data'
 import { fetchSkills, createSkillApi, updateSkillApi, deleteSkillApi } from './api/skills'
 import { isConfigured, SkillNoteApiError } from './api/client'
+import { slugFromName } from './skill-validation'
 
 const STORAGE_KEY = 'skillnote:skills'
 
@@ -94,12 +95,7 @@ export async function createSkill(data: {
   tags: string[]
   collections: string[]
 }): Promise<Skill> {
-  const slug = data.title
-    .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, '')
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '')
+  const slug = slugFromName(data.title)
 
   if (isConfigured()) {
     const skill = await createSkillApi({ name: data.title, slug, ...data })
@@ -120,9 +116,9 @@ export async function deleteSkillById(slug: string): Promise<void> {
   deleteSkill(slug)
 }
 
-export async function saveSkillEdit(slug: string, patch: { title?: string; content_md?: string; tags?: string[]; collections?: string[] }): Promise<void> {
+export async function saveSkillEdit(slug: string, patch: { title?: string; description?: string; content_md?: string; tags?: string[]; collections?: string[] }): Promise<void> {
   if (isConfigured()) {
-    await updateSkillApi(slug, { name: patch.title, content_md: patch.content_md, tags: patch.tags, collections: patch.collections })
+    await updateSkillApi(slug, { name: patch.title, description: patch.description, content_md: patch.content_md, tags: patch.tags, collections: patch.collections })
   }
   updateSkill(slug, patch)
 }
