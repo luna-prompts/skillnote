@@ -1,7 +1,9 @@
 'use client'
 
 import { use, useEffect, useState } from 'react'
-import { getSkills, syncSkillsFromApi } from '@/lib/skills-store'
+import { getSkills, syncSkillsFromApi, updateSkill } from '@/lib/skills-store'
+import { fetchSkill } from '@/lib/api/skills'
+import { isConfigured } from '@/lib/api/client'
 import { SkillDetail } from '@/components/skills/skill-detail'
 
 export default function SkillPage({ params }: { params: Promise<{ slug: string }> }) {
@@ -9,9 +11,22 @@ export default function SkillPage({ params }: { params: Promise<{ slug: string }
   const [skill, setSkill] = useState(() => getSkills().find(s => s.slug === slug) ?? null)
 
   useEffect(() => {
-    syncSkillsFromApi()
-      .then(skills => setSkill(skills.find(s => s.slug === slug) ?? null))
-      .catch(() => {})
+    if (isConfigured()) {
+      fetchSkill(slug)
+        .then(fullSkill => {
+          setSkill(fullSkill)
+          updateSkill(slug, fullSkill)
+        })
+        .catch(() => {
+          syncSkillsFromApi()
+            .then(skills => setSkill(skills.find(s => s.slug === slug) ?? null))
+            .catch(() => {})
+        })
+    } else {
+      syncSkillsFromApi()
+        .then(skills => setSkill(skills.find(s => s.slug === slug) ?? null))
+        .catch(() => {})
+    }
   }, [slug])
 
   if (skill === null) {
