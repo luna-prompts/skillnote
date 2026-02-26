@@ -189,9 +189,10 @@ function SwitchControl({ storageKey, defaultValue = false }: { storageKey: strin
 export default function SettingsPage() {
   const [importOpen, setImportOpen] = useState(false)
   const [exporting, setExporting] = useState(false)
-  const [skillsCount, setSkillsCount] = useState(getSkills().length)
+  const [skillsCount, setSkillsCount] = useState(0)
 
   useEffect(() => {
+    setSkillsCount(getSkills().length)
     syncSkillsFromApi().then(s => setSkillsCount(s.length)).catch(() => {})
   }, [])
 
