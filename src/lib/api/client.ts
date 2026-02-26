@@ -5,6 +5,9 @@ export function getApiBaseUrl(): string {
   return (localStorage.getItem('skillnote:api-url') || DEFAULT_API_BASE).replace(/\/$/, '')
 }
 
+// Note: Token is stored in localStorage for simplicity (Phase 1).
+// Known risk: accessible to same-origin JS. Acceptable for self-hosted single-user deployment.
+// TODO Phase 2: Move to httpOnly cookie via API route proxy.
 export function getAuthToken(): string {
   if (typeof window === 'undefined') return ''
   return localStorage.getItem('skillnote:token') || ''

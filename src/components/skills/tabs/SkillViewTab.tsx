@@ -1,7 +1,7 @@
 'use client'
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { ArrowUp, Check, Copy, Hash, FileText, MessageSquare } from 'lucide-react'
-import { Skill } from '@/lib/mock-data'
+import { Skill, type Comment } from '@/lib/mock-data'
 import { cn } from '@/lib/utils'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -148,7 +148,7 @@ function ScrollToTopButton({ containerRef }: { containerRef: React.RefObject<HTM
 
 type SkillViewTabProps = {
   skill: Skill
-  onAddComment?: (body: string) => Promise<void>
+  onAddComment?: (body: string) => Promise<Comment | void>
 }
 
 export function SkillViewTab({ skill, onAddComment }: SkillViewTabProps) {
