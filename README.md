@@ -8,40 +8,38 @@ A self-hosted skills registry for [Claude Code](https://claude.ai/claude-code) �
 
 ## Quick Start
 
-### 1. Start the backend (API + database)
-
 ```bash
-cd backend
-make up        # builds and starts api + postgres in Docker
-make migrate   # applies DB migrations
-make seed      # seeds a dev token and sample skills
+docker compose up --build
 ```
 
-Backend runs at **http://localhost:8082**.
+That's it. Docker starts postgres, migrates the DB, seeds sample data, and runs both the API and the web UI.
 
-### 2. Start the frontend
+| Service | URL |
+|---------|-----|
+| **Web UI** | http://localhost:3000 |
+| **API** | http://localhost:8082 |
 
-**Development (with hot-reload):**
+**First-time setup:** open the app, go to **Settings → Backend** and enter:
+- **Access Token:** `skn_dev_demo_token`
+
+Click **Test Connection** → **Save**, then reload.
+
+---
+
+## Development
+
+Run the frontend with hot-reload against the Dockerised backend:
+
 ```bash
+# Terminal 1 — backend
+cd backend && make up && make migrate && make seed
+
+# Terminal 2 — frontend dev server
 npm install
 npm run dev
 ```
 
-**Production (Docker):**
-```bash
-docker build -t skillnote-prod .
-docker run -d --rm -p 3000:3000 --name skillnote skillnote-prod
-```
-
-Frontend runs at **http://localhost:3000**.
-
-### 3. Connect the frontend to the backend
-
-Open **Settings → Backend** in the app and enter:
-- **API Base URL:** `http://localhost:8082`
-- **Access Token:** `skn_dev_demo_token` (created by `make seed`)
-
-Click **Test Connection** → **Save**, then reload the page.
+Frontend: **http://localhost:3000** · Backend: **http://localhost:8082**
 
 ---
 
