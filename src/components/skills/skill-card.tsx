@@ -25,7 +25,12 @@ export function SkillCard({ skill }: { skill: Skill }) {
         {skill.description}
       </p>
       <div className="flex items-center justify-between pt-3 border-t border-border/40">
-        <div className="flex gap-1 flex-wrap">
+        <div className="flex gap-1 flex-wrap items-center">
+          {skill.current_version > 0 && (
+            <span className="text-[10px] font-mono font-medium text-accent/70 bg-accent/10 px-1.5 py-0.5 rounded-md">
+              v{skill.current_version}
+            </span>
+          )}
           {skill.tags.slice(0, 2).map(tag => (
             <span key={tag} className="text-[11px] font-mono text-zinc-600 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded-md">
               {tag}

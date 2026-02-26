@@ -44,6 +44,17 @@ export type Revision = {
   diff: DiffLine[]
 }
 
+export type ContentVersion = {
+  version: number
+  title: string
+  description: string
+  content_md: string
+  tags: string[]
+  collections: string[]
+  is_latest: boolean
+  created_at: string
+}
+
 export type Skill = {
   slug: string
   title: string
@@ -51,6 +62,7 @@ export type Skill = {
   content_md: string
   tags: string[]
   collections: string[]
+  current_version: number
   created_at: string
   updated_at: string
   comments?: Comment[]
@@ -104,6 +116,7 @@ export const mockSkills: Skill[] = [
     content_md: `\`\`\`tsx\nfunction useDebounce<T>(value: T, delay: number): T {\n  const [debounced, setDebounced] = useState(value)\n  useEffect(() => {\n    const timer = setTimeout(() => setDebounced(value), delay)\n    return () => clearTimeout(timer)\n  }, [value, delay])\n  return debounced\n}\n\`\`\``,
     tags: ['react', 'typescript'],
     collections: ['Frontend'],
+    current_version: 3,
     created_at: '2026-02-10T10:00:00Z',
     updated_at: '2026-02-20T14:30:00Z',
     comments: [
@@ -161,6 +174,7 @@ export const mockSkills: Skill[] = [
     content_md: `- 400 Bad Request — invalid input\n- 401 Unauthorized — missing/invalid auth\n- 403 Forbidden — insufficient permissions\n- 404 Not Found — resource missing\n- 500 Internal Server Error — unexpected failure`,
     tags: ['api', 'typescript'],
     collections: ['Backend'],
+    current_version: 1,
     created_at: '2026-02-08T10:00:00Z',
     updated_at: '2026-02-19T09:00:00Z',
     comments: [
@@ -174,6 +188,7 @@ export const mockSkills: Skill[] = [
     content_md: `// Step 2: Minimal implementation\nfunction add(a: number, b: number) {\n  return a + b\n}\n\`\`\``,
     tags: ['testing', 'workflow'],
     collections: ['Frontend', 'Backend'],
+    current_version: 1,
     created_at: '2026-02-05T10:00:00Z',
     updated_at: '2026-02-17T16:00:00Z',
   },
@@ -184,6 +199,7 @@ export const mockSkills: Skill[] = [
     content_md: `Default: Server Components (no JS sent to client)\nAdd \`'use client'\` only when you need browser APIs or interactivity.`,
     tags: ['nextjs', 'react'],
     collections: ['Frontend'],
+    current_version: 1,
     created_at: '2026-02-12T10:00:00Z',
     updated_at: '2026-02-21T08:00:00Z',
   },
@@ -191,6 +207,7 @@ export const mockSkills: Skill[] = [
     slug: 'trello',
     title: 'Trello Skill',
     description: 'Manage Trello boards, lists, and cards via the Trello REST API.',
+    current_version: 1,
     content_md: `---\nname: trello\ndescription: Manage Trello boards, lists, and cards via the Trello REST API.\nhomepage: https://developer.atlassian.com/cloud/trello/rest/\nmetadata: {"clawdbot":{"emoji":"📋","requires":{"bins":["jq"],"env":["TRELLO_API_KEY","TRELLO_TOKEN"]}}}\n---\n# Trello Skill\n\nManage Trello boards, lists, and cards directly from Clawdbot.\n\n## Setup\n\n1. Get your API key: https://trello.com/app-key\n2. Generate a token (click "Token" link on that page)\n3. Set environment variables:\n\n\`\`\`bash\nexport TRELLO_API_KEY="your-api-key"\nexport TRELLO_TOKEN="your-token"\n\`\`\`\n\n## Usage\n\nAll commands use curl to hit the Trello REST API.\n\n### List boards\n\n\`\`\`bash\ncurl -s "https://api.trello.com/1/members/me/boards?key=\$TRELLO_API_KEY&token=\$TRELLO_TOKEN" | jq '.[] | {name, id}'\n\`\`\`\n\n### List lists in a board\n\n\`\`\`bash\ncurl -s "https://api.trello.com/1/boards/{boardId}/lists?key=\$TRELLO_API_KEY&token=\$TRELLO_TOKEN" | jq '.[] | {name, id}'\n\`\`\``,
     tags: ['api', 'productivity'],
     collections: ['Integrations'],
@@ -204,6 +221,7 @@ export const mockSkills: Skill[] = [
     content_md: `\`\`\`yaml\nservices:\n  app:\n    build: .\n    ports:\n      - "3000:3000"\n    depends_on:\n      - db\n  db:\n    image: postgres:16\n    environment:\n      POSTGRES_PASSWORD: password\n    volumes:\n      - pgdata:/var/lib/postgresql/data\nvolumes:\n  pgdata:\n\`\`\``,
     tags: ['devops', 'workflow'],
     collections: ['DevOps'],
+    current_version: 1,
     created_at: '2026-02-01T10:00:00Z',
     updated_at: '2026-02-15T12:00:00Z',
   },
