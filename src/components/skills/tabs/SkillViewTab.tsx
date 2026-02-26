@@ -148,9 +148,10 @@ function ScrollToTopButton({ containerRef }: { containerRef: React.RefObject<HTM
 
 type SkillViewTabProps = {
   skill: Skill
+  onAddComment?: (body: string) => Promise<void>
 }
 
-export function SkillViewTab({ skill }: SkillViewTabProps) {
+export function SkillViewTab({ skill, onAddComment }: SkillViewTabProps) {
   const { resolvedTheme } = useTheme()
   const isDark = resolvedTheme === 'dark'
   const viewContentRef = useRef<HTMLDivElement>(null)
@@ -271,7 +272,7 @@ export function SkillViewTab({ skill }: SkillViewTabProps) {
               </span>
             )}
           </h2>
-          <SkillCommentsTab comments={skill.comments ?? []} />
+          <SkillCommentsTab comments={skill.comments ?? []} onAddComment={onAddComment} skillSlug={skill.slug} />
         </div>
       </div>
 
