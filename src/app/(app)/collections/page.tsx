@@ -7,6 +7,7 @@ import { formatRelative } from '@/lib/format'
 import { useEffect, useMemo, useState } from 'react'
 import { getSkills, syncSkillsFromApi } from '@/lib/skills-store'
 import { deriveCollections } from '@/lib/derived'
+import { NewCollectionModal } from '@/components/collections/NewCollectionModal'
 
 const COLLECTION_COLORS = [
   { bg: 'bg-violet-100 dark:bg-violet-950/40', icon: 'text-violet-600 dark:text-violet-400', hover: 'hover:border-violet-400/40', accent: '#8b5cf6' },
@@ -18,10 +19,18 @@ const COLLECTION_COLORS = [
 
 export default function CollectionsPage() {
   const [skills, setSkills] = useState(getSkills())
+  const [newCollectionOpen, setNewCollectionOpen] = useState(false)
   useEffect(() => {
     syncSkillsFromApi().then(setSkills).catch(() => {})
   }, [])
   const collections = useMemo(() => deriveCollections(skills), [skills])
+
+  function handleCollectionCreated(_name: string, _desc: string) {
+    // Re-derive collections by triggering a re-render via a skills state update
+    // deriveCollections reads from localStorage so a forced re-read is enough
+    setSkills(s => [...s])
+    setNewCollectionOpen(false)
+  }
 
   return (
     <>
@@ -32,7 +41,7 @@ export default function CollectionsPage() {
             <h1 className="text-lg font-semibold text-foreground">Collections</h1>
             <p className="text-[13px] text-muted-foreground mt-0.5">{collections.length} collections</p>
           </div>
-          <Button size="sm" className="h-8 gap-1.5 text-[13px] bg-foreground hover:bg-foreground/90 text-background border-0" disabled>
+          <Button size="sm" className="h-8 gap-1.5 text-[13px] bg-foreground hover:bg-foreground/90 text-background border-0" onClick={() => setNewCollectionOpen(true)}>
             <Plus className="h-3.5 w-3.5" />
             New Collection
           </Button>
@@ -65,6 +74,13 @@ export default function CollectionsPage() {
           })}
         </div>
       </main>
+
+      {newCollectionOpen && (
+        <NewCollectionModal
+          onClose={() => setNewCollectionOpen(false)}
+          onCreated={handleCollectionCreated}
+        />
+      )}
     </>
   )
 }
