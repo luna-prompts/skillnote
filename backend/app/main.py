@@ -7,6 +7,7 @@ from app.core.config import settings
 from app.api.skills import router as skills_router
 from app.api.downloads import router as downloads_router
 from app.api.publish import router as publish_router
+from app.api.comments import router as comments_router
 
 app = FastAPI(title="SkillNote Backend", version="0.1.0")
 
@@ -47,6 +48,7 @@ app.include_router(auth_router)
 app.include_router(skills_router)
 app.include_router(downloads_router)
 app.include_router(publish_router)
+app.include_router(comments_router)
 
 
 @app.get("/health")
