@@ -1,26 +1,39 @@
 'use client'
 
 import { Skill } from './mock-data'
-import { fetchSkills } from './api/skills'
+import { fetchSkills, createSkillApi, updateSkillApi, deleteSkillApi } from './api/skills'
+import { isConfigured } from './api/client'
 
 const STORAGE_KEY = 'skillnote:skills'
+
+type ConnectionStatus = 'online' | 'offline' | 'unconfigured'
+let _connectionStatus: ConnectionStatus = 'unconfigured'
+const _listeners: Array<(s: ConnectionStatus) => void> = []
+
+export function getConnectionStatus(): ConnectionStatus {
+  return _connectionStatus
+}
+
+function setConnectionStatus(s: ConnectionStatus) {
+  _connectionStatus = s
+  _listeners.forEach(fn => fn(s))
+}
+
+export function onConnectionStatusChange(fn: (s: ConnectionStatus) => void) {
+  _listeners.push(fn)
+  return () => { const i = _listeners.indexOf(fn); if (i !== -1) _listeners.splice(i, 1) }
+}
 
 function readStorage(): Skill[] | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return null
     return JSON.parse(raw) as Skill[]
-  } catch {
-    return null
-  }
+  } catch { return null }
 }
 
 function writeStorage(skills: Skill[]): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(skills))
-  } catch {
-    // localStorage full or unavailable
-  }
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(skills)) } catch {}
 }
 
 export function getSkills(): Skill[] {
@@ -28,9 +41,19 @@ export function getSkills(): Skill[] {
 }
 
 export async function syncSkillsFromApi(): Promise<Skill[]> {
-  const skills = await fetchSkills()
-  writeStorage(skills)
-  return skills
+  if (!isConfigured()) {
+    setConnectionStatus('unconfigured')
+    return getSkills()
+  }
+  try {
+    const skills = await fetchSkills()
+    writeStorage(skills)
+    setConnectionStatus('online')
+    return skills
+  } catch {
+    setConnectionStatus('offline')
+    return getSkills()
+  }
 }
 
 export function saveSkills(skills: Skill[]): void {
@@ -58,4 +81,44 @@ export function deleteSkill(slug: string): void {
 
 export function clearAndReseed(): void {
   localStorage.removeItem(STORAGE_KEY)
+}
+
+export async function createSkill(data: {
+  title: string
+  description: string
+  content_md: string
+  tags: string[]
+  collections: string[]
+}): Promise<Skill> {
+  const slug = data.title
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+
+  if (isConfigured()) {
+    const skill = await createSkillApi({ name: data.title, slug, ...data })
+    addSkill(skill)
+    return skill
+  } else {
+    const now = new Date().toISOString()
+    const skill: Skill = { slug, title: data.title, description: data.description, content_md: data.content_md, tags: data.tags, collections: data.collections, created_at: now, updated_at: now }
+    addSkill(skill)
+    return skill
+  }
+}
+
+export async function deleteSkillById(slug: string): Promise<void> {
+  if (isConfigured()) {
+    await deleteSkillApi(slug)
+  }
+  deleteSkill(slug)
+}
+
+export async function saveSkillEdit(slug: string, patch: { title?: string; content_md?: string; tags?: string[]; collections?: string[] }): Promise<void> {
+  if (isConfigured()) {
+    await updateSkillApi(slug, { name: patch.title, content_md: patch.content_md, tags: patch.tags, collections: patch.collections })
+  }
+  updateSkill(slug, patch)
 }
