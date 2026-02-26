@@ -316,29 +316,13 @@ export function SkillDetail({ skill }: { skill: Skill }) {
                 </div>
               </div>
               <div className="flex items-center gap-2 shrink-0">
-                {/* Presence indicators - hidden at lg, shown at xl+ */}
-                <div className="hidden xl:flex items-center -space-x-1.5 mr-2 relative">
-                  {[
-                    { initials: 'P', color: '#8b5cf6', name: 'Pat', status: 'viewing now' },
-                    { initials: 'R', color: '#ef4444', name: 'Rudra', status: 'edited 5m ago' },
-                    { initials: 'T', color: '#3b82f6', name: 'Tyler', status: 'commenting' },
-                  ].map((user, i) => (
-                    <div key={user.initials} className="relative group/presence" style={{ zIndex: 3 - i }}>
-                      <div
-                        className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold text-white border-2 border-card animate-[pulse_3s_ease-in-out_infinite]"
-                        style={{ backgroundColor: user.color, animationDelay: `${i * 0.5}s` }}
-                        title={`${user.name} — ${user.status}`}
-                      >
-                        {user.initials}
-                      </div>
-                      <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 opacity-0 group-hover/presence:opacity-100 pointer-events-none transition-opacity z-50">
-                        <div className="bg-popover border border-border rounded-md px-2 py-1 text-[10px] text-popover-foreground whitespace-nowrap shadow-lg">
-                          {user.name} — {user.status}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                  <div className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-green-500 border border-card z-10" />
+                <div className="hidden xl:flex items-center gap-2">
+                  <div className="w-5 h-5 rounded-full bg-accent/20 flex items-center justify-center text-[8px] font-bold text-accent">
+                    {skill.title.charAt(0).toUpperCase()}
+                  </div>
+                  <span className="text-[11px] text-muted-foreground">
+                    Last edited {new Date(skill.updated_at).toLocaleDateString()}
+                  </span>
                 </div>
 
                 <Button variant="outline" size="sm" className="h-8 sm:h-8 min-h-[44px] sm:min-h-0 gap-1.5 text-[13px]" onClick={() => setCommandPaletteOpen(true)}>
