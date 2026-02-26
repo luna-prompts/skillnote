@@ -110,12 +110,36 @@ function CommandPalette({ actions, onClose }: { actions: PaletteAction[]; onClos
   )
 }
 
-export function SkillDetail({ skill }: { skill: Skill }) {
+export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUpdated?: (s: Skill) => void }) {
   const [activeTab, setActiveTab] = useState('view')
   const [editorContent, setEditorContent] = useState(skill.content_md)
   const [titleValue, setTitleValue] = useState(skill.title)
   const [descriptionValue, setDescriptionValue] = useState(skill.description)
+  const [tagsValue, setTagsValue] = useState<string[]>(skill.tags)
   const [starred, setStarred] = useState(false)
+
+  // Sync state ONLY when the skill slug changes (navigating to a different skill)
+  // or when content arrives for the first time (initial fetch fills empty content_md)
+  const [lastSyncedSlug, setLastSyncedSlug] = useState(skill.slug)
+  const [initialContentLoaded, setInitialContentLoaded] = useState(!!skill.content_md)
+  useEffect(() => {
+    if (skill.slug !== lastSyncedSlug) {
+      // Different skill — reset everything
+      setEditorContent(skill.content_md)
+      setTitleValue(skill.title)
+      setDescriptionValue(skill.description)
+      setTagsValue(skill.tags)
+      setLastSyncedSlug(skill.slug)
+      setInitialContentLoaded(!!skill.content_md)
+    } else if (!initialContentLoaded && skill.content_md) {
+      // Same skill, but content just arrived from API (was empty from list cache)
+      setEditorContent(skill.content_md)
+      setTitleValue(skill.title)
+      setDescriptionValue(skill.description)
+      setTagsValue(skill.tags)
+      setInitialContentLoaded(true)
+    }
+  }, [skill, lastSyncedSlug, initialContentLoaded])
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false)
   const router = useRouter()
@@ -153,7 +177,7 @@ export function SkillDetail({ skill }: { skill: Skill }) {
     }
   }, [prevSkill, nextSkill, router])
 
-  const editorDirty = editorContent !== skill.content_md || titleValue !== skill.title || descriptionValue !== skill.description
+  const editorDirty = editorContent !== skill.content_md || titleValue !== skill.title || descriptionValue !== skill.description || JSON.stringify(tagsValue) !== JSON.stringify(skill.tags)
 
   useEffect(() => {
     const saved = localStorage.getItem(`starred-${skill.slug}`)
@@ -178,13 +202,17 @@ export function SkillDetail({ skill }: { skill: Skill }) {
 
   const confirmDiscard = useCallback(() => {
     setEditorContent(skill.content_md)
+    setTitleValue(skill.title)
+    setDescriptionValue(skill.description)
+    setTagsValue(skill.tags)
     setShowDiscardConfirm(false)
-  }, [skill.content_md])
+  }, [skill.content_md, skill.title, skill.description, skill.tags])
 
   const handleSave = useCallback(async () => {
     setSaveToast('saving')
     try {
-      await saveSkillEdit(skill.slug, { title: titleValue, description: descriptionValue, content_md: editorContent })
+      const updated = await saveSkillEdit(skill.slug, { title: titleValue, description: descriptionValue, content_md: editorContent, tags: tagsValue })
+      onSkillUpdated?.(updated)
       setSaveToast('saved')
       setActiveTab('view')
       setTimeout(() => setSaveToast(false), 1500)
@@ -192,7 +220,7 @@ export function SkillDetail({ skill }: { skill: Skill }) {
       setSaveToast(false)
       toast.error('Failed to save')
     }
-  }, [skill.slug, titleValue, editorContent])
+  }, [skill.slug, titleValue, descriptionValue, editorContent, tagsValue, onSkillUpdated])
 
   const handleCancel = useCallback(() => {
     setActiveTab('view')
@@ -313,13 +341,13 @@ export function SkillDetail({ skill }: { skill: Skill }) {
                     </>
                   )}
                 </div>
-                {skill.description && (
+                {descriptionValue && (
                   <p className="text-[12px] text-muted-foreground/70 mt-1.5 leading-relaxed max-w-xl">
-                    {skill.description}
+                    {descriptionValue}
                   </p>
                 )}
                 <div className="flex gap-1.5 mt-2 flex-wrap">
-                  {skill.tags.map(tag => (
+                  {tagsValue.map(tag => (
                     <span key={tag} className="text-[11px] font-mono font-medium text-zinc-600 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded-md">
                       {tag}
                     </span>
@@ -329,7 +357,7 @@ export function SkillDetail({ skill }: { skill: Skill }) {
               <div className="flex items-center gap-2 shrink-0">
                 <div className="hidden xl:flex items-center gap-2">
                   <div className="w-5 h-5 rounded-full bg-accent/20 flex items-center justify-center text-[8px] font-bold text-accent">
-                    {skill.title.charAt(0).toUpperCase()}
+                    {titleValue.charAt(0).toUpperCase()}
                   </div>
                   <span className="text-[11px] text-muted-foreground">
                     Last edited {new Date(skill.updated_at).toLocaleDateString()}
@@ -442,6 +470,9 @@ export function SkillDetail({ skill }: { skill: Skill }) {
                 setSkillTitle={setTitleValue}
                 skillDescription={descriptionValue}
                 setSkillDescription={setDescriptionValue}
+                skillSlug={skill.slug}
+                skillTags={tagsValue}
+                setSkillTags={setTagsValue}
                 openFullscreen={true}
               />
             )}
