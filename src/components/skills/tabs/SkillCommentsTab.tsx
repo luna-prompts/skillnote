@@ -1,6 +1,7 @@
 'use client'
 import { useState, useRef } from 'react'
-import { MessageSquare, MoreHorizontal, Pencil, Reply, Send, Trash2 } from 'lucide-react'
+import { MessageSquare, MoreHorizontal, Pencil, Reply, Send, Trash2, Loader2 } from 'lucide-react'
+import { updateCommentApi, deleteCommentApi } from '@/lib/api/skills'
 import { Button } from '@/components/ui/button'
 import { type Comment, mockTeamMembers } from '@/lib/mock-data'
 import { formatRelative } from '@/lib/format'
@@ -12,8 +13,9 @@ const EMOJI_MAP: Record<string, string> = {
   '+1': '👍', 'heart': '❤️', 'rocket': '🚀', 'fire': '🔥', 'tada': '🎉',
 }
 
-function CommentInput({ placeholder, onSubmit, autoFocus }: { placeholder: string; onSubmit?: () => void; autoFocus?: boolean }) {
+function CommentInput({ placeholder, onSubmit, onSubmitComment, autoFocus }: { placeholder: string; onSubmit?: () => void; onSubmitComment?: (body: string) => Promise<void>; autoFocus?: boolean }) {
   const [value, setValue] = useState('')
+  const [submitting, setSubmitting] = useState(false)
   const [showPreview, setShowPreview] = useState(false)
   const [mentionOpen, setMentionOpen] = useState(false)
   const [emojiOpen, setEmojiOpen] = useState(false)
@@ -88,10 +90,21 @@ function CommentInput({ placeholder, onSubmit, autoFocus }: { placeholder: strin
             value={value}
             onChange={handleChange}
             autoFocus={autoFocus}
-            onKeyDown={(e) => {
+            onKeyDown={async (e) => {
               if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
                 e.preventDefault()
-                onSubmit?.()
+                if (!value.trim() || submitting) return
+                if (onSubmitComment) {
+                  setSubmitting(true)
+                  try {
+                    await onSubmitComment(value)
+                    setValue('')
+                  } finally {
+                    setSubmitting(false)
+                  }
+                } else {
+                  onSubmit?.()
+                }
               }
             }}
           />
@@ -126,8 +139,23 @@ function CommentInput({ placeholder, onSubmit, autoFocus }: { placeholder: strin
         <span className="text-[11px] text-muted-foreground sm:hidden">
           <kbd className="font-mono text-[10px] bg-muted px-1 py-0.5 rounded">@</kbd> mention · <kbd className="font-mono text-[10px] bg-muted px-1 py-0.5 rounded">:</kbd> emoji
         </span>
-        <Button size="sm" className="h-8 min-h-[44px] sm:min-h-0 text-[13px] gap-1.5" aria-label="Submit comment">
-          <Send className="h-3 w-3" />
+        <Button
+          size="sm"
+          className="h-8 min-h-[44px] sm:min-h-0 text-[13px] gap-1.5"
+          aria-label="Submit comment"
+          disabled={submitting || !value.trim()}
+          onClick={async () => {
+            if (!value.trim()) return
+            setSubmitting(true)
+            try {
+              await onSubmitComment?.(value)
+              setValue('')
+            } finally {
+              setSubmitting(false)
+            }
+          }}
+        >
+          {submitting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
           Comment
         </Button>
       </div>
@@ -135,10 +163,14 @@ function CommentInput({ placeholder, onSubmit, autoFocus }: { placeholder: strin
   )
 }
 
-function CommentCard({ comment }: { comment: Comment }) {
+function CommentCard({ comment, skillSlug, onDeleted }: { comment: Comment; skillSlug?: string; onDeleted?: () => void }) {
   const [showReply, setShowReply] = useState(false)
   const [reactions, setReactions] = useState(comment.reactions)
   const [showMenu, setShowMenu] = useState(false)
+  const [isEditing, setIsEditing] = useState(false)
+  const [editValue, setEditValue] = useState(comment.body)
+  const [editSaving, setEditSaving] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const initials = comment.author.split(' ').map(n => n[0]).join('')
   const timeAgo = formatRelative(comment.created_at)
   const absoluteTime = new Date(comment.created_at).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })
@@ -146,6 +178,34 @@ function CommentCard({ comment }: { comment: Comment }) {
   const toggleReaction = (emoji: string) => {
     setReactions(prev => prev.map(r => r.emoji === emoji ? { ...r, count: r.count + 1 } : r))
   }
+
+  const handleEditSave = async () => {
+    if (!editValue.trim() || !skillSlug) { setIsEditing(false); return }
+    setEditSaving(true)
+    try {
+      await updateCommentApi(skillSlug, comment.id, editValue)
+      comment.body = editValue
+      setIsEditing(false)
+    } catch {
+      // keep editing open on error
+    } finally {
+      setEditSaving(false)
+    }
+  }
+
+  const handleDelete = async () => {
+    if (!skillSlug) { setShowMenu(false); return }
+    setDeleting(true)
+    setShowMenu(false)
+    try {
+      await deleteCommentApi(skillSlug, comment.id)
+      onDeleted?.()
+    } catch {
+      setDeleting(false)
+    }
+  }
+
+  if (deleting) return null
 
   return (
     <div className="flex gap-3 group/comment">
@@ -169,19 +229,41 @@ function CommentCard({ comment }: { comment: Comment }) {
               </button>
               {showMenu && (
                 <div className="absolute right-0 top-full mt-1 z-20 bg-popover border border-border rounded-lg shadow-lg overflow-hidden min-w-[100px]">
-                  <button onClick={() => setShowMenu(false)} className="flex items-center gap-2 px-3 py-2 text-[12px] hover:bg-muted w-full text-left text-foreground">
+                  <button onClick={() => { setIsEditing(true); setShowMenu(false) }} className="flex items-center gap-2 px-3 py-2 text-[12px] hover:bg-muted w-full text-left text-foreground">
                     <Pencil className="h-3 w-3" /> Edit
                   </button>
-                  <button onClick={() => setShowMenu(false)} className="flex items-center gap-2 px-3 py-2 text-[12px] hover:bg-muted w-full text-left text-destructive">
+                  <button onClick={handleDelete} className="flex items-center gap-2 px-3 py-2 text-[12px] hover:bg-muted w-full text-left text-destructive">
                     <Trash2 className="h-3 w-3" /> Delete
                   </button>
                 </div>
               )}
             </div>
           </div>
-          <div className="text-[13px] text-foreground/90 leading-relaxed prose prose-sm dark:prose-invert max-w-none prose-p:my-1">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{comment.body}</ReactMarkdown>
-          </div>
+          {isEditing ? (
+            <div>
+              <textarea
+                className="w-full p-2 text-sm bg-muted rounded-lg border border-border/60 resize-none focus:outline-none focus:ring-2 focus:ring-ring min-h-[80px] placeholder:text-muted-foreground"
+                value={editValue}
+                onChange={e => setEditValue(e.target.value)}
+                autoFocus
+                onKeyDown={async (e) => {
+                  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); await handleEditSave() }
+                  if (e.key === 'Escape') { setIsEditing(false); setEditValue(comment.body) }
+                }}
+              />
+              <div className="flex justify-end gap-2 mt-2">
+                <Button variant="ghost" size="sm" className="h-7 text-[12px]" onClick={() => { setIsEditing(false); setEditValue(comment.body) }}>Cancel</Button>
+                <Button size="sm" className="h-7 text-[12px] gap-1" disabled={editSaving || !editValue.trim()} onClick={handleEditSave}>
+                  {editSaving && <Loader2 className="h-3 w-3 animate-spin" />}
+                  Save
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="text-[13px] text-foreground/90 leading-relaxed prose prose-sm dark:prose-invert max-w-none prose-p:my-1">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{comment.body}</ReactMarkdown>
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-2 mt-2 ml-1 flex-wrap">
           {reactions.map(({ emoji, count }) => (
@@ -229,18 +311,26 @@ function CommentCard({ comment }: { comment: Comment }) {
 
 type SkillCommentsTabProps = {
   comments: Comment[]
+  onAddComment?: (body: string) => Promise<void>
+  skillSlug?: string
 }
 
-export function SkillCommentsTab({ comments }: SkillCommentsTabProps) {
+export function SkillCommentsTab({ comments: initialComments, onAddComment, skillSlug }: SkillCommentsTabProps) {
+  const [localComments, setLocalComments] = useState(initialComments)
+
+  const handleDeletedComment = (id: string) => {
+    setLocalComments(prev => prev.filter(c => c.id !== id))
+  }
+
   return (
     <div className="flex-1 py-6 mt-0 animate-in fade-in duration-200">
       <div className="max-w-3xl">
-        <CommentInput placeholder="Leave a comment..." />
-        {comments.length > 0 ? (
+        <CommentInput placeholder="Leave a comment..." onSubmitComment={onAddComment} />
+        {localComments.length > 0 ? (
           <div className="mt-6 space-y-4">
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{comments.length} Comment{comments.length !== 1 ? 's' : ''}</p>
-            {comments.map((comment) => (
-              <CommentCard key={comment.id} comment={comment} />
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{localComments.length} Comment{localComments.length !== 1 ? 's' : ''}</p>
+            {localComments.map((comment) => (
+              <CommentCard key={comment.id} comment={comment} skillSlug={skillSlug} onDeleted={() => handleDeletedComment(comment.id)} />
             ))}
           </div>
         ) : (
