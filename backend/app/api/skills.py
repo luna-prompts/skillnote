@@ -39,6 +39,8 @@ def list_skills(
                 name=skill.name,
                 slug=skill.slug,
                 description=skill.description,
+                tags=skill.tags or [],
+                collections=skill.collections or [],
                 latestVersion=latest.version if latest else None,
                 status=latest.status if latest else None,
                 channel=latest.channel if latest else None,

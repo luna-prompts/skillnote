@@ -1,6 +1,6 @@
 'use client'
 import { useState, useRef } from 'react'
-import { MessageSquare, MoreHorizontal, Pencil, Reply, Send, Trash2, Loader2 } from 'lucide-react'
+import { MessageSquare, MoreHorizontal, Pencil, Send, Trash2, Loader2 } from 'lucide-react'
 import { updateCommentApi, deleteCommentApi } from '@/lib/api/skills'
 import { Button } from '@/components/ui/button'
 import { type Comment } from '@/lib/mock-data'
@@ -164,7 +164,6 @@ function CommentInput({ placeholder, onSubmit, onSubmitComment, autoFocus }: { p
 }
 
 function CommentCard({ comment, skillSlug, onDeleted }: { comment: Comment; skillSlug?: string; onDeleted?: () => void }) {
-  const [showReply, setShowReply] = useState(false)
   const [reactions, setReactions] = useState(comment.reactions)
   const [showMenu, setShowMenu] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
@@ -276,34 +275,7 @@ function CommentCard({ comment, skillSlug, onDeleted }: { comment: Comment; skil
               <span className="text-muted-foreground font-medium">{count}</span>
             </button>
           ))}
-          <button
-            onClick={() => setShowReply(!showReply)}
-            className="flex items-center gap-1 px-2.5 py-1 min-h-[36px] sm:min-h-0 sm:py-0.5 rounded-full text-[12px] text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-          >
-            <Reply className="h-3 w-3" />
-            Reply
-          </button>
         </div>
-        {showReply && (
-          <div className="mt-3 ml-0">
-            <div className="flex gap-2">
-              <textarea
-                className="flex-1 p-3 text-sm bg-muted rounded-lg border border-border/60 resize-none focus:outline-none focus:ring-2 focus:ring-ring min-h-[60px] placeholder:text-muted-foreground"
-                placeholder={`Reply to ${comment.author}...`}
-                autoFocus
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-                    e.preventDefault()
-                  }
-                }}
-              />
-            </div>
-            <div className="flex justify-end gap-2 mt-2">
-              <Button variant="ghost" size="sm" className="h-7 text-[12px]" onClick={() => setShowReply(false)}>Cancel</Button>
-              <Button size="sm" className="h-7 text-[12px]">Reply</Button>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   )

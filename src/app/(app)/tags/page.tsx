@@ -1,31 +1,44 @@
 'use client'
-import { useMemo, useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { TopBar } from '@/components/layout/topbar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Plus, Search } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { getSkills, syncSkillsFromApi, saveSkills } from '@/lib/skills-store'
-import { deriveTags } from '@/lib/derived'
-import { renameTagApi, deleteTagApi } from '@/lib/api/skills'
+import { saveSkills, getSkills } from '@/lib/skills-store'
+import { renameTagApi, deleteTagApi, fetchTagsApi } from '@/lib/api/skills'
+import { isConfigured } from '@/lib/api/client'
 import { toast } from 'sonner'
 
 const TAG_COLORS = ['bg-violet-500', 'bg-blue-500', 'bg-teal-500', 'bg-amber-500', 'bg-rose-500', 'bg-emerald-500', 'bg-indigo-500']
 
+type Tag = { name: string; skill_count: number }
+
 export default function TagsPage() {
   const [filter, setFilter] = useState('')
-  const [skills, setSkills] = useState(getSkills())
+  const [tags, setTags] = useState<Tag[]>([])
   const [renamingTag, setRenamingTag] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const [deletingTag, setDeletingTag] = useState<string | null>(null)
   const router = useRouter()
 
-  useEffect(() => {
-    syncSkillsFromApi().then(setSkills).catch(() => {})
-  }, [])
+  async function loadTags() {
+    if (!isConfigured()) return
+    try {
+      const data = await fetchTagsApi()
+      setTags(data)
+    } catch {
+      // fall back to deriving from localStorage
+      const skills = getSkills()
+      const counts = new Map<string, number>()
+      skills.forEach(s => (s.tags || []).forEach(t => counts.set(t, (counts.get(t) ?? 0) + 1)))
+      setTags(Array.from(counts.entries()).map(([name, skill_count]) => ({ name, skill_count })))
+    }
+  }
 
-  const tags = useMemo(() => deriveTags(skills), [skills])
+  useEffect(() => { loadTags() }, [])
+
   const maxCount = Math.max(1, ...tags.map(t => t.skill_count))
   const filtered = tags.filter(t => t.name.toLowerCase().includes(filter.toLowerCase()))
 
@@ -33,14 +46,15 @@ export default function TagsPage() {
     if (!renamingTag || !renameValue.trim()) return
     try {
       await renameTagApi(renamingTag, renameValue.trim())
+      const skills = getSkills()
       const updated = skills.map(s => ({
         ...s,
         tags: (s.tags || []).map(t => t === renamingTag ? renameValue.trim() : t)
       }))
       saveSkills(updated)
-      setSkills(updated)
       toast.success(`Tag renamed to "${renameValue.trim()}"`)
       setRenamingTag(null)
+      await loadTags()
     } catch {
       toast.error('Failed to rename tag')
     }
@@ -50,14 +64,15 @@ export default function TagsPage() {
     if (!deletingTag) return
     try {
       await deleteTagApi(deletingTag)
+      const skills = getSkills()
       const updated = skills.map(s => ({
         ...s,
         tags: (s.tags || []).filter(t => t !== deletingTag)
       }))
       saveSkills(updated)
-      setSkills(updated)
       toast.success(`Tag "${deletingTag}" deleted`)
       setDeletingTag(null)
+      await loadTags()
     } catch {
       toast.error('Failed to delete tag')
     }
@@ -87,7 +102,7 @@ export default function TagsPage() {
           <table className="w-full text-sm"><thead><tr className="border-b border-border/60 bg-muted/40"><th className="text-left py-3 px-5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Tag</th><th className="text-left py-3 px-5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Skills</th><th className="text-left py-3 px-5 text-xs font-semibold text-muted-foreground uppercase tracking-wider w-48">Usage</th><th className="py-3 px-5"></th></tr></thead>
             <tbody>
               {filtered.map((tag, i) => (
-                <tr key={tag.id} onClick={() => router.push(`/?tag=${tag.name}`)} className={cn('border-b border-border/40 hover:bg-accent/[0.04] dark:hover:bg-accent/[0.06] active:bg-muted/50 transition-colors cursor-pointer', i === filtered.length - 1 && 'border-b-0')}>
+                <tr key={tag.name} onClick={() => router.push(`/?tag=${tag.name}`)} className={cn('border-b border-border/40 hover:bg-accent/[0.04] dark:hover:bg-accent/[0.06] active:bg-muted/50 transition-colors cursor-pointer', i === filtered.length - 1 && 'border-b-0')}>
                   <td className="py-3.5 px-5"><div className="flex items-center gap-2.5"><span className={cn('w-2 h-2 rounded-full shrink-0', TAG_COLORS[i % TAG_COLORS.length])} /><Badge variant="secondary" className="text-xs font-mono">{tag.name}</Badge></div></td>
                   <td className="py-3.5 px-5 text-muted-foreground text-xs tabular-nums">{tag.skill_count} skills</td>
                   <td className="py-3.5 px-5"><div className="flex items-center gap-2"><div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden"><div className="h-full bg-accent/60 rounded-full transition-all" style={{ width: `${(tag.skill_count / maxCount) * 100}%` }} /></div><span className="text-[11px] text-muted-foreground/60 tabular-nums w-6 text-right">{tag.skill_count}</span></div></td>

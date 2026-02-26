@@ -187,14 +187,16 @@ function SwitchControl({ storageKey, defaultValue = false }: { storageKey: strin
 }
 
 function BackendConfig() {
-  const [apiUrl, setApiUrl] = useState(() =>
-    typeof window !== 'undefined' ? (localStorage.getItem('skillnote:api-url') || '') : ''
-  )
-  const [token, setToken] = useState(() =>
-    typeof window !== 'undefined' ? (localStorage.getItem('skillnote:token') || '') : ''
-  )
+  const [apiUrl, setApiUrl] = useState('')
+  const [token, setToken] = useState('')
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<'idle' | 'ok' | 'fail'>('idle')
+
+  // Sync from localStorage after mount (avoids SSR/hydration mismatch)
+  useEffect(() => {
+    setApiUrl(localStorage.getItem('skillnote:api-url') || '')
+    setToken(localStorage.getItem('skillnote:token') || '')
+  }, [])
 
   function save() {
     localStorage.setItem('skillnote:api-url', apiUrl.trim())

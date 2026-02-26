@@ -28,6 +28,12 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8080/health')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
     command: >
       sh -c "python scripts/wait_for_db.py &&
              alembic upgrade head &&
@@ -42,7 +48,8 @@ services:
       NODE_ENV: production
       NEXT_PUBLIC_API_BASE_URL: http://localhost:8082
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:

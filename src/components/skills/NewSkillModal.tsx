@@ -1,5 +1,5 @@
 'use client'
-import { useState, useCallback, KeyboardEvent } from 'react'
+import { useState, useCallback, useEffect, KeyboardEvent } from 'react'
 import { Plus, X, BookOpen, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { createSkill } from '@/lib/skills-store'
@@ -19,6 +19,12 @@ export function NewSkillModal({ onClose, collections }: NewSkillModalProps) {
   const [selectedCollections, setSelectedCollections] = useState<string[]>([])
   const [saving, setSaving] = useState(false)
   const router = useRouter()
+
+  useEffect(() => {
+    const handler = (e: globalThis.KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [onClose])
 
   const addTag = useCallback(() => {
     const t = tagInput.trim().toLowerCase().replace(/\s+/g, '-')
@@ -56,10 +62,10 @@ export function NewSkillModal({ onClose, collections }: NewSkillModalProps) {
   }, [title, description, tags, selectedCollections, router, onClose])
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
-      <div className="w-full max-w-lg bg-card border border-border rounded-xl shadow-2xl overflow-hidden mx-4" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose} role="presentation">
+      <div role="dialog" aria-modal="true" aria-labelledby="new-skill-title" className="w-full max-w-lg bg-card border border-border rounded-xl shadow-2xl overflow-hidden mx-4" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-6 py-4 border-b border-border/60">
-          <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+          <h3 id="new-skill-title" className="text-sm font-semibold text-foreground flex items-center gap-2">
             <BookOpen className="h-4 w-4 text-muted-foreground" />
             New Skill
           </h3>
