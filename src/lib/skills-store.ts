@@ -2,7 +2,7 @@
 
 import { Skill } from './mock-data'
 import { fetchSkills, createSkillApi, updateSkillApi, deleteSkillApi } from './api/skills'
-import { isConfigured } from './api/client'
+import { isConfigured, SkillNoteApiError } from './api/client'
 
 const STORAGE_KEY = 'skillnote:skills'
 
@@ -50,8 +50,12 @@ export async function syncSkillsFromApi(): Promise<Skill[]> {
     writeStorage(skills)
     setConnectionStatus('online')
     return skills
-  } catch {
-    setConnectionStatus('offline')
+  } catch (err) {
+    if (err instanceof SkillNoteApiError && (err.status === 401 || err.status === 403)) {
+      setConnectionStatus('unconfigured')  // auth issue — treat same as unconfigured
+    } else {
+      setConnectionStatus('offline')
+    }
     return getSkills()
   }
 }

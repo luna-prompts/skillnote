@@ -13,7 +13,7 @@ const EMOJI_MAP: Record<string, string> = {
   '+1': '👍', 'heart': '❤️', 'rocket': '🚀', 'fire': '🔥', 'tada': '🎉',
 }
 
-function CommentInput({ placeholder, onSubmit, onSubmitComment, autoFocus }: { placeholder: string; onSubmit?: () => void; onSubmitComment?: (body: string) => Promise<void>; autoFocus?: boolean }) {
+function CommentInput({ placeholder, onSubmit, onSubmitComment, autoFocus }: { placeholder: string; onSubmit?: () => void; onSubmitComment?: (body: string) => Promise<Comment | void>; autoFocus?: boolean }) {
   const [value, setValue] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [showPreview, setShowPreview] = useState(false)
@@ -311,7 +311,7 @@ function CommentCard({ comment, skillSlug, onDeleted }: { comment: Comment; skil
 
 type SkillCommentsTabProps = {
   comments: Comment[]
-  onAddComment?: (body: string) => Promise<void>
+  onAddComment?: (body: string) => Promise<Comment | void>
   skillSlug?: string
 }
 
@@ -322,10 +322,17 @@ export function SkillCommentsTab({ comments: initialComments, onAddComment, skil
     setLocalComments(prev => prev.filter(c => c.id !== id))
   }
 
+  const handleSubmitComment = async (body: string): Promise<void> => {
+    const newComment = await onAddComment?.(body)
+    if (newComment) {
+      setLocalComments(prev => [...prev, newComment])
+    }
+  }
+
   return (
     <div className="flex-1 py-6 mt-0 animate-in fade-in duration-200">
       <div className="max-w-3xl">
-        <CommentInput placeholder="Leave a comment..." onSubmitComment={onAddComment} />
+        <CommentInput placeholder="Leave a comment..." onSubmitComment={handleSubmitComment} />
         {localComments.length > 0 ? (
           <div className="mt-6 space-y-4">
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{localComments.length} Comment{localComments.length !== 1 ? 's' : ''}</p>

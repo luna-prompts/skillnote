@@ -4,7 +4,7 @@ import { TopBar } from '@/components/layout/topbar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Download, Pencil, History, Check, BookOpen, ArrowLeft, Hash, Link2, Star, Command, X, Keyboard, FileText, Search, FolderOpen, Share2, MoreHorizontal, Trash2 } from 'lucide-react'
-import { Skill } from '@/lib/mock-data'
+import { Skill, type Comment } from '@/lib/mock-data'
 import { getSkills, updateSkill, deleteSkillById, saveSkillEdit } from '@/lib/skills-store'
 import { generateMarkdown, triggerDownload } from '@/lib/markdown-utils'
 import { createCommentApi } from '@/lib/api/skills'
@@ -123,8 +123,8 @@ export function SkillDetail({ skill }: { skill: Skill }) {
   const touchStartRef = useRef<{ x: number; y: number } | null>(null)
   const allSkills = getSkills()
   const currentIdx = allSkills.findIndex(s => s.slug === skill.slug)
-  const prevSkill = allSkills[(currentIdx - 1 + allSkills.length) % allSkills.length]
-  const nextSkill = allSkills[(currentIdx + 1) % allSkills.length]
+  const prevSkill = allSkills.length > 1 && currentIdx > 0 ? allSkills[currentIdx - 1] : null
+  const nextSkill = allSkills.length > 1 && currentIdx < allSkills.length - 1 ? allSkills[currentIdx + 1] : null
 
   useEffect(() => {
     const el = mainRef.current
@@ -139,8 +139,8 @@ export function SkillDetail({ skill }: { skill: Skill }) {
       touchStartRef.current = null
       // Only trigger if horizontal swipe > 80px and more horizontal than vertical
       if (Math.abs(dx) > 80 && Math.abs(dx) > Math.abs(dy) * 1.5) {
-        if (dx > 0) router.push(`/skills/${prevSkill.slug}`)
-        else router.push(`/skills/${nextSkill.slug}`)
+        if (dx > 0 && prevSkill) router.push(`/skills/${prevSkill.slug}`)
+        else if (dx < 0 && nextSkill) router.push(`/skills/${nextSkill.slug}`)
       }
     }
     el.addEventListener('touchstart', onTouchStart, { passive: true })
@@ -149,7 +149,7 @@ export function SkillDetail({ skill }: { skill: Skill }) {
       el.removeEventListener('touchstart', onTouchStart)
       el.removeEventListener('touchend', onTouchEnd)
     }
-  }, [prevSkill.slug, nextSkill.slug, router])
+  }, [prevSkill, nextSkill, router])
 
   const editorDirty = editorContent !== skill.content_md
 
@@ -213,10 +213,11 @@ export function SkillDetail({ skill }: { skill: Skill }) {
     }
   }, [skill.slug, skill.title, router])
 
-  const handleAddComment = useCallback(async (body: string) => {
+  const handleAddComment = useCallback(async (body: string): Promise<Comment | void> => {
     const comment = await createCommentApi(skill.slug, 'You', body)
     updateSkill(skill.slug, { comments: [...(skill.comments || []), comment] })
     toast.success('Comment added')
+    return comment
   }, [skill.slug, skill.comments])
 
   useEffect(() => {
