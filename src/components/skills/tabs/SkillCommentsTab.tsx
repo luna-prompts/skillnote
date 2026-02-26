@@ -3,7 +3,7 @@ import { useState, useRef } from 'react'
 import { MessageSquare, MoreHorizontal, Pencil, Reply, Send, Trash2, Loader2 } from 'lucide-react'
 import { updateCommentApi, deleteCommentApi } from '@/lib/api/skills'
 import { Button } from '@/components/ui/button'
-import { type Comment, mockTeamMembers } from '@/lib/mock-data'
+import { type Comment } from '@/lib/mock-data'
 import { formatRelative } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import ReactMarkdown from 'react-markdown'
@@ -111,7 +111,7 @@ function CommentInput({ placeholder, onSubmit, onSubmitComment, autoFocus }: { p
           {/* @mention dropdown — above input on mobile, below on desktop */}
           {mentionOpen && (
             <div className="absolute left-4 bottom-full sm:bottom-2 mb-1 sm:mb-0 z-20 bg-popover border border-border rounded-lg shadow-lg overflow-hidden">
-              {mockTeamMembers.map(m => (
+              {([] as { name: string; color: string }[]).map(m => (
                 <button key={m.name} onClick={() => insertMention(m.name)} className="flex items-center gap-2 px-3 py-2 min-h-[44px] sm:min-h-0 text-[13px] hover:bg-muted w-full text-left">
                   <div className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold text-white" style={{ backgroundColor: m.color }}>{m.name[0]}</div>
                   {m.name}
