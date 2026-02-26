@@ -8,9 +8,10 @@ import { getSkills, syncSkillsFromApi } from '@/lib/skills-store'
 
 export function Sidebar({ onClose }: { onClose?: () => void }) {
   const pathname = usePathname()
-  const [skills, setSkills] = useState(getSkills())
+  const [skills, setSkills] = useState<Array<ReturnType<typeof getSkills>[number]>>([])
 
   useEffect(() => {
+    setSkills(getSkills())
     syncSkillsFromApi().then(setSkills).catch(() => {})
   }, [])
 

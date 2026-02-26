@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     max_zip_entries: int = 500
     max_uncompressed_bytes: int = 25 * 1024 * 1024
     enforce_https_in_prod: bool = True
+    cors_origins: str = "http://localhost:3000,http://localhost:3001,http://127.0.0.1:3000,http://127.0.0.1:3001"
 
     model_config = SettingsConfigDict(env_file=".env", env_prefix="SKILLNOTE_")
 
