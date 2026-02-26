@@ -1,5 +1,14 @@
 name: skillnote
 
+# ─── Configuration ───────────────────────────────────────────────
+# Set SKILLNOTE_HOST to your machine's IP or domain.
+# All services use this single value for URLs and CORS.
+#
+#   SKILLNOTE_HOST=192.168.29.69 docker compose up --build -d
+#
+# Defaults to localhost (works when browser is on the same machine).
+# ─────────────────────────────────────────────────────────────────
+
 services:
   postgres:
     image: postgres:16
@@ -21,6 +30,7 @@ services:
       SKILLNOTE_DATABASE_URL: postgresql+psycopg://skillnote:skillnote@postgres:5432/skillnote
       SKILLNOTE_TOKEN_PEPPER: dev-pepper-change-me
       SKILLNOTE_BUNDLE_STORAGE_DIR: /app/data/bundles
+      SKILLNOTE_CORS_ORIGINS: "http://${SKILLNOTE_HOST:-localhost}:3000,http://${SKILLNOTE_HOST:-localhost}:3001,http://localhost:3000,http://127.0.0.1:3000"
     ports:
       - "${SKILLNOTE_API_PORT:-8082}:8080"
     volumes:
@@ -41,12 +51,14 @@ services:
              uvicorn app.main:app --host 0.0.0.0 --port 8080"
 
   web:
-    build: .
+    build:
+      context: .
+      args:
+        NEXT_PUBLIC_API_BASE_URL: "http://${SKILLNOTE_HOST:-localhost}:${SKILLNOTE_API_PORT:-8082}"
     ports:
       - "3000:3000"
     environment:
       NODE_ENV: production
-      NEXT_PUBLIC_API_BASE_URL: http://localhost:8082
     depends_on:
       api:
         condition: service_healthy

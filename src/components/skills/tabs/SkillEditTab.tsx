@@ -1,9 +1,10 @@
 'use client'
-import { useState, useEffect } from 'react'
-import { FileText, Maximize2, RotateCcw, Save } from 'lucide-react'
-import { DESC_MAX } from '@/lib/skill-validation'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { RotateCcw, Save, Loader2, Info, X, AlertCircle } from 'lucide-react'
+import { NAME_MAX, DESC_MAX, slugFromName, validateSkillName, validateDescription, type ValidationError } from '@/lib/skill-validation'
 import { Button } from '@/components/ui/button'
 import { WysiwygEditor } from '@/components/skills/WysiwygEditor'
+import { FieldError } from '@/components/skills/FieldError'
 
 type SkillEditTabProps = {
   editorContent: string
@@ -16,11 +17,25 @@ type SkillEditTabProps = {
   setSkillTitle: (title: string) => void
   skillDescription: string
   setSkillDescription: (desc: string) => void
+  skillSlug?: string
+  skillTags?: string[]
+  setSkillTags?: (tags: string[]) => void
   openFullscreen?: boolean
+  /** 'edit' shows Discard/Cancel/Save; 'create' shows Cancel/Create Skill */
+  mode?: 'edit' | 'create'
+  saving?: boolean
 }
 
-export function SkillEditTab({ editorContent, setEditorContent, editorDirty, onDiscard, onSave, onCancel, skillTitle, setSkillTitle, skillDescription, setSkillDescription, openFullscreen }: SkillEditTabProps) {
+export function SkillEditTab({
+  editorContent, setEditorContent, editorDirty, onDiscard, onSave, onCancel,
+  skillTitle, setSkillTitle, skillDescription, setSkillDescription,
+  skillSlug, skillTags = [], setSkillTags, openFullscreen,
+  mode = 'edit', saving = false,
+}: SkillEditTabProps) {
   const [fullscreen, setFullscreen] = useState(false)
+  const [touched, setTouched] = useState<Record<string, boolean>>({})
+  const [tagInput, setTagInput] = useState('')
+  const nameRef = useRef<HTMLInputElement>(null)
 
   // Auto-open fullscreen when requested on mount
   useEffect(() => {
@@ -28,7 +43,14 @@ export function SkillEditTab({ editorContent, setEditorContent, editorDirty, onD
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Escape in fullscreen → return to view (cancel)
+  // Auto-focus name in create mode
+  useEffect(() => {
+    if (mode === 'create') {
+      setTimeout(() => nameRef.current?.focus(), 100)
+    }
+  }, [mode])
+
+  // Escape in fullscreen → cancel
   useEffect(() => {
     if (!fullscreen) return
     const handleKey = (e: KeyboardEvent) => {
@@ -42,10 +64,32 @@ export function SkillEditTab({ editorContent, setEditorContent, editorDirty, onD
     return () => window.removeEventListener('keydown', handleKey, true)
   }, [fullscreen, onCancel])
 
+  const nameErrors = touched.name ? validateSkillName(skillTitle) : []
+  const descErrors = touched.description ? validateDescription(skillDescription) : []
+  const isValid = validateSkillName(skillTitle).length === 0 && validateDescription(skillDescription).length === 0
+
+  const previewSlug = skillSlug || (skillTitle.trim() ? slugFromName(skillTitle.trim()) : '')
+
+  const handleNameChange = (value: string) => {
+    // In create mode, restrict to valid slug characters; in edit mode allow free editing
+    if (mode === 'create') {
+      setSkillTitle(value.toLowerCase().replace(/[^a-z0-9-]/g, ''))
+    } else {
+      setSkillTitle(value.toLowerCase().replace(/[^a-z0-9-]/g, ''))
+    }
+  }
+
+  const addTag = useCallback(() => {
+    const t = tagInput.trim().toLowerCase().replace(/\s+/g, '-')
+    if (t && !skillTags.includes(t)) setSkillTags?.([...skillTags, t])
+    setTagInput('')
+  }, [tagInput, skillTags, setSkillTags])
+
+  /* Footer bar — shared between fullscreen and inline modes */
   const footerContent = (
     <>
       <div className="flex items-center gap-2">
-        {editorDirty && (
+        {editorDirty && mode === 'edit' && (
           <span className="text-[11px] text-amber-500 font-medium items-center gap-1 hidden sm:flex">
             <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
             Unsaved changes
@@ -53,7 +97,7 @@ export function SkillEditTab({ editorContent, setEditorContent, editorDirty, onD
         )}
       </div>
       <div className="flex items-center gap-2">
-        {editorDirty && (
+        {editorDirty && mode === 'edit' && (
           <Button variant="ghost" size="sm" className="h-8 min-h-[44px] sm:min-h-0 text-[13px] text-muted-foreground hover:text-destructive gap-1.5" onClick={onDiscard}>
             <RotateCcw className="h-3 w-3" />
             Discard
@@ -62,107 +106,157 @@ export function SkillEditTab({ editorContent, setEditorContent, editorDirty, onD
         <Button variant="ghost" size="sm" className="h-8 min-h-[44px] sm:min-h-0 text-[13px]" onClick={onCancel}>
           Cancel
         </Button>
-        <Button size="sm" className="h-8 min-h-[44px] sm:min-h-0 gap-1.5 text-[13px] bg-foreground text-background hover:bg-foreground/90" onClick={onSave}>
-          <Save className="h-3.5 w-3.5" />
-          Save
+        <Button
+          size="sm"
+          className="h-8 min-h-[44px] sm:min-h-0 gap-1.5 text-[13px] bg-foreground text-background hover:bg-foreground/90"
+          disabled={mode === 'create' ? (!isValid || saving) : saving}
+          onClick={() => {
+            if (mode === 'create') setTouched({ name: true, description: true })
+            onSave()
+          }}
+        >
+          {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+          {mode === 'create' ? 'Create Skill' : 'Save'}
         </Button>
       </div>
     </>
   )
 
-  const stickyFooter = (
-    <div className="shrink-0 bg-background/95 backdrop-blur-sm border-t border-border/50 px-4 sm:px-6 py-3 flex items-center justify-between gap-3 safe-area-bottom">
-      {footerContent}
+  /* Metadata section — name, slug, description, tags */
+  const metadataSection = (
+    <div className="px-6 sm:px-10 pt-6 pb-4">
+      {/* Name */}
+      <div className="mb-1">
+        <div className="flex items-center gap-2 mb-2">
+          <label className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/70">Name</label>
+          <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">Required</span>
+        </div>
+        <input
+          ref={nameRef}
+          value={skillTitle}
+          onChange={e => handleNameChange(e.target.value)}
+          onBlur={() => setTouched(prev => ({ ...prev, name: true }))}
+          placeholder="skill-name"
+          maxLength={NAME_MAX}
+          className="w-full text-3xl sm:text-4xl font-bold font-mono text-foreground bg-transparent border-none outline-none focus:outline-none placeholder:text-muted-foreground/20 tracking-tight leading-tight"
+          style={{ outline: 'none', boxShadow: 'none', border: 'none' }}
+        />
+      </div>
+      <div className="flex items-center gap-3 mb-1">
+        {previewSlug && (
+          <code className="text-[11px] font-mono text-muted-foreground/50">{previewSlug}/SKILL.md</code>
+        )}
+        <span className={`text-[10px] tabular-nums ${skillTitle.length > NAME_MAX * 0.9 ? 'text-destructive' : 'text-muted-foreground/40'}`}>
+          {skillTitle.length}/{NAME_MAX}
+        </span>
+        {editorDirty && mode === 'edit' && <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" title="Unsaved changes" />}
+      </div>
+      {!skillTitle && !touched.name && (
+        <p className="text-[11px] text-muted-foreground/50 mb-2">Lowercase letters, numbers, and hyphens only. This becomes the skill&apos;s folder name.</p>
+      )}
+      <div className="mb-4">
+        <FieldError errors={nameErrors} />
+      </div>
+
+      {/* Description */}
+      <div className="mb-6">
+        <div className="flex items-center gap-2 mb-2">
+          <label className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/70">Description</label>
+          <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">Required</span>
+        </div>
+        <textarea
+          value={skillDescription}
+          onChange={e => setSkillDescription(e.target.value)}
+          onBlur={() => setTouched(prev => ({ ...prev, description: true }))}
+          placeholder="Describe what this skill does and when Claude should use it..."
+          maxLength={DESC_MAX}
+          rows={2}
+          className="w-full text-[15px] text-muted-foreground bg-transparent border-none outline-none focus:outline-none placeholder:text-muted-foreground/25 resize-none leading-relaxed"
+          style={{ outline: 'none', boxShadow: 'none', border: 'none' }}
+        />
+        <div className="flex items-center justify-between mt-1">
+          <FieldError errors={descErrors} />
+          <span className={`text-[10px] tabular-nums ${skillDescription.length > DESC_MAX * 0.9 ? 'text-destructive' : 'text-muted-foreground/40'}`}>
+            {skillDescription.length}/{DESC_MAX}
+          </span>
+        </div>
+        {!skillDescription && !touched.description && (
+          <div className="mt-2 flex items-start gap-1.5 p-2.5 bg-blue-500/5 border border-blue-500/10 rounded-lg">
+            <Info className="h-3.5 w-3.5 text-blue-500 mt-0.5 shrink-0" />
+            <p className="text-[11px] text-blue-600 dark:text-blue-400 leading-relaxed">
+              This is the most important field — Claude uses it to decide <strong>when</strong> to trigger the skill.
+              Be pushy — Claude tends to under-trigger. Example: <em>&quot;Extract text and tables from PDF files. Use whenever the user mentions PDFs, forms, or document extraction.&quot;</em>
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* Tags — inline editor */}
+      {setSkillTags && (
+        <div className="mb-6">
+          <div className="flex flex-wrap items-center gap-1.5">
+            {skillTags.map(tag => (
+              <span key={tag} className="flex items-center gap-1 px-2 py-0.5 bg-accent/10 text-accent text-[11px] font-mono rounded-md">
+                {tag}
+                <button onClick={() => setSkillTags(skillTags.filter(t => t !== tag))} className="hover:opacity-70"><X className="h-2.5 w-2.5" /></button>
+              </span>
+            ))}
+            <input
+              value={tagInput}
+              onChange={e => setTagInput(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); addTag() }
+                if (e.key === 'Backspace' && !tagInput && skillTags.length) setSkillTags(skillTags.slice(0, -1))
+              }}
+              onBlur={addTag}
+              placeholder={skillTags.length === 0 ? '+ Add tags' : ''}
+              className="min-w-[80px] bg-transparent text-[12px] font-mono text-muted-foreground focus:outline-none placeholder:text-muted-foreground/30"
+            />
+          </div>
+        </div>
+      )}
+
+      <hr className="border-border/40" />
     </div>
   )
 
-  const fixedFooter = (
-    <div className="fixed bottom-16 lg:bottom-0 left-0 right-0 z-50 bg-background/95 backdrop-blur-sm border-t border-border/50 px-4 sm:px-6 py-3 flex items-center justify-between gap-3 safe-area-bottom">
-      {footerContent}
-    </div>
-  )
-
-  // Fullscreen mode
-  if (fullscreen) {
+  // Fullscreen mode (always used in edit, always used in create)
+  if (fullscreen || mode === 'create') {
     return (
       <div className="fixed inset-0 z-50 bg-background flex flex-col">
-        {/* Header — title input only; Save/Cancel/Discard stay in the sticky footer */}
-        <div className="flex items-center gap-2 px-6 sm:px-10 pt-6 pb-2 bg-background shrink-0">
-          <input
-            value={skillTitle}
-            onChange={(e) => setSkillTitle(e.target.value)}
-            className="flex-1 min-w-0 text-[28px] sm:text-[32px] font-bold text-foreground bg-transparent border-none outline-none focus:outline-none ring-0 focus:ring-0 shadow-none placeholder:text-muted-foreground/30 leading-tight tracking-tight"
-            style={{ outline: 'none', boxShadow: 'none', border: 'none' }}
-            placeholder="Untitled"
-          />
-          {editorDirty && <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0 mt-1" title="Unsaved changes" />}
+        {/* Top bar */}
+        <div className="shrink-0 flex items-center justify-between px-4 sm:px-6 py-3 border-b border-border/60">
+          {footerContent}
         </div>
 
-        {/* File bar */}
-        <div className="flex items-center gap-2 px-6 sm:px-10 pb-2 shrink-0">
-          <FileText className="h-3.5 w-3.5 text-muted-foreground/50 shrink-0" />
-          <span className="font-mono text-[12px] text-muted-foreground/50 shrink-0">SKILL.md</span>
-        </div>
-        {/* Description input */}
-        <div className="px-6 sm:px-10 pb-3 shrink-0">
-          <div className="flex items-center justify-between mb-1">
-            <label className="text-[11px] font-medium text-muted-foreground/60">Description</label>
-            <span className={`text-[10px] tabular-nums ${skillDescription.length > DESC_MAX * 0.9 ? 'text-destructive' : 'text-muted-foreground/40'}`}>
-              {skillDescription.length}/{DESC_MAX}
-            </span>
+        {/* Main content — scrollable */}
+        <div className="flex-1 overflow-y-auto flex flex-col min-h-0">
+          {metadataSection}
+
+          {/* Editor */}
+          <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+            <WysiwygEditor
+              value={editorContent}
+              onChange={setEditorContent}
+            />
           </div>
-          <textarea
-            value={skillDescription}
-            onChange={(e) => setSkillDescription(e.target.value)}
-            placeholder="What this skill does and when Claude should use it..."
-            rows={2}
-            maxLength={DESC_MAX}
-            className="w-full px-3 py-2 text-[13px] bg-muted/40 border border-border/40 rounded-lg focus:outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/30 resize-none"
-          />
         </div>
-        <hr className="border-border/40 shrink-0" />
-
-        {/* Editor fills remaining height */}
-        <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-          <WysiwygEditor
-            value={editorContent}
-            onChange={setEditorContent}
-          />
-        </div>
-
-        {stickyFooter}
       </div>
     )
   }
 
+  // Inline (non-fullscreen) edit — just the editor with footer
   return (
     <div className="flex-1 flex flex-col mt-0 animate-in fade-in duration-200 pb-16 min-h-0">
-      {/* File header bar */}
-      <div className="flex items-center justify-between px-4 py-2 shrink-0">
-        <div className="flex items-center gap-3">
-          <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
-          <span className="font-mono text-[13px] text-muted-foreground shrink-0">SKILL.md</span>
-        </div>
-        {/* Fullscreen button */}
-        <button
-          onClick={() => setFullscreen(true)}
-          className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors hidden sm:flex items-center justify-center"
-          title="Fullscreen"
-        >
-          <Maximize2 className="h-3.5 w-3.5" />
-        </button>
-      </div>
-      <hr className="border-border/40 mx-0 shrink-0" />
-
-      {/* WYSIWYG editor — flex-1 fills the column */}
       <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
         <WysiwygEditor
           value={editorContent}
           onChange={setEditorContent}
         />
       </div>
-
-      {fixedFooter}
+      <div className="fixed bottom-16 lg:bottom-0 left-0 right-0 z-50 bg-background/95 backdrop-blur-sm border-t border-border/50 px-4 sm:px-6 py-3 flex items-center justify-between gap-3 safe-area-bottom">
+        {footerContent}
+      </div>
     </div>
   )
 }

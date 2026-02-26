@@ -1,15 +1,17 @@
 'use client'
 
-import { use, useEffect, useState } from 'react'
-import { getSkills, syncSkillsFromApi, updateSkill } from '@/lib/skills-store'
+import { use, useEffect, useState, useCallback } from 'react'
+import { getSkills, updateSkill } from '@/lib/skills-store'
 import { fetchSkill } from '@/lib/api/skills'
 import { isConfigured } from '@/lib/api/client'
+import { Skill } from '@/lib/mock-data'
 import { SkillDetail } from '@/components/skills/skill-detail'
 
 export default function SkillPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params)
-  const [skill, setSkill] = useState(() => getSkills().find(s => s.slug === slug) ?? null)
+  const [skill, setSkill] = useState<Skill | null>(() => getSkills().find(s => s.slug === slug) ?? null)
 
+  // Fetch full skill from API on mount (list endpoint has empty content_md)
   useEffect(() => {
     if (isConfigured()) {
       fetchSkill(slug)
@@ -17,17 +19,14 @@ export default function SkillPage({ params }: { params: Promise<{ slug: string }
           setSkill(fullSkill)
           updateSkill(slug, fullSkill)
         })
-        .catch(() => {
-          syncSkillsFromApi()
-            .then(skills => setSkill(skills.find(s => s.slug === slug) ?? null))
-            .catch(() => {})
-        })
-    } else {
-      syncSkillsFromApi()
-        .then(skills => setSkill(skills.find(s => s.slug === slug) ?? null))
         .catch(() => {})
     }
   }, [slug])
+
+  // Called by SkillDetail after a successful save — update local state directly
+  const handleSkillUpdated = useCallback((updated: Skill) => {
+    setSkill(updated)
+  }, [])
 
   if (skill === null) {
     return (
@@ -37,5 +36,5 @@ export default function SkillPage({ params }: { params: Promise<{ slug: string }
     )
   }
 
-  return <SkillDetail skill={skill} />
+  return <SkillDetail skill={skill} onSkillUpdated={handleSkillUpdated} />
 }

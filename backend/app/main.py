@@ -12,11 +12,10 @@ from app.api.tags_api import router as tags_router
 
 app = FastAPI(title="SkillNote Backend", version="0.1.0")
 
-origins = [o.strip() for o in settings.cors_origins.split(',') if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
