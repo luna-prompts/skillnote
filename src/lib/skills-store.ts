@@ -33,8 +33,14 @@ function readStorage(): Skill[] | null {
   } catch { return null }
 }
 
+/** Write to localStorage only — no event dispatch */
 function writeStorage(skills: Skill[]): void {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(skills)) } catch {}
+}
+
+/** Notify other components that skills list changed (home page, etc.) */
+function notifyChanged(): void {
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event('skillnote:skills-changed'))
 }
 
 export function getSkills(): Skill[] {
@@ -53,7 +59,7 @@ export async function syncSkillsFromApi(): Promise<Skill[]> {
     return skills
   } catch (err) {
     if (err instanceof SkillNoteApiError && (err.status === 401 || err.status === 403)) {
-      setConnectionStatus('unconfigured')  // auth issue — treat same as unconfigured
+      setConnectionStatus('unconfigured')
     } else {
       setConnectionStatus('offline')
     }
@@ -100,11 +106,13 @@ export async function createSkill(data: {
   if (isConfigured()) {
     const skill = await createSkillApi({ name: data.title, slug, ...data })
     addSkill(skill)
+    notifyChanged()
     return skill
   } else {
     const now = new Date().toISOString()
     const skill: Skill = { slug, title: data.title, description: data.description, content_md: data.content_md, tags: data.tags, collections: data.collections, created_at: now, updated_at: now }
     addSkill(skill)
+    notifyChanged()
     return skill
   }
 }
@@ -114,11 +122,17 @@ export async function deleteSkillById(slug: string): Promise<void> {
     await deleteSkillApi(slug)
   }
   deleteSkill(slug)
+  notifyChanged()
 }
 
-export async function saveSkillEdit(slug: string, patch: { title?: string; description?: string; content_md?: string; tags?: string[]; collections?: string[] }): Promise<void> {
+export async function saveSkillEdit(slug: string, patch: { title?: string; description?: string; content_md?: string; tags?: string[]; collections?: string[] }): Promise<Skill> {
   if (isConfigured()) {
     await updateSkillApi(slug, { name: patch.title, description: patch.description, content_md: patch.content_md, tags: patch.tags, collections: patch.collections })
   }
   updateSkill(slug, patch)
+  notifyChanged()
+  // Return the updated skill so callers can use it directly
+  const updated = getSkills().find(s => s.slug === slug)
+  if (!updated) throw new Error('Skill not found after save')
+  return updated
 }

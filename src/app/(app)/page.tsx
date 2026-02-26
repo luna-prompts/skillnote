@@ -20,9 +20,18 @@ function SkillsPageInner() {
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false)
   const [skills, setSkills] = useState<Skill[]>([])
 
+  // Load skills on mount + re-sync on focus and when skills-store changes
   useEffect(() => {
+    const sync = () => syncSkillsFromApi().then(setSkills).catch(() => {})
+    const refresh = () => setSkills(getSkills())
     setSkills(getSkills())
-    syncSkillsFromApi().then(setSkills).catch(() => {})
+    sync()
+    window.addEventListener('focus', sync)
+    window.addEventListener('skillnote:skills-changed', refresh)
+    return () => {
+      window.removeEventListener('focus', sync)
+      window.removeEventListener('skillnote:skills-changed', refresh)
+    }
   }, [])
 
   const tagCounts = skills.reduce<Record<string, number>>((acc, s) => {
