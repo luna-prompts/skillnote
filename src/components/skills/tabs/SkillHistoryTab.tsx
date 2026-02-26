@@ -166,12 +166,14 @@ export function SkillHistoryTab({ revisions }: SkillHistoryTabProps) {
             ))}
           </>
         ) : (
-          <div className="flex flex-col items-center py-12 text-center">
-            <div className="w-10 h-10 rounded-xl bg-muted/80 flex items-center justify-center mb-3">
-              <History className="h-5 w-5 text-muted-foreground/50" />
+          <div className="flex flex-col items-center justify-center py-16 px-6">
+            <div className="w-12 h-12 rounded-xl bg-muted/80 flex items-center justify-center mb-4">
+              <History className="h-6 w-6 text-muted-foreground/50" />
             </div>
-            <p className="text-[13px] font-medium text-foreground mb-0.5">No revisions</p>
-            <p className="text-[12px] text-muted-foreground">Edit this skill to create the first revision.</p>
+            <p className="text-[14px] font-medium text-foreground mb-1">No revision history yet</p>
+            <p className="text-[13px] text-muted-foreground text-center max-w-xs">
+              Revision history will appear here as the skill is edited and saved.
+            </p>
           </div>
         )}
       </div>
