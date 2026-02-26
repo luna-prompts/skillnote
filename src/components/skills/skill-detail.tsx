@@ -3,10 +3,11 @@ import { useState, useCallback, useEffect, useRef } from 'react'
 import { TopBar } from '@/components/layout/topbar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Download, Pencil, History, Check, BookOpen, ArrowLeft, Hash, Link2, Star, Command, X, Keyboard, FileText, Search, FolderOpen, Share2, MoreHorizontal } from 'lucide-react'
+import { Download, Pencil, History, Check, BookOpen, ArrowLeft, Hash, Link2, Star, Command, X, Keyboard, FileText, Search, FolderOpen, Share2, MoreHorizontal, Trash2 } from 'lucide-react'
 import { Skill } from '@/lib/mock-data'
-import { getSkills, updateSkill } from '@/lib/skills-store'
+import { getSkills, updateSkill, deleteSkillById } from '@/lib/skills-store'
 import { generateMarkdown, triggerDownload } from '@/lib/markdown-utils'
+import { createCommentApi } from '@/lib/api/skills'
 import { toast } from 'sonner'
 import { formatRelative } from '@/lib/format'
 import { cn } from '@/lib/utils'
@@ -167,6 +168,7 @@ export function SkillDetail({ skill }: { skill: Skill }) {
   const [showHelp, setShowHelp] = useState(false)
   const [saveToast, setSaveToast] = useState<'saving' | 'saved' | false>(false)
   const [showMoreMenu, setShowMoreMenu] = useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
 
   const handleDiscard = useCallback(() => {
     setShowDiscardConfirm(true)
@@ -197,6 +199,22 @@ export function SkillDetail({ skill }: { skill: Skill }) {
     triggerDownload(blob, `${skill.slug}.md`)
     toast.success(`Exported ${skill.slug}.md`)
   }, [skill])
+
+  const handleDelete = useCallback(async () => {
+    try {
+      await deleteSkillById(skill.slug)
+      toast.success(`"${skill.title}" deleted`)
+      router.push('/')
+    } catch {
+      toast.error('Failed to delete skill')
+    }
+  }, [skill.slug, skill.title, router])
+
+  const handleAddComment = useCallback(async (body: string) => {
+    const comment = await createCommentApi(skill.slug, 'You', body)
+    updateSkill(skill.slug, { comments: [...(skill.comments || []), comment] })
+    toast.success('Comment added')
+  }, [skill.slug, skill.comments])
 
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
@@ -376,6 +394,14 @@ export function SkillDetail({ skill }: { skill: Skill }) {
                           <Download className="h-3.5 w-3.5 text-muted-foreground" />
                           Export
                         </button>
+                        <div className="border-t border-border/60 my-1" />
+                        <button
+                          onClick={() => { setShowDeleteConfirm(true); setShowMoreMenu(false) }}
+                          className="flex items-center gap-2.5 px-3 py-2 text-[13px] hover:bg-destructive/10 w-full text-left text-destructive min-h-[44px] sm:min-h-[36px]"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          Delete Skill
+                        </button>
                       </div>
                     </>
                   )}
@@ -407,7 +433,7 @@ export function SkillDetail({ skill }: { skill: Skill }) {
           {/* Content — no tab bar; edit is fullscreen overlay, comments inline in view */}
           <div className="flex-1 flex flex-col min-h-0">
             {activeTab !== 'edit' && (
-              <SkillViewTab skill={skill} />
+              <SkillViewTab skill={skill} onAddComment={handleAddComment} />
             )}
             {activeTab === 'edit' && (
               <SkillEditTab
@@ -451,6 +477,20 @@ export function SkillDetail({ skill }: { skill: Skill }) {
               Saved
             </>
           )}
+        </div>
+      )}
+
+      {/* Delete confirm dialog */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowDeleteConfirm(false)}>
+          <div className="w-full max-w-sm bg-card border border-border rounded-xl shadow-2xl p-6" onClick={e => e.stopPropagation()}>
+            <h3 className="text-sm font-semibold text-foreground mb-2">Delete &ldquo;{skill.title}&rdquo;?</h3>
+            <p className="text-[13px] text-muted-foreground mb-5">This will permanently delete the skill. This cannot be undone.</p>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" size="sm" className="h-8 text-[13px]" onClick={() => setShowDeleteConfirm(false)}>Cancel</Button>
+              <Button variant="destructive" size="sm" className="h-8 text-[13px]" onClick={handleDelete}>Delete</Button>
+            </div>
+          </div>
         </div>
       )}
 
