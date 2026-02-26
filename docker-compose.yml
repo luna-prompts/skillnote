@@ -1,11 +1,50 @@
 name: skillnote
 
 services:
-  skillnote:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: skillnote
+      POSTGRES_USER: skillnote
+      POSTGRES_PASSWORD: skillnote
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U skillnote"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: ./backend
+    environment:
+      SKILLNOTE_DATABASE_URL: postgresql+psycopg://skillnote:skillnote@postgres:5432/skillnote
+      SKILLNOTE_TOKEN_PEPPER: dev-pepper-change-me
+      SKILLNOTE_BUNDLE_STORAGE_DIR: /app/data/bundles
+    ports:
+      - "${SKILLNOTE_API_PORT:-8082}:8080"
+    volumes:
+      - bundles:/app/data/bundles
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: >
+      sh -c "python scripts/wait_for_db.py &&
+             alembic upgrade head &&
+             python scripts/seed_data.py &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8080"
+
+  web:
     build: .
-    container_name: skillnote
     ports:
       - "3000:3000"
     environment:
-      - NODE_ENV=production
+      NODE_ENV: production
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:8082
+    depends_on:
+      - api
     restart: unless-stopped
+
+volumes:
+  pgdata:
+  bundles:
