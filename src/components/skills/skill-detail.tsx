@@ -3,7 +3,7 @@ import { useState, useCallback, useEffect, useRef } from 'react'
 import { TopBar } from '@/components/layout/topbar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Download, Pencil, History, Check, BookOpen, ArrowLeft, Hash, Link2, Star, Command, X, Keyboard, FileText, Search, FolderOpen, Share2, MoreHorizontal, Trash2 } from 'lucide-react'
+import { Download, Pencil, GitBranch, Check, BookOpen, ArrowLeft, Hash, Link2, Star, Command, X, Keyboard, FileText, Search, FolderOpen, Share2, MoreHorizontal, Trash2 } from 'lucide-react'
 import { Skill, type Comment } from '@/lib/mock-data'
 import { getSkills, updateSkill, deleteSkillById, saveSkillEdit } from '@/lib/skills-store'
 import { validateSkillName, validateDescription } from '@/lib/skill-validation'
@@ -330,6 +330,9 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
                 <div className="flex items-center gap-1.5 mt-1 mb-1.5">
                   <FolderOpen className="h-3 w-3 text-muted-foreground/40 shrink-0" />
                   <code className="font-mono text-[11px] text-muted-foreground/50 tracking-wide">{skill.slug}/SKILL.md</code>
+                  {skill.current_version > 0 && (
+                    <Badge variant="outline" className="text-[10px] py-0 h-4 font-mono ml-1">v{skill.current_version}</Badge>
+                  )}
                 </div>
                 <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
                   <div className="w-4 h-4 rounded-full bg-accent flex items-center justify-center text-[8px] font-bold text-white">NV</div>
@@ -368,9 +371,9 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
                   <Command className="h-3.5 w-3.5" />
                   <kbd className="text-[10px] font-mono text-muted-foreground hidden xl:inline">⌘K</kbd>
                 </Button>
-                <Button variant="outline" size="sm" className="h-8 sm:h-8 min-h-[44px] sm:min-h-0 gap-1.5 text-[13px]" onClick={() => router.push(`/skills/${skill.slug}/history`)}>
-                  <History className="h-3.5 w-3.5" />
-                  <span className="hidden sm:inline">History</span>
+                <Button variant="outline" size="sm" className="h-8 sm:h-8 min-h-[44px] sm:min-h-0 gap-1.5 text-[13px]" onClick={() => router.push(`/skills/${skill.slug}/versions`)}>
+                  <GitBranch className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">Versions</span>
                 </Button>
                 <Button variant="outline" size="sm" className="h-8 sm:h-8 min-h-[44px] sm:min-h-0 gap-1.5 text-[13px]" onClick={() => setActiveTab('edit')}>
                   <Pencil className="h-3.5 w-3.5" />
@@ -397,11 +400,11 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
                       <div className="fixed inset-0 z-20" onClick={() => setShowMoreMenu(false)} />
                       <div className="absolute right-0 top-full mt-1 z-30 bg-popover border border-border rounded-lg shadow-lg overflow-hidden min-w-[180px] py-1">
                         <button
-                          onClick={() => { router.push(`/skills/${skill.slug}/history`); setShowMoreMenu(false) }}
+                          onClick={() => { router.push(`/skills/${skill.slug}/versions`); setShowMoreMenu(false) }}
                           className="flex items-center gap-2.5 px-3 py-2 text-[13px] hover:bg-muted w-full text-left text-foreground min-h-[44px] sm:min-h-[36px]"
                         >
-                          <History className="h-3.5 w-3.5 text-muted-foreground" />
-                          View History
+                          <GitBranch className="h-3.5 w-3.5 text-muted-foreground" />
+                          View Versions
                         </button>
                         <button
                           onClick={() => { navigator.clipboard.writeText(window.location.href); setShowMoreMenu(false) }}
@@ -437,7 +440,7 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
           {commandPaletteOpen && (() => {
             const actions: PaletteAction[] = [
               { icon: Pencil, label: 'Edit skill', shortcut: 'E', group: 'Actions', action: () => { setActiveTab('edit'); setCommandPaletteOpen(false) } },
-              { icon: History, label: 'View history', shortcut: '', group: 'Actions', action: () => { router.push(`/skills/${skill.slug}/history`); setCommandPaletteOpen(false) } },
+              { icon: GitBranch, label: 'View versions', shortcut: '', group: 'Actions', action: () => { router.push(`/skills/${skill.slug}/versions`); setCommandPaletteOpen(false) } },
               { icon: Download, label: 'Export as Markdown', shortcut: '⌘E', group: 'Actions', action: () => { handleExport(); setCommandPaletteOpen(false) } },
               { icon: Link2, label: 'Copy link', shortcut: '⌘L', group: 'Actions', action: () => { navigator.clipboard.writeText(window.location.href); setCommandPaletteOpen(false) } },
               { icon: Star, label: starred ? 'Unstar skill' : 'Star skill', shortcut: '', group: 'Actions', action: () => { toggleStar(); setCommandPaletteOpen(false) } },

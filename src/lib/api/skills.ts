@@ -1,4 +1,4 @@
-import { Skill, Comment } from '@/lib/mock-data'
+import { Skill, Comment, ContentVersion } from '@/lib/mock-data'
 import { apiRequest } from './client'
 
 type ApiSkillListItem = {
@@ -8,6 +8,7 @@ type ApiSkillListItem = {
   tags?: string[]
   collections?: string[]
   latestVersion?: string
+  currentVersion?: number
 }
 
 type ApiSkillDetail = {
@@ -18,6 +19,7 @@ type ApiSkillDetail = {
   content_md: string
   tags: string[]
   collections: string[]
+  current_version: number
   created_at: string
   updated_at: string
 }
@@ -39,6 +41,7 @@ function listItemToSkill(item: ApiSkillListItem): Skill {
     content_md: '',
     tags: item.tags || [],
     collections: item.collections || [],
+    current_version: item.currentVersion || 0,
     created_at: now,
     updated_at: now,
   }
@@ -52,6 +55,7 @@ function detailToSkill(item: ApiSkillDetail, existingComments?: Comment[]): Skil
     content_md: item.content_md || '',
     tags: item.tags || [],
     collections: item.collections || [],
+    current_version: item.current_version || 0,
     created_at: item.created_at,
     updated_at: item.updated_at,
     comments: existingComments,
@@ -148,4 +152,44 @@ export async function renameTagApi(oldName: string, newName: string): Promise<vo
 
 export async function deleteTagApi(name: string): Promise<void> {
   await apiRequest(`/v1/tags/${encodeURIComponent(name)}`, { method: 'DELETE' })
+}
+
+// Content versions
+type ApiContentVersion = {
+  version: number
+  title: string
+  description: string
+  content_md: string
+  tags: string[]
+  collections: string[]
+  is_latest: boolean
+  created_at: string
+}
+
+export async function fetchContentVersions(slug: string): Promise<ContentVersion[]> {
+  const list = await apiRequest<ApiContentVersion[]>(`/v1/skills/${slug}/content-versions`)
+  return list.map(v => ({
+    version: v.version,
+    title: v.title,
+    description: v.description,
+    content_md: v.content_md,
+    tags: v.tags || [],
+    collections: v.collections || [],
+    is_latest: v.is_latest,
+    created_at: v.created_at,
+  }))
+}
+
+export async function setLatestVersionApi(slug: string, version: number): Promise<Skill> {
+  const detail = await apiRequest<ApiSkillDetail>(`/v1/skills/${slug}/content-versions/${version}/set-latest`, {
+    method: 'POST',
+  })
+  return detailToSkill(detail)
+}
+
+export async function restoreVersionApi(slug: string, version: number): Promise<Skill> {
+  const detail = await apiRequest<ApiSkillDetail>(`/v1/skills/${slug}/content-versions/${version}/restore`, {
+    method: 'POST',
+  })
+  return detailToSkill(detail)
 }
