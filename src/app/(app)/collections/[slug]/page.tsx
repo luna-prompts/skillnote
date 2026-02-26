@@ -15,7 +15,7 @@ export default function CollectionDetailPage() {
   }, [])
 
   const collectionName = decodeURIComponent(slug).replace(/-/g, ' ')
-  const filtered = useMemo(() => skills.filter(s => (s.collections || []).includes(collectionName)), [skills, collectionName])
+  const filtered = useMemo(() => skills.filter(s => (s.collections || []).some(c => c.toLowerCase() === collectionName.toLowerCase())), [skills, collectionName])
 
   return (
     <>
