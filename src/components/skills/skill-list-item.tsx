@@ -19,6 +19,11 @@ export function SkillListItem({ skill }: { skill: Skill }) {
         </span>
       </div>
       <div className="flex items-center gap-2 shrink-0">
+        {skill.current_version > 0 && (
+          <span className="text-[10px] font-mono font-medium text-accent/70 bg-accent/10 px-1.5 py-0.5 rounded hidden sm:inline">
+            v{skill.current_version}
+          </span>
+        )}
         {skill.tags.slice(0, 1).map(tag => (
           <span key={tag} className="text-[10px] font-mono font-medium text-muted-foreground/70 bg-muted/60 dark:bg-muted/40 px-1.5 py-0.5 rounded sm:inline">
             {tag}

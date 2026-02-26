@@ -55,6 +55,7 @@ export function parseMarkdown(raw: string, filename: string): Omit<Skill, 'comme
     content_md: content.trim(),
     tags,
     collections: [],
+    current_version: 0,
     created_at: now,
     updated_at: now,
   }

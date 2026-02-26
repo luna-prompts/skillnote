@@ -15,6 +15,7 @@ class SkillListItem(BaseModel):
     latestVersion: Optional[str] = None
     status: Optional[str] = None
     channel: Optional[str] = None
+    currentVersion: int = 0
 
 
 class SkillDetail(BaseModel):
@@ -25,6 +26,7 @@ class SkillDetail(BaseModel):
     content_md: Optional[str] = ""
     tags: List[str] = []
     collections: List[str] = []
+    current_version: int = 0
     created_at: datetime
     updated_at: datetime
 

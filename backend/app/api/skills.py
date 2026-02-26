@@ -6,12 +6,52 @@ from app.core.errors import api_error
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_token
-from app.db.models import Skill, SkillVersion, TokenSkillGrant, AccessToken
+from app.db.models import Skill, SkillVersion, SkillContentVersion, TokenSkillGrant, AccessToken
 from app.db.session import get_db
 from app.schemas.skill import SkillListItem, SkillDetail, SkillCreate, SkillUpdate
-from app.schemas.version import SkillVersionItem
+from app.schemas.version import SkillVersionItem, ContentVersionItem
 
 router = APIRouter(prefix="/v1/skills", tags=["skills"])
+
+
+def _get_accessible_skill(slug: str, token: AccessToken, db: Session) -> Skill:
+    skill_row = (
+        db.query(Skill)
+        .join(TokenSkillGrant, TokenSkillGrant.skill_id == Skill.id)
+        .filter(TokenSkillGrant.token_id == token.id)
+        .filter(Skill.slug == slug)
+        .first()
+    )
+    if not skill_row:
+        raise api_error(404, "SKILL_NOT_FOUND", "Skill not found")
+    return skill_row
+
+
+def _create_content_version(db: Session, skill: Skill) -> SkillContentVersion:
+    """Snapshot current skill state as a new content version."""
+    next_ver = (skill.current_version or 0) + 1
+
+    # Clear is_latest on all existing versions for this skill
+    db.query(SkillContentVersion).filter(
+        SkillContentVersion.skill_id == skill.id,
+        SkillContentVersion.is_latest == True,
+    ).update({"is_latest": False})
+
+    cv = SkillContentVersion(
+        id=uuid_lib.uuid4(),
+        skill_id=skill.id,
+        version=next_ver,
+        title=skill.name,
+        description=skill.description,
+        content_md=skill.content_md or "",
+        tags=skill.tags or [],
+        collections=skill.collections or [],
+        is_latest=True,
+    )
+    db.add(cv)
+
+    skill.current_version = next_ver
+    return cv
 
 
 @router.get("", response_model=list[SkillListItem])
@@ -44,6 +84,7 @@ def list_skills(
                 latestVersion=latest.version if latest else None,
                 status=latest.status if latest else None,
                 channel=latest.channel if latest else None,
+                currentVersion=skill.current_version or 0,
             )
         )
 
@@ -86,21 +127,100 @@ def list_versions(
     ]
 
 
+@router.get("/{skill_slug}/content-versions", response_model=list[ContentVersionItem])
+def list_content_versions(
+    skill_slug: str,
+    current_token: AccessToken = Depends(get_current_token),
+    db: Session = Depends(get_db),
+):
+    skill_row = _get_accessible_skill(skill_slug, current_token, db)
+    versions = (
+        db.query(SkillContentVersion)
+        .filter(SkillContentVersion.skill_id == skill_row.id)
+        .order_by(SkillContentVersion.version.desc())
+        .all()
+    )
+    return versions
+
+
+@router.post("/{skill_slug}/content-versions/{version}/set-latest", response_model=SkillDetail)
+def set_latest_version(
+    skill_slug: str,
+    version: int,
+    current_token: AccessToken = Depends(get_current_token),
+    db: Session = Depends(get_db),
+):
+    skill_row = _get_accessible_skill(skill_slug, current_token, db)
+
+    target = (
+        db.query(SkillContentVersion)
+        .filter(SkillContentVersion.skill_id == skill_row.id, SkillContentVersion.version == version)
+        .first()
+    )
+    if not target:
+        raise api_error(404, "VERSION_NOT_FOUND", f"Version {version} not found")
+
+    # Clear all is_latest flags
+    db.query(SkillContentVersion).filter(
+        SkillContentVersion.skill_id == skill_row.id,
+        SkillContentVersion.is_latest == True,
+    ).update({"is_latest": False})
+
+    target.is_latest = True
+
+    # Apply version content to the skill
+    skill_row.name = target.title
+    skill_row.description = target.description
+    skill_row.content_md = target.content_md
+    skill_row.tags = target.tags or []
+    skill_row.collections = target.collections or []
+    skill_row.updated_at = datetime.now(timezone.utc)
+
+    db.commit()
+    db.refresh(skill_row)
+    return skill_row
+
+
+@router.post("/{skill_slug}/content-versions/{version}/restore", response_model=SkillDetail)
+def restore_version(
+    skill_slug: str,
+    version: int,
+    current_token: AccessToken = Depends(get_current_token),
+    db: Session = Depends(get_db),
+):
+    skill_row = _get_accessible_skill(skill_slug, current_token, db)
+
+    target = (
+        db.query(SkillContentVersion)
+        .filter(SkillContentVersion.skill_id == skill_row.id, SkillContentVersion.version == version)
+        .first()
+    )
+    if not target:
+        raise api_error(404, "VERSION_NOT_FOUND", f"Version {version} not found")
+
+    # Apply version content to skill
+    skill_row.name = target.title
+    skill_row.description = target.description
+    skill_row.content_md = target.content_md
+    skill_row.tags = target.tags or []
+    skill_row.collections = target.collections or []
+    skill_row.updated_at = datetime.now(timezone.utc)
+
+    # Create a new version snapshot for the restore
+    _create_content_version(db, skill_row)
+
+    db.commit()
+    db.refresh(skill_row)
+    return skill_row
+
+
 @router.get("/{skill_slug}", response_model=SkillDetail)
 def get_skill(
     skill_slug: str,
     current_token: AccessToken = Depends(get_current_token),
     db: Session = Depends(get_db),
 ):
-    skill_row = (
-        db.query(Skill)
-        .join(TokenSkillGrant, TokenSkillGrant.skill_id == Skill.id)
-        .filter(TokenSkillGrant.token_id == current_token.id)
-        .filter(Skill.slug == skill_slug)
-        .first()
-    )
-    if not skill_row:
-        raise api_error(404, "SKILL_NOT_FOUND", "Skill not found")
+    skill_row = _get_accessible_skill(skill_slug, current_token, db)
     return skill_row
 
 
@@ -122,9 +242,13 @@ def create_skill(
         content_md=payload.content_md,
         tags=payload.tags,
         collections=payload.collections,
+        current_version=0,
     )
     db.add(skill)
     db.flush()
+
+    # Create initial version (v1)
+    _create_content_version(db, skill)
 
     grant = TokenSkillGrant(
         id=uuid_lib.uuid4(),
@@ -144,15 +268,7 @@ def update_skill(
     current_token: AccessToken = Depends(get_current_token),
     db: Session = Depends(get_db),
 ):
-    skill_row = (
-        db.query(Skill)
-        .join(TokenSkillGrant, TokenSkillGrant.skill_id == Skill.id)
-        .filter(TokenSkillGrant.token_id == current_token.id)
-        .filter(Skill.slug == skill_slug)
-        .first()
-    )
-    if not skill_row:
-        raise api_error(404, "SKILL_NOT_FOUND", "Skill not found")
+    skill_row = _get_accessible_skill(skill_slug, current_token, db)
 
     if payload.name is not None:
         skill_row.name = payload.name
@@ -166,6 +282,9 @@ def update_skill(
         skill_row.collections = payload.collections
     skill_row.updated_at = datetime.now(timezone.utc)
 
+    # Auto-create a new content version on every save
+    _create_content_version(db, skill_row)
+
     db.commit()
     db.refresh(skill_row)
     return skill_row
@@ -177,15 +296,6 @@ def delete_skill(
     current_token: AccessToken = Depends(get_current_token),
     db: Session = Depends(get_db),
 ):
-    skill_row = (
-        db.query(Skill)
-        .join(TokenSkillGrant, TokenSkillGrant.skill_id == Skill.id)
-        .filter(TokenSkillGrant.token_id == current_token.id)
-        .filter(Skill.slug == skill_slug)
-        .first()
-    )
-    if not skill_row:
-        raise api_error(404, "SKILL_NOT_FOUND", "Skill not found")
-
+    skill_row = _get_accessible_skill(skill_slug, current_token, db)
     db.delete(skill_row)
     db.commit()
