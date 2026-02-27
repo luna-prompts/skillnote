@@ -1,14 +1,19 @@
 import { Skill } from './mock-data'
 
 export function generateMarkdown(skill: Skill): string {
-  const frontmatter = [
+  const lines = [
     '---',
     `name: ${skill.slug}`,
     `description: ${skill.description}`,
-    '---',
-    '',
-  ].join('\n')
-  return frontmatter + skill.content_md
+  ]
+  if (skill.tags && skill.tags.length > 0) {
+    lines.push(`tags: [${skill.tags.join(', ')}]`)
+  }
+  if (skill.collections && skill.collections.length > 0) {
+    lines.push(`collections: [${skill.collections.join(', ')}]`)
+  }
+  lines.push('---', '')
+  return lines.join('\n') + skill.content_md
 }
 
 export function parseMarkdown(raw: string, filename: string): Omit<Skill, 'comments' | 'attachments' | 'revisions'> {
@@ -16,6 +21,7 @@ export function parseMarkdown(raw: string, filename: string): Omit<Skill, 'comme
   let title = filename.replace(/\.md$/i, '')
   let description = ''
   let tags: string[] = []
+  let collections: string[] = []
   let content = raw
 
   // Parse frontmatter
@@ -39,6 +45,11 @@ export function parseMarkdown(raw: string, filename: string): Omit<Skill, 'comme
     const tagsMatch = fm.match(/^tags:\s*\[([^\]]*)\]$/m)
     if (tagsMatch) {
       tags = tagsMatch[1].split(',').map(t => t.trim()).filter(Boolean)
+    }
+
+    const colMatch = fm.match(/^collections:\s*\[([^\]]*)\]$/m)
+    if (colMatch) {
+      collections = colMatch[1].split(',').map(c => c.trim()).filter(Boolean)
     }
   }
 
@@ -66,7 +77,7 @@ export function parseMarkdown(raw: string, filename: string): Omit<Skill, 'comme
     description,
     content_md: content.trim(),
     tags,
-    collections: [],
+    collections,
     current_version: 1,
     created_at: now,
     updated_at: now,

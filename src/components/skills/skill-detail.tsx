@@ -228,11 +228,15 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
     setActiveTab('view')
   }, [])
 
-  const handleExport = useCallback(() => {
+  const handleExport = useCallback(async () => {
     const md = generateMarkdown(skill)
-    const blob = new Blob([md], { type: 'text/markdown' })
-    triggerDownload(blob, `${skill.slug}.md`)
-    toast.success(`Exported ${skill.slug}.md`)
+    const JSZip = (await import('jszip')).default
+    const zip = new JSZip()
+    const folder = zip.folder(skill.slug)!
+    folder.file('SKILL.md', md)
+    const blob = await zip.generateAsync({ type: 'blob' })
+    triggerDownload(blob, `${skill.slug}.zip`)
+    toast.success(`Exported ${skill.slug}.zip`)
   }, [skill])
 
   const handleDelete = useCallback(async () => {
