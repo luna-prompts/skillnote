@@ -13,7 +13,7 @@ import { useState, useCallback, useRef, useEffect } from 'react'
 import { cn } from '@/lib/utils'
 import {
   Bold, Italic, Strikethrough, Code, Heading1, Heading2, Heading3,
-  List, ListOrdered, Quote, Minus, Columns2, FileEdit, Eye, Link2,
+  List, ListOrdered, Quote, Minus, FileEdit, Eye, Link2,
   Undo2, Redo2,
 } from 'lucide-react'
 
@@ -37,7 +37,7 @@ interface MarkdownStorage {
   markdown: { getMarkdown: () => string }
 }
 
-type EditorMode = 'wysiwyg' | 'raw' | 'split'
+type EditorMode = 'wysiwyg' | 'raw'
 
 interface Props {
   value: string
@@ -176,8 +176,6 @@ export function WysiwygEditor({ value, onChange, renderToolbar, onModeChange, sk
   const [transitioning, setTransitioning] = useState(false)
   const editorWrapRef = useRef<HTMLDivElement>(null)
 
-  // Prevent feedback loop when syncing raw textarea → Tiptap editor
-  const syncingFromRaw = useRef(false)
   // Prevent onUpdate from overwriting rawValue when we call setContent programmatically
   const settingContentRef = useRef(false)
 
@@ -200,7 +198,7 @@ export function WysiwygEditor({ value, onChange, renderToolbar, onModeChange, sk
     editable: true,
     onUpdate: ({ editor }) => {
       // Skip when triggered by raw textarea sync or programmatic setContent
-      if (syncingFromRaw.current || settingContentRef.current) return
+      if (settingContentRef.current) return
       const md = (editor.storage as unknown as MarkdownStorage).markdown.getMarkdown()
       setRawValue(md)
       onChange(md)
@@ -257,18 +255,6 @@ export function WysiwygEditor({ value, onChange, renderToolbar, onModeChange, sk
     })
   }, [mode, rawValue, editor, onChange, skillMeta, onMetaChange, onModeChange])
 
-  // Handle edits from the raw textarea (used in both 'raw' mode and split mode right pane)
-  const handleRawChange = useCallback((newVal: string) => {
-    setRawValue(newVal)
-    onChange(newVal)
-    // In split mode, sync the raw edit back to the Tiptap editor (left pane)
-    if (editor) {
-      syncingFromRaw.current = true
-      editor.commands.setContent(newVal)
-      // Reset flag after Tiptap's onUpdate has had a chance to fire
-      setTimeout(() => { syncingFromRaw.current = false }, 0)
-    }
-  }, [editor, onChange])
 
   const toolbarNode = (
     <div className="shrink-0 bg-background">
@@ -318,14 +304,6 @@ export function WysiwygEditor({ value, onChange, renderToolbar, onModeChange, sk
             <FileEdit className="h-3.5 w-3.5" />
             <span className="text-[11px] ml-1">Raw</span>
           </ModeBtn>
-          <ModeBtn
-            active={mode === 'split'}
-            onClick={() => handleModeSwitch('split')}
-            title="Split — WYSIWYG editor (left) + raw Markdown textarea (right), both live-synced"
-          >
-            <Columns2 className="h-3.5 w-3.5" />
-            <span className="text-[11px] ml-1">Split</span>
-          </ModeBtn>
         </div>
       </div>
       {/* Right fade hint for scrollable toolbar on mobile */}
@@ -340,16 +318,13 @@ export function WysiwygEditor({ value, onChange, renderToolbar, onModeChange, sk
       {renderToolbar ? renderToolbar(toolbarNode) : toolbarNode}
 
       {/* Content area */}
-      <div className={cn('flex-1 flex flex-col sm:flex-row transition-opacity duration-150', transitioning && 'opacity-0')}>
+      <div className={cn('flex-1 flex flex-col transition-opacity duration-150', transitioning && 'opacity-0')}>
 
-        {/* ── LEFT PANE: Tiptap WYSIWYG editor (wysiwyg mode + split left) ── */}
-        {(mode === 'wysiwyg' || mode === 'split') && (
+        {/* ── WYSIWYG editor ── */}
+        {mode === 'wysiwyg' && (
           <div
             ref={editorWrapRef}
-            className={cn(
-              'flex-1 relative flex flex-col min-h-[100vh]',
-              mode === 'split' && 'sm:border-r border-border/40 sm:w-1/2 sm:flex-none overflow-y-auto',
-            )}
+            className="flex-1 relative flex flex-col min-h-[100vh]"
             onPasteCapture={(e) => {
               const text = e.clipboardData?.getData('text/plain')
               if (!text || !text.trimStart().startsWith('---')) return
@@ -361,35 +336,12 @@ export function WysiwygEditor({ value, onChange, renderToolbar, onModeChange, sk
                 settingContentRef.current = true
                 editor.commands.setContent(stripped)
                 settingContentRef.current = false
-                // rawValue keeps the ORIGINAL text so Raw mode shows --- frontmatter
                 setRawValue(text)
                 onChange(text)
               }
             }}
           >
-            {mode === 'split' && (
-              <div className="hidden sm:block px-4 py-1.5 text-[10px] font-medium text-muted-foreground/60 uppercase tracking-widest border-b border-border/30 shrink-0">
-                Rendered (editable)
-              </div>
-            )}
             <EditorContent editor={editor} />
-          </div>
-        )}
-
-        {/* ── RIGHT PANE (split mode only): Raw Markdown textarea, live-synced — hidden on mobile */}
-        {mode === 'split' && (
-          <div className="hidden sm:flex flex-none sm:w-1/2 overflow-y-auto relative flex-col min-h-[200px] sm:min-h-0">
-            <div className="px-4 py-1.5 text-[10px] font-medium text-muted-foreground/60 uppercase tracking-widest border-b border-border/30 shrink-0">
-              Raw Markdown
-            </div>
-            <textarea
-              value={rawValue}
-              onChange={(e) => handleRawChange(e.target.value)}
-              className="w-full flex-1 min-h-0 px-6 py-4 font-mono text-[13px] bg-muted/10 resize-none focus:outline-none text-foreground/70 focus:text-foreground transition-colors"
-              spellCheck={false}
-              placeholder="Raw markdown synced with the editor on the left..."
-              style={textareaStyle}
-            />
           </div>
         )}
 
