@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useTheme } from 'next-themes'
-import { Upload, Download, RotateCcw, ExternalLink, Sun, Moon, Monitor, CheckCircle2, XCircle, Loader2 } from 'lucide-react'
+import { Upload, Download, RotateCcw, ExternalLink, Sun, Moon, Monitor } from 'lucide-react'
 import { TopBar } from '@/components/layout/topbar'
 import { ImportModal } from '@/components/import/ImportModal'
 import { exportAllAsZip } from '@/lib/export-utils'
@@ -226,87 +226,6 @@ function ProfileConfig() {
   )
 }
 
-function BackendConfig() {
-  const [apiUrl, setApiUrl] = useState('')
-  const [token, setToken] = useState('')
-  const [testing, setTesting] = useState(false)
-  const [testResult, setTestResult] = useState<'idle' | 'ok' | 'fail'>('idle')
-
-  // Sync from localStorage after mount (avoids SSR/hydration mismatch)
-  useEffect(() => {
-    setApiUrl(localStorage.getItem('skillnote:api-url') || '')
-    setToken(localStorage.getItem('skillnote:token') || '')
-  }, [])
-
-  function save() {
-    localStorage.setItem('skillnote:api-url', apiUrl.trim())
-    localStorage.setItem('skillnote:token', token.trim())
-    toast.success('Backend config saved — reload to reconnect')
-  }
-
-  async function testConnection() {
-    setTesting(true)
-    setTestResult('idle')
-    try {
-      const base = (apiUrl.trim() || 'http://localhost:8082').replace(/\/$/, '')
-      const res = await fetch(`${base}/auth/validate-token`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: token.trim() }),
-      })
-      const data = await res.json()
-      setTestResult(data.valid ? 'ok' : 'fail')
-    } catch {
-      setTestResult('fail')
-    } finally {
-      setTesting(false)
-    }
-  }
-
-  return (
-    <>
-      <Row label="API Base URL" desc="URL of your SkillNote backend (e.g. http://localhost:8082)">
-        <input
-          type="url"
-          value={apiUrl}
-          onChange={e => setApiUrl(e.target.value)}
-          placeholder="http://localhost:8082"
-          className="h-8 px-3 text-[13px] bg-muted border border-border/60 rounded-lg text-foreground focus:outline-none focus:ring-1 focus:ring-ring w-56"
-        />
-      </Row>
-      <Row label="Access Token" desc="Bearer token for API authentication">
-        <input
-          type="password"
-          value={token}
-          onChange={e => setToken(e.target.value)}
-          placeholder="skn_live_..."
-          className="h-8 px-3 text-[13px] bg-muted border border-border/60 rounded-lg text-foreground focus:outline-none focus:ring-1 focus:ring-ring w-56"
-        />
-      </Row>
-      <Row label="Connection" desc="Validate token against the backend">
-        <div className="flex items-center gap-2">
-          {testResult === 'ok' && <span className="flex items-center gap-1 text-[12px] text-emerald-600 dark:text-emerald-400"><CheckCircle2 className="h-3.5 w-3.5" /> Connected</span>}
-          {testResult === 'fail' && <span className="flex items-center gap-1 text-[12px] text-destructive"><XCircle className="h-3.5 w-3.5" /> Failed</span>}
-          <button
-            onClick={testConnection}
-            disabled={testing || !token}
-            className="flex items-center gap-1.5 h-8 px-3 text-[13px] font-medium bg-muted hover:bg-muted-foreground/15 border border-border/60 rounded-lg text-foreground transition-colors disabled:opacity-50"
-          >
-            {testing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-            Test Connection
-          </button>
-          <button
-            onClick={save}
-            className="flex items-center gap-1.5 h-8 px-3 text-[13px] font-medium bg-foreground text-background hover:bg-foreground/90 rounded-lg transition-colors"
-          >
-            Save
-          </button>
-        </div>
-      </Row>
-    </>
-  )
-}
-
 export default function SettingsPage() {
   const [importOpen, setImportOpen] = useState(false)
   const [exporting, setExporting] = useState(false)
@@ -411,11 +330,6 @@ export default function SettingsPage() {
                 Reset
               </button>
             </Row>
-          </Section>
-
-          {/* Backend */}
-          <Section title="Backend">
-            <BackendConfig />
           </Section>
 
           {/* About */}
