@@ -116,6 +116,7 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
   const [titleValue, setTitleValue] = useState(skill.title)
   const [descriptionValue, setDescriptionValue] = useState(skill.description)
   const [tagsValue, setTagsValue] = useState<string[]>(skill.tags)
+  const [collectionsValue, setCollectionsValue] = useState<string[]>(skill.collections)
   const [starred, setStarred] = useState(false)
 
   // Sync state ONLY when the skill slug changes (navigating to a different skill)
@@ -129,6 +130,7 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
       setTitleValue(skill.title)
       setDescriptionValue(skill.description)
       setTagsValue(skill.tags)
+      setCollectionsValue(skill.collections)
       setLastSyncedSlug(skill.slug)
       setInitialContentLoaded(!!skill.content_md)
     } else if (!initialContentLoaded && skill.content_md) {
@@ -137,6 +139,7 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
       setTitleValue(skill.title)
       setDescriptionValue(skill.description)
       setTagsValue(skill.tags)
+      setCollectionsValue(skill.collections)
       setInitialContentLoaded(true)
     }
   }, [skill, lastSyncedSlug, initialContentLoaded])
@@ -177,7 +180,7 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
     }
   }, [prevSkill, nextSkill, router])
 
-  const editorDirty = editorContent !== skill.content_md || titleValue !== skill.title || descriptionValue !== skill.description || JSON.stringify(tagsValue) !== JSON.stringify(skill.tags)
+  const editorDirty = editorContent !== skill.content_md || titleValue !== skill.title || descriptionValue !== skill.description || JSON.stringify(tagsValue) !== JSON.stringify(skill.tags) || JSON.stringify(collectionsValue) !== JSON.stringify(skill.collections)
 
   useEffect(() => {
     const saved = localStorage.getItem(`starred-${skill.slug}`)
@@ -206,13 +209,14 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
     setTitleValue(skill.title)
     setDescriptionValue(skill.description)
     setTagsValue(skill.tags)
+    setCollectionsValue(skill.collections)
     setShowDiscardConfirm(false)
-  }, [skill.content_md, skill.title, skill.description, skill.tags])
+  }, [skill.content_md, skill.title, skill.description, skill.tags, skill.collections])
 
   const handleSave = useCallback(async () => {
     setSaveToast('saving')
     try {
-      const updated = await saveSkillEdit(skill.slug, { title: titleValue, description: descriptionValue, content_md: editorContent, tags: tagsValue })
+      const updated = await saveSkillEdit(skill.slug, { title: titleValue, description: descriptionValue, content_md: editorContent, tags: tagsValue, collections: collectionsValue })
       onSkillUpdated?.(updated)
       setSavedVersion(updated.current_version)
       setSaveToast('saved')
@@ -503,9 +507,10 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
                 skillSlug={skill.slug}
                 skillTags={tagsValue}
                 setSkillTags={setTagsValue}
+                skillCollections={collectionsValue}
+                setSkillCollections={setCollectionsValue}
                 openFullscreen={true}
                 currentVersion={skill.current_version}
-                latestVersion={skill.latest_version}
               />
             )}
           </div>

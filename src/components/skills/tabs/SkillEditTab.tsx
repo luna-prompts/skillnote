@@ -20,6 +20,8 @@ type SkillEditTabProps = {
   skillSlug?: string
   skillTags?: string[]
   setSkillTags?: (tags: string[]) => void
+  skillCollections?: string[]
+  setSkillCollections?: (collections: string[]) => void
   openFullscreen?: boolean
   /** 'edit' shows Discard/Cancel/Save; 'create' shows Cancel/Create Skill */
   mode?: 'edit' | 'create'
@@ -33,13 +35,14 @@ type SkillEditTabProps = {
 export function SkillEditTab({
   editorContent, setEditorContent, editorDirty, onDiscard, onSave, onCancel,
   skillTitle, setSkillTitle, skillDescription, setSkillDescription,
-  skillSlug, skillTags = [], setSkillTags, openFullscreen,
-  mode = 'edit', saving = false, currentVersion, latestVersion,
+  skillSlug, skillTags = [], setSkillTags, skillCollections = [], setSkillCollections,
+  openFullscreen, mode = 'edit', saving = false, currentVersion, latestVersion,
 }: SkillEditTabProps) {
   const [fullscreen, setFullscreen] = useState(false)
   const [touched, setTouched] = useState<Record<string, boolean>>({})
   const [showSaveConfirm, setShowSaveConfirm] = useState(false)
   const [tagInput, setTagInput] = useState('')
+  const [collectionInput, setCollectionInput] = useState('')
   const [editorMode, setEditorMode] = useState<EditorMode>('wysiwyg')
   const nameRef = useRef<HTMLInputElement>(null)
   const descRef = useRef<HTMLTextAreaElement>(null)
@@ -83,8 +86,7 @@ export function SkillEditTab({
   const descErrors = touched.description ? validateDescription(skillDescription) : []
   const isValid = validateSkillName(skillTitle).length === 0 && validateDescription(skillDescription).length === 0
 
-  const versionCounter = latestVersion ?? currentVersion ?? 0
-  const nextVersion = versionCounter ? versionCounter + 1 : 1
+  const nextVersion = currentVersion ? currentVersion + 1 : 1
   const previewSlug = skillSlug || (skillTitle.trim() ? slugFromName(skillTitle.trim()) : '')
 
   const handleNameChange = (value: string) => {
@@ -101,6 +103,12 @@ export function SkillEditTab({
     if (t && !skillTags.includes(t)) setSkillTags?.([...skillTags, t])
     setTagInput('')
   }, [tagInput, skillTags, setSkillTags])
+
+  const addCollection = useCallback(() => {
+    const c = collectionInput.trim()
+    if (c && !skillCollections.includes(c)) setSkillCollections?.([...skillCollections, c])
+    setCollectionInput('')
+  }, [collectionInput, skillCollections, setSkillCollections])
 
   /** Validate fields, then either save directly (create) or show confirmation (edit) */
   const handleSaveClick = useCallback(() => {
@@ -282,7 +290,8 @@ export function SkillEditTab({
 
       {/* Tags — inline editor */}
       {setSkillTags && (
-        <div className="mb-6">
+        <div className="mb-4">
+          <label className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/70 mb-2 block">Tags</label>
           <div className="flex flex-wrap items-center gap-1.5">
             {skillTags.map(tag => (
               <span key={tag} className="flex items-center gap-1 px-2 py-0.5 bg-accent/10 text-accent text-[11px] font-mono rounded-md">
@@ -300,6 +309,32 @@ export function SkillEditTab({
               onBlur={addTag}
               placeholder={skillTags.length === 0 ? '+ Add tags' : ''}
               className="min-w-[80px] bg-transparent text-[12px] font-mono text-muted-foreground focus:outline-none placeholder:text-muted-foreground/30"
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Collections — inline editor */}
+      {setSkillCollections && (
+        <div className="mb-6">
+          <label className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/70 mb-2 block">Collections</label>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {skillCollections.map(col => (
+              <span key={col} className="flex items-center gap-1 px-2 py-0.5 bg-muted text-foreground/70 text-[11px] rounded-md">
+                {col}
+                <button onClick={() => setSkillCollections(skillCollections.filter(c => c !== col))} className="hover:opacity-70"><X className="h-2.5 w-2.5" /></button>
+              </span>
+            ))}
+            <input
+              value={collectionInput}
+              onChange={e => setCollectionInput(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); addCollection() }
+                if (e.key === 'Backspace' && !collectionInput && skillCollections.length) setSkillCollections(skillCollections.slice(0, -1))
+              }}
+              onBlur={addCollection}
+              placeholder={skillCollections.length === 0 ? '+ Add to collection' : ''}
+              className="min-w-[80px] bg-transparent text-[12px] text-muted-foreground focus:outline-none placeholder:text-muted-foreground/30"
             />
           </div>
         </div>
