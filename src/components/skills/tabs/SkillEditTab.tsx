@@ -52,6 +52,14 @@ export function SkillEditTab({
     }
   }, [mode])
 
+  // Auto-resize description textarea when value changes (e.g. edit mode load, raw mode sync)
+  useEffect(() => {
+    if (descRef.current) {
+      descRef.current.style.height = 'auto'
+      descRef.current.style.height = descRef.current.scrollHeight + 'px'
+    }
+  }, [skillDescription])
+
   // Escape in fullscreen → cancel
   useEffect(() => {
     if (!fullscreen) return
@@ -183,12 +191,17 @@ export function SkillEditTab({
         <textarea
           ref={descRef}
           value={skillDescription}
-          onChange={e => setSkillDescription(e.target.value)}
+          onChange={e => {
+            setSkillDescription(e.target.value)
+            // Auto-resize: reset height then set to scrollHeight
+            e.target.style.height = 'auto'
+            e.target.style.height = e.target.scrollHeight + 'px'
+          }}
           onBlur={() => setTouched(prev => ({ ...prev, description: true }))}
           placeholder="Describe what this skill does and when Claude should use it..."
           maxLength={DESC_MAX}
           rows={2}
-          className="w-full text-[15px] text-muted-foreground bg-transparent border-none outline-none focus:outline-none placeholder:text-muted-foreground/25 resize-none leading-relaxed"
+          className="w-full text-[15px] text-muted-foreground bg-transparent border-none outline-none focus:outline-none placeholder:text-muted-foreground/25 resize-none leading-relaxed overflow-hidden"
           style={{ outline: 'none', boxShadow: 'none', border: 'none' }}
         />
         <div className="flex items-center justify-between mt-1">
