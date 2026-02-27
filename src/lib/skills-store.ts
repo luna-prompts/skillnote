@@ -76,6 +76,7 @@ export function addSkill(skill: Skill): void {
   const skills = getSkills()
   skills.unshift(skill)
   writeStorage(skills)
+  notifyChanged()
 }
 
 export function updateSkill(slug: string, patch: Partial<Skill>): void {

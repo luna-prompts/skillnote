@@ -2,7 +2,7 @@
 import { useState, useMemo } from 'react'
 import { cn } from '@/lib/utils'
 import { ChevronDown, Search } from 'lucide-react'
-import type { Tag, Collection } from '@/lib/mock-data'
+type FilterItem = { id: string; name: string; skill_count: number }
 
 interface FilterSectionProps<T extends { id: string; name: string; skill_count: number }> {
   label: string
@@ -140,8 +140,8 @@ function FilterSection<T extends { id: string; name: string; skill_count: number
 }
 
 interface FilterPanelProps {
-  tags: Tag[]
-  collections: Collection[]
+  tags: FilterItem[]
+  collections: FilterItem[]
   selectedTags: string[]
   selectedCollections: string[]
   onToggleTag: (name: string) => void

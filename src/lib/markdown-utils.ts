@@ -14,6 +14,7 @@ export function generateMarkdown(skill: Skill): string {
 export function parseMarkdown(raw: string, filename: string): Omit<Skill, 'comments' | 'attachments' | 'revisions'> {
   const now = new Date().toISOString()
   let title = filename.replace(/\.md$/i, '')
+  let description = ''
   let tags: string[] = []
   let content = raw
 
@@ -29,6 +30,10 @@ export function parseMarkdown(raw: string, filename: string): Omit<Skill, 'comme
     const titleMatch = fm.match(/^title:\s*(.+)$/m)
     if (titleMatch && !nameMatch) title = titleMatch[1].trim()
 
+    // Extract description from frontmatter
+    const descMatch = fm.match(/^description:\s*(.+)$/m)
+    if (descMatch) description = descMatch[1].trim()
+
     const tagsMatch = fm.match(/^tags:\s*\[([^\]]*)\]$/m)
     if (tagsMatch) {
       tags = tagsMatch[1].split(',').map(t => t.trim()).filter(Boolean)
@@ -41,6 +46,11 @@ export function parseMarkdown(raw: string, filename: string): Omit<Skill, 'comme
     if (h1Match) title = h1Match[1].trim()
   }
 
+  // Fallback description from content if not in frontmatter
+  if (!description) {
+    description = content.slice(0, 150).replace(/[#\n]/g, ' ').trim()
+  }
+
   const slug = title
     .toLowerCase()
     .replace(/[^a-z0-9\s-]/g, '')
@@ -51,7 +61,7 @@ export function parseMarkdown(raw: string, filename: string): Omit<Skill, 'comme
   return {
     slug,
     title,
-    description: content.slice(0, 150).replace(/[#\n]/g, ' ').trim(),
+    description,
     content_md: content.trim(),
     tags,
     collections: [],
