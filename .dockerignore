@@ -7,3 +7,5 @@ Dockerfile
 docker-compose.yml
 .env*
 npm-debug.log*
+cli
+bun.lock
