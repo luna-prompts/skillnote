@@ -4,15 +4,17 @@ import { usePathname } from 'next/navigation'
 import { BookOpen, FolderOpen, Tag, Boxes, Settings, HelpCircle, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useEffect, useMemo, useState } from 'react'
-import { getSkills, syncSkillsFromApi } from '@/lib/skills-store'
+import { getSkills, syncSkillsFromApi, getConnectionStatus, onConnectionStatusChange } from '@/lib/skills-store'
 
 export function Sidebar({ onClose }: { onClose?: () => void }) {
   const pathname = usePathname()
   const [skills, setSkills] = useState<Array<ReturnType<typeof getSkills>[number]>>([])
+  const [connStatus, setConnStatus] = useState(getConnectionStatus())
 
   useEffect(() => {
     setSkills(getSkills())
     syncSkillsFromApi().then(setSkills).catch(() => {})
+    return onConnectionStatusChange(setConnStatus)
   }, [])
 
   const navItems = useMemo(() => {
@@ -83,9 +85,11 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
           <HelpCircle className="h-[15px] w-[15px] shrink-0" />
           Help
         </button>
-        <div className="flex items-center gap-1.5 px-2.5 pt-2" title="Running locally">
-          <div className="w-1.5 h-1.5 rounded-full bg-teal-500 shrink-0" />
-          <p className="text-[10px] text-[var(--muted-foreground)]/40">Local</p>
+        <div className="flex items-center gap-1.5 px-2.5 pt-2" title={connStatus === 'online' ? 'Connected to backend' : connStatus === 'offline' ? 'Backend offline' : 'Running locally'}>
+          <div className={cn('w-1.5 h-1.5 rounded-full shrink-0', connStatus === 'online' ? 'bg-emerald-500' : connStatus === 'offline' ? 'bg-red-500' : 'bg-teal-500')} />
+          <p className="text-[10px] text-[var(--muted-foreground)]/40">
+            {connStatus === 'online' ? 'Connected' : connStatus === 'offline' ? 'Offline' : 'Admin'}
+          </p>
         </div>
       </div>
     </aside>
