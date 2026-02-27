@@ -361,7 +361,6 @@ curl http://localhost:8082/v1/skills \
 | -------------------------- | ------------------------ | ------------------------------------------------ |
 | `SKILLNOTE_API_PORT`       | `8082`                   | Host port for the API                            |
 | `SKILLNOTE_DATABASE_URL`   | (set in docker-compose)  | PostgreSQL connection string                     |
-| `SKILLNOTE_TOKEN_PEPPER`   | `dev-pepper-change-me`   | Pepper for token hashing (change in production!) |
 | `NODE_ENV`                 | `production`             | Next.js environment                              |
 | `NEXT_PUBLIC_API_BASE_URL` | `http://localhost:8082`  | Default API URL (overridable in Settings UI)     |
 

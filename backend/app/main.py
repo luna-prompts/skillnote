@@ -2,7 +2,6 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.auth import router as auth_router
 from app.core.config import settings
 from app.api.skills import router as skills_router
 from app.api.downloads import router as downloads_router
@@ -44,7 +43,6 @@ async def http_exception_handler(_: Request, exc: HTTPException):
     return JSONResponse(status_code=exc.status_code, content={"error": payload})
 
 
-app.include_router(auth_router)
 app.include_router(skills_router)
 app.include_router(downloads_router)
 app.include_router(publish_router)

@@ -5,7 +5,6 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { type ContentVersion } from '@/lib/mock-data'
 import { fetchContentVersions, setLatestVersionApi, restoreVersionApi } from '@/lib/api/skills'
-import { isConfigured } from '@/lib/api/client'
 import { getSkills } from '@/lib/skills-store'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
@@ -182,28 +181,25 @@ export function SkillVersionsTab({ skillSlug, onRestored }: SkillVersionsTabProp
   const [loading, setLoading] = useState(true)
 
   const loadVersions = () => {
-    if (!isConfigured()) {
-      // In local mode, build a version entry from the skill in localStorage
-      const skill = getSkills().find(s => s.slug === skillSlug)
-      if (skill && skill.current_version > 0) {
-        setVersions([{
-          version: skill.current_version,
-          title: skill.title,
-          description: skill.description,
-          content_md: skill.content_md,
-          tags: skill.tags,
-          collections: skill.collections,
-          is_latest: true,
-          created_at: skill.updated_at,
-        }])
-      }
-      setLoading(false)
-      return
-    }
     setLoading(true)
     fetchContentVersions(skillSlug)
       .then(setVersions)
-      .catch(() => {})
+      .catch(() => {
+        // Fallback: build a version entry from the skill in localStorage
+        const skill = getSkills().find(s => s.slug === skillSlug)
+        if (skill && skill.current_version > 0) {
+          setVersions([{
+            version: skill.current_version,
+            title: skill.title,
+            description: skill.description,
+            content_md: skill.content_md,
+            tags: skill.tags,
+            collections: skill.collections,
+            is_latest: true,
+            created_at: skill.updated_at,
+          }])
+        }
+      })
       .finally(() => setLoading(false))
   }
 

@@ -35,7 +35,7 @@ export async function updateCommand(
 
   const projectDir = process.cwd()
   const manifest = loadManifest(projectDir)
-  const client = new ApiClient(auth.host, auth.token)
+  const client = new ApiClient(auth.host)
 
   let slugs: string[]
   if (options.all) {

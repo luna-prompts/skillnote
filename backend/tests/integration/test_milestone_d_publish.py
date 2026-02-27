@@ -8,12 +8,9 @@ import zipfile
 import pytest
 
 BASE_URL = "http://127.0.0.1:8080"
-ADMIN_TOKEN = "skn_admin_demo_token"
-USER_TOKEN = "skn_dev_demo_token"
 
 
 def _multipart_publish(
-    token: str,
     name: str,
     version: str,
     status: str = "active",
@@ -52,7 +49,6 @@ def _multipart_publish(
         method="POST",
         data=body.getvalue(),
         headers={
-            "Authorization": f"Bearer {token}",
             "Content-Type": f"multipart/form-data; boundary={boundary}",
         },
     )
@@ -65,14 +61,9 @@ def _multipart_publish(
         pytest.skip(f"API not reachable for publish integration test: {e}")
 
 
-def test_publish_requires_admin():
-    status, body = _multipart_publish(USER_TOKEN, "user-should-fail", "0.1.0")
-    assert status == 403
-    assert body["error"]["code"] == "FORBIDDEN"
-
-
-def test_publish_with_admin_success():
-    status, body = _multipart_publish(ADMIN_TOKEN, "admin-published-skill", "0.1.0")
+def test_publish_success():
+    """Publish is open (no auth) — any caller can publish."""
+    status, body = _multipart_publish("admin-published-skill", "0.1.0")
     assert status == 200
     assert body["skill"] == "admin-published-skill"
     assert body["version"] == "0.1.0"
@@ -80,31 +71,31 @@ def test_publish_with_admin_success():
 
 
 def test_publish_rejects_bad_semver_and_status():
-    status, body = _multipart_publish(ADMIN_TOKEN, "bad-semver", "1.0")
+    status, body = _multipart_publish("bad-semver", "1.0")
     assert status == 400
     assert body["error"]["code"] == "VERSION_INVALID"
 
-    status, body = _multipart_publish(ADMIN_TOKEN, "bad-status", "1.0.0", status="broken")
+    status, body = _multipart_publish("bad-status", "1.0.0", status="broken")
     assert status == 400
     assert body["error"]["code"] == "STATUS_INVALID"
 
 
 def test_publish_rejects_missing_skill_md():
-    status, body = _multipart_publish(ADMIN_TOKEN, "missing-skill-md", "1.0.0", with_skill_md=False)
+    status, body = _multipart_publish("missing-skill-md", "1.0.0", with_skill_md=False)
     assert status == 400
     assert body["error"]["code"] == "BUNDLE_INVALID"
 
 
 def test_publish_rejects_duplicate_version():
-    status, _ = _multipart_publish(ADMIN_TOKEN, "dup-skill", "1.2.3")
+    status, _ = _multipart_publish("dup-skill", "1.2.3")
     assert status == 200
 
-    status, body = _multipart_publish(ADMIN_TOKEN, "dup-skill", "1.2.3")
+    status, body = _multipart_publish("dup-skill", "1.2.3")
     assert status == 409
     assert body["error"]["code"] == "VERSION_EXISTS"
 
 
 def test_publish_rejects_too_large_bundle():
-    status, body = _multipart_publish(ADMIN_TOKEN, "too-large", "2.0.0", huge_payload=True)
+    status, body = _multipart_publish("too-large", "2.0.0", huge_payload=True)
     assert status == 413
     assert body["error"]["code"] == "BUNDLE_TOO_LARGE"

@@ -9,12 +9,6 @@ export class ApiError extends Error {
   }
 }
 
-export interface ValidateTokenResult {
-  valid: boolean
-  subject?: { type: string; id: string }
-  expiresAt?: string
-}
-
 export interface SkillListItem {
   name: string
   slug: string
@@ -37,33 +31,20 @@ export interface SkillVersionItem {
 
 export class ApiClient {
   private baseUrl: string
-  private token: string
 
-  constructor(host: string, token: string) {
+  constructor(host: string) {
     this.baseUrl = host.replace(/\/+$/, '')
-    this.token = token
   }
 
   async get<T = unknown>(path: string): Promise<T> {
     return this.request<T>(path, { method: 'GET' })
   }
 
-  async validateToken(): Promise<ValidateTokenResult> {
-    const res = await fetch(`${this.baseUrl}/auth/validate-token`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token: this.token }),
-    })
-    return res.json() as Promise<ValidateTokenResult>
-  }
-
   async downloadBundle(
     skill: string,
     version: string,
   ): Promise<{ buffer: Buffer; checksum: string }> {
-    const res = await fetch(`${this.baseUrl}/v1/skills/${skill}/${version}/download`, {
-      headers: { Authorization: `Bearer ${this.token}` },
-    })
+    const res = await fetch(`${this.baseUrl}/v1/skills/${skill}/${version}/download`)
     if (!res.ok) {
       const body = await res.json().catch(() => ({ error: { code: 'UNKNOWN', message: res.statusText } }))
       throw new ApiError(res.status, body.error?.code ?? 'UNKNOWN', body.error?.message ?? res.statusText)
@@ -91,13 +72,7 @@ export class ApiClient {
   }
 
   private async request<T>(path: string, init: RequestInit): Promise<T> {
-    const res = await fetch(`${this.baseUrl}${path}`, {
-      ...init,
-      headers: {
-        ...init.headers as Record<string, string>,
-        Authorization: `Bearer ${this.token}`,
-      },
-    })
+    const res = await fetch(`${this.baseUrl}${path}`, init)
     if (!res.ok) {
       const body = await res.json().catch(() => ({ error: { code: 'UNKNOWN', message: res.statusText } }))
       throw new ApiError(res.status, body.error?.code ?? 'UNKNOWN', body.error?.message ?? res.statusText)

@@ -58,23 +58,9 @@ export async function doctorCommand(): Promise<void> {
       label: 'Backend reachable',
       run: async () => {
         if (!auth) return { ok: false, detail: 'No config — cannot check' }
-        const client = new ApiClient(auth.host, auth.token)
+        const client = new ApiClient(auth.host)
         const ok = await client.checkHealth()
         return { ok, detail: ok ? auth.host : `Cannot reach ${auth.host}` }
-      },
-    },
-    {
-      label: 'Token valid',
-      run: async () => {
-        if (!auth) return { ok: false, detail: 'No config — cannot check' }
-        const client = new ApiClient(auth.host, auth.token)
-        const result = await client.validateToken()
-        return {
-          ok: result.valid,
-          detail: result.valid
-            ? `${result.subject?.type} (${result.subject?.id})`
-            : 'Token invalid or expired',
-        }
       },
     },
     {
