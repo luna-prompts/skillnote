@@ -13,12 +13,12 @@ export async function listCommand(): Promise<void> {
   const spin = ui.spinner('Fetching skills...')
   spin.start()
 
-  const client = new ApiClient(auth.host, auth.token)
+  const client = new ApiClient(auth.host)
   const skills = await client.listSkills()
   spin.stop()
 
   if (skills.length === 0) {
-    ui.info('No skills available for this token.')
+    ui.info('No skills available.')
     return
   }
 

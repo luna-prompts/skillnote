@@ -32,8 +32,95 @@ const SKILL_SLUG = 'react-component-patterns'
 const SKILL_URL = `/skills/${SKILL_SLUG}`
 const NEW_SKILL_URL = '/skills/new'
 
-// Seed localStorage before each test
+// Seed localStorage before each test — also mock API so sync doesn't overwrite
 async function seedStorage(page: Page) {
+  // Mock /v1/skills list to return seeded data in API format
+  const apiSkills = SEED_SKILLS.map(s => ({
+    name: s.title,
+    slug: s.slug,
+    description: s.description,
+    tags: s.tags,
+    collections: s.collections,
+    currentVersion: s.current_version,
+  }))
+  await page.route('**/v1/skills', (route, request) => {
+    // Only intercept the list endpoint, not /v1/skills/<slug>
+    const url = new URL(request.url())
+    if (request.method() === 'GET' && url.pathname === '/v1/skills') {
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(apiSkills) })
+    }
+    return route.continue()
+  })
+  // Mock individual skill detail endpoints
+  for (const skill of SEED_SKILLS) {
+    await page.route(`**/v1/skills/${skill.slug}`, (route, request) => {
+      if (request.method() === 'GET') {
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            id: skill.slug,
+            name: skill.title,
+            slug: skill.slug,
+            description: skill.description,
+            content_md: skill.content_md,
+            tags: skill.tags,
+            collections: skill.collections,
+            current_version: skill.current_version,
+            created_at: skill.created_at,
+            updated_at: skill.updated_at,
+          }),
+        })
+      }
+      if (request.method() === 'PATCH') {
+        // Accept updates and return updated skill
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            id: skill.slug,
+            name: skill.title,
+            slug: skill.slug,
+            description: skill.description,
+            content_md: skill.content_md,
+            tags: skill.tags,
+            collections: skill.collections,
+            current_version: skill.current_version + 1,
+            created_at: skill.created_at,
+            updated_at: new Date().toISOString(),
+          }),
+        })
+      }
+      return route.continue()
+    })
+    // Mock content-versions endpoint
+    await page.route(`**/v1/skills/${skill.slug}/content-versions`, (route, request) => {
+      if (request.method() === 'GET') {
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify([{
+            version: skill.current_version,
+            title: skill.title,
+            description: skill.description,
+            content_md: skill.content_md,
+            tags: skill.tags,
+            collections: skill.collections,
+            is_latest: true,
+            created_at: skill.created_at,
+          }]),
+        })
+      }
+      return route.continue()
+    })
+    // Mock comments endpoint
+    await page.route(`**/v1/skills/${skill.slug}/comments`, (route, request) => {
+      if (request.method() === 'GET') {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
+      }
+      return route.continue()
+    })
+  }
   // Navigate to a page first so we can access localStorage on the right origin
   await page.goto('/')
   await page.evaluate((skills) => {

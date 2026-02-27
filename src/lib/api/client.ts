@@ -1,18 +1,8 @@
 const DEFAULT_API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8082'
-const DEFAULT_TOKEN = process.env.NEXT_PUBLIC_API_TOKEN || 'skn_admin_demo_token'
 
 export function getApiBaseUrl(): string {
   if (typeof window === 'undefined') return DEFAULT_API_BASE
   return (localStorage.getItem('skillnote:api-url') || DEFAULT_API_BASE).replace(/\/$/, '')
-}
-
-export function getAuthToken(): string {
-  if (typeof window === 'undefined') return DEFAULT_TOKEN
-  return localStorage.getItem('skillnote:token') || DEFAULT_TOKEN
-}
-
-export function isConfigured(): boolean {
-  return Boolean(getAuthToken())
 }
 
 export type ApiError = {
@@ -31,9 +21,7 @@ export class SkillNoteApiError extends Error {
 }
 
 export async function apiRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const token = getAuthToken()
   const headers = new Headers(init.headers || {})
-  if (token) headers.set('Authorization', `Bearer ${token}`)
   if (!headers.has('Content-Type') && init.body) headers.set('Content-Type', 'application/json')
 
   const res = await fetch(`${getApiBaseUrl()}${path}`, { ...init, headers })

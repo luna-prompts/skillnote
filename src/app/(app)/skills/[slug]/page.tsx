@@ -3,7 +3,6 @@
 import { use, useEffect, useState, useCallback } from 'react'
 import { getSkills, updateSkill } from '@/lib/skills-store'
 import { fetchSkill } from '@/lib/api/skills'
-import { isConfigured } from '@/lib/api/client'
 import { Skill } from '@/lib/mock-data'
 import { SkillDetail } from '@/components/skills/skill-detail'
 
@@ -13,26 +12,12 @@ export default function SkillPage({ params }: { params: Promise<{ slug: string }
 
   // Fetch full skill from API on mount + periodic sync every 30s
   useEffect(() => {
-    const sync = () => {
-      if (!isConfigured()) return
-      fetchSkill(slug)
-        .then(fullSkill => {
-          const local = getSkills().find(s => s.slug === slug)
-          // Preserve locally-set current_version if user set an older version as latest
-          if (local && local.current_version < fullSkill.current_version) {
-            fullSkill = { ...fullSkill, current_version: local.current_version }
-          }
-          // Use the higher of API current_version and local latest_version as the counter
-          const latestVersion = Math.max(fullSkill.current_version, local?.latest_version ?? 0)
-          fullSkill = { ...fullSkill, latest_version: latestVersion }
-          setSkill(fullSkill)
-          updateSkill(slug, fullSkill)
-        })
-        .catch(() => {})
-    }
-    sync()
-    const interval = setInterval(sync, 30_000)
-    return () => clearInterval(interval)
+    fetchSkill(slug)
+      .then(fullSkill => {
+        setSkill(fullSkill)
+        updateSkill(slug, fullSkill)
+      })
+      .catch(() => {})
   }, [slug])
 
   // Called by SkillDetail after a successful save — update local state directly

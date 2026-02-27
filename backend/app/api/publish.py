@@ -8,10 +8,9 @@ import tempfile
 from fastapi import APIRouter, Depends, File, Form, UploadFile
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_token
 from app.core.config import settings
 from app.core.errors import api_error
-from app.db.models import AccessToken, Skill, SkillVersion, TokenSkillGrant
+from app.db.models import Skill, SkillVersion
 from app.db.session import get_db
 from app.validators.bundle_validator import validate_zip_and_extract_metadata
 
@@ -27,14 +26,9 @@ def publish_skill(
     release_notes: str | None = Form(default=None),
     status: str = Form(default="active"),
     channel: str = Form(default="stable"),
-    grant_all_tokens: bool = Form(default=True),
     bundle: UploadFile = File(...),
-    current_token: AccessToken = Depends(get_current_token),
     db: Session = Depends(get_db),
 ):
-    if current_token.subject_type != "admin":
-        raise api_error(403, "FORBIDDEN", "Admin token required for publish")
-
     if not bundle.filename or not bundle.filename.endswith(".zip"):
         raise api_error(400, "BUNDLE_INVALID", "Only .zip bundle is supported")
     if status not in ALLOWED_STATUS:
@@ -89,18 +83,6 @@ def publish_skill(
             published_at=datetime.now(timezone.utc),
         )
         db.add(row)
-
-        if grant_all_tokens:
-            tokens = db.query(AccessToken).filter(AccessToken.status == "active").all()
-            for t in tokens:
-                exists = (
-                    db.query(TokenSkillGrant)
-                    .filter(TokenSkillGrant.token_id == t.id, TokenSkillGrant.skill_id == skill.id)
-                    .first()
-                )
-                if not exists:
-                    db.add(TokenSkillGrant(token_id=t.id, skill_id=skill.id))
-
         db.commit()
     except Exception:
         db.rollback()

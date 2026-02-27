@@ -17,7 +17,7 @@ export async function checkCommand(): Promise<void> {
     return
   }
 
-  const client = new ApiClient(auth.host, auth.token)
+  const client = new ApiClient(auth.host)
   const spin = ui.spinner('Checking for updates...')
   spin.start()
 

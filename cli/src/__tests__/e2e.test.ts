@@ -6,7 +6,6 @@ import os from 'node:os'
 
 const CLI = path.resolve(__dirname, '../../dist/index.js')
 const HOST = process.env.SKILLNOTE_HOST || 'http://localhost:8082'
-const TOKEN = process.env.SKILLNOTE_TOKEN || 'skn_dev_demo_token'
 
 function run(args: string, opts?: { cwd?: string; env?: Record<string, string> }): string {
   return execSync(`node ${CLI} ${args}`, {
@@ -14,7 +13,6 @@ function run(args: string, opts?: { cwd?: string; env?: Record<string, string> }
     env: {
       ...process.env,
       SKILLNOTE_HOST: HOST,
-      SKILLNOTE_TOKEN: TOKEN,
       ...opts?.env,
     },
     cwd: opts?.cwd,
@@ -69,6 +67,6 @@ describe('CLI E2E', () => {
   it('runs doctor', () => {
     const out = run('doctor', { cwd: tmpProject })
     expect(out).toContain('Backend reachable')
-    expect(out).toContain('Token valid')
+    // Token valid check has been removed — no longer applicable
   })
 })

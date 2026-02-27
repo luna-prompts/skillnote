@@ -18,7 +18,6 @@ program
   .command('login')
   .description('Authenticate with a SkillNote registry')
   .option('--host <url>', 'Registry URL')
-  .option('--token <token>', 'Access token')
   .action(loginCommand)
 
 program

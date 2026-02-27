@@ -4,7 +4,6 @@ import os from 'node:os'
 
 export interface Config {
   host: string
-  token: string
 }
 
 export function defaultConfigDir(): string {
@@ -17,8 +16,8 @@ export function loadConfig(configDir: string): Config | null {
   try {
     const raw = fs.readFileSync(filePath, 'utf-8')
     const data = JSON.parse(raw)
-    if (typeof data.host === 'string' && typeof data.token === 'string') {
-      return { host: data.host, token: data.token }
+    if (typeof data.host === 'string') {
+      return { host: data.host }
     }
     return null
   } catch {
@@ -34,9 +33,8 @@ export function saveConfig(configDir: string, config: Config): void {
 
 export function resolveAuth(configDir: string): Config | null {
   const envHost = process.env.SKILLNOTE_HOST
-  const envToken = process.env.SKILLNOTE_TOKEN
-  if (envHost && envToken) {
-    return { host: envHost, token: envToken }
+  if (envHost) {
+    return { host: envHost }
   }
   return loadConfig(configDir)
 }
