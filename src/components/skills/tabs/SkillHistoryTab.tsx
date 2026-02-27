@@ -174,7 +174,7 @@ function VersionEntry({
 
 type SkillVersionsTabProps = {
   skillSlug: string
-  onRestored?: () => void
+  onRestored?: (activeVersion: number) => void
 }
 
 export function SkillVersionsTab({ skillSlug, onRestored }: SkillVersionsTabProps) {
@@ -216,7 +216,7 @@ export function SkillVersionsTab({ skillSlug, onRestored }: SkillVersionsTabProp
       await setLatestVersionApi(skillSlug, version)
       toast.success(`Version ${version} set as latest — content updated`)
       loadVersions()
-      onRestored?.()
+      onRestored?.(version)
     } catch {
       toast.error('Failed to set latest version')
     }
@@ -224,10 +224,12 @@ export function SkillVersionsTab({ skillSlug, onRestored }: SkillVersionsTabProp
 
   const handleRestore = async (version: number) => {
     try {
-      await restoreVersionApi(skillSlug, version)
+      const restored = await restoreVersionApi(skillSlug, version)
       toast.success(`Restored to version ${version}`)
       loadVersions()
-      onRestored?.()
+      // Restore creates a new version, so pass the new current_version from API response
+      // But the "active" content is from the restored version, so the displayed version should reflect that
+      onRestored?.(version)
     } catch {
       toast.error('Failed to restore version')
     }

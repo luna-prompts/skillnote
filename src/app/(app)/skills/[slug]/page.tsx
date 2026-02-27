@@ -17,6 +17,12 @@ export default function SkillPage({ params }: { params: Promise<{ slug: string }
       if (!isConfigured()) return
       fetchSkill(slug)
         .then(fullSkill => {
+          // Preserve locally-set current_version if the API returns a higher number
+          // (API tracks highest version, but user may have set an older version as latest)
+          const local = getSkills().find(s => s.slug === slug)
+          if (local && local.current_version < fullSkill.current_version) {
+            fullSkill = { ...fullSkill, current_version: local.current_version }
+          }
           setSkill(fullSkill)
           updateSkill(slug, fullSkill)
         })

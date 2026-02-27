@@ -57,9 +57,19 @@ export async function syncSkillsFromApi(): Promise<Skill[]> {
     const apiSkills = await fetchSkills()
     // Merge: keep local-only skills (not on API) so imports aren't wiped
     const local = getSkills()
+    const localBySlug = new Map(local.map(s => [s.slug, s]))
     const apiSlugs = new Set(apiSkills.map(s => s.slug))
     const localOnly = local.filter(s => !apiSlugs.has(s.slug))
-    const merged = [...localOnly, ...apiSkills]
+    // Preserve locally-set current_version when API returns a higher number
+    // (user may have set an older version as latest via "Set Latest")
+    const resolvedApi = apiSkills.map(s => {
+      const localSkill = localBySlug.get(s.slug)
+      if (localSkill && localSkill.current_version > 0 && localSkill.current_version < s.current_version) {
+        return { ...s, current_version: localSkill.current_version }
+      }
+      return s
+    })
+    const merged = [...localOnly, ...resolvedApi]
     writeStorage(merged)
     setConnectionStatus('online')
     return merged
