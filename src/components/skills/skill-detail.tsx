@@ -193,6 +193,7 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
 
   const [showHelp, setShowHelp] = useState(false)
   const [saveToast, setSaveToast] = useState<'saving' | 'saved' | false>(false)
+  const [savedVersion, setSavedVersion] = useState<number | null>(null)
   const [showMoreMenu, setShowMoreMenu] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
 
@@ -213,6 +214,7 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
     try {
       const updated = await saveSkillEdit(skill.slug, { title: titleValue, description: descriptionValue, content_md: editorContent, tags: tagsValue })
       onSkillUpdated?.(updated)
+      setSavedVersion(updated.current_version)
       setSaveToast('saved')
       setActiveTab('view')
       setTimeout(() => setSaveToast(false), 1500)
@@ -477,6 +479,7 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
                 skillTags={tagsValue}
                 setSkillTags={setTagsValue}
                 openFullscreen={true}
+                currentVersion={skill.current_version}
               />
             )}
           </div>
@@ -505,7 +508,7 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
           ) : (
             <>
               <Check className="h-4 w-4" />
-              Saved
+              Saved as v{savedVersion ?? skill.current_version}
             </>
           )}
         </div>
