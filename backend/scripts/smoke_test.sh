@@ -20,37 +20,27 @@ echo "[5/6] health + data check"
 docker compose exec -T api python -c "import urllib.request;print(urllib.request.urlopen('http://127.0.0.1:8080/health').read().decode())"
 docker compose exec -T postgres psql -U skillnote -d skillnote -c "select count(*) as skills from skills;"
 
-echo "[6/6] milestone B API checks"
+echo "[6/6] API checks (no auth required)"
 docker compose exec -T api python - <<'PY'
 import json
 import urllib.request
 
 base = 'http://127.0.0.1:8080'
 
-def post_json(path, payload):
-    req = urllib.request.Request(
-        f"{base}{path}",
-        data=json.dumps(payload).encode(),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    with urllib.request.urlopen(req) as r:
-        return r.status, json.loads(r.read().decode())
-
-status, body = post_json('/auth/validate-token', {'token': 'skn_dev_demo_token'})
-assert status == 200 and body.get('valid') is True
-
-req = urllib.request.Request(f"{base}/v1/skills", headers={"Authorization": "Bearer skn_dev_demo_token"})
+# List skills — no auth header needed
+req = urllib.request.Request(f"{base}/v1/skills")
 with urllib.request.urlopen(req) as r:
     skills = json.loads(r.read().decode())
-assert len(skills) >= 1
+assert len(skills) >= 1, f"Expected at least 1 skill, got {len(skills)}"
 
-req = urllib.request.Request(f"{base}/v1/skills/secure-migrations/versions", headers={"Authorization": "Bearer skn_dev_demo_token"})
+# Get versions for seeded skill
+req = urllib.request.Request(f"{base}/v1/skills/secure-migrations/versions")
 with urllib.request.urlopen(req) as r:
     versions = json.loads(r.read().decode())
-assert len(versions) >= 1
+assert len(versions) >= 1, f"Expected at least 1 version, got {len(versions)}"
 
-req = urllib.request.Request(f"{base}/v1/skills/secure-migrations/0.1.0/download", headers={"Authorization": "Bearer skn_dev_demo_token"})
+# Download skill bundle
+req = urllib.request.Request(f"{base}/v1/skills/secure-migrations/0.1.0/download")
 with urllib.request.urlopen(req) as r:
     payload = r.read()
     assert r.status == 200
@@ -58,10 +48,10 @@ with urllib.request.urlopen(req) as r:
     assert r.headers.get("X-Checksum-Sha256")
     assert len(payload) > 0
 
-print('milestone B+C checks passed')
+print('API checks passed')
 PY
 
-echo "[7/7] milestone D publish check"
+echo "[7/7] publish check (no auth required)"
 docker compose exec -T api python - <<'PY'
 import io
 import json
@@ -70,7 +60,7 @@ import urllib.request
 
 base='http://127.0.0.1:8080'
 
-def post_multipart(path, fields, file_field, filename, file_bytes, token):
+def post_multipart(path, fields, file_field, filename, file_bytes):
     boundary = '----skillnote-boundary-123'
     body = io.BytesIO()
     for k, v in fields.items():
@@ -90,7 +80,6 @@ def post_multipart(path, fields, file_field, filename, file_bytes, token):
         data=body.getvalue(),
         method='POST',
         headers={
-            'Authorization': f'Bearer {token}',
             'Content-Type': f'multipart/form-data; boundary={boundary}',
         },
     )
@@ -107,17 +96,17 @@ status, body = post_multipart(
     file_field='bundle',
     filename='api-reviewer.zip',
     file_bytes=buff.getvalue(),
-    token='skn_admin_demo_token',
 )
 assert status == 200
 assert body.get('skill') == 'api-reviewer'
 
-req = urllib.request.Request(f"{base}/v1/skills", headers={'Authorization': 'Bearer skn_dev_demo_token'})
+# Verify the published skill appears in the list
+req = urllib.request.Request(f"{base}/v1/skills")
 with urllib.request.urlopen(req) as r:
     skills = json.loads(r.read().decode())
 assert any(s.get('slug') == 'api-reviewer' for s in skills)
 
-print('milestone D publish check passed')
+print('publish check passed')
 PY
 
 echo "smoke test passed"
