@@ -1,16 +1,14 @@
 const DEFAULT_API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8082'
+const DEFAULT_TOKEN = process.env.NEXT_PUBLIC_API_TOKEN || 'skn_admin_demo_token'
 
 export function getApiBaseUrl(): string {
   if (typeof window === 'undefined') return DEFAULT_API_BASE
   return (localStorage.getItem('skillnote:api-url') || DEFAULT_API_BASE).replace(/\/$/, '')
 }
 
-// Note: Token is stored in localStorage for simplicity (Phase 1).
-// Known risk: accessible to same-origin JS. Acceptable for self-hosted single-user deployment.
-// TODO Phase 2: Move to httpOnly cookie via API route proxy.
 export function getAuthToken(): string {
-  if (typeof window === 'undefined') return ''
-  return localStorage.getItem('skillnote:token') || ''
+  if (typeof window === 'undefined') return DEFAULT_TOKEN
+  return localStorage.getItem('skillnote:token') || DEFAULT_TOKEN
 }
 
 export function isConfigured(): boolean {
