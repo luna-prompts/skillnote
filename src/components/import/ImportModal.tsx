@@ -4,7 +4,7 @@ import { useState, useCallback, useRef, useMemo } from 'react'
 import { Upload, FileText, X, Check, Plus, Tag, FolderOpen } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Skill } from '@/lib/mock-data'
-import { addSkill, getSkills } from '@/lib/skills-store'
+import { createSkill, getSkills } from '@/lib/skills-store'
 import { parseMarkdown } from '@/lib/markdown-utils'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -156,10 +156,16 @@ export function ImportModal({ onClose, onImported }: { onClose: () => void; onIm
     processFiles(e.dataTransfer.files)
   }, [processFiles])
 
-  const handleImport = useCallback(() => {
+  const handleImport = useCallback(async () => {
     setImporting(true)
     for (const { skill } of files) {
-      addSkill(skill as Skill)
+      await createSkill({
+        title: skill.title,
+        description: skill.description,
+        content_md: skill.content_md,
+        tags: skill.tags,
+        collections: skill.collections,
+      })
     }
     toast.success(`Imported ${files.length} skill${files.length !== 1 ? 's' : ''}`)
     // Delay close so the skills-changed event propagates before React batches the unmount

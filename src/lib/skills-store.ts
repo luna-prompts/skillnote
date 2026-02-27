@@ -54,10 +54,15 @@ export async function syncSkillsFromApi(): Promise<Skill[]> {
     return getSkills()
   }
   try {
-    const skills = await fetchSkills()
-    writeStorage(skills)
+    const apiSkills = await fetchSkills()
+    // Merge: keep local-only skills (not on API) so imports aren't wiped
+    const local = getSkills()
+    const apiSlugs = new Set(apiSkills.map(s => s.slug))
+    const localOnly = local.filter(s => !apiSlugs.has(s.slug))
+    const merged = [...localOnly, ...apiSkills]
+    writeStorage(merged)
     setConnectionStatus('online')
-    return skills
+    return merged
   } catch (err) {
     if (err instanceof SkillNoteApiError && (err.status === 401 || err.status === 403)) {
       setConnectionStatus('unconfigured')
