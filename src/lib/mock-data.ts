@@ -63,6 +63,8 @@ export type Skill = {
   tags: string[]
   collections: string[]
   current_version: number
+  /** Total number of versions created (always increments, used for next version counter) */
+  latest_version?: number
   created_by?: string
   created_at: string
   updated_at: string

@@ -31,9 +31,11 @@ export default function VersionsPage({ params }: { params: Promise<{ slug: strin
     // Re-fetch from API if configured
     if (isConfigured()) {
       fetchSkill(slug).then(fetched => {
-        // Override current_version with the active version, not the highest
-        setSkill({ ...fetched, current_version: activeVersion })
-        updateSkill(slug, { current_version: activeVersion })
+        // Keep latest_version as the highest version (for counter), set current_version to active
+        const local = getSkills().find(s => s.slug === slug)
+        const latestVersion = Math.max(fetched.current_version, local?.latest_version ?? 0)
+        setSkill({ ...fetched, current_version: activeVersion, latest_version: latestVersion })
+        updateSkill(slug, { current_version: activeVersion, latest_version: latestVersion })
       }).catch(() => {})
     }
     syncSkillsFromApi().catch(() => {})

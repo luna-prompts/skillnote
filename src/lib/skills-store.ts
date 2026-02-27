@@ -60,14 +60,18 @@ export async function syncSkillsFromApi(): Promise<Skill[]> {
     const localBySlug = new Map(local.map(s => [s.slug, s]))
     const apiSlugs = new Set(apiSkills.map(s => s.slug))
     const localOnly = local.filter(s => !apiSlugs.has(s.slug))
-    // Preserve locally-set current_version when API returns a higher number
-    // (user may have set an older version as latest via "Set Latest")
+    // Preserve locally-set current_version and latest_version
     const resolvedApi = apiSkills.map(s => {
       const localSkill = localBySlug.get(s.slug)
-      if (localSkill && localSkill.current_version > 0 && localSkill.current_version < s.current_version) {
-        return { ...s, current_version: localSkill.current_version }
+      if (!localSkill) return s
+      const resolved = { ...s }
+      // Preserve current_version if user set an older version as latest
+      if (localSkill.current_version > 0 && localSkill.current_version < s.current_version) {
+        resolved.current_version = localSkill.current_version
       }
-      return s
+      // Preserve latest_version (total version counter)
+      resolved.latest_version = Math.max(s.current_version, localSkill.latest_version ?? 0)
+      return resolved
     })
     const merged = [...localOnly, ...resolvedApi]
     writeStorage(merged)
@@ -127,7 +131,7 @@ export async function createSkill(data: {
     return skill
   } else {
     const now = new Date().toISOString()
-    const skill: Skill = { slug, title: data.title, description: data.description, content_md: data.content_md, tags: data.tags, collections: data.collections, current_version: 1, created_by: getDisplayName(), created_at: now, updated_at: now }
+    const skill: Skill = { slug, title: data.title, description: data.description, content_md: data.content_md, tags: data.tags, collections: data.collections, current_version: 1, latest_version: 1, created_by: getDisplayName(), created_at: now, updated_at: now }
     addSkill(skill)
     notifyChanged()
     return skill
@@ -146,10 +150,11 @@ export async function saveSkillEdit(slug: string, patch: { title?: string; descr
   if (isConfigured()) {
     await updateSkillApi(slug, { name: patch.title, description: patch.description, content_md: patch.content_md, tags: patch.tags, collections: patch.collections })
   }
-  // Increment version on each save
+  // Increment version counter and set as active
   const existing = getSkills().find(s => s.slug === slug)
-  const nextVersion = (existing?.current_version ?? 0) + 1
-  updateSkill(slug, { ...patch, current_version: nextVersion })
+  const totalVersions = existing?.latest_version ?? existing?.current_version ?? 0
+  const nextVersion = totalVersions + 1
+  updateSkill(slug, { ...patch, current_version: nextVersion, latest_version: nextVersion })
   notifyChanged()
   // Return the updated skill so callers can use it directly
   const updated = getSkills().find(s => s.slug === slug)
