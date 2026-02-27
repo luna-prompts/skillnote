@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { RotateCcw, Save, Loader2, Info, X, AlertCircle } from 'lucide-react'
+import { RotateCcw, Save, Loader2, X, AlertCircle } from 'lucide-react'
 import { NAME_MAX, DESC_MAX, slugFromName, validateSkillName, validateDescription, type ValidationError } from '@/lib/skill-validation'
 import { Button } from '@/components/ui/button'
 import { WysiwygEditor, type EditorMode } from '@/components/skills/WysiwygEditor'
@@ -210,15 +210,6 @@ export function SkillEditTab({
             {skillDescription.length}/{DESC_MAX}
           </span>
         </div>
-        {!skillDescription && !touched.description && (
-          <div className="mt-2 flex items-start gap-1.5 p-2.5 bg-blue-500/5 border border-blue-500/10 rounded-lg">
-            <Info className="h-3.5 w-3.5 text-blue-500 mt-0.5 shrink-0" />
-            <p className="text-[11px] text-blue-600 dark:text-blue-400 leading-relaxed">
-              This is the most important field — Claude uses it to decide <strong>when</strong> to trigger the skill.
-              Be pushy — Claude tends to under-trigger. Example: <em>&quot;Extract text and tables from PDF files. Use whenever the user mentions PDFs, forms, or document extraction.&quot;</em>
-            </p>
-          </div>
-        )}
       </div>
 
       {/* Tags — inline editor */}
