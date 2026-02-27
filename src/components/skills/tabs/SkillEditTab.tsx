@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { RotateCcw, Save, Loader2, Info, X, AlertCircle } from 'lucide-react'
 import { NAME_MAX, DESC_MAX, slugFromName, validateSkillName, validateDescription, type ValidationError } from '@/lib/skill-validation'
 import { Button } from '@/components/ui/button'
-import { WysiwygEditor } from '@/components/skills/WysiwygEditor'
+import { WysiwygEditor, type EditorMode } from '@/components/skills/WysiwygEditor'
 import { FieldError } from '@/components/skills/FieldError'
 
 type SkillEditTabProps = {
@@ -35,7 +35,9 @@ export function SkillEditTab({
   const [fullscreen, setFullscreen] = useState(false)
   const [touched, setTouched] = useState<Record<string, boolean>>({})
   const [tagInput, setTagInput] = useState('')
+  const [editorMode, setEditorMode] = useState<EditorMode>('wysiwyg')
   const nameRef = useRef<HTMLInputElement>(null)
+  const descRef = useRef<HTMLTextAreaElement>(null)
 
   // Auto-open fullscreen when requested on mount
   useEffect(() => {
@@ -109,9 +111,25 @@ export function SkillEditTab({
         <Button
           size="sm"
           className="h-8 min-h-[44px] sm:min-h-0 gap-1.5 text-[13px] bg-foreground text-background hover:bg-foreground/90"
-          disabled={mode === 'create' ? (!isValid || saving) : saving}
+          disabled={saving}
           onClick={() => {
-            if (mode === 'create') setTouched({ name: true, description: true })
+            setTouched({ name: true, description: true })
+            const nErrs = validateSkillName(skillTitle)
+            const dErrs = validateDescription(skillDescription)
+            if (nErrs.length > 0) {
+              if (nameRef.current) {
+                nameRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                nameRef.current.focus()
+              }
+              return
+            }
+            if (dErrs.length > 0) {
+              if (descRef.current) {
+                descRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                descRef.current.focus()
+              }
+              return
+            }
             onSave()
           }}
         >
@@ -129,7 +147,6 @@ export function SkillEditTab({
       <div className="mb-1">
         <div className="flex items-center gap-2 mb-2">
           <label className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/70">Name</label>
-          <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">Required</span>
         </div>
         <input
           ref={nameRef}
@@ -162,9 +179,9 @@ export function SkillEditTab({
       <div className="mb-6">
         <div className="flex items-center gap-2 mb-2">
           <label className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/70">Description</label>
-          <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">Required</span>
         </div>
         <textarea
+          ref={descRef}
           value={skillDescription}
           onChange={e => setSkillDescription(e.target.value)}
           onBlur={() => setTouched(prev => ({ ...prev, description: true }))}
@@ -231,15 +248,27 @@ export function SkillEditTab({
 
         {/* Main content — scrollable */}
         <div className="flex-1 overflow-y-auto flex flex-col min-h-0">
-          {metadataSection}
+          {/* Hide metadata in raw mode — frontmatter is inline in the raw textarea */}
+          {editorMode !== 'raw' && metadataSection}
 
-          {/* Editor */}
-          <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-            <WysiwygEditor
-              value={editorContent}
-              onChange={setEditorContent}
-            />
-          </div>
+          {/* Editor — toolbar uses sticky inside the scroll container */}
+          <WysiwygEditor
+            value={editorContent}
+            onChange={setEditorContent}
+            onModeChange={setEditorMode}
+            className="min-h-[80vh]"
+            skillMeta={{ name: skillTitle, description: skillDescription, tags: skillTags }}
+            onMetaChange={(meta) => {
+              setSkillTitle(meta.name)
+              setSkillDescription(meta.description)
+              if (meta.tags && setSkillTags) setSkillTags(meta.tags)
+            }}
+            renderToolbar={(toolbar) => (
+              <div className="sticky top-0 z-10 border-b border-border/40">
+                {toolbar}
+              </div>
+            )}
+          />
         </div>
       </div>
     )

@@ -8,7 +8,7 @@ import Typography from '@tiptap/extension-typography'
 import { Table, TableRow, TableHeader, TableCell } from '@tiptap/extension-table'
 import { Markdown } from 'tiptap-markdown'
 import { Extension } from '@tiptap/core'
-import { transformFrontmatterToTable, stripFrontmatter } from '@/lib/frontmatter'
+import { parseFrontmatter, stripFrontmatter } from '@/lib/frontmatter'
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { cn } from '@/lib/utils'
 import {
@@ -42,6 +42,27 @@ type EditorMode = 'wysiwyg' | 'raw' | 'split'
 interface Props {
   value: string
   onChange: (markdown: string) => void
+  /** Render toolbar via render prop so parent can position it (e.g. sticky) */
+  renderToolbar?: (toolbar: React.ReactNode) => React.ReactNode
+  /** Called when editor mode changes so parent can react (e.g. hide metadata in raw mode) */
+  onModeChange?: (mode: EditorMode) => void
+  /** Skill metadata — used to compose full SKILL.md frontmatter in raw mode */
+  skillMeta?: { name: string; description: string; tags?: string[] }
+  /** Called when frontmatter fields are edited in raw mode */
+  onMetaChange?: (meta: { name: string; description: string; tags?: string[] }) => void
+  /** Extra className for the root wrapper */
+  className?: string
+}
+
+/** Compose full SKILL.md content with frontmatter from metadata + body */
+function composeSkillMd(meta: { name: string; description: string; tags?: string[] }, body: string): string {
+  const lines = ['---', `name: ${meta.name}`, `description: ${meta.description}`]
+  if (meta.tags && meta.tags.length > 0) {
+    lines.push(`tags: [${meta.tags.join(', ')}]`)
+  }
+  lines.push('---', '')
+  const bodyTrimmed = body.replace(/^\n+/, '')
+  return lines.join('\n') + (bodyTrimmed ? '\n' + bodyTrimmed : '\n')
 }
 
 /* ── Shared inline style constants (avoids re-creation on every render) ── */
@@ -147,7 +168,9 @@ function FormattingToolbar({ editor }: { editor: Editor }) {
 
 /* ── Main Editor ── */
 
-export function WysiwygEditor({ value, onChange }: Props) {
+export type { EditorMode }
+
+export function WysiwygEditor({ value, onChange, renderToolbar, onModeChange, skillMeta, onMetaChange, className }: Props) {
   const [mode, setMode] = useState<EditorMode>('wysiwyg')
   const [rawValue, setRawValue] = useState(value)
   const [transitioning, setTransitioning] = useState(false)
@@ -185,11 +208,14 @@ export function WysiwygEditor({ value, onChange }: Props) {
     onBlur: () => {},
   })
 
-  // Auto-focus editor on mount, cursor at end
+  // Auto-focus editor on mount, cursor at start (so editor opens at top)
   useEffect(() => {
     if (editor) {
       requestAnimationFrame(() => {
-        editor.commands.focus('end')
+        editor.commands.focus('start')
+        // Ensure the scroll container starts at top
+        const scrollContainer = document.querySelector('.fixed.inset-0.z-50 > div:nth-child(2)')
+        if (scrollContainer) scrollContainer.scrollTop = 0
       })
     }
   }, [editor])
@@ -197,18 +223,39 @@ export function WysiwygEditor({ value, onChange }: Props) {
   const handleModeSwitch = useCallback((newMode: EditorMode) => {
     if (newMode === mode) return
     setTransitioning(true)
-    // When leaving raw mode, push the raw text back into the Tiptap editor
-    // Strip frontmatter so --- isn't rendered as HR in WYSIWYG
-    if (mode === 'raw' && newMode !== 'raw' && editor) {
-      settingContentRef.current = true
-      editor.commands.setContent(stripFrontmatter(rawValue))
-      settingContentRef.current = false
+
+    // Entering raw mode — compose full SKILL.md with frontmatter
+    if (newMode === 'raw' && skillMeta) {
+      const fullContent = composeSkillMd(skillMeta, rawValue)
+      setRawValue(fullContent)
     }
+
+    // Leaving raw mode — parse frontmatter back into metadata fields, push body to Tiptap
+    if (mode === 'raw' && newMode !== 'raw') {
+      const { data, body } = parseFrontmatter(rawValue)
+      if (onMetaChange && (data.name || data.description)) {
+        onMetaChange({
+          name: typeof data.name === 'string' ? data.name : skillMeta?.name ?? '',
+          description: typeof data.description === 'string' ? data.description : skillMeta?.description ?? '',
+          tags: Array.isArray(data.tags) ? data.tags.map(String) : skillMeta?.tags,
+        })
+      }
+      // Update the body content (without frontmatter)
+      setRawValue(body)
+      onChange(body)
+      if (editor) {
+        settingContentRef.current = true
+        editor.commands.setContent(body)
+        settingContentRef.current = false
+      }
+    }
+
     setMode(newMode)
+    onModeChange?.(newMode)
     requestAnimationFrame(() => {
       setTimeout(() => setTransitioning(false), 150)
     })
-  }, [mode, rawValue, editor, onChange])
+  }, [mode, rawValue, editor, onChange, skillMeta, onMetaChange, onModeChange])
 
   // Handle edits from the raw textarea (used in both 'raw' mode and split mode right pane)
   const handleRawChange = useCallback((newVal: string) => {
@@ -223,70 +270,74 @@ export function WysiwygEditor({ value, onChange }: Props) {
     }
   }, [editor, onChange])
 
-  return (
-    <div className="flex-1 flex flex-col min-h-0">
-      {/* Toolbar */}
-      <div className="shrink-0">
-        {/* Mode toggle — always visible as its own row on mobile, inline on desktop */}
-        <div className="flex items-center gap-1 px-3 py-1.5 sm:hidden border-b border-border/30">
-          <div className="flex items-center gap-0.5 bg-muted/50 rounded-lg p-0.5">
-            <ModeBtn
-              active={mode === 'wysiwyg'}
-              onClick={() => handleModeSwitch('wysiwyg')}
-              title="Rendered"
-            >
-              <Eye className="h-3.5 w-3.5" />
-              <span className="text-[11px] ml-1">Rendered</span>
-            </ModeBtn>
-            <ModeBtn
-              active={mode === 'raw'}
-              onClick={() => handleModeSwitch('raw')}
-              title="Raw"
-            >
-              <FileEdit className="h-3.5 w-3.5" />
-              <span className="text-[11px] ml-1">Raw</span>
-            </ModeBtn>
-          </div>
-        </div>
-        {/* Formatting toolbar — scrollable row with fade hint */}
-        <div className="relative">
-        <div className="flex items-center gap-0.5 px-3 h-10 sm:h-9 overflow-x-auto scrollbar-hide border-b border-border/30 sm:border-b-0">
-          {editor && mode !== 'raw' && <FormattingToolbar editor={editor} />}
-
-          <div className="flex-1 min-w-4" />
-
-          {/* Mode toggle on desktop — hidden on mobile (shown above) */}
-          <div className="hidden sm:flex items-center gap-0.5 bg-muted/50 rounded-lg p-0.5 shrink-0">
-            <ModeBtn
-              active={mode === 'wysiwyg'}
-              onClick={() => handleModeSwitch('wysiwyg')}
-              title="Rendered — edit formatted text directly (WYSIWYG)"
-            >
-              <Eye className="h-3.5 w-3.5" />
-              <span className="text-[11px] ml-1">Rendered</span>
-            </ModeBtn>
-            <ModeBtn
-              active={mode === 'raw'}
-              onClick={() => handleModeSwitch('raw')}
-              title="Raw — edit plain Markdown"
-            >
-              <FileEdit className="h-3.5 w-3.5" />
-              <span className="text-[11px] ml-1">Raw</span>
-            </ModeBtn>
-            <ModeBtn
-              active={mode === 'split'}
-              onClick={() => handleModeSwitch('split')}
-              title="Split — WYSIWYG editor (left) + raw Markdown textarea (right), both live-synced"
-            >
-              <Columns2 className="h-3.5 w-3.5" />
-              <span className="text-[11px] ml-1">Split</span>
-            </ModeBtn>
-          </div>
-        </div>
-        {/* Right fade hint for scrollable toolbar on mobile */}
-        <div className="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-background to-transparent pointer-events-none sm:hidden" />
+  const toolbarNode = (
+    <div className="shrink-0 bg-background">
+      {/* Mode toggle — always visible as its own row on mobile, inline on desktop */}
+      <div className="flex items-center gap-1 px-6 py-1.5 sm:hidden border-b border-border/30">
+        <div className="flex items-center gap-0.5 bg-muted/50 rounded-lg p-0.5">
+          <ModeBtn
+            active={mode === 'wysiwyg'}
+            onClick={() => handleModeSwitch('wysiwyg')}
+            title="Rendered"
+          >
+            <Eye className="h-3.5 w-3.5" />
+            <span className="text-[11px] ml-1">Rendered</span>
+          </ModeBtn>
+          <ModeBtn
+            active={mode === 'raw'}
+            onClick={() => handleModeSwitch('raw')}
+            title="Raw"
+          >
+            <FileEdit className="h-3.5 w-3.5" />
+            <span className="text-[11px] ml-1">Raw</span>
+          </ModeBtn>
         </div>
       </div>
+      {/* Formatting toolbar — scrollable row with fade hint */}
+      <div className="relative">
+      <div className="flex items-center gap-0.5 px-6 sm:px-10 h-10 sm:h-9 overflow-x-auto scrollbar-hide border-b border-border/30 sm:border-b-0">
+        {editor && mode !== 'raw' && <FormattingToolbar editor={editor} />}
+
+        <div className="flex-1 min-w-4" />
+
+        {/* Mode toggle on desktop — hidden on mobile (shown above) */}
+        <div className="hidden sm:flex items-center gap-0.5 bg-muted/50 rounded-lg p-0.5 shrink-0">
+          <ModeBtn
+            active={mode === 'wysiwyg'}
+            onClick={() => handleModeSwitch('wysiwyg')}
+            title="Rendered — edit formatted text directly (WYSIWYG)"
+          >
+            <Eye className="h-3.5 w-3.5" />
+            <span className="text-[11px] ml-1">Rendered</span>
+          </ModeBtn>
+          <ModeBtn
+            active={mode === 'raw'}
+            onClick={() => handleModeSwitch('raw')}
+            title="Raw — edit plain Markdown"
+          >
+            <FileEdit className="h-3.5 w-3.5" />
+            <span className="text-[11px] ml-1">Raw</span>
+          </ModeBtn>
+          <ModeBtn
+            active={mode === 'split'}
+            onClick={() => handleModeSwitch('split')}
+            title="Split — WYSIWYG editor (left) + raw Markdown textarea (right), both live-synced"
+          >
+            <Columns2 className="h-3.5 w-3.5" />
+            <span className="text-[11px] ml-1">Split</span>
+          </ModeBtn>
+        </div>
+      </div>
+      {/* Right fade hint for scrollable toolbar on mobile */}
+      <div className="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-background to-transparent pointer-events-none sm:hidden" />
+      </div>
+    </div>
+  )
+
+  return (
+    <div className={cn('flex-1 flex flex-col min-h-0', className)}>
+      {/* Toolbar — rendered via parent wrapper if provided, otherwise inline */}
+      {renderToolbar ? renderToolbar(toolbarNode) : toolbarNode}
 
       {/* Content area */}
       <div className={cn('flex-1 min-h-0 flex flex-col sm:flex-row transition-opacity duration-150', transitioning && 'opacity-0')}>
@@ -342,23 +393,22 @@ export function WysiwygEditor({ value, onChange }: Props) {
           </div>
         )}
 
-        {/* ── Raw mode (full width): plain Markdown textarea ── */}
+        {/* ── Raw mode (full width): plain Markdown textarea showing full SKILL.md ── */}
         {mode === 'raw' && (
           <div className="flex-1 overflow-y-auto relative flex flex-col">
             <div className="px-4 sm:px-8 pt-4 pb-1">
               <span className="text-[11px] text-muted-foreground/50">
-                Editing raw Markdown · Switch to <strong>Rendered</strong> for WYSIWYG or <strong>Split</strong> for side-by-side
+                Editing raw SKILL.md · Frontmatter (name, description) included · Switch to <strong>Rendered</strong> for WYSIWYG
               </span>
             </div>
             <textarea
               value={rawValue}
               onChange={(e) => {
                 setRawValue(e.target.value)
-                onChange(e.target.value)
               }}
               className="w-full flex-1 min-h-[400px] px-4 sm:px-8 py-4 font-mono text-[13px] bg-transparent resize-none focus:outline-none text-foreground/70"
               spellCheck={false}
-              placeholder="Write markdown here..."
+              placeholder={"---\nname: my-skill\ndescription: What this skill does...\n---\n\n# My Skill\n\nContent here..."}
               style={textareaStyle}
             />
           </div>
