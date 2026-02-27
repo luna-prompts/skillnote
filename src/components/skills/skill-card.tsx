@@ -1,43 +1,84 @@
 import Link from 'next/link'
 import { Skill } from '@/lib/mock-data'
 import { formatRelative } from '@/lib/format'
+import { MessageSquare, Paperclip } from 'lucide-react'
+import { cn } from '@/lib/utils'
 
-const TAG_COLORS = ['bg-violet-100 dark:bg-violet-950/40 text-violet-700 dark:text-violet-300', 'bg-blue-100 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300', 'bg-teal-100 dark:bg-teal-950/40 text-teal-700 dark:text-teal-300', 'bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300', 'bg-rose-100 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300']
+const CARD_ACCENTS = [
+  { bg: 'bg-violet-500/10 dark:bg-violet-500/15', text: 'text-violet-600 dark:text-violet-400', border: 'border-violet-500/15', dot: 'bg-violet-400' },
+  { bg: 'bg-sky-500/10 dark:bg-sky-500/15', text: 'text-sky-600 dark:text-sky-400', border: 'border-sky-500/15', dot: 'bg-sky-400' },
+  { bg: 'bg-teal-500/10 dark:bg-teal-500/15', text: 'text-teal-600 dark:text-teal-400', border: 'border-teal-500/15', dot: 'bg-teal-400' },
+  { bg: 'bg-amber-500/10 dark:bg-amber-500/15', text: 'text-amber-600 dark:text-amber-400', border: 'border-amber-500/15', dot: 'bg-amber-400' },
+  { bg: 'bg-rose-500/10 dark:bg-rose-500/15', text: 'text-rose-600 dark:text-rose-400', border: 'border-rose-500/15', dot: 'bg-rose-400' },
+]
 
 export function SkillCard({ skill }: { skill: Skill }) {
   const initials = skill.title.split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase()
-  const colorIdx = skill.title.charCodeAt(0) % TAG_COLORS.length
+  const colorIdx = skill.title.charCodeAt(0) % CARD_ACCENTS.length
+  const accent = CARD_ACCENTS[colorIdx]
+  const commentCount = skill.comments?.length ?? 0
+  const attachCount = skill.attachments?.length ?? 0
 
   return (
     <Link
       href={`/skills/${skill.slug}`}
-      className="group block bg-card rounded-xl border border-border/60 p-5 hover:border-accent/30 hover:shadow-[0_4px_24px_rgba(0,0,0,0.1)] dark:hover:shadow-[0_4px_24px_rgba(0,0,0,0.4)] hover:-translate-y-0.5 hover:scale-[1.01] active:scale-[0.99] transition-all duration-200"
+      className="group block bg-card rounded-xl border border-border/40 hover:border-accent/25 hover:shadow-[0_8px_30px_rgba(0,0,0,0.06)] dark:hover:shadow-[0_8px_30px_rgba(0,0,0,0.35)] hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.995] transition-all duration-250 relative overflow-hidden"
     >
-      <div className="flex items-start gap-3 mb-3">
-        <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 text-[12px] font-bold ${TAG_COLORS[colorIdx]}`}>
-          {initials}
+      {/* Subtle top gradient accent */}
+      <div className={cn('absolute top-0 left-0 right-0 h-[2px] opacity-0 group-hover:opacity-100 transition-opacity duration-300', accent.dot)} />
+
+      <div className="p-5">
+        <div className="flex items-start gap-3 mb-3">
+          <div className={cn(
+            'w-9 h-9 rounded-lg flex items-center justify-center shrink-0 text-[11px] font-bold tracking-wide border transition-all duration-200',
+            accent.bg, accent.text, accent.border,
+            'group-hover:scale-105'
+          )}>
+            {initials}
+          </div>
+          <div className="min-w-0 flex-1 pt-0.5">
+            <h3 className="text-[13px] font-semibold text-foreground group-hover:text-accent transition-colors duration-200 leading-tight truncate">
+              {skill.title}
+            </h3>
+            {(commentCount > 0 || attachCount > 0) && (
+              <div className="flex items-center gap-2 mt-1">
+                {commentCount > 0 && (
+                  <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground/30">
+                    <MessageSquare className="h-2.5 w-2.5" />
+                    {commentCount}
+                  </span>
+                )}
+                {attachCount > 0 && (
+                  <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground/30">
+                    <Paperclip className="h-2.5 w-2.5" />
+                    {attachCount}
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
         </div>
-        <h3 className="text-[13px] font-semibold text-foreground group-hover:text-accent transition-colors leading-tight pt-1">
-          {skill.title}
-        </h3>
-      </div>
-      <p className="text-[12px] text-muted-foreground/70 line-clamp-2 mb-4 leading-relaxed">
-        {skill.description}
-      </p>
-      <div className="flex items-center justify-between pt-3 border-t border-border/40">
-        <div className="flex gap-1 flex-wrap items-center">
-          {skill.current_version > 0 && (
-            <span className="text-[10px] font-mono font-medium text-accent/70 bg-accent/10 px-1.5 py-0.5 rounded-md">
-              v{skill.current_version}
-            </span>
-          )}
-          {skill.tags.slice(0, 2).map(tag => (
-            <span key={tag} className="text-[11px] font-mono text-zinc-600 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded-md">
-              {tag}
-            </span>
-          ))}
+        <p className="text-[12px] text-muted-foreground/50 line-clamp-2 mb-4 leading-relaxed group-hover:text-muted-foreground/65 transition-colors duration-200">
+          {skill.description}
+        </p>
+        <div className="flex items-center justify-between pt-3 border-t border-border/30">
+          <div className="flex gap-1.5 flex-wrap items-center">
+            {skill.current_version > 0 && (
+              <span className="text-[10px] font-mono font-medium text-accent/70 bg-accent/10 px-1.5 py-0.5 rounded-md">
+                v{skill.current_version}
+              </span>
+            )}
+            {skill.tags.slice(0, 2).map(tag => (
+              <span
+                key={tag}
+                className="text-[10px] font-mono font-medium text-muted-foreground/40 bg-foreground/[0.03] border border-foreground/[0.04] px-1.5 py-0.5 rounded-md"
+              >
+                {tag}
+              </span>
+            ))}
+          </div>
+          <span className="text-[10px] text-muted-foreground/30 tabular-nums font-mono">{formatRelative(skill.updated_at)}</span>
         </div>
-        <span className="text-[11px] text-muted-foreground/50 tabular-nums">{formatRelative(skill.updated_at)}</span>
       </div>
     </Link>
   )
