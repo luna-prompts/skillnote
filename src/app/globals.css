@@ -231,14 +231,14 @@ body.skill-editing .content-wrapper {
   outline: none !important;
   caret-color: var(--accent);
   min-height: 100%;
-  padding: 1.25rem 1rem;
+  padding: 1.25rem 1.5rem;
   font-size: 15px;
   line-height: 1.75;
   color: var(--foreground);
 }
 @media (min-width: 640px) {
   .ProseMirror {
-    padding: 2rem 3rem;
+    padding: 2rem 2.5rem;
   }
 }
 .ProseMirror:focus {
