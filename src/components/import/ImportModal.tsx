@@ -142,9 +142,12 @@ export function ImportModal({ onClose, onImported }: { onClose: () => void; onIm
       return
     }
 
-    setFiles(prev => [...prev, ...results])
-    // Auto-expand the first file for editing if it's the first upload
-    if (results.length === 1) setEditingIdx(prev => prev ?? 0)
+    setFiles(prev => {
+      const updated = [...prev, ...results]
+      // Auto-expand the first new file for editing
+      if (results.length === 1) setEditingIdx(prev.length)
+      return updated
+    })
   }, [])
 
   const handleDrop = useCallback((e: React.DragEvent) => {
@@ -159,8 +162,11 @@ export function ImportModal({ onClose, onImported }: { onClose: () => void; onIm
       addSkill(skill as Skill)
     }
     toast.success(`Imported ${files.length} skill${files.length !== 1 ? 's' : ''}`)
-    onImported?.()
-    onClose()
+    // Delay close so the skills-changed event propagates before React batches the unmount
+    setTimeout(() => {
+      onImported?.()
+      onClose()
+    }, 50)
   }, [files, onClose, onImported])
 
   const removeFile = (idx: number) => {
