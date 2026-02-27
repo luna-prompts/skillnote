@@ -14,6 +14,7 @@ export function generateMarkdown(skill: Skill): string {
 export function parseMarkdown(raw: string, filename: string): Omit<Skill, 'comments' | 'attachments' | 'revisions'> {
   const now = new Date().toISOString()
   let title = filename.replace(/\.md$/i, '')
+  let slugHint = ''
   let description = ''
   let tags: string[] = []
   let content = raw
@@ -24,11 +25,13 @@ export function parseMarkdown(raw: string, filename: string): Omit<Skill, 'comme
     const fm = fmMatch[1]
     content = raw.slice(fmMatch[0].length)
 
-    // Support both "name" (SKILL.md spec) and "title" (legacy) frontmatter
+    // "name" is the slug identifier in SKILL.md spec
     const nameMatch = fm.match(/^name:\s*(.+)$/m)
-    if (nameMatch) title = nameMatch[1].trim()
+    if (nameMatch) slugHint = nameMatch[1].trim()
+
+    // "title" is a legacy frontmatter field — use as display title
     const titleMatch = fm.match(/^title:\s*(.+)$/m)
-    if (titleMatch && !nameMatch) title = titleMatch[1].trim()
+    if (titleMatch) title = titleMatch[1].trim()
 
     // Extract description from frontmatter
     const descMatch = fm.match(/^description:\s*(.+)$/m)
@@ -40,10 +43,13 @@ export function parseMarkdown(raw: string, filename: string): Omit<Skill, 'comme
     }
   }
 
-  // Fallback: extract title from first H1
-  if (!title || title === filename.replace(/\.md$/i, '')) {
-    const h1Match = content.match(/^#\s+(.+)$/m)
-    if (h1Match) title = h1Match[1].trim()
+  // Always try to extract display title from first H1 (preferred over slug-like "name")
+  const h1Match = content.match(/^#\s+(.+)$/m)
+  if (h1Match) title = h1Match[1].trim()
+
+  // If no H1 and no title frontmatter, humanize the name/filename
+  if (title === filename.replace(/\.md$/i, '') && slugHint) {
+    title = slugHint.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
   }
 
   // Fallback description from content if not in frontmatter
@@ -51,7 +57,8 @@ export function parseMarkdown(raw: string, filename: string): Omit<Skill, 'comme
     description = content.slice(0, 150).replace(/[#\n]/g, ' ').trim()
   }
 
-  const slug = title
+  // Use name from frontmatter as slug if available, otherwise derive from title
+  const slug = slugHint || title
     .toLowerCase()
     .replace(/[^a-z0-9\s-]/g, '')
     .replace(/\s+/g, '-')
