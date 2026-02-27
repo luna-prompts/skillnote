@@ -21,15 +21,17 @@ function SkillsPageInner() {
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false)
   const [skills, setSkills] = useState<Skill[]>([])
 
-  // Load skills on mount + re-sync on focus and when skills-store changes
+  // Load skills on mount + re-sync on focus, periodic, and when skills-store changes
   useEffect(() => {
     const sync = () => syncSkillsFromApi().then(setSkills).catch(() => {})
     const refresh = () => setSkills(getSkills())
     setSkills(getSkills())
     sync()
+    const interval = setInterval(sync, 30_000)
     window.addEventListener('focus', sync)
     window.addEventListener('skillnote:skills-changed', refresh)
     return () => {
+      clearInterval(interval)
       window.removeEventListener('focus', sync)
       window.removeEventListener('skillnote:skills-changed', refresh)
     }

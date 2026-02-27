@@ -11,9 +11,10 @@ export default function SkillPage({ params }: { params: Promise<{ slug: string }
   const { slug } = use(params)
   const [skill, setSkill] = useState<Skill | null>(() => getSkills().find(s => s.slug === slug) ?? null)
 
-  // Fetch full skill from API on mount (list endpoint has empty content_md)
+  // Fetch full skill from API on mount + periodic sync every 30s
   useEffect(() => {
-    if (isConfigured()) {
+    const sync = () => {
+      if (!isConfigured()) return
       fetchSkill(slug)
         .then(fullSkill => {
           setSkill(fullSkill)
@@ -21,6 +22,9 @@ export default function SkillPage({ params }: { params: Promise<{ slug: string }
         })
         .catch(() => {})
     }
+    sync()
+    const interval = setInterval(sync, 30_000)
+    return () => clearInterval(interval)
   }, [slug])
 
   // Called by SkillDetail after a successful save — update local state directly
