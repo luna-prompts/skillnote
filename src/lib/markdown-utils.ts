@@ -79,6 +79,7 @@ export function parseMarkdown(raw: string, filename: string): Omit<Skill, 'comme
     tags,
     collections,
     current_version: 1,
+    latest_version: 1,
     created_at: now,
     updated_at: now,
   }

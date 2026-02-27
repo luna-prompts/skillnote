@@ -505,6 +505,7 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
                 setSkillTags={setTagsValue}
                 openFullscreen={true}
                 currentVersion={skill.current_version}
+                latestVersion={skill.latest_version}
               />
             )}
           </div>
