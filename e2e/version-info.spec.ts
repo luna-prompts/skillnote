@@ -58,37 +58,30 @@ test.beforeEach(async ({ page }) => {
 
 // ─── SECTION 1: Slug line shows version info ──────────────────────
 
-test.describe('Slug line version info', () => {
-  test('edit mode shows "v3 → v4" in slug line', async ({ page }) => {
+test.describe('Version transition in top bar', () => {
+  test('edit mode shows "v3 → v4" in the top bar', async ({ page }) => {
     await enterEditMode(page)
-    await expect(page.getByText('v3 → v4')).toBeVisible()
-  })
-
-  test('create mode shows "v1" in slug line', async ({ page }) => {
-    await page.goto(NEW_SKILL_URL)
-    await page.waitForLoadState('networkidle')
-    // Type a name so the slug line appears
-    await page.locator('input[placeholder="skill-name"]').fill('test-skill')
-    // The v1 text should appear in the slug line area
-    const slugArea = page.locator('.flex.items-center.gap-3')
-    await expect(slugArea.getByText('v1')).toBeVisible()
+    // Version transition is in the top bar (header)
+    const topBar = page.locator('.fixed.inset-0 .border-b').first()
+    await expect(topBar.getByText('v3 → v4')).toBeVisible()
   })
 })
 
 // ─── SECTION 2: Top bar shows version context ─────────────────────
 
 test.describe('Top bar version context', () => {
-  test('edit mode (no changes) shows "Based on v3"', async ({ page }) => {
+  test('edit mode (no changes) shows version transition in top bar', async ({ page }) => {
     await enterEditMode(page)
-    await expect(page.getByText('Based on v3')).toBeVisible()
+    const topBar = page.locator('.fixed.inset-0 .border-b').first()
+    await expect(topBar.getByText('v3 → v4')).toBeVisible()
   })
 
-  test('edit mode (with changes) shows unsaved indicator + "Based on v3"', async ({ page }) => {
+  test('edit mode (with changes) shows unsaved indicator + version transition', async ({ page }) => {
     await enterEditMode(page)
     // Make a change to trigger dirty state
     await page.locator('textarea[placeholder*="Describe what this skill"]').fill('Modified description')
     await expect(page.getByText('Unsaved changes')).toBeVisible()
-    await expect(page.getByText('Based on v3')).toBeVisible()
+    await expect(page.getByText('v3 → v4')).toBeVisible()
   })
 })
 
