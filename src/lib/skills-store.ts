@@ -2,14 +2,14 @@
 
 import { Skill } from './mock-data'
 import { fetchSkills, createSkillApi, updateSkillApi, deleteSkillApi } from './api/skills'
-import { isConfigured, SkillNoteApiError } from './api/client'
+import { SkillNoteApiError } from './api/client'
 import { slugFromName } from './skill-validation'
 import { getDisplayName } from './profile'
 
 const STORAGE_KEY = 'skillnote:skills'
 
-type ConnectionStatus = 'online' | 'offline' | 'unconfigured'
-let _connectionStatus: ConnectionStatus = 'unconfigured'
+type ConnectionStatus = 'online' | 'offline'
+let _connectionStatus: ConnectionStatus = 'offline'
 const _listeners: Array<(s: ConnectionStatus) => void> = []
 
 export function getConnectionStatus(): ConnectionStatus {
@@ -49,10 +49,6 @@ export function getSkills(): Skill[] {
 }
 
 export async function syncSkillsFromApi(): Promise<Skill[]> {
-  if (!isConfigured()) {
-    setConnectionStatus('unconfigured')
-    return getSkills()
-  }
   try {
     const apiSkills = await fetchSkills()
     // Merge: keep local-only skills (not on API) so imports aren't wiped
@@ -77,12 +73,8 @@ export async function syncSkillsFromApi(): Promise<Skill[]> {
     writeStorage(merged)
     setConnectionStatus('online')
     return merged
-  } catch (err) {
-    if (err instanceof SkillNoteApiError && (err.status === 401 || err.status === 403)) {
-      setConnectionStatus('unconfigured')
-    } else {
-      setConnectionStatus('offline')
-    }
+  } catch {
+    setConnectionStatus('offline')
     return getSkills()
   }
 }
@@ -124,12 +116,12 @@ export async function createSkill(data: {
 }): Promise<Skill> {
   const slug = slugFromName(data.title)
 
-  if (isConfigured()) {
+  try {
     const skill = await createSkillApi({ name: data.title, slug, ...data })
     addSkill(skill)
     notifyChanged()
     return skill
-  } else {
+  } catch {
     const now = new Date().toISOString()
     const skill: Skill = { slug, title: data.title, description: data.description, content_md: data.content_md, tags: data.tags, collections: data.collections, current_version: 1, latest_version: 1, created_by: getDisplayName(), created_at: now, updated_at: now }
     addSkill(skill)
@@ -139,18 +131,18 @@ export async function createSkill(data: {
 }
 
 export async function deleteSkillById(slug: string): Promise<void> {
-  if (isConfigured()) {
+  try {
     await deleteSkillApi(slug)
-  }
+  } catch {}
   deleteSkill(slug)
   notifyChanged()
 }
 
 export async function saveSkillEdit(slug: string, patch: { title?: string; description?: string; content_md?: string; tags?: string[]; collections?: string[] }): Promise<Skill> {
-  if (isConfigured()) {
+  try {
     await updateSkillApi(slug, { name: patch.title, description: patch.description, content_md: patch.content_md, tags: patch.tags, collections: patch.collections })
-  }
-  // Increment version counter and set as active
+  } catch {}
+  // Increment version on each save
   const existing = getSkills().find(s => s.slug === slug)
   const totalVersions = existing?.latest_version ?? existing?.current_version ?? 0
   const nextVersion = totalVersions + 1

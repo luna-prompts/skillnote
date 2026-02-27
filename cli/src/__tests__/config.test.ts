@@ -24,16 +24,15 @@ describe('config', () => {
   it('saves and loads config', async () => {
     const { saveConfig, loadConfig } = await import('../config/index.js')
     const configDir = path.join(tmpDir, '.skillnote')
-    saveConfig(configDir, { host: 'https://example.com', token: 'skn_test_123' })
+    saveConfig(configDir, { host: 'https://example.com' })
     const cfg = loadConfig(configDir)
-    expect(cfg).toEqual({ host: 'https://example.com', token: 'skn_test_123' })
+    expect(cfg).toEqual({ host: 'https://example.com' })
   })
 
   it('resolves env vars over config file', async () => {
     const { resolveAuth } = await import('../config/index.js')
     vi.stubEnv('SKILLNOTE_HOST', 'https://env.example.com')
-    vi.stubEnv('SKILLNOTE_TOKEN', 'skn_env_456')
     const auth = resolveAuth(path.join(tmpDir, '.skillnote'))
-    expect(auth).toEqual({ host: 'https://env.example.com', token: 'skn_env_456' })
+    expect(auth).toEqual({ host: 'https://env.example.com' })
   })
 })

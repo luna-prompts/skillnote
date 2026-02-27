@@ -28,7 +28,6 @@ services:
     build: ./backend
     environment:
       SKILLNOTE_DATABASE_URL: postgresql+psycopg://skillnote:skillnote@postgres:5432/skillnote
-      SKILLNOTE_TOKEN_PEPPER: dev-pepper-change-me
       SKILLNOTE_BUNDLE_STORAGE_DIR: /app/data/bundles
       SKILLNOTE_CORS_ORIGINS: "http://${SKILLNOTE_HOST:-localhost}:3000,http://${SKILLNOTE_HOST:-localhost}:3001,http://localhost:3000,http://127.0.0.1:3000"
     ports:

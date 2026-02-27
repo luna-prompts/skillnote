@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation'
 import { ArrowLeft } from 'lucide-react'
 import { getSkills, syncSkillsFromApi, updateSkill } from '@/lib/skills-store'
 import { fetchSkill } from '@/lib/api/skills'
-import { isConfigured } from '@/lib/api/client'
 import { Skill } from '@/lib/mock-data'
 import { TopBar } from '@/components/layout/topbar'
 import { SkillVersionsTab } from '@/components/skills/tabs/SkillHistoryTab'
@@ -16,28 +15,14 @@ export default function VersionsPage({ params }: { params: Promise<{ slug: strin
   const [skill, setSkill] = useState<Skill | null>(() => getSkills().find(s => s.slug === slug) ?? null)
 
   useEffect(() => {
-    if (isConfigured()) {
-      fetchSkill(slug)
-        .then(setSkill)
-        .catch(() => {})
-    }
+    fetchSkill(slug)
+      .then(setSkill)
+      .catch(() => {})
   }, [slug])
 
-  const handleRestored = useCallback((activeVersion: number) => {
-    // Update localStorage with the active version number so it shows correctly everywhere
-    updateSkill(slug, { current_version: activeVersion })
-    setSkill(prev => prev ? { ...prev, current_version: activeVersion } : prev)
-
-    // Re-fetch from API if configured
-    if (isConfigured()) {
-      fetchSkill(slug).then(fetched => {
-        // Keep latest_version as the highest version (for counter), set current_version to active
-        const local = getSkills().find(s => s.slug === slug)
-        const latestVersion = Math.max(fetched.current_version, local?.latest_version ?? 0)
-        setSkill({ ...fetched, current_version: activeVersion, latest_version: latestVersion })
-        updateSkill(slug, { current_version: activeVersion, latest_version: latestVersion })
-      }).catch(() => {})
-    }
+  const handleRestored = useCallback(() => {
+    // Re-fetch skill after restore to get updated version
+    fetchSkill(slug).then(setSkill).catch(() => {})
     syncSkillsFromApi().catch(() => {})
   }, [slug])
 

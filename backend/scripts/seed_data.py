@@ -11,17 +11,8 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 from app.core.config import settings
-from app.db.models import AccessToken, Skill, SkillVersion, TokenSkillGrant
+from app.db.models import Skill, SkillVersion
 from app.db.session import SessionLocal
-
-
-PLAINTEXT_TOKEN = "skn_dev_demo_token"
-ADMIN_TOKEN = "skn_admin_demo_token"
-
-
-def hash_token(token: str) -> str:
-    raw = f"{settings.token_pepper}:{token}".encode("utf-8")
-    return hashlib.sha256(raw).hexdigest()
 
 
 def ensure_seed_bundle() -> tuple[str, str]:
@@ -117,45 +108,8 @@ def main():
             version.checksum_sha256 = checksum
             version.bundle_storage_key = storage_key
 
-        token_hash = hash_token(PLAINTEXT_TOKEN)
-        token = db.query(AccessToken).filter(AccessToken.token_hash == token_hash).first()
-        if not token:
-            token = AccessToken(
-                token_hash=token_hash,
-                label="dev-seed-token",
-                status="active",
-                subject_type="user",
-                subject_id="seed-user",
-            )
-            db.add(token)
-            db.flush()
-
-        admin_hash = hash_token(ADMIN_TOKEN)
-        admin = db.query(AccessToken).filter(AccessToken.token_hash == admin_hash).first()
-        if not admin:
-            admin = AccessToken(
-                token_hash=admin_hash,
-                label="admin-seed-token",
-                status="active",
-                subject_type="admin",
-                subject_id="seed-admin",
-            )
-            db.add(admin)
-            db.flush()
-
-        for t in (token, admin):
-            grant = (
-                db.query(TokenSkillGrant)
-                .filter(TokenSkillGrant.token_id == t.id, TokenSkillGrant.skill_id == skill.id)
-                .first()
-            )
-            if not grant:
-                db.add(TokenSkillGrant(token_id=t.id, skill_id=skill.id))
-
         db.commit()
         print("Seed complete")
-        print(f"Plain token (dev only): {PLAINTEXT_TOKEN}")
-        print(f"Admin token (dev only): {ADMIN_TOKEN}")
         print(f"Bundle: {storage_key}")
     except Exception:
         db.rollback()
