@@ -3,7 +3,7 @@
 import { use, useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft } from 'lucide-react'
-import { getSkills, syncSkillsFromApi } from '@/lib/skills-store'
+import { getSkills, syncSkillsFromApi, updateSkill } from '@/lib/skills-store'
 import { fetchSkill } from '@/lib/api/skills'
 import { isConfigured } from '@/lib/api/client'
 import { Skill } from '@/lib/mock-data'
@@ -23,10 +23,18 @@ export default function VersionsPage({ params }: { params: Promise<{ slug: strin
     }
   }, [slug])
 
-  const handleRestored = useCallback(() => {
-    // Re-fetch skill after restore to get updated version
+  const handleRestored = useCallback((activeVersion: number) => {
+    // Update localStorage with the active version number so it shows correctly everywhere
+    updateSkill(slug, { current_version: activeVersion })
+    setSkill(prev => prev ? { ...prev, current_version: activeVersion } : prev)
+
+    // Re-fetch from API if configured
     if (isConfigured()) {
-      fetchSkill(slug).then(setSkill).catch(() => {})
+      fetchSkill(slug).then(fetched => {
+        // Override current_version with the active version, not the highest
+        setSkill({ ...fetched, current_version: activeVersion })
+        updateSkill(slug, { current_version: activeVersion })
+      }).catch(() => {})
     }
     syncSkillsFromApi().catch(() => {})
   }, [slug])
