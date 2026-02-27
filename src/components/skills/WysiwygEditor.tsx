@@ -335,20 +335,20 @@ export function WysiwygEditor({ value, onChange, renderToolbar, onModeChange, sk
   )
 
   return (
-    <div className={cn('flex-1 flex flex-col min-h-0', className)}>
+    <div className={cn('flex-1 flex flex-col', className)}>
       {/* Toolbar — rendered via parent wrapper if provided, otherwise inline */}
       {renderToolbar ? renderToolbar(toolbarNode) : toolbarNode}
 
       {/* Content area */}
-      <div className={cn('flex-1 min-h-0 flex flex-col sm:flex-row transition-opacity duration-150', transitioning && 'opacity-0')}>
+      <div className={cn('flex-1 flex flex-col sm:flex-row transition-opacity duration-150', transitioning && 'opacity-0')}>
 
         {/* ── LEFT PANE: Tiptap WYSIWYG editor (wysiwyg mode + split left) ── */}
         {(mode === 'wysiwyg' || mode === 'split') && (
           <div
             ref={editorWrapRef}
             className={cn(
-              'flex-1 overflow-y-auto relative flex flex-col',
-              mode === 'split' && 'sm:border-r border-border/40 sm:w-1/2 sm:flex-none',
+              'flex-1 relative flex flex-col',
+              mode === 'split' && 'sm:border-r border-border/40 sm:w-1/2 sm:flex-none overflow-y-auto',
             )}
             onPasteCapture={(e) => {
               const text = e.clipboardData?.getData('text/plain')
@@ -372,7 +372,7 @@ export function WysiwygEditor({ value, onChange, renderToolbar, onModeChange, sk
                 Rendered (editable)
               </div>
             )}
-            <EditorContent editor={editor} className="flex-1" />
+            <EditorContent editor={editor} />
           </div>
         )}
 
