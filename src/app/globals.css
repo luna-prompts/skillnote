@@ -251,7 +251,6 @@ body.skill-editing .content-wrapper {
   pointer-events: none;
   height: 0;
   font-style: normal;
-  font-size: 1.25rem;
 }
 /* Headings */
 .ProseMirror h1 { font-size: 2em; font-weight: 700; margin: 1.5rem 0 0.5rem; letter-spacing: -0.02em; color: var(--foreground); }

@@ -347,7 +347,7 @@ export function WysiwygEditor({ value, onChange, renderToolbar, onModeChange, sk
           <div
             ref={editorWrapRef}
             className={cn(
-              'flex-1 relative flex flex-col',
+              'flex-1 relative flex flex-col min-h-[100vh]',
               mode === 'split' && 'sm:border-r border-border/40 sm:w-1/2 sm:flex-none overflow-y-auto',
             )}
             onPasteCapture={(e) => {
