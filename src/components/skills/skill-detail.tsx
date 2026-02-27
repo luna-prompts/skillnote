@@ -3,7 +3,7 @@ import { useState, useCallback, useEffect, useRef } from 'react'
 import { TopBar } from '@/components/layout/topbar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Download, Pencil, GitBranch, Check, BookOpen, ArrowLeft, Hash, Link2, Star, Command, X, Keyboard, FileText, Search, FolderOpen, Share2, MoreHorizontal, Trash2 } from 'lucide-react'
+import { Download, Pencil, GitBranch, Check, BookOpen, ArrowLeft, Hash, Link2, Star, Command, X, Keyboard, FileText, Search, FolderOpen, Share2, MoreHorizontal, Trash2, Clock, Tag } from 'lucide-react'
 import { Skill, type Comment } from '@/lib/mock-data'
 import { getSkills, updateSkill, deleteSkillById, saveSkillEdit } from '@/lib/skills-store'
 import { validateSkillName, validateDescription } from '@/lib/skill-validation'
@@ -308,89 +308,33 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
       <TopBar showFab={false} />
       <div className="flex flex-1 overflow-hidden">
         <main ref={mainRef} className="flex-1 overflow-auto flex flex-col min-w-0">
-          {/* Header */}
-          <div className="px-4 sm:px-6 py-4 sm:py-5 border-b border-border/60 shrink-0">
-            <div className="flex flex-col sm:flex-row items-start justify-between gap-3 sm:gap-4">
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2 mb-1">
-                  <button onClick={() => router.back()} className="text-muted-foreground hover:text-foreground transition-colors p-0.5 -ml-1 shrink-0" aria-label="Go back">
-                    <ArrowLeft className="h-4 w-4" />
-                  </button>
-                  <input
-                    value={titleValue}
-                    onChange={(e) => setTitleValue(e.target.value)}
-                    className="flex-1 min-w-0 text-xl font-semibold text-foreground bg-transparent border-none outline-none focus:outline-none ring-0 focus:ring-0 shadow-none focus:shadow-none cursor-text hover:opacity-80 transition-opacity"
-                    style={{ outline: 'none', boxShadow: 'none', border: 'none' }}
-                    title="Click to edit title"
-                    size={titleValue.length || 1}
-                  />
-                  <button onClick={toggleStar} className="p-1 -m-1 transition-colors shrink-0" aria-label={starred ? 'Unstar' : 'Star'}>
-                    <Star className={cn('h-4 w-4', starred ? 'fill-amber-400 text-amber-400' : 'text-muted-foreground hover:text-amber-400')} />
-                  </button>
-                  {editorDirty && <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" title="Unsaved changes" />}
-                </div>
-                <div className="flex items-center gap-1.5 mt-1 mb-1.5">
+          {/* Header — hero section */}
+          <div className="shrink-0">
+            {/* Top nav strip */}
+            <div className="flex items-center justify-between px-4 sm:px-6 py-2.5 border-b border-border/40">
+              <div className="flex items-center gap-3">
+                <button onClick={() => router.back()} className="text-muted-foreground hover:text-foreground transition-colors p-1 -ml-1 shrink-0 rounded-md hover:bg-muted/50" aria-label="Go back">
+                  <ArrowLeft className="h-4 w-4" />
+                </button>
+                <div className="flex items-center gap-1.5">
                   <FolderOpen className="h-3 w-3 text-muted-foreground/40 shrink-0" />
                   <code className="font-mono text-[11px] text-muted-foreground/50 tracking-wide">{skill.slug}/SKILL.md</code>
-                  {skill.current_version > 0 && (
-                    <Badge variant="outline" className="text-[10px] py-0 h-4 font-mono ml-1">v{skill.current_version}</Badge>
-                  )}
-                </div>
-                <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-                  <div className="w-4 h-4 rounded-full bg-accent flex items-center justify-center text-[8px] font-bold text-white">NV</div>
-                  Last edited by Nova Vex · {formatRelative(skill.updated_at)}
-                  {skill.collections.length > 0 && (
-                    <>
-                      <span className="text-muted-foreground/40">·</span>
-                      {skill.collections.map(c => <Badge key={c} variant="outline" className="text-[10px] py-0 h-4">{c}</Badge>)}
-                    </>
-                  )}
-                </div>
-                {descriptionValue && (
-                  <p className="text-[12px] text-muted-foreground/70 mt-1.5 leading-relaxed max-w-xl">
-                    {descriptionValue}
-                  </p>
-                )}
-                <div className="flex gap-1.5 mt-2 flex-wrap">
-                  {tagsValue.map(tag => (
-                    <span key={tag} className="text-[11px] font-mono font-medium text-zinc-600 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded-md">
-                      {tag}
-                    </span>
-                  ))}
                 </div>
               </div>
-              <div className="flex items-center gap-2 shrink-0">
-                <div className="hidden xl:flex items-center gap-2">
-                  <div className="w-5 h-5 rounded-full bg-accent/20 flex items-center justify-center text-[8px] font-bold text-accent">
-                    {titleValue.charAt(0).toUpperCase()}
-                  </div>
-                  <span className="text-[11px] text-muted-foreground">
-                    Last edited {new Date(skill.updated_at).toLocaleDateString()}
-                  </span>
-                </div>
-
-                <Button variant="outline" size="sm" className="h-8 sm:h-8 min-h-[44px] sm:min-h-0 gap-1.5 text-[13px]" onClick={() => setCommandPaletteOpen(true)}>
+              <div className="flex items-center gap-1.5">
+                <Button variant="ghost" size="sm" className="h-8 min-h-[44px] sm:min-h-0 text-[13px] text-muted-foreground px-2" onClick={() => setCommandPaletteOpen(true)}>
                   <Command className="h-3.5 w-3.5" />
-                  <kbd className="text-[10px] font-mono text-muted-foreground hidden xl:inline">⌘K</kbd>
+                  <kbd className="text-[10px] font-mono text-muted-foreground/50 hidden xl:inline ml-1">⌘K</kbd>
                 </Button>
-                <Button variant="outline" size="sm" className="h-8 sm:h-8 min-h-[44px] sm:min-h-0 gap-1.5 text-[13px]" onClick={() => router.push(`/skills/${skill.slug}/versions`)}>
-                  <GitBranch className="h-3.5 w-3.5" />
-                  <span className="hidden sm:inline">Versions</span>
-                </Button>
-                <Button variant="outline" size="sm" className="h-8 sm:h-8 min-h-[44px] sm:min-h-0 gap-1.5 text-[13px]" onClick={() => setActiveTab('edit')}>
-                  <Pencil className="h-3.5 w-3.5" />
-                  Edit
-                </Button>
-                <Button variant="outline" size="sm" className="h-8 sm:h-8 min-h-[44px] sm:min-h-0 gap-1.5 text-[13px] hidden xl:flex" onClick={handleExport}>
-                  <Download className="h-3.5 w-3.5" />
-                  Export
+                <Button variant="ghost" size="sm" className="h-8 min-h-[44px] sm:min-h-0 text-[13px] text-muted-foreground px-2" onClick={toggleStar} aria-label={starred ? 'Unstar' : 'Star'}>
+                  <Star className={cn('h-3.5 w-3.5', starred ? 'fill-amber-400 text-amber-400' : '')} />
                 </Button>
                 {/* ⋯ More menu */}
                 <div className="relative">
                   <Button
-                    variant="outline"
+                    variant="ghost"
                     size="sm"
-                    className="h-8 sm:h-8 min-h-[44px] sm:min-h-0 text-[13px] px-2"
+                    className="h-8 min-h-[44px] sm:min-h-0 text-[13px] text-muted-foreground px-2"
                     onClick={() => setShowMoreMenu(prev => !prev)}
                     aria-label="More options"
                   >
@@ -398,7 +342,6 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
                   </Button>
                   {showMoreMenu && (
                     <>
-                      {/* Backdrop to close on outside click */}
                       <div className="fixed inset-0 z-20" onClick={() => setShowMoreMenu(false)} />
                       <div className="absolute right-0 top-full mt-1 z-30 bg-popover border border-border rounded-lg shadow-lg overflow-hidden min-w-[180px] py-1">
                         <button
@@ -417,10 +360,10 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
                         </button>
                         <button
                           onClick={() => { handleExport(); setShowMoreMenu(false) }}
-                          className="flex items-center gap-2.5 px-3 py-2 text-[13px] hover:bg-muted w-full text-left text-foreground min-h-[44px] sm:min-h-[36px] xl:hidden"
+                          className="flex items-center gap-2.5 px-3 py-2 text-[13px] hover:bg-muted w-full text-left text-foreground min-h-[44px] sm:min-h-[36px]"
                         >
                           <Download className="h-3.5 w-3.5 text-muted-foreground" />
-                          Export
+                          Export Markdown
                         </button>
                         <div className="border-t border-border/60 my-1" />
                         <button
@@ -436,6 +379,78 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
                 </div>
               </div>
             </div>
+
+            {/* Hero content */}
+            <div className="px-4 sm:px-10 lg:px-14 pt-8 sm:pt-10 pb-6 sm:pb-8">
+              {/* Title row */}
+              <p className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground/40 font-medium mb-1.5">Name</p>
+              <div className="flex items-start justify-between gap-4 mb-4">
+                <h1 className="text-2xl sm:text-3xl font-bold font-mono text-foreground tracking-tight leading-tight">
+                  {titleValue}
+                </h1>
+                {editorDirty && <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shrink-0 mt-2.5" title="Unsaved changes" />}
+              </div>
+
+              {/* Description — prominent */}
+              {descriptionValue && (
+                <div className="mb-5">
+                  <p className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground/40 font-medium mb-1.5">Description</p>
+                  <p className="text-[15px] sm:text-base text-muted-foreground leading-relaxed max-w-2xl">
+                    {descriptionValue}
+                  </p>
+                </div>
+              )}
+
+              {/* Meta pills row */}
+              <div className="flex flex-wrap items-center gap-2 mb-5">
+                {skill.current_version > 0 && (
+                  <span className="inline-flex items-center gap-1.5 text-[11px] font-mono text-muted-foreground bg-muted/60 px-2.5 py-1 rounded-full">
+                    <GitBranch className="h-3 w-3" />
+                    v{skill.current_version}
+                  </span>
+                )}
+                <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground bg-muted/60 px-2.5 py-1 rounded-full">
+                  <Clock className="h-3 w-3" />
+                  {formatRelative(skill.updated_at)}
+                </span>
+                {skill.collections.map(c => (
+                  <span key={c} className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground bg-muted/60 px-2.5 py-1 rounded-full">
+                    <FolderOpen className="h-3 w-3" />
+                    {c}
+                  </span>
+                ))}
+              </div>
+
+              {/* Tags */}
+              {tagsValue.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5 mb-6">
+                  <Tag className="h-3 w-3 text-muted-foreground/40 mr-0.5" />
+                  {tagsValue.map(tag => (
+                    <span key={tag} className="text-[11px] font-mono text-accent/80 bg-accent/8 border border-accent/15 px-2 py-0.5 rounded-md">
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {/* Action buttons */}
+              <div className="flex items-center gap-2">
+                <Button size="sm" className="h-9 min-h-[44px] sm:min-h-0 gap-2 text-[13px] bg-foreground text-background hover:bg-foreground/90" onClick={() => setActiveTab('edit')}>
+                  <Pencil className="h-3.5 w-3.5" />
+                  Edit Skill
+                </Button>
+                <Button variant="outline" size="sm" className="h-9 min-h-[44px] sm:min-h-0 gap-2 text-[13px]" onClick={() => router.push(`/skills/${skill.slug}/versions`)}>
+                  <GitBranch className="h-3.5 w-3.5" />
+                  Versions
+                </Button>
+                <Button variant="outline" size="sm" className="h-9 min-h-[44px] sm:min-h-0 gap-2 text-[13px] hidden sm:flex" onClick={handleExport}>
+                  <Download className="h-3.5 w-3.5" />
+                  Export
+                </Button>
+              </div>
+            </div>
+
+            <hr className="border-border/40 mx-0" />
           </div>
 
           {/* Command Palette */}
