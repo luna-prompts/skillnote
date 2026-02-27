@@ -129,7 +129,10 @@ export async function saveSkillEdit(slug: string, patch: { title?: string; descr
   if (isConfigured()) {
     await updateSkillApi(slug, { name: patch.title, description: patch.description, content_md: patch.content_md, tags: patch.tags, collections: patch.collections })
   }
-  updateSkill(slug, patch)
+  // Increment version on each save
+  const existing = getSkills().find(s => s.slug === slug)
+  const nextVersion = (existing?.current_version ?? 0) + 1
+  updateSkill(slug, { ...patch, current_version: nextVersion })
   notifyChanged()
   // Return the updated skill so callers can use it directly
   const updated = getSkills().find(s => s.slug === slug)

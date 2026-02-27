@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { RotateCcw, Save, Loader2, X, AlertCircle } from 'lucide-react'
+import { RotateCcw, Save, Loader2, X, AlertCircle, ArrowRight } from 'lucide-react'
 import { NAME_MAX, DESC_MAX, slugFromName, validateSkillName, validateDescription, type ValidationError } from '@/lib/skill-validation'
 import { Button } from '@/components/ui/button'
 import { WysiwygEditor, type EditorMode } from '@/components/skills/WysiwygEditor'
@@ -24,16 +24,19 @@ type SkillEditTabProps = {
   /** 'edit' shows Discard/Cancel/Save; 'create' shows Cancel/Create Skill */
   mode?: 'edit' | 'create'
   saving?: boolean
+  /** Current version number of the skill being edited */
+  currentVersion?: number
 }
 
 export function SkillEditTab({
   editorContent, setEditorContent, editorDirty, onDiscard, onSave, onCancel,
   skillTitle, setSkillTitle, skillDescription, setSkillDescription,
   skillSlug, skillTags = [], setSkillTags, openFullscreen,
-  mode = 'edit', saving = false,
+  mode = 'edit', saving = false, currentVersion,
 }: SkillEditTabProps) {
   const [fullscreen, setFullscreen] = useState(false)
   const [touched, setTouched] = useState<Record<string, boolean>>({})
+  const [showSaveConfirm, setShowSaveConfirm] = useState(false)
   const [tagInput, setTagInput] = useState('')
   const [editorMode, setEditorMode] = useState<EditorMode>('wysiwyg')
   const nameRef = useRef<HTMLInputElement>(null)
@@ -78,6 +81,7 @@ export function SkillEditTab({
   const descErrors = touched.description ? validateDescription(skillDescription) : []
   const isValid = validateSkillName(skillTitle).length === 0 && validateDescription(skillDescription).length === 0
 
+  const nextVersion = currentVersion ? currentVersion + 1 : 1
   const previewSlug = skillSlug || (skillTitle.trim() ? slugFromName(skillTitle.trim()) : '')
 
   const handleNameChange = (value: string) => {
@@ -95,11 +99,58 @@ export function SkillEditTab({
     setTagInput('')
   }, [tagInput, skillTags, setSkillTags])
 
+  /** Validate fields, then either save directly (create) or show confirmation (edit) */
+  const handleSaveClick = useCallback(() => {
+    setTouched({ name: true, description: true })
+    const nErrs = validateSkillName(skillTitle)
+    const dErrs = validateDescription(skillDescription)
+    if (nErrs.length > 0) {
+      if (nameRef.current) {
+        nameRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        nameRef.current.focus()
+      }
+      return
+    }
+    if (dErrs.length > 0) {
+      if (descRef.current) {
+        descRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        descRef.current.focus()
+      }
+      return
+    }
+    if (mode === 'edit' && currentVersion) {
+      setShowSaveConfirm(true)
+    } else {
+      onSave()
+    }
+  }, [skillTitle, skillDescription, mode, currentVersion, onSave])
+
+  const confirmSave = useCallback(() => {
+    setShowSaveConfirm(false)
+    onSave()
+  }, [onSave])
+
+  const saveButtonLabel = mode === 'create'
+    ? 'Create Skill'
+    : currentVersion ? `Save as v${nextVersion}` : 'Save'
+
   /* Footer bar — shared between fullscreen and inline modes */
   const footerContent = (
     <>
       <div className="flex items-center gap-2">
-        {editorDirty && mode === 'edit' && (
+        {mode === 'edit' && currentVersion && (
+          <span className="text-[11px] text-muted-foreground font-medium items-center gap-1 hidden sm:flex">
+            {editorDirty && (
+              <>
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                <span className="text-amber-500">Unsaved changes</span>
+                <span className="text-muted-foreground/40 mx-0.5">&middot;</span>
+              </>
+            )}
+            Based on v{currentVersion}
+          </span>
+        )}
+        {editorDirty && mode === 'edit' && !currentVersion && (
           <span className="text-[11px] text-amber-500 font-medium items-center gap-1 hidden sm:flex">
             <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
             Unsaved changes
@@ -120,32 +171,55 @@ export function SkillEditTab({
           size="sm"
           className="h-8 min-h-[44px] sm:min-h-0 gap-1.5 text-[13px] bg-foreground text-background hover:bg-foreground/90"
           disabled={saving}
-          onClick={() => {
-            setTouched({ name: true, description: true })
-            const nErrs = validateSkillName(skillTitle)
-            const dErrs = validateDescription(skillDescription)
-            if (nErrs.length > 0) {
-              if (nameRef.current) {
-                nameRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
-                nameRef.current.focus()
-              }
-              return
-            }
-            if (dErrs.length > 0) {
-              if (descRef.current) {
-                descRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
-                descRef.current.focus()
-              }
-              return
-            }
-            onSave()
-          }}
+          onClick={handleSaveClick}
         >
           {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-          {mode === 'create' ? 'Create Skill' : 'Save'}
+          {saveButtonLabel}
         </Button>
       </div>
     </>
+  )
+
+  /* Save confirmation popup — edit mode only */
+  const saveConfirmDialog = showSaveConfirm && (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 animate-in fade-in duration-150" onClick={() => setShowSaveConfirm(false)}>
+      <div className="w-full max-w-sm bg-card border border-border rounded-xl shadow-2xl p-6 animate-in zoom-in-95 duration-150" onClick={e => e.stopPropagation()}>
+        {/* Version transition — the hero of the dialog */}
+        <div className="flex items-center justify-center gap-3 mb-5">
+          <div className="flex flex-col items-center">
+            <span className="text-[10px] uppercase tracking-widest text-muted-foreground/60 mb-1">Current</span>
+            <span className="text-2xl font-bold font-mono text-muted-foreground/50">v{currentVersion}</span>
+          </div>
+          <ArrowRight className="h-5 w-5 text-muted-foreground/40 mt-4" />
+          <div className="flex flex-col items-center">
+            <span className="text-[10px] uppercase tracking-widest text-accent mb-1">New</span>
+            <span className="text-2xl font-bold font-mono text-foreground">v{nextVersion}</span>
+          </div>
+        </div>
+
+        <p className="text-[13px] text-muted-foreground text-center mb-1">
+          New version of
+        </p>
+        <p className="text-[13px] font-mono text-foreground/80 text-center mb-5">
+          {previewSlug || skillTitle}
+        </p>
+
+        <div className="flex justify-end gap-2">
+          <Button variant="outline" size="sm" className="h-8 min-h-[44px] sm:min-h-0 text-[13px]" onClick={() => setShowSaveConfirm(false)}>
+            Cancel
+          </Button>
+          <Button
+            size="sm"
+            className="h-8 min-h-[44px] sm:min-h-0 gap-1.5 text-[13px] bg-foreground text-background hover:bg-foreground/90"
+            disabled={saving}
+            onClick={confirmSave}
+          >
+            {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+            Save v{nextVersion}
+          </Button>
+        </div>
+      </div>
+    </div>
   )
 
   /* Metadata section — name, slug, description, tags */
@@ -168,6 +242,11 @@ export function SkillEditTab({
         />
       </div>
       <div className="flex items-center gap-3 mb-1">
+        {currentVersion ? (
+          <span className="text-[10px] font-mono text-muted-foreground/40 tabular-nums">v{currentVersion} → v{nextVersion}</span>
+        ) : mode === 'create' ? (
+          <span className="text-[10px] font-mono text-muted-foreground/40 tabular-nums">v1</span>
+        ) : null}
         {previewSlug && (
           <code className="text-[11px] font-mono text-muted-foreground/50">{previewSlug}/SKILL.md</code>
         )}
@@ -244,52 +323,58 @@ export function SkillEditTab({
   // Fullscreen mode (always used in edit, always used in create)
   if (fullscreen || mode === 'create') {
     return (
-      <div className="fixed inset-0 z-50 bg-background flex flex-col">
-        {/* Top bar */}
-        <div className="shrink-0 flex items-center justify-between px-4 sm:px-6 py-3 border-b border-border/60">
-          {footerContent}
-        </div>
+      <>
+        <div className="fixed inset-0 z-50 bg-background flex flex-col">
+          {/* Top bar */}
+          <div className="shrink-0 flex items-center justify-between px-4 sm:px-6 py-3 border-b border-border/60">
+            {footerContent}
+          </div>
 
-        {/* Main content — scrollable */}
-        <div className="flex-1 overflow-y-auto flex flex-col min-h-0">
-          {/* Hide metadata in raw mode — frontmatter is inline in the raw textarea */}
-          {editorMode !== 'raw' && metadataSection}
+          {/* Main content — scrollable */}
+          <div className="flex-1 overflow-y-auto flex flex-col min-h-0">
+            {/* Hide metadata in raw mode — frontmatter is inline in the raw textarea */}
+            {editorMode !== 'raw' && metadataSection}
 
-          {/* Editor — toolbar uses sticky inside the scroll container */}
-          <WysiwygEditor
-            value={editorContent}
-            onChange={setEditorContent}
-            onModeChange={setEditorMode}
-            className="min-h-[80vh]"
-            skillMeta={{ name: skillTitle, description: skillDescription, tags: skillTags }}
-            onMetaChange={(meta) => {
-              setSkillTitle(meta.name)
-              setSkillDescription(meta.description)
-              if (meta.tags && setSkillTags) setSkillTags(meta.tags)
-            }}
-            renderToolbar={(toolbar) => (
-              <div className="sticky top-0 z-10 border-b border-border/40">
-                {toolbar}
-              </div>
-            )}
-          />
+            {/* Editor — toolbar uses sticky inside the scroll container */}
+            <WysiwygEditor
+              value={editorContent}
+              onChange={setEditorContent}
+              onModeChange={setEditorMode}
+              className="min-h-[80vh]"
+              skillMeta={{ name: skillTitle, description: skillDescription, tags: skillTags }}
+              onMetaChange={(meta) => {
+                setSkillTitle(meta.name)
+                setSkillDescription(meta.description)
+                if (meta.tags && setSkillTags) setSkillTags(meta.tags)
+              }}
+              renderToolbar={(toolbar) => (
+                <div className="sticky top-0 z-10 border-b border-border/40">
+                  {toolbar}
+                </div>
+              )}
+            />
+          </div>
         </div>
-      </div>
+        {saveConfirmDialog}
+      </>
     )
   }
 
   // Inline (non-fullscreen) edit — just the editor with footer
   return (
-    <div className="flex-1 flex flex-col mt-0 animate-in fade-in duration-200 pb-16 min-h-0">
-      <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-        <WysiwygEditor
-          value={editorContent}
-          onChange={setEditorContent}
-        />
+    <>
+      <div className="flex-1 flex flex-col mt-0 animate-in fade-in duration-200 pb-16 min-h-0">
+        <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+          <WysiwygEditor
+            value={editorContent}
+            onChange={setEditorContent}
+          />
+        </div>
+        <div className="fixed bottom-16 lg:bottom-0 left-0 right-0 z-50 bg-background/95 backdrop-blur-sm border-t border-border/50 px-4 sm:px-6 py-3 flex items-center justify-between gap-3 safe-area-bottom">
+          {footerContent}
+        </div>
       </div>
-      <div className="fixed bottom-16 lg:bottom-0 left-0 right-0 z-50 bg-background/95 backdrop-blur-sm border-t border-border/50 px-4 sm:px-6 py-3 flex items-center justify-between gap-3 safe-area-bottom">
-        {footerContent}
-      </div>
-    </div>
+      {saveConfirmDialog}
+    </>
   )
 }
