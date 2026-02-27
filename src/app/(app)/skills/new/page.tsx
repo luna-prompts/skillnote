@@ -4,7 +4,7 @@ import { useState, useCallback, useEffect } from 'react'
 import { SkillEditTab } from '@/components/skills/tabs/SkillEditTab'
 import { createSkill } from '@/lib/skills-store'
 import { validateSkillName, validateDescription } from '@/lib/skill-validation'
-import { parseFrontmatter } from '@/lib/frontmatter'
+import { parseFrontmatter, stripFrontmatter } from '@/lib/frontmatter'
 import { toast } from 'sonner'
 import { useRouter } from 'next/navigation'
 
@@ -13,6 +13,7 @@ export default function NewSkillPage() {
   const [description, setDescription] = useState('')
   const [content, setContent] = useState('')
   const [tags, setTags] = useState<string[]>([])
+  const [collections, setCollections] = useState<string[]>([])
   const [saving, setSaving] = useState(false)
   const router = useRouter()
 
@@ -46,16 +47,15 @@ export default function NewSkillPage() {
     if (validateSkillName(name).length > 0 || validateDescription(description).length > 0) return
     setSaving(true)
     try {
-      const frontmatter = `---\nname: ${name.trim()}\ndescription: ${description.trim()}\n---\n\n`
-      const bodyContent = content.trim() || `# ${name.trim()}\n\n`
-      const fullContent = frontmatter + bodyContent
+      // Strip any existing frontmatter from pasted content to avoid duplication
+      const bodyContent = stripFrontmatter(content).trim() || `# ${name.trim()}\n\n`
 
       const skill = await createSkill({
         title: name.trim(),
         description: description.trim(),
-        content_md: fullContent,
+        content_md: bodyContent,
         tags,
-        collections: [],
+        collections,
       })
       toast.success(`"${skill.title}" created`)
       router.push(`/skills/${skill.slug}`)
@@ -81,6 +81,8 @@ export default function NewSkillPage() {
       setSkillDescription={setDescription}
       skillTags={tags}
       setSkillTags={setTags}
+      skillCollections={collections}
+      setSkillCollections={setCollections}
       saving={saving}
     />
   )

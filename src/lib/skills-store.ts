@@ -57,17 +57,15 @@ export async function syncSkillsFromApi(): Promise<Skill[]> {
     const apiSlugs = new Set(apiSkills.map(s => s.slug))
     const localOnly = local.filter(s => !apiSlugs.has(s.slug))
     // Preserve locally-set current_version and latest_version
+    // Use backend versions as source of truth
     const resolvedApi = apiSkills.map(s => {
       const localSkill = localBySlug.get(s.slug)
       if (!localSkill) return s
-      const resolved = { ...s }
-      // Preserve current_version if user set an older version as latest
-      if (localSkill.current_version > 0 && localSkill.current_version < s.current_version) {
-        resolved.current_version = localSkill.current_version
+      // Preserve local content_md if API returned empty (list endpoint doesn't include content)
+      if (!s.content_md && localSkill.content_md) {
+        return { ...s, content_md: localSkill.content_md }
       }
-      // Preserve latest_version (total version counter)
-      resolved.latest_version = Math.max(s.current_version, localSkill.latest_version ?? 0)
-      return resolved
+      return s
     })
     const merged = [...localOnly, ...resolvedApi]
     writeStorage(merged)
@@ -139,14 +137,16 @@ export async function deleteSkillById(slug: string): Promise<void> {
 }
 
 export async function saveSkillEdit(slug: string, patch: { title?: string; description?: string; content_md?: string; tags?: string[]; collections?: string[] }): Promise<Skill> {
+  let apiVersion: number | null = null
   try {
-    await updateSkillApi(slug, { name: patch.title, description: patch.description, content_md: patch.content_md, tags: patch.tags, collections: patch.collections })
+    const apiSkill = await updateSkillApi(slug, { name: patch.title, description: patch.description, content_md: patch.content_md, tags: patch.tags, collections: patch.collections })
+    apiVersion = apiSkill.current_version
   } catch {}
-  // Increment version on each save
+
+  // Use the backend's version if available, otherwise increment locally
   const existing = getSkills().find(s => s.slug === slug)
-  const totalVersions = existing?.latest_version ?? existing?.current_version ?? 0
-  const nextVersion = totalVersions + 1
-  updateSkill(slug, { ...patch, current_version: nextVersion, latest_version: nextVersion })
+  const nextVersion = apiVersion ?? ((existing?.current_version ?? 0) + 1)
+  updateSkill(slug, { ...patch, current_version: nextVersion })
   notifyChanged()
   // Return the updated skill so callers can use it directly
   const updated = getSkills().find(s => s.slug === slug)
