@@ -511,6 +511,10 @@ test.describe('Skill Detail — After Import', () => {
     await page.waitForLoadState('networkidle')
 
     await expect(page.getByText('Current: v1')).toBeVisible()
+    // Version entry should show v1 with Latest badge
+    await expect(page.getByText('Latest')).toBeVisible()
+    // Should NOT show "No versions yet"
+    await expect(page.getByText('No versions yet')).not.toBeVisible()
   })
 })
 
