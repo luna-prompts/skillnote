@@ -3,7 +3,7 @@ import { useState, useCallback, useEffect, useRef } from 'react'
 import { TopBar } from '@/components/layout/topbar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Download, Pencil, GitBranch, Check, BookOpen, ArrowLeft, Hash, Link2, Star, Command, X, Keyboard, FileText, Search, FolderOpen, Share2, MoreHorizontal, Trash2, Clock, Tag } from 'lucide-react'
+import { Download, Pencil, GitBranch, Check, BookOpen, ArrowLeft, Hash, Link2, Star, Command, X, Keyboard, FileText, Search, FolderOpen, Share2, MoreHorizontal, Trash2, Clock, Tag, User } from 'lucide-react'
 import { Skill, type Comment } from '@/lib/mock-data'
 import { getSkills, updateSkill, deleteSkillById, saveSkillEdit } from '@/lib/skills-store'
 import { validateSkillName, validateDescription } from '@/lib/skill-validation'
@@ -403,6 +403,12 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
 
               {/* Meta pills row */}
               <div className="flex flex-wrap items-center gap-2 mb-5">
+                {skill.created_by && (
+                  <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground bg-muted/60 px-2.5 py-1 rounded-full">
+                    <User className="h-3 w-3" />
+                    {skill.created_by}
+                  </span>
+                )}
                 {skill.current_version > 0 && (
                   <span className="inline-flex items-center gap-1.5 text-[11px] font-mono text-muted-foreground bg-muted/60 px-2.5 py-1 rounded-full">
                     <GitBranch className="h-3 w-3" />

@@ -63,6 +63,7 @@ export type Skill = {
   tags: string[]
   collections: string[]
   current_version: number
+  created_by?: string
   created_at: string
   updated_at: string
   comments?: Comment[]
@@ -117,6 +118,7 @@ export const mockSkills: Skill[] = [
     tags: ['react', 'typescript'],
     collections: ['Frontend'],
     current_version: 3,
+    created_by: 'Nova Vex',
     created_at: '2026-02-10T10:00:00Z',
     updated_at: '2026-02-20T14:30:00Z',
     comments: [
@@ -175,6 +177,7 @@ export const mockSkills: Skill[] = [
     tags: ['api', 'typescript'],
     collections: ['Backend'],
     current_version: 1,
+    created_by: 'Dev Patel',
     created_at: '2026-02-08T10:00:00Z',
     updated_at: '2026-02-19T09:00:00Z',
     comments: [
@@ -189,6 +192,7 @@ export const mockSkills: Skill[] = [
     tags: ['testing', 'workflow'],
     collections: ['Frontend', 'Backend'],
     current_version: 1,
+    created_by: 'Sarah Kim',
     created_at: '2026-02-05T10:00:00Z',
     updated_at: '2026-02-17T16:00:00Z',
   },
@@ -200,6 +204,7 @@ export const mockSkills: Skill[] = [
     tags: ['nextjs', 'react'],
     collections: ['Frontend'],
     current_version: 1,
+    created_by: 'Jordan Lee',
     created_at: '2026-02-12T10:00:00Z',
     updated_at: '2026-02-21T08:00:00Z',
   },

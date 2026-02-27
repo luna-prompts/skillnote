@@ -7,6 +7,7 @@ import { TopBar } from '@/components/layout/topbar'
 import { ImportModal } from '@/components/import/ImportModal'
 import { exportAllAsZip } from '@/lib/export-utils'
 import { getSkills, syncSkillsFromApi } from '@/lib/skills-store'
+import { getProfile, setProfile } from '@/lib/profile'
 import { toast } from 'sonner'
 
 const ACCENT_COLORS = [
@@ -186,6 +187,45 @@ function SwitchControl({ storageKey, defaultValue = false }: { storageKey: strin
   )
 }
 
+function ProfileConfig() {
+  const [firstName, setFirstName] = useState('')
+  const [lastName, setLastName] = useState('')
+
+  useEffect(() => {
+    const p = getProfile()
+    setFirstName(p.firstName)
+    setLastName(p.lastName)
+  }, [])
+
+  function save() {
+    setProfile({ firstName, lastName })
+    toast.success('Profile saved')
+  }
+
+  return (
+    <>
+      <Row label="First Name" desc="Your first name — shown as skill author">
+        <input
+          value={firstName}
+          onChange={e => setFirstName(e.target.value)}
+          onBlur={save}
+          placeholder="First"
+          className="h-8 px-3 text-[13px] bg-muted border border-border/60 rounded-lg text-foreground focus:outline-none focus:ring-1 focus:ring-ring w-40"
+        />
+      </Row>
+      <Row label="Last Name" desc="Your last name">
+        <input
+          value={lastName}
+          onChange={e => setLastName(e.target.value)}
+          onBlur={save}
+          placeholder="Last"
+          className="h-8 px-3 text-[13px] bg-muted border border-border/60 rounded-lg text-foreground focus:outline-none focus:ring-1 focus:ring-ring w-40"
+        />
+      </Row>
+    </>
+  )
+}
+
 function BackendConfig() {
   const [apiUrl, setApiUrl] = useState('')
   const [token, setToken] = useState('')
@@ -304,6 +344,11 @@ export default function SettingsPage() {
       <div className="flex-1 overflow-auto">
         <div className="max-w-2xl mx-auto px-6 py-8">
           <h1 className="text-xl font-semibold text-foreground mb-8">Settings</h1>
+
+          {/* Profile */}
+          <Section title="Profile">
+            <ProfileConfig />
+          </Section>
 
           {/* Appearance */}
           <Section title="Appearance">
