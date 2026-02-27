@@ -4,6 +4,7 @@ import { Skill } from './mock-data'
 import { fetchSkills, createSkillApi, updateSkillApi, deleteSkillApi } from './api/skills'
 import { isConfigured, SkillNoteApiError } from './api/client'
 import { slugFromName } from './skill-validation'
+import { getDisplayName } from './profile'
 
 const STORAGE_KEY = 'skillnote:skills'
 
@@ -110,7 +111,7 @@ export async function createSkill(data: {
     return skill
   } else {
     const now = new Date().toISOString()
-    const skill: Skill = { slug, title: data.title, description: data.description, content_md: data.content_md, tags: data.tags, collections: data.collections, current_version: 1, created_at: now, updated_at: now }
+    const skill: Skill = { slug, title: data.title, description: data.description, content_md: data.content_md, tags: data.tags, collections: data.collections, current_version: 1, created_by: getDisplayName(), created_at: now, updated_at: now }
     addSkill(skill)
     notifyChanged()
     return skill
