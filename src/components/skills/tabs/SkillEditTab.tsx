@@ -139,18 +139,9 @@ export function SkillEditTab({
     <>
       <div className="flex items-center gap-2">
         {mode === 'edit' && currentVersion && (
-          <span className="text-[11px] text-muted-foreground font-medium items-center gap-1 hidden sm:flex">
-            {editorDirty && (
-              <>
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-                <span className="text-amber-500">Unsaved changes</span>
-                <span className="text-muted-foreground/40 mx-0.5">&middot;</span>
-              </>
-            )}
-            Based on v{currentVersion}
-          </span>
+          <span className="text-[11px] font-mono text-muted-foreground/60 tabular-nums hidden sm:inline">v{currentVersion} → v{nextVersion}</span>
         )}
-        {editorDirty && mode === 'edit' && !currentVersion && (
+        {editorDirty && mode === 'edit' && (
           <span className="text-[11px] text-amber-500 font-medium items-center gap-1 hidden sm:flex">
             <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
             Unsaved changes
@@ -242,11 +233,6 @@ export function SkillEditTab({
         />
       </div>
       <div className="flex items-center gap-3 mb-1">
-        {currentVersion ? (
-          <span className="text-[10px] font-mono text-muted-foreground/40 tabular-nums">v{currentVersion} → v{nextVersion}</span>
-        ) : mode === 'create' ? (
-          <span className="text-[10px] font-mono text-muted-foreground/40 tabular-nums">v1</span>
-        ) : null}
         {previewSlug && (
           <code className="text-[11px] font-mono text-muted-foreground/50">{previewSlug}/SKILL.md</code>
         )}
