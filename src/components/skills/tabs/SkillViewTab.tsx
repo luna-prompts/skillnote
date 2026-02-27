@@ -5,7 +5,7 @@ import { Skill, type Comment } from '@/lib/mock-data'
 import { cn } from '@/lib/utils'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { transformFrontmatterToTable } from '@/lib/frontmatter'
+import { stripFrontmatter } from '@/lib/frontmatter'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { nightOwl, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import { useTheme } from 'next-themes'
@@ -156,7 +156,8 @@ export function SkillViewTab({ skill, onAddComment }: SkillViewTabProps) {
   const isDark = resolvedTheme === 'dark'
   const viewContentRef = useRef<HTMLDivElement>(null)
 
-  const headings = useMemo(() => extractHeadings(skill.content_md), [skill.content_md])
+  const strippedContent = useMemo(() => stripFrontmatter(skill.content_md), [skill.content_md])
+  const headings = useMemo(() => extractHeadings(strippedContent), [strippedContent])
 
   return (
     <div className="flex-1 mt-0 overflow-y-auto overflow-x-hidden scroll-smooth animate-in fade-in duration-200" ref={viewContentRef}>
@@ -252,7 +253,7 @@ export function SkillViewTab({ skill, onAddComment }: SkillViewTabProps) {
                 },
               }}
             >
-              {transformFrontmatterToTable(skill.content_md)}
+              {stripFrontmatter(skill.content_md)}
             </ReactMarkdown>
           </div>
         </div>
