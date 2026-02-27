@@ -4,7 +4,6 @@ import { getSkills, syncSkillsFromApi } from './skills-store'
 
 export async function exportAllAsZip() {
   const zip = new JSZip()
-  const folder = zip.folder('skills')!
   let skills = getSkills()
   if (skills.length === 0) {
     try {
@@ -15,7 +14,9 @@ export async function exportAllAsZip() {
   }
   for (const skill of skills) {
     const md = generateMarkdown(skill)
-    folder.file(`${skill.slug}.md`, md)
+    // Each skill gets its own folder: {slug}/SKILL.md
+    const skillFolder = zip.folder(skill.slug)!
+    skillFolder.file('SKILL.md', md)
   }
   const blob = await zip.generateAsync({ type: 'blob' })
   const date = new Date().toISOString().split('T')[0]

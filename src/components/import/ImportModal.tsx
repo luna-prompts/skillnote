@@ -127,9 +127,14 @@ export function ImportModal({ onClose, onImported }: { onClose: () => void; onIm
           for (const [path, entry] of entries) {
             if (entry.dir || !path.endsWith('.md')) continue
             const text = await entry.async('text')
-            const name = path.split('/').pop() || path
-            const skill = parseMarkdown(text, name)
-            results.push({ filename: name, skill })
+            const fileName = path.split('/').pop() || path
+            // For SKILL.md files inside folders, use the folder name as the filename context
+            const parts = path.split('/').filter(Boolean)
+            const displayName = fileName.toUpperCase() === 'SKILL.MD' && parts.length >= 2
+              ? parts[parts.length - 2] + '.md'
+              : fileName
+            const skill = parseMarkdown(text, displayName)
+            results.push({ filename: displayName, skill })
           }
         } catch {
           toast.error('Failed to read ZIP file')
