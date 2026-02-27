@@ -2,8 +2,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
-from app.api.deps import get_current_token
-from app.db.models import AccessToken, Skill, TokenSkillGrant
+from app.db.models import Skill
 from app.db.session import get_db
 from datetime import datetime, timezone
 
@@ -22,15 +21,9 @@ router = APIRouter(prefix="/v1/tags", tags=["tags"])
 
 @router.get("", response_model=list[TagOut])
 def list_tags(
-    current_token: AccessToken = Depends(get_current_token),
     db: Session = Depends(get_db),
 ):
-    skills = (
-        db.query(Skill)
-        .join(TokenSkillGrant, TokenSkillGrant.skill_id == Skill.id)
-        .filter(TokenSkillGrant.token_id == current_token.id)
-        .all()
-    )
+    skills = db.query(Skill).all()
     tag_counts: dict[str, int] = {}
     for skill in skills:
         for tag in (skill.tags or []):
@@ -42,13 +35,10 @@ def list_tags(
 def rename_tag(
     tag_name: str,
     payload: TagRenameRequest,
-    current_token: AccessToken = Depends(get_current_token),
     db: Session = Depends(get_db),
 ):
     skills = (
         db.query(Skill)
-        .join(TokenSkillGrant, TokenSkillGrant.skill_id == Skill.id)
-        .filter(TokenSkillGrant.token_id == current_token.id)
         .filter(Skill.tags.contains([tag_name]))
         .all()
     )
@@ -62,13 +52,10 @@ def rename_tag(
 @router.delete("/{tag_name}", status_code=204)
 def delete_tag(
     tag_name: str,
-    current_token: AccessToken = Depends(get_current_token),
     db: Session = Depends(get_db),
 ):
     skills = (
         db.query(Skill)
-        .join(TokenSkillGrant, TokenSkillGrant.skill_id == Skill.id)
-        .filter(TokenSkillGrant.token_id == current_token.id)
         .filter(Skill.tags.contains([tag_name]))
         .all()
     )

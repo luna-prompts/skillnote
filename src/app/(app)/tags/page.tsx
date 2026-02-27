@@ -8,7 +8,6 @@ import { Plus, Search } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { saveSkills, getSkills } from '@/lib/skills-store'
 import { renameTagApi, deleteTagApi, fetchTagsApi } from '@/lib/api/skills'
-import { isConfigured } from '@/lib/api/client'
 import { toast } from 'sonner'
 
 const TAG_COLORS = ['bg-violet-500', 'bg-blue-500', 'bg-teal-500', 'bg-amber-500', 'bg-rose-500', 'bg-emerald-500', 'bg-indigo-500']
@@ -24,7 +23,6 @@ export default function TagsPage() {
   const router = useRouter()
 
   async function loadTags() {
-    if (!isConfigured()) return
     try {
       const data = await fetchTagsApi()
       setTags(data)

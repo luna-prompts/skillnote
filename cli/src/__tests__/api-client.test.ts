@@ -5,7 +5,7 @@ describe('ApiClient', () => {
     vi.restoreAllMocks()
   })
 
-  it('adds auth header to requests', async () => {
+  it('makes requests without auth headers', async () => {
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
       json: () => Promise.resolve({ status: 'ok' }),
@@ -13,17 +13,18 @@ describe('ApiClient', () => {
     vi.stubGlobal('fetch', mockFetch)
 
     const { ApiClient } = await import('../api/client.js')
-    const client = new ApiClient('https://example.com', 'skn_test_123')
+    const client = new ApiClient('https://example.com')
     await client.get('/health')
 
     expect(mockFetch).toHaveBeenCalledWith(
       'https://example.com/health',
       expect.objectContaining({
-        headers: expect.objectContaining({
-          Authorization: 'Bearer skn_test_123',
-        }),
+        method: 'GET',
       })
     )
+    // Should NOT have Authorization header
+    const callArgs = mockFetch.mock.calls[0][1]
+    expect(callArgs.headers?.Authorization).toBeUndefined()
   })
 
   it('throws on non-ok response with error body', async () => {
@@ -35,24 +36,21 @@ describe('ApiClient', () => {
     vi.stubGlobal('fetch', mockFetch)
 
     const { ApiClient } = await import('../api/client.js')
-    const client = new ApiClient('https://example.com', 'skn_test_123')
+    const client = new ApiClient('https://example.com')
     await expect(client.get('/v1/skills/nope')).rejects.toThrow('Skill not found')
   })
 
-  it('validates token via POST', async () => {
+  it('checks health via GET', async () => {
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({ valid: true, subject: { type: 'user', id: 'me' } }),
+      json: () => Promise.resolve({ status: 'ok' }),
     })
     vi.stubGlobal('fetch', mockFetch)
 
     const { ApiClient } = await import('../api/client.js')
-    const client = new ApiClient('https://example.com', 'skn_test_123')
-    const result = await client.validateToken()
-    expect(result).toEqual({ valid: true, subject: { type: 'user', id: 'me' } })
-    expect(mockFetch).toHaveBeenCalledWith(
-      'https://example.com/auth/validate-token',
-      expect.objectContaining({ method: 'POST' })
-    )
+    const client = new ApiClient('https://example.com')
+    const result = await client.checkHealth()
+    expect(result).toBe(true)
+    expect(mockFetch).toHaveBeenCalledWith('https://example.com/health')
   })
 })

@@ -121,7 +121,7 @@ export async function addCommand(
   }
 
   const projectDir = process.cwd()
-  const client = new ApiClient(auth.host, auth.token)
+  const client = new ApiClient(auth.host)
 
   let agents = options.agent
     ? [getAdapter(options.agent, projectDir)].filter(Boolean) as ReturnType<typeof detectAgents>

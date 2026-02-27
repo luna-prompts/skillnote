@@ -1,19 +1,11 @@
-import hashlib
 import json
 import urllib.error
 import urllib.request
 
-import psycopg
 import pytest
 
-from app.core.config import settings
 
 BASE_URL = "http://127.0.0.1:8080"
-TOKEN = "skn_dev_demo_token"
-
-
-def _db_dsn() -> str:
-    return settings.database_url.replace("+psycopg", "")
 
 
 def _request(method: str, path: str, headers: dict | None = None, body: dict | None = None):
@@ -32,81 +24,27 @@ def _request(method: str, path: str, headers: dict | None = None, body: dict | N
         pytest.skip(f"API not reachable for integration test: {e}")
 
 
-def test_validate_token_success_and_failure():
-    status, body = _request("POST", "/auth/validate-token", {"Content-Type": "application/json"}, {"token": TOKEN})
+def test_health_endpoint():
+    status, body = _request("GET", "/health")
     assert status == 200
-    assert body["valid"] is True
-
-    status, body = _request("POST", "/auth/validate-token", {"Content-Type": "application/json"}, {"token": "bad"})
-    assert status == 200
-    assert body["valid"] is False
+    assert body["status"] == "ok"
 
 
-def test_validate_token_inactive_and_expired():
-    try:
-        with psycopg.connect(_db_dsn()) as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    update access_tokens
-                    set status = 'revoked'
-                    where label = 'dev-seed-token'
-                    """
-                )
-            conn.commit()
-
-        status, body = _request("POST", "/auth/validate-token", {"Content-Type": "application/json"}, {"token": TOKEN})
-        assert status == 200
-        assert body["valid"] is False
-
-        with psycopg.connect(_db_dsn()) as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    update access_tokens
-                    set status = 'active', expires_at = now() - interval '1 minute'
-                    where label = 'dev-seed-token'
-                    """
-                )
-            conn.commit()
-
-        status, body = _request("POST", "/auth/validate-token", {"Content-Type": "application/json"}, {"token": TOKEN})
-        assert status == 200
-        assert body["valid"] is False
-    except Exception as e:
-        pytest.skip(f"DB not reachable for token state test: {e}")
-    finally:
-        try:
-            with psycopg.connect(_db_dsn()) as conn:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        """
-                        update access_tokens
-                        set status = 'active', expires_at = null
-                        where label = 'dev-seed-token'
-                        """
-                    )
-                conn.commit()
-        except Exception:
-            pass
-
-
-def test_skills_requires_auth_error_shape():
-    status, body = _request("GET", "/v1/skills")
-    assert status == 401
-    assert "error" in body
-    assert "code" in body["error"] and "message" in body["error"]
-
-
-def test_list_skills_and_versions_with_auth():
-    headers = {"Authorization": f"Bearer {TOKEN}"}
-
-    status, skills = _request("GET", "/v1/skills", headers=headers)
+def test_list_skills_no_auth_required():
+    """Skills endpoint is open — no auth header needed."""
+    status, skills = _request("GET", "/v1/skills")
     assert status == 200
     assert isinstance(skills, list)
     assert len(skills) >= 1
 
-    status, versions = _request("GET", "/v1/skills/secure-migrations/versions", headers=headers)
+
+def test_list_skills_and_versions():
+    status, skills = _request("GET", "/v1/skills")
+    assert status == 200
+    assert isinstance(skills, list)
+    assert len(skills) >= 1
+
+    status, versions = _request("GET", "/v1/skills/secure-migrations/versions")
     assert status == 200
     assert isinstance(versions, list)
     assert len(versions) >= 1
@@ -115,7 +53,6 @@ def test_list_skills_and_versions_with_auth():
 def test_download_bundle_with_headers():
     req = urllib.request.Request(
         f"{BASE_URL}/v1/skills/secure-migrations/0.1.0/download",
-        headers={"Authorization": f"Bearer {TOKEN}"},
         method="GET",
     )
     try:
@@ -130,64 +67,53 @@ def test_download_bundle_with_headers():
         pytest.skip(f"Download endpoint not reachable for integration test: {e}")
 
 
-def test_download_detects_checksum_mismatch():
-    actual_checksum = None
-    try:
-        with psycopg.connect(_db_dsn()) as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    select sv.bundle_storage_key
-                    from skill_versions sv
-                    join skills s on s.id = sv.skill_id
-                    where s.slug = %s and sv.version = %s
-                    """,
-                    ("secure-migrations", "0.1.0"),
-                )
-                row = cur.fetchone()
-                if not row:
-                    pytest.skip("seeded version not found")
-                storage_key = row[0]
+def test_download_nonexistent_skill():
+    status, body = _request("GET", "/v1/skills/nonexistent-xyz/0.1.0/download")
+    assert status == 404
 
-            bundle_path = f"{settings.bundle_storage_dir}/{storage_key}"
-            actual_checksum = hashlib.sha256(open(bundle_path, "rb").read()).hexdigest()
 
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    update skill_versions sv
-                    set checksum_sha256 = %s
-                    from skills s
-                    where sv.skill_id = s.id and s.slug = %s and sv.version = %s
-                    """,
-                    ("0" * 64, "secure-migrations", "0.1.0"),
-                )
-            conn.commit()
+def test_skill_crud_lifecycle():
+    """Full create → read → update → delete cycle without auth."""
+    # Create
+    status, body = _request(
+        "POST", "/v1/skills",
+        headers={"Content-Type": "application/json"},
+        body={
+            "name": "integration-test-skill",
+            "slug": "integration-test-skill",
+            "description": "Created by integration test",
+            "content_md": "# Integration Test",
+            "tags": ["test"],
+            "collections": [],
+        },
+    )
+    assert status == 200
+    assert body["slug"] == "integration-test-skill"
+    assert body["current_version"] == 1
 
-        status, body = _request(
-            "GET",
-            "/v1/skills/secure-migrations/0.1.0/download",
-            headers={"Authorization": f"Bearer {TOKEN}"},
-        )
-        assert status == 409
-        assert body["error"]["code"] == "CHECKSUM_MISMATCH"
-    except Exception as e:
-        pytest.skip(f"DB/storage not reachable for checksum mismatch test: {e}")
-    finally:
-        if not actual_checksum:
-            return
-        try:
-            with psycopg.connect(_db_dsn()) as conn:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        """
-                        update skill_versions sv
-                        set checksum_sha256 = %s
-                        from skills s
-                        where sv.skill_id = s.id and s.slug = %s and sv.version = %s
-                        """,
-                        (actual_checksum, "secure-migrations", "0.1.0"),
-                    )
-                conn.commit()
-        except Exception:
-            pass
+    # Read
+    status, body = _request("GET", "/v1/skills/integration-test-skill")
+    assert status == 200
+    assert body["description"] == "Created by integration test"
+
+    # Update
+    status, body = _request(
+        "PATCH", "/v1/skills/integration-test-skill",
+        headers={"Content-Type": "application/json"},
+        body={"description": "Updated by integration test"},
+    )
+    assert status == 200
+    assert body["description"] == "Updated by integration test"
+
+    # Content versions should exist
+    status, versions = _request("GET", "/v1/skills/integration-test-skill/content-versions")
+    assert status == 200
+    assert len(versions) >= 1
+
+    # Delete
+    status, _ = _request("DELETE", "/v1/skills/integration-test-skill")
+    assert status == 200
+
+    # Verify deleted
+    status, _ = _request("GET", "/v1/skills/integration-test-skill")
+    assert status == 404

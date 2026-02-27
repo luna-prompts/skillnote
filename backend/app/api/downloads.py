@@ -4,9 +4,8 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_token
 from app.core.errors import api_error
-from app.db.models import AccessToken, Skill, SkillVersion, TokenSkillGrant
+from app.db.models import Skill, SkillVersion
 from app.db.session import get_db
 from app.services.storage_service import storage
 
@@ -17,13 +16,10 @@ router = APIRouter(prefix="/v1/skills", tags=["downloads"])
 def download_skill_bundle(
     skill: str,
     version: str,
-    current_token: AccessToken = Depends(get_current_token),
     db: Session = Depends(get_db),
 ):
     skill_row = (
         db.query(Skill)
-        .join(TokenSkillGrant, TokenSkillGrant.skill_id == Skill.id)
-        .filter(TokenSkillGrant.token_id == current_token.id)
         .filter((Skill.slug == skill) | (Skill.name == skill))
         .first()
     )

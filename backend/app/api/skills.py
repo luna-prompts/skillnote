@@ -5,8 +5,7 @@ from fastapi import APIRouter, Depends
 from app.core.errors import api_error
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_token
-from app.db.models import Skill, SkillVersion, SkillContentVersion, TokenSkillGrant, AccessToken
+from app.db.models import Skill, SkillVersion, SkillContentVersion
 from app.db.session import get_db
 from app.schemas.skill import SkillListItem, SkillDetail, SkillCreate, SkillUpdate
 from app.schemas.version import SkillVersionItem, ContentVersionItem
@@ -14,14 +13,8 @@ from app.schemas.version import SkillVersionItem, ContentVersionItem
 router = APIRouter(prefix="/v1/skills", tags=["skills"])
 
 
-def _get_accessible_skill(slug: str, token: AccessToken, db: Session) -> Skill:
-    skill_row = (
-        db.query(Skill)
-        .join(TokenSkillGrant, TokenSkillGrant.skill_id == Skill.id)
-        .filter(TokenSkillGrant.token_id == token.id)
-        .filter(Skill.slug == slug)
-        .first()
-    )
+def _get_skill(slug: str, db: Session) -> Skill:
+    skill_row = db.query(Skill).filter(Skill.slug == slug).first()
     if not skill_row:
         raise api_error(404, "SKILL_NOT_FOUND", "Skill not found")
     return skill_row
@@ -55,16 +48,8 @@ def _create_content_version(db: Session, skill: Skill) -> SkillContentVersion:
 
 
 @router.get("", response_model=list[SkillListItem])
-def list_skills(
-    current_token: AccessToken = Depends(get_current_token), db: Session = Depends(get_db)
-):
-    rows = (
-        db.query(Skill)
-        .join(TokenSkillGrant, TokenSkillGrant.skill_id == Skill.id)
-        .filter(TokenSkillGrant.token_id == current_token.id)
-        .order_by(Skill.slug.asc())
-        .all()
-    )
+def list_skills(db: Session = Depends(get_db)):
+    rows = db.query(Skill).order_by(Skill.slug.asc()).all()
 
     out: list[SkillListItem] = []
     for skill in rows:
@@ -94,13 +79,10 @@ def list_skills(
 @router.get("/{skill}/versions", response_model=list[SkillVersionItem])
 def list_versions(
     skill: str,
-    current_token: AccessToken = Depends(get_current_token),
     db: Session = Depends(get_db),
 ):
     skill_row = (
         db.query(Skill)
-        .join(TokenSkillGrant, TokenSkillGrant.skill_id == Skill.id)
-        .filter(TokenSkillGrant.token_id == current_token.id)
         .filter((Skill.slug == skill) | (Skill.name == skill))
         .first()
     )
@@ -130,10 +112,9 @@ def list_versions(
 @router.get("/{skill_slug}/content-versions", response_model=list[ContentVersionItem])
 def list_content_versions(
     skill_slug: str,
-    current_token: AccessToken = Depends(get_current_token),
     db: Session = Depends(get_db),
 ):
-    skill_row = _get_accessible_skill(skill_slug, current_token, db)
+    skill_row = _get_skill(skill_slug, db)
     versions = (
         db.query(SkillContentVersion)
         .filter(SkillContentVersion.skill_id == skill_row.id)
@@ -147,10 +128,9 @@ def list_content_versions(
 def set_latest_version(
     skill_slug: str,
     version: int,
-    current_token: AccessToken = Depends(get_current_token),
     db: Session = Depends(get_db),
 ):
-    skill_row = _get_accessible_skill(skill_slug, current_token, db)
+    skill_row = _get_skill(skill_slug, db)
 
     target = (
         db.query(SkillContentVersion)
@@ -185,10 +165,9 @@ def set_latest_version(
 def restore_version(
     skill_slug: str,
     version: int,
-    current_token: AccessToken = Depends(get_current_token),
     db: Session = Depends(get_db),
 ):
-    skill_row = _get_accessible_skill(skill_slug, current_token, db)
+    skill_row = _get_skill(skill_slug, db)
 
     target = (
         db.query(SkillContentVersion)
@@ -217,17 +196,15 @@ def restore_version(
 @router.get("/{skill_slug}", response_model=SkillDetail)
 def get_skill(
     skill_slug: str,
-    current_token: AccessToken = Depends(get_current_token),
     db: Session = Depends(get_db),
 ):
-    skill_row = _get_accessible_skill(skill_slug, current_token, db)
+    skill_row = _get_skill(skill_slug, db)
     return skill_row
 
 
 @router.post("", response_model=SkillDetail, status_code=201)
 def create_skill(
     payload: SkillCreate,
-    current_token: AccessToken = Depends(get_current_token),
     db: Session = Depends(get_db),
 ):
     existing = db.query(Skill).filter(Skill.slug == payload.slug).first()
@@ -250,12 +227,6 @@ def create_skill(
     # Create initial version (v1)
     _create_content_version(db, skill)
 
-    grant = TokenSkillGrant(
-        id=uuid_lib.uuid4(),
-        token_id=current_token.id,
-        skill_id=skill.id,
-    )
-    db.add(grant)
     db.commit()
     db.refresh(skill)
     return skill
@@ -265,10 +236,9 @@ def create_skill(
 def update_skill(
     skill_slug: str,
     payload: SkillUpdate,
-    current_token: AccessToken = Depends(get_current_token),
     db: Session = Depends(get_db),
 ):
-    skill_row = _get_accessible_skill(skill_slug, current_token, db)
+    skill_row = _get_skill(skill_slug, db)
 
     if payload.name is not None:
         skill_row.name = payload.name
@@ -293,9 +263,8 @@ def update_skill(
 @router.delete("/{skill_slug}", status_code=204)
 def delete_skill(
     skill_slug: str,
-    current_token: AccessToken = Depends(get_current_token),
     db: Session = Depends(get_db),
 ):
-    skill_row = _get_accessible_skill(skill_slug, current_token, db)
+    skill_row = _get_skill(skill_slug, db)
     db.delete(skill_row)
     db.commit()

@@ -72,12 +72,107 @@ function writeTestFile(name: string, content: string): string {
   return filePath
 }
 
+/** Mock all /v1/** API calls so syncSkillsFromApi() doesn't interfere with localStorage-based tests */
+async function mockApi(page: Page, skills: typeof SEED_SKILLS = []) {
+  const apiList = skills.map(s => ({
+    name: s.title, slug: s.slug, description: s.description,
+    tags: s.tags, collections: s.collections, currentVersion: s.current_version,
+  }))
+
+  // Intercept all /v1/ API calls to prevent real backend interaction
+  await page.route('**/v1/**', (route, request) => {
+    const url = new URL(request.url())
+    const path = url.pathname
+
+    // GET /v1/skills (list)
+    if (request.method() === 'GET' && path === '/v1/skills') {
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(apiList) })
+    }
+
+    // GET /v1/skills/:slug
+    if (request.method() === 'GET' && /^\/v1\/skills\/[^/]+$/.test(path)) {
+      const slug = path.split('/').pop()!
+      const skill = skills.find(s => s.slug === slug)
+      if (skill) {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
+          id: slug, name: skill.title, slug: skill.slug, description: skill.description,
+          content_md: skill.content_md, tags: skill.tags, collections: skill.collections,
+          current_version: skill.current_version, created_at: skill.created_at, updated_at: skill.updated_at,
+        })})
+      }
+      return route.fulfill({ status: 404, contentType: 'application/json', body: '{"error":{"code":"SKILL_NOT_FOUND","message":"Skill not found"}}' })
+    }
+
+    // GET /v1/skills/:slug/content-versions
+    if (request.method() === 'GET' && /\/content-versions$/.test(path)) {
+      const slug = path.split('/')[3]
+      const skill = skills.find(s => s.slug === slug)
+      if (skill && skill.current_version > 0) {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([{
+          version: skill.current_version, title: skill.title, description: skill.description,
+          content_md: skill.content_md, tags: skill.tags, collections: skill.collections,
+          is_latest: true, created_at: skill.created_at || new Date().toISOString(),
+        }])})
+      }
+      // Return 404 for unknown skills so the localStorage fallback triggers
+      return route.fulfill({ status: 404, contentType: 'application/json', body: '{"error":{"code":"SKILL_NOT_FOUND","message":"Skill not found"}}' })
+    }
+
+    // GET /v1/skills/:slug/comments
+    if (request.method() === 'GET' && /\/comments$/.test(path)) {
+      return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
+    }
+
+    // GET /v1/tags
+    if (request.method() === 'GET' && path === '/v1/tags') {
+      return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
+    }
+
+    // POST /v1/skills (create) — return the created skill
+    if (request.method() === 'POST' && path === '/v1/skills') {
+      try {
+        const body = JSON.parse(request.postData() || '{}')
+        const now = new Date().toISOString()
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
+          id: body.slug || 'new', name: body.name, slug: body.slug,
+          description: body.description || '', content_md: body.content_md || '',
+          tags: body.tags || [], collections: body.collections || [],
+          current_version: 1, created_at: now, updated_at: now,
+        })})
+      } catch { /* fall through */ }
+    }
+
+    // PATCH /v1/skills/:slug (update) — return success
+    if (request.method() === 'PATCH' && /^\/v1\/skills\/[^/]+$/.test(path)) {
+      const slug = path.split('/').pop()!
+      const skill = skills.find(s => s.slug === slug)
+      const now = new Date().toISOString()
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
+        id: slug, name: skill?.title || slug, slug,
+        description: skill?.description || '', content_md: skill?.content_md || '',
+        tags: skill?.tags || [], collections: skill?.collections || [],
+        current_version: (skill?.current_version || 0) + 1, created_at: skill?.created_at || now, updated_at: now,
+      })})
+    }
+
+    // DELETE — return success
+    if (request.method() === 'DELETE') {
+      return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' })
+    }
+
+    // Default: return empty success for other endpoints
+    return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' })
+  })
+}
+
 async function clearStorage(page: Page) {
+  await mockApi(page)
   await page.goto('/')
   await page.evaluate(() => localStorage.clear())
 }
 
 async function seedStorage(page: Page) {
+  await mockApi(page, SEED_SKILLS)
   await page.goto('/')
   await page.evaluate((skills) => {
     localStorage.setItem('skillnote:skills', JSON.stringify(skills))
@@ -289,6 +384,9 @@ test.describe('Import Modal — Tag & Collection Editing', () => {
     await page.evaluate((skills) => {
       localStorage.setItem('skillnote:skills', JSON.stringify(skills))
     }, SEED_SKILLS)
+    // Update route mock to return seeded skills so sync doesn't overwrite
+    await page.unroute('**/v1/**')
+    await mockApi(page, SEED_SKILLS)
     await page.reload({ waitUntil: 'networkidle' })
 
     await openImportModal(page)
@@ -507,6 +605,14 @@ test.describe('Skill Detail — After Import', () => {
   })
 
   test('versions page shows v1 for imported skill', async ({ page }) => {
+    // Read the imported skill from localStorage and update mock to include it
+    const importedSkills = await page.evaluate(() => {
+      const raw = localStorage.getItem('skillnote:skills')
+      return raw ? JSON.parse(raw) : []
+    })
+    await page.unroute('**/v1/**')
+    await mockApi(page, importedSkills)
+
     await page.goto('/skills/skill-creator/versions')
     await page.waitForLoadState('networkidle')
 
