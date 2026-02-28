@@ -55,6 +55,15 @@ skillnote/
 └── Dockerfile                    # Next.js multi-stage build
 ```
 
+## Git Workflow
+
+The `master` branch is protected. All changes must go through a feature branch and a pull request. Never push directly to `master`.
+
+1. Create a feature branch (`git checkout -b feat/my-feature`)
+2. Commit changes to the feature branch
+3. Push the branch and create a PR (`gh pr create`)
+4. Merge after approval
+
 ## Development Setup
 
 ### Full stack with Docker
