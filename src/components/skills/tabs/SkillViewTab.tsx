@@ -215,7 +215,7 @@ export function SkillViewTab({ skill, onAddComment }: SkillViewTabProps) {
       </div>
 
 
-      {/* Inline Comments Section */}
+      {/* TODO: Re-enable comments when ACL is ready
       <div className="px-4 sm:px-10 lg:px-14 pb-20 lg:pb-12">
         <div className="border-t border-border/40 pt-8 mt-6 max-w-[48rem]">
           <h2 className="text-[13px] font-semibold text-foreground/90 mb-6 flex items-center gap-2 uppercase tracking-wide">
@@ -230,6 +230,7 @@ export function SkillViewTab({ skill, onAddComment }: SkillViewTabProps) {
           <SkillCommentsTab comments={skill.comments ?? []} onAddComment={onAddComment} skillSlug={skill.slug} />
         </div>
       </div>
+      */}
 
       <ScrollToTopButton containerRef={viewContentRef} />
     </div>

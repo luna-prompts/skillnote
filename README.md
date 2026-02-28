@@ -105,9 +105,6 @@ Install skills to any AI coding agent from the web UI or CLI. Supported agents:
 | Windsurf    | `.windsurf/skills/<skill>/SKILL.md`         |
 | Universal   | `.skills/<skill>/SKILL.md`                  |
 
-### Comments
-Leave feedback on any skill. Discuss improvements, report issues, or share usage tips right alongside the skill content.
-
 ### Offline-First
 The frontend works without a backend. Skills are stored in localStorage and sync to PostgreSQL when the API is available. No data loss if the backend goes down.
 
@@ -266,15 +263,6 @@ curl http://localhost:8082/v1/skills \
 | `POST`   | `/v1/publish`                                                  | Publish a bundle         |
 | `GET`    | `/v1/skills/{slug}/{version}/download`                        | Download a bundle        |
 
-### Comments
-
-| Method   | Endpoint                                  | Description         |
-| -------- | ----------------------------------------- | ------------------- |
-| `GET`    | `/v1/skills/{slug}/comments`              | List comments       |
-| `POST`   | `/v1/skills/{slug}/comments`              | Add a comment       |
-| `PATCH`  | `/v1/skills/{slug}/comments/{id}`         | Edit a comment      |
-| `DELETE` | `/v1/skills/{slug}/comments/{id}`         | Delete a comment    |
-
 ### Tags
 
 | Method   | Endpoint             | Description                         |
@@ -384,6 +372,28 @@ docker compose up --build -d
 
 ---
 
+## References
+
+Learn more about skills and how they work across different AI coding agents:
+
+- [AgentSkills.io](https://agentskills.io/home) - The skills ecosystem
+- [Claude Code Skills](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview) - Anthropic's official skills documentation
+- [Codex Skills](https://developers.openai.com/codex/skills/) - OpenAI Codex skills reference
+- [Antigravity Skills](https://antigravity.google/docs/skills) - Google Antigravity skills documentation
+- [OpenHands Skills](https://docs.openhands.dev/overview/skills) - OpenHands skills overview
+
+---
+
+## Star Us
+
+If you find SkillNote useful, please consider giving it a star on GitHub. It helps others discover the project and motivates us to keep improving it.
+
+<p align="center">
+  <a href="https://github.com/luna-prompts/skillnote"><img src="https://img.shields.io/github/stars/luna-prompts/skillnote?style=for-the-badge&logo=github&label=Star%20on%20GitHub" alt="Star on GitHub" /></a>
+</p>
+
+---
+
 ## Contributing
 
 Contributions are welcome! Here's how:
@@ -405,5 +415,5 @@ MIT &copy; [Luna Prompts](https://github.com/luna-prompts)
 ---
 
 <p align="center">
-  Built by <a href="https://github.com/luna-prompts"><strong>Luna Prompts</strong></a>
+  Made with ❤️ by <a href="https://github.com/luna-prompts"><strong>Luna Prompts</strong></a>
 </p>
