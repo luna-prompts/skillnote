@@ -151,7 +151,7 @@ async function mockApi(page: Page, skills: typeof SEED_SKILLS = []) {
         id: slug, name: skill?.title || slug, slug,
         description: skill?.description || '', content_md: skill?.content_md || '',
         tags: skill?.tags || [], collections: skill?.collections || [],
-        current_version: (skill?.current_version || 0) + 1, created_at: skill?.created_at || now, updated_at: now,
+        current_version: (skill?.current_version || 0) + 1, total_versions: (skill?.current_version || 0) + 1, created_at: skill?.created_at || now, updated_at: now,
       })})
     }
 
