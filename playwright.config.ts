@@ -11,7 +11,6 @@ export default defineConfig({
     headless: true,
     screenshot: 'only-on-failure',
     launchOptions: {
-      executablePath: '/home/homeai/.cache/ms-playwright/chromium-1208/chrome-linux/chrome',
       args: ['--no-sandbox'],
     },
   },

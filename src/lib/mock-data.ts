@@ -88,10 +88,10 @@ export type Tag = {
 }
 
 export const mockTeamMembers: TeamMember[] = [
-  { name: 'Pat', color: '#8b5cf6' },
-  { name: 'Rudra', color: '#ef4444' },
-  { name: 'Tyler', color: '#3b82f6' },
-  { name: 'Max', color: '#f59e0b' },
+  { name: 'Alice', color: '#8b5cf6' },
+  { name: 'Bob', color: '#ef4444' },
+  { name: 'Carol', color: '#3b82f6' },
+  { name: 'Dan', color: '#f59e0b' },
 ]
 
 export const mockTags: Tag[] = [

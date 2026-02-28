@@ -3,7 +3,7 @@ import { chromium } from './node_modules/playwright/index.mjs'
 const HOST = process.env.SKILLNOTE_HOST || 'localhost'
 const BASE = `http://${HOST}:3000`
 const API = `http://${HOST}:8082`
-const TOKEN = 'skn_dev_demo_token'
+const TOKEN = process.env.SKILLNOTE_TOKEN || 'skn_dev_demo_token'
 
 let browser, page
 let passed = 0, failed = 0
@@ -71,7 +71,6 @@ async function clickRendered(p) {
 
 try {
   browser = await chromium.launch({
-    executablePath: '/home/homeai/.cache/ms-playwright/chromium-1208/chrome-linux/chrome',
     headless: true,
     args: ['--no-sandbox'],
   })
