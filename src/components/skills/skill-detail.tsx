@@ -3,7 +3,7 @@ import { useState, useCallback, useEffect, useRef } from 'react'
 import { TopBar } from '@/components/layout/topbar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Download, Pencil, GitBranch, Check, BookOpen, ArrowLeft, Hash, Link2, Star, Command, X, Keyboard, FileText, Search, FolderOpen, Share2, MoreHorizontal, Trash2, Clock, Tag, User } from 'lucide-react'
+import { Download, Pencil, GitBranch, Check, BookOpen, ArrowLeft, Hash, Link2, Star, Command, X, Keyboard, FileText, Search, FolderOpen, Share2, MoreHorizontal, Trash2, Clock, Tag, User, Terminal } from 'lucide-react'
 import { Skill, type Comment } from '@/lib/mock-data'
 import { getSkills, updateSkill, deleteSkillById, saveSkillEdit } from '@/lib/skills-store'
 import { validateSkillName, validateDescription } from '@/lib/skill-validation'
@@ -15,6 +15,7 @@ import { cn } from '@/lib/utils'
 import { useRouter } from 'next/navigation'
 import { SkillViewTab } from './tabs/SkillViewTab'
 import { SkillEditTab } from './tabs/SkillEditTab'
+import { InstallDialog } from './InstallDialog'
 
 type PaletteAction = {
   icon: React.ComponentType<{ className?: string }>
@@ -199,6 +200,7 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
   const [savedVersion, setSavedVersion] = useState<number | null>(null)
   const [showMoreMenu, setShowMoreMenu] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [showInstallDialog, setShowInstallDialog] = useState(false)
 
   const handleDiscard = useCallback(() => {
     setShowDiscardConfirm(true)
@@ -457,6 +459,10 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
                   <GitBranch className="h-3.5 w-3.5" />
                   Versions
                 </Button>
+                <Button variant="outline" size="sm" className="h-9 min-h-[44px] sm:min-h-0 gap-2 text-[13px]" onClick={() => setShowInstallDialog(true)}>
+                  <Terminal className="h-3.5 w-3.5" />
+                  Install
+                </Button>
                 <Button variant="outline" size="sm" className="h-9 min-h-[44px] sm:min-h-0 gap-2 text-[13px] hidden sm:flex" onClick={handleExport}>
                   <Download className="h-3.5 w-3.5" />
                   Export
@@ -573,6 +579,11 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
           </div>
         </div>
       )}
+      {/* Install dialog */}
+      {showInstallDialog && (
+        <InstallDialog slug={skill.slug} onClose={() => setShowInstallDialog(false)} />
+      )}
+
       {/* Keyboard help panel */}
       {showHelp && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowHelp(false)}>

@@ -2,6 +2,7 @@ import uuid as uuid_lib
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends
+from fastapi.responses import PlainTextResponse
 from app.core.errors import api_error
 from sqlalchemy import func as sa_func
 from sqlalchemy.orm import Session
@@ -185,6 +186,30 @@ def set_latest_version(
     db.commit()
     db.refresh(skill_row)
     return _skill_detail(db, skill_row)
+
+
+@router.get("/{skill_slug}/raw", response_class=PlainTextResponse)
+def get_skill_raw(
+    skill_slug: str,
+    db: Session = Depends(get_db),
+):
+    """Return the skill as a plain-text SKILL.md file (YAML frontmatter + markdown body)."""
+    skill_row = _get_skill(skill_slug, db)
+    lines = [
+        "---",
+        f"name: {skill_row.slug}",
+        f"description: {skill_row.description or ''}",
+    ]
+    tags = skill_row.tags or []
+    if tags:
+        lines.append(f"tags: [{', '.join(tags)}]")
+    collections = skill_row.collections or []
+    if collections:
+        lines.append(f"collections: [{', '.join(collections)}]")
+    lines.append("---")
+    lines.append("")
+    content = "\n".join(lines) + (skill_row.content_md or "")
+    return PlainTextResponse(content, media_type="text/markdown; charset=utf-8")
 
 
 @router.get("/{skill_slug}", response_model=SkillDetail)
