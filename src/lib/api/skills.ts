@@ -187,9 +187,3 @@ export async function setLatestVersionApi(slug: string, version: number): Promis
   return detailToSkill(detail)
 }
 
-export async function restoreVersionApi(slug: string, version: number): Promise<Skill> {
-  const detail = await apiRequest<ApiSkillDetail>(`/v1/skills/${slug}/content-versions/${version}/restore`, {
-    method: 'POST',
-  })
-  return detailToSkill(detail)
-}
