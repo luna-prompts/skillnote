@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/luna-prompts/skillnote/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License" /></a>
+  <a href="https://github.com/luna-prompts/skillnote/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License" /></a>
   <a href="https://github.com/luna-prompts/skillnote"><img src="https://img.shields.io/github/stars/luna-prompts/skillnote?style=social" alt="Stars" /></a>
   <a href="https://github.com/luna-prompts/skillnote/issues"><img src="https://img.shields.io/github/issues/luna-prompts/skillnote" alt="Issues" /></a>
   <img src="https://img.shields.io/badge/docker-ready-2496ED?logo=docker&logoColor=white" alt="Docker Ready" />
@@ -410,7 +410,7 @@ Please follow [Conventional Commits](https://www.conventionalcommits.org/) for c
 
 ## License
 
-MIT &copy; [Luna Prompts](https://github.com/luna-prompts)
+Apache 2.0 &copy; [Luna Prompts](https://github.com/luna-prompts)
 
 ---
 
