@@ -1,259 +1,124 @@
-# SkillNote
+<p align="center">
+  <img src="public/logo.svg" width="80" height="80" alt="SkillNote" />
+</p>
 
-Self-hosted skills registry for AI coding agents. Create, manage, and distribute `.md` prompt files (SKILL.md) across Claude Code, Cursor, Codex, OpenClaw, OpenHands, and more.
+<h1 align="center">SkillNote</h1>
 
-**Stack:** Next.js 16 · React 19 · FastAPI · PostgreSQL · Docker
+<p align="center">
+  <strong>The open-source skill registry for AI coding agents.</strong>
+  <br />
+  Create, manage, and distribute <code>SKILL.md</code> files across Claude Code, Cursor, Codex, OpenHands, and more.
+</p>
+
+<p align="center">
+  <a href="https://github.com/luna-prompts/skillnote/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License" /></a>
+  <a href="https://github.com/luna-prompts/skillnote"><img src="https://img.shields.io/github/stars/luna-prompts/skillnote?style=social" alt="Stars" /></a>
+  <a href="https://github.com/luna-prompts/skillnote/issues"><img src="https://img.shields.io/github/issues/luna-prompts/skillnote" alt="Issues" /></a>
+  <img src="https://img.shields.io/badge/docker-ready-2496ED?logo=docker&logoColor=white" alt="Docker Ready" />
+  <img src="https://img.shields.io/badge/self--hosted-yes-green" alt="Self-hosted" />
+</p>
+
+<p align="center">
+  <a href="#quick-start">Quick Start</a> &nbsp;&middot;&nbsp;
+  <a href="#features">Features</a> &nbsp;&middot;&nbsp;
+  <a href="#cli">CLI</a> &nbsp;&middot;&nbsp;
+  <a href="#api-reference">API</a> &nbsp;&middot;&nbsp;
+  <a href="#self-hosting">Self-Hosting</a> &nbsp;&middot;&nbsp;
+  <a href="#contributing">Contributing</a>
+</p>
+
+<br />
 
 ---
 
-## Prerequisites
+## Why SkillNote?
 
-- [Docker](https://docs.docker.com/get-docker/) and [Docker Compose](https://docs.docker.com/compose/install/) (v2+)
-- [Node.js](https://nodejs.org/) 18+ (only needed for local dev or CLI)
-- [Git](https://git-scm.com/)
+AI coding agents like Claude Code, Cursor, and Codex use `SKILL.md` files to learn new capabilities. But managing these files is painful:
+
+- They live scattered across `~/.claude/skills/`, `.cursor/skills/`, `.codex/skills/`
+- No versioning, no search, no way to share across projects or teams
+- Writing them from scratch means guessing what works
+
+**SkillNote fixes this.** It's a self-hosted registry with a clean web UI, a CLI for one-command installs, and a versioning system that tracks every edit. Write once, install everywhere.
+
+**Why self-hosted?** Not every skill can live on a public registry. Enterprise workflows, proprietary codebases, internal tooling, compliance-sensitive prompts: these skills contain institutional knowledge that shouldn't leave your infrastructure. SkillNote runs entirely on your machines. Your skills stay private, versioned, and accessible only to your team.
+
+<p align="center">
+  <img src="docs/screenshots/hero-dashboard.png" width="100%" alt="SkillNote Dashboard" />
+</p>
 
 ---
 
-## Step-by-Step Setup
+## Quick Start
 
-### Step 1: Clone the repository
+Make sure you have [Docker](https://docs.docker.com/get-docker/) and [Docker Compose](https://docs.docker.com/compose/install/) v2+ installed.
 
 ```bash
 git clone https://github.com/luna-prompts/skillnote.git
 cd skillnote
-```
-
-### Step 2: Start everything with Docker
-
-```bash
 docker compose up --build -d
 ```
 
-This builds and starts three containers:
+That's it. Three containers spin up:
 
-| Container  | Port  | What it does                                  |
-| ---------- | ----- | --------------------------------------------- |
-| `postgres` | 5432  | PostgreSQL database                           |
-| `api`      | 8082  | FastAPI backend (auto-migrates + seeds on start) |
-| `web`      | 3000  | Next.js frontend                              |
+| Service    | URL                        | What it does                            |
+| ---------- | -------------------------- | --------------------------------------- |
+| **Web**    | http://localhost:3000      | Next.js frontend                        |
+| **API**    | http://localhost:8082      | FastAPI backend (auto-migrates + seeds) |
+| **DB**     | localhost:5432             | PostgreSQL 16                           |
 
-### Step 3: Verify containers are running
+Open **http://localhost:3000** and start creating skills.
 
-```bash
-docker compose ps
-```
-
-You should see all three services with status `Up` or `running (healthy)`.
-
-### Step 4: Check the API is healthy
-
-```bash
-curl http://localhost:8082/health
-```
-
-Expected output:
-```json
-{"status":"ok"}
-```
-
-### Step 5: Open the Web UI
-
-Open your browser and go to:
-
-```
-http://localhost:3000
-```
-
-### Step 6: Connect the UI to the backend
-
-The UI works offline by default (localStorage). To connect it to the real backend:
-
-1. Click the **gear icon** in the left sidebar to open **Settings**
-2. Under **Backend Configuration**, fill in:
-   - **API URL:** `http://localhost:8082`
-   - **Access Token:** `skn_dev_demo_token`
-3. Click **Test Connection**
-4. You should see a green **"Connected"** status
-5. Click **Save** — the page will reload and sync skills from the backend
-
-> **Where does `http://localhost:8082` come from?**
-> That's the API port defined in `docker-compose.yml`. The backend container runs internally on port 8080 and is mapped to host port 8082. You can change it with `SKILLNOTE_API_PORT=9000 docker compose up --build -d`.
-
-> **Where does `skn_dev_demo_token` come from?**
-> The backend seed script (`scripts/seed_data.py`) creates this dev-only token on first start. In production, generate proper tokens via the API.
-
-### Step 7: Create your first skill
-
-1. Press **N** on your keyboard (or click **New Skill** button)
-2. A full-page editor opens (Notion-style)
-3. Type a **skill name** — lowercase, hyphens allowed (e.g., `pdf-extractor`)
-4. Write a **description** — explain what it does AND when to use it
-5. Write the skill content in the editor below (supports rich text, code blocks, markdown)
-6. Click **Create Skill**
-
-You're done! The skill is saved to the backend and visible in the skill list.
+> The backend auto-runs migrations and seeds a default skill (`skill-creator`) on first boot. No manual setup needed.
 
 ---
 
-## Stopping & Resetting
+## Features
 
-```bash
-# Stop all containers (keeps data)
-docker compose down
+### Skill Editor
+A Notion-style WYSIWYG editor powered by Tiptap. Write in rich text or switch to raw markdown. Paste a raw `SKILL.md` file and it auto-extracts the name, description, and body from the frontmatter.
 
-# Stop and wipe all data (database, volumes)
-docker compose down -v
+<p align="center">
+  <img src="docs/screenshots/skill-editor.png" width="100%" alt="Skill Editor" />
+</p>
 
-# Restart
-docker compose up -d
-```
+### Version History
+Every save creates a snapshot. Browse the full history, compare versions, and restore any previous state with one click. Published versions use semantic versioning (`1.0.0`, `1.1.0`, ...) and are distributed as checksummed ZIP bundles.
 
----
+<p align="center">
+  <img src="docs/screenshots/version-history.png" width="100%" alt="Version History" />
+</p>
 
-## Local Development (without Docker for frontend)
+### Tags & Collections
+Organize skills with tags and collections. Filter, search, and browse by category. Rename or delete tags across all skills at once.
 
-If you want hot-reload on the frontend while the backend runs in Docker:
+### Multi-Agent Install
+Install skills to any AI coding agent from the web UI or CLI. Supported agents:
 
-### Terminal 1 — Start backend
+| Agent       | Install Path                                |
+| ----------- | ------------------------------------------- |
+| Claude Code | `~/.claude/skills/<skill>/SKILL.md`         |
+| Cursor      | `.cursor/skills/<skill>/SKILL.md`           |
+| Codex       | `.codex/skills/<skill>/SKILL.md`            |
+| OpenClaw    | `~/.openclaw/skills/<skill>/SKILL.md`       |
+| OpenHands   | `~/.openhands/skills/<skill>/SKILL.md`      |
+| Windsurf    | `.windsurf/skills/<skill>/SKILL.md`         |
+| Universal   | `.skills/<skill>/SKILL.md`                  |
 
-```bash
-docker compose up --build -d postgres api
-```
+### Comments
+Leave feedback on any skill. Discuss improvements, report issues, or share usage tips right alongside the skill content.
 
-Wait for the API to be healthy:
+### Offline-First
+The frontend works without a backend. Skills are stored in localStorage and sync to PostgreSQL when the API is available. No data loss if the backend goes down.
 
-```bash
-curl http://localhost:8082/health
-# {"status":"ok"}
-```
+### Keyboard Shortcuts
 
-### Terminal 2 — Start frontend dev server
-
-```bash
-npm install
-npm run dev
-```
-
-Open http://localhost:3000 — changes to `src/` hot-reload instantly.
-
-### Frontend commands
-
-```bash
-npm run dev    # dev server with hot-reload (http://localhost:3000)
-npm run build  # production build
-npm run start  # serve production build
-npm run lint   # run ESLint
-```
-
-### Backend commands (with Make)
-
-```bash
-cd backend
-make up        # start api + postgres
-make down      # stop containers
-make reset     # stop + wipe database volumes
-make migrate   # run Alembic migrations
-make seed      # seed dev token + sample data
-make smoke     # run smoke test
-```
-
-### Backend commands (without Make)
-
-```bash
-cd backend
-docker compose up --build -d
-docker compose exec -T api python scripts/wait_for_db.py
-docker compose exec -T api alembic upgrade head
-docker compose exec -T api python scripts/seed_data.py
-```
-
----
-
-## CLI
-
-SkillNote includes a CLI for installing and managing skills from the terminal — no browser needed.
-
-### Step 1: Build the CLI
-
-```bash
-cd cli
-npm install
-npm run build
-```
-
-### Step 2: Make it available
-
-**Option A — Global install (recommended):**
-
-```bash
-npm link
-```
-
-Now `skillnote` works from any directory:
-
-```bash
-skillnote --version
-# 0.1.0
-```
-
-**Option B — Run directly (no global install):**
-
-```bash
-node dist/index.js --version
-```
-
-### Step 3: Login to your registry
-
-```bash
-skillnote login --host http://localhost:8082 --token skn_dev_demo_token
-```
-
-This saves credentials to `~/.skillnote/config.json`.
-
-> **Where does the host URL come from?** Same API URL from Step 6 above — `http://localhost:8082` (or wherever your backend is running).
-
-### Step 4: Use the CLI
-
-```bash
-# List all skills in the registry
-skillnote list
-
-# Install a skill (auto-detects your AI agent)
-skillnote add pdf-extractor
-
-# Install for a specific agent
-skillnote add pdf-extractor --agent claude
-
-# Install ALL skills at once
-skillnote add --all
-
-# Check which installed skills have updates
-skillnote check
-
-# Update all installed skills
-skillnote update --all
-
-# Remove a skill
-skillnote remove pdf-extractor
-
-# Diagnose setup issues
-skillnote doctor
-```
-
-### Where does the CLI install skills?
-
-The CLI auto-detects your AI coding agent and places `SKILL.md` files in the right directory:
-
-| Agent       | Installs to                              |
-| ----------- | ---------------------------------------- |
-| Claude Code | `~/.claude/skills/<skill-name>/SKILL.md` |
-| Cursor      | `.cursor/skills/<skill-name>/SKILL.md`   |
-| Codex       | `.codex/skills/<skill-name>/SKILL.md`    |
-| OpenClaw    | `~/.openclaw/skills/<skill-name>/SKILL.md` |
-| OpenHands   | `~/.openhands/skills/<skill-name>/SKILL.md` |
-| Universal   | `.skills/<skill-name>/SKILL.md`          |
-
-Override with `--agent <name>` if auto-detection picks the wrong one.
+| Shortcut       | Action          |
+| -------------- | --------------- |
+| `N`            | New Skill       |
+| `Cmd/Ctrl + K` | Focus search    |
+| `Cmd/Ctrl + S` | Save (in editor)|
+| `Escape`       | Close / Go back |
 
 ---
 
@@ -264,116 +129,178 @@ Every skill is a Markdown file with YAML frontmatter:
 ```markdown
 ---
 name: pdf-extractor
-description: Extract text and tables from PDF files. Use whenever the user mentions PDFs, forms, or document extraction.
+description: Extract text and tables from PDF files. Use when the user mentions PDFs, scanned documents, or form extraction.
 ---
 
 # PDF Extractor
 
-When the user provides a PDF file or asks about PDF content:
+When the user provides a PDF file:
 
-1. Use the `pdftotext` tool to extract raw text
-2. Look for tables and format them as markdown tables
-3. Preserve headings and structure from the original document
+1. Use `pdftotext` to extract raw text
+2. Identify tables and format them as markdown
+3. Preserve headings and document structure
 ```
 
-### Validation rules
+### Validation Rules
 
-SkillNote enforces the [official SKILL.md spec](https://docs.anthropic.com/en/docs/claude-code/skills):
+| Field         | Rule                                                                 |
+| ------------- | -------------------------------------------------------------------- |
+| `name`        | Required. Lowercase `a-z`, `0-9`, `-` only. Max 64 chars. No reserved words (`anthropic`, `claude`). |
+| `description` | Required. Max 1024 chars. Should explain **what** it does and **when** to trigger it. |
 
-**Name** (`name` field):
-- Required
-- Lowercase letters, numbers, and hyphens only (`a-z`, `0-9`, `-`)
-- Max 64 characters
-- Cannot contain reserved words: `anthropic`, `claude`
-- No XML-like tags (`<tag>`)
-
-**Description** (`description` field):
-- Required
-- Max 1024 characters
-- Should explain both **what** the skill does and **when** to use it
-- No XML-like tags (`<tag>`)
-
-> **Tip:** Be pushy in descriptions — Claude tends to under-trigger skills. Include specific keywords the user might say.
+> **Tip:** Be aggressive in descriptions. Claude tends to under-trigger skills. Include specific phrases the user might say.
 
 ---
 
-## Pasting raw markdown
+## CLI
 
-You can paste a raw `.md` file (with frontmatter) directly into the editor. SkillNote will:
+SkillNote includes a CLI for installing and managing skills from the terminal, no browser needed.
 
-1. Detect the `---` frontmatter block
-2. Auto-extract the `name` into the name field
-3. Auto-extract the `description` into the description field
-4. Render the body content in the WYSIWYG editor
+### Install
+
+```bash
+cd cli
+npm install && npm run build
+npm link
+```
+
+### Login
+
+```bash
+skillnote login --host http://localhost:8082 --token skn_dev_demo_token
+```
+
+### Commands
+
+```bash
+skillnote list                        # List all skills in the registry
+skillnote add pdf-extractor           # Install a skill (auto-detects agent)
+skillnote add pdf-extractor --agent claude  # Install for a specific agent
+skillnote add --all                   # Install everything
+skillnote check                       # Check for updates
+skillnote update --all                # Update all installed skills
+skillnote remove pdf-extractor        # Uninstall a skill
+skillnote doctor                      # Diagnose setup issues
+```
 
 ---
 
-## Changing the API Port
+## Self-Hosting
 
-By default the API runs on port **8082**. To change it:
-
-```bash
-SKILLNOTE_API_PORT=9000 docker compose up --build -d
-```
-
-Then update the **API URL** in Settings to `http://localhost:9000`.
-
-If using the CLI, re-login with the new host:
+### Docker Compose (recommended)
 
 ```bash
-skillnote login --host http://localhost:9000 --token skn_dev_demo_token
+git clone https://github.com/luna-prompts/skillnote.git
+cd skillnote
+docker compose up --build -d
 ```
+
+#### Custom host or port
+
+```bash
+SKILLNOTE_HOST=192.168.1.100 SKILLNOTE_API_PORT=9000 docker compose up --build -d
+```
+
+#### Stop & reset
+
+```bash
+docker compose down          # Stop (keeps data)
+docker compose down -v       # Stop + wipe database
+```
+
+### Local Development
+
+Run the backend in Docker, frontend with hot-reload:
+
+```bash
+# Terminal 1: Backend
+docker compose up --build -d postgres api
+curl http://localhost:8082/health   # Wait for {"status":"ok"}
+
+# Terminal 2: Frontend
+npm install
+npm run dev                         # http://localhost:3000
+```
+
+### Environment Variables
+
+| Variable                     | Default                 | Description                              |
+| ---------------------------- | ----------------------- | ---------------------------------------- |
+| `SKILLNOTE_HOST`             | `localhost`             | Host IP or domain (CORS + frontend URL)  |
+| `SKILLNOTE_API_PORT`         | `8082`                  | Host port for the API                    |
+| `SKILLNOTE_DATABASE_URL`     | *(set in compose)*      | PostgreSQL connection string             |
+| `SKILLNOTE_BUNDLE_STORAGE_DIR` | `/app/data/bundles`  | Where versioned ZIP bundles are stored   |
+| `SKILLNOTE_MAX_BUNDLE_SIZE_BYTES` | `5242880`          | Max bundle upload size (5 MB)            |
+| `SKILLNOTE_CORS_ORIGINS`     | *(auto from host)*      | Comma-separated CORS origins             |
+| `NEXT_PUBLIC_API_BASE_URL`   | `http://localhost:8082` | Frontend API endpoint                    |
 
 ---
 
 ## API Reference
 
-All endpoints (except `/health`) require `Authorization: Bearer <token>`.
+All endpoints except `/health` require `Authorization: Bearer <token>`.
 
 ```bash
-# Example: list all skills
 curl http://localhost:8082/v1/skills \
   -H "Authorization: Bearer skn_dev_demo_token"
 ```
 
-| Method   | Path                                     | Description              |
-| -------- | ---------------------------------------- | ------------------------ |
-| `GET`    | `/health`                                | Health check             |
-| `GET`    | `/v1/skills`                             | List all skills          |
-| `POST`   | `/v1/skills`                             | Create a skill           |
-| `GET`    | `/v1/skills/{slug}`                      | Get skill by slug        |
-| `PATCH`  | `/v1/skills/{slug}`                      | Update a skill           |
-| `DELETE` | `/v1/skills/{slug}`                      | Delete a skill           |
-| `GET`    | `/v1/skills/{slug}/comments`             | List comments            |
-| `POST`   | `/v1/skills/{slug}/comments`             | Add a comment            |
-| `PATCH`  | `/v1/skills/{slug}/comments/{id}`        | Edit a comment           |
-| `DELETE` | `/v1/skills/{slug}/comments/{id}`        | Delete a comment         |
-| `GET`    | `/v1/tags`                               | List all tags            |
-| `PATCH`  | `/v1/tags/{name}`                        | Rename a tag             |
-| `DELETE` | `/v1/tags/{name}`                        | Delete a tag             |
-| `POST`   | `/auth/validate-token`                   | Validate a token         |
+### Skills
+
+| Method   | Endpoint                                          | Description                |
+| -------- | ------------------------------------------------- | -------------------------- |
+| `GET`    | `/v1/skills`                                      | List all skills            |
+| `POST`   | `/v1/skills`                                      | Create a skill             |
+| `GET`    | `/v1/skills/{slug}`                               | Get skill details          |
+| `PATCH`  | `/v1/skills/{slug}`                               | Update a skill             |
+| `DELETE` | `/v1/skills/{slug}`                               | Delete a skill             |
+
+### Versioning
+
+| Method   | Endpoint                                                       | Description              |
+| -------- | -------------------------------------------------------------- | ------------------------ |
+| `GET`    | `/v1/skills/{slug}/content-versions`                           | List content snapshots   |
+| `POST`   | `/v1/skills/{slug}/content-versions/{version}/set-latest`     | Set version as latest    |
+| `POST`   | `/v1/skills/{slug}/content-versions/{version}/restore`        | Restore a version        |
+| `GET`    | `/v1/skills/{slug}/versions`                                   | List published versions  |
+| `POST`   | `/v1/publish`                                                  | Publish a bundle         |
+| `GET`    | `/v1/skills/{slug}/{version}/download`                        | Download a bundle        |
+
+### Comments
+
+| Method   | Endpoint                                  | Description         |
+| -------- | ----------------------------------------- | ------------------- |
+| `GET`    | `/v1/skills/{slug}/comments`              | List comments       |
+| `POST`   | `/v1/skills/{slug}/comments`              | Add a comment       |
+| `PATCH`  | `/v1/skills/{slug}/comments/{id}`         | Edit a comment      |
+| `DELETE` | `/v1/skills/{slug}/comments/{id}`         | Delete a comment    |
+
+### Tags
+
+| Method   | Endpoint             | Description                         |
+| -------- | -------------------- | ----------------------------------- |
+| `GET`    | `/v1/tags`           | List all tags with counts           |
+| `PATCH`  | `/v1/tags/{name}`    | Rename a tag (updates all skills)   |
+| `DELETE` | `/v1/tags/{name}`    | Delete a tag (removes from all)     |
+
+### Auth
+
+| Method   | Endpoint                  | Description          |
+| -------- | ------------------------- | -------------------- |
+| `GET`    | `/health`                 | Health check         |
+| `POST`   | `/auth/validate-token`    | Validate a token     |
 
 ---
 
-## Environment Variables
+## Tech Stack
 
-| Variable                   | Default                  | Description                                      |
-| -------------------------- | ------------------------ | ------------------------------------------------ |
-| `SKILLNOTE_API_PORT`       | `8082`                   | Host port for the API                            |
-| `SKILLNOTE_DATABASE_URL`   | (set in docker-compose)  | PostgreSQL connection string                     |
-| `NODE_ENV`                 | `production`             | Next.js environment                              |
-| `NEXT_PUBLIC_API_BASE_URL` | `http://localhost:8082`  | Default API URL (overridable in Settings UI)     |
-
----
-
-## Keyboard Shortcuts
-
-| Shortcut         | Action                  |
-| ---------------- | ----------------------- |
-| `N`              | New Skill               |
-| `Cmd/Ctrl + K`   | Focus search            |
-| `Cmd/Ctrl + S`   | Save (in editor)        |
-| `Escape`         | Close / Go back         |
+| Layer      | Technology                                              |
+| ---------- | ------------------------------------------------------- |
+| Frontend   | Next.js 16, React 19, TypeScript, Tailwind CSS 4, Tiptap |
+| Backend    | Python 3.12, FastAPI, SQLAlchemy 2, Alembic, Pydantic 2 |
+| Database   | PostgreSQL 16                                           |
+| CLI        | Node.js, TypeScript, Commander.js                       |
+| Infra      | Docker, Docker Compose                                  |
 
 ---
 
@@ -381,62 +308,102 @@ curl http://localhost:8082/v1/skills \
 
 ```
 skillnote/
-├── src/                        # Next.js frontend
-│   ├── app/(app)/              # App Router pages
-│   │   ├── skills/new/         # New skill page (Notion-like editor)
-│   │   └── skills/[slug]/      # Skill detail page
-│   ├── components/             # React components (Shadcn UI + Tiptap)
-│   └── lib/                    # API client, store, validation, utilities
-├── backend/                    # FastAPI backend
-│   ├── app/api/                # Route handlers
-│   ├── app/db/models/          # SQLAlchemy ORM models
-│   ├── app/schemas/            # Pydantic schemas with validation
-│   ├── app/validators/         # SKILL.md spec validators
-│   └── alembic/versions/       # DB migrations
-├── cli/                        # CLI tool (Commander.js)
+├── src/                          # Next.js frontend
+│   ├── app/(app)/                #   App Router pages
+│   │   ├── page.tsx              #     Home: skill list + search
+│   │   ├── skills/new/           #     Create skill (full-page editor)
+│   │   ├── skills/[slug]/        #     Skill detail + edit
+│   │   ├── collections/          #     Browse by collection
+│   │   ├── tags/                 #     Browse by tag
+│   │   └── settings/             #     About
+│   ├── components/               #   UI components
+│   │   ├── skills/               #     Editor, detail view, install strip
+│   │   ├── layout/               #     Sidebar, topbar
+│   │   └── ui/                   #     Primitives (Shadcn)
+│   └── lib/                      #   State, API client, validation
+│
+├── backend/                      # FastAPI backend
+│   ├── app/api/                  #   Route handlers
+│   ├── app/db/models/            #   SQLAlchemy models
+│   ├── app/schemas/              #   Pydantic schemas
+│   ├── app/validators/           #   SKILL.md spec validators
+│   ├── alembic/                  #   Database migrations
+│   └── scripts/                  #   Seed data, health checks
+│
+├── cli/                          # CLI tool
 │   └── src/
-│       ├── commands/           # login, list, add, check, update, remove, doctor
-│       ├── agents/             # Agent detection + skill placement
-│       └── manifest/           # SKILL.md parsing
-├── docker-compose.yml          # Full stack orchestration
-├── Dockerfile                  # Frontend production image (multi-stage)
-└── public/                     # Static assets
+│       ├── commands/             #   login, list, add, update, remove, doctor
+│       └── agents/               #   Agent detection + install paths
+│
+├── docker-compose.yml            # Full stack orchestration
+├── Dockerfile                    # Frontend multi-stage build
+└── start.sh                      # One-command startup
 ```
 
 ---
 
 ## Troubleshooting
 
-**Containers won't start:**
+<details>
+<summary><strong>Containers won't start</strong></summary>
+
 ```bash
-docker compose logs api     # check API logs
-docker compose logs postgres # check DB logs
+docker compose logs api       # Check API logs
+docker compose logs postgres  # Check DB logs
+```
+</details>
+
+<details>
+<summary><strong>API returns 401 / 403</strong></summary>
+
+Make sure the backend has been seeded:
+
+```bash
+docker compose exec -T api python scripts/seed_data.py
 ```
 
-**API returns 401/403:**
-- Check your token in Settings — it should be `skn_dev_demo_token` for dev
-- Make sure the backend has been seeded: `docker compose exec -T api python scripts/seed_data.py`
+Use token `skn_dev_demo_token` for development.
+</details>
 
-**Frontend shows "Unconfigured" banner:**
-- Go to Settings and configure the API URL + token (Step 6 above)
+<details>
+<summary><strong>Port already in use</strong></summary>
 
-**Port already in use:**
 ```bash
 SKILLNOTE_API_PORT=9000 docker compose up --build -d
 ```
+</details>
 
-**Reset everything from scratch:**
+<details>
+<summary><strong>Reset everything</strong></summary>
+
 ```bash
 docker compose down -v
 docker compose up --build -d
 ```
+</details>
+
+---
+
+## Contributing
+
+Contributions are welcome! Here's how:
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feat/my-feature`)
+3. Commit your changes (`git commit -m 'feat: add my feature'`)
+4. Push to the branch (`git push origin feat/my-feature`)
+5. Open a Pull Request
+
+Please follow [Conventional Commits](https://www.conventionalcommits.org/) for commit messages.
 
 ---
 
 ## License
 
-MIT
+MIT &copy; [Luna Prompts](https://github.com/luna-prompts)
 
 ---
 
-[github.com/luna-prompts/skillnote](https://github.com/luna-prompts/skillnote)
+<p align="center">
+  Built by <a href="https://github.com/luna-prompts"><strong>Luna Prompts</strong></a>
+</p>
