@@ -162,37 +162,6 @@ def set_latest_version(
     return skill_row
 
 
-@router.post("/{skill_slug}/content-versions/{version}/restore", response_model=SkillDetail)
-def restore_version(
-    skill_slug: str,
-    version: int,
-    db: Session = Depends(get_db),
-):
-    skill_row = _get_skill(skill_slug, db)
-
-    target = (
-        db.query(SkillContentVersion)
-        .filter(SkillContentVersion.skill_id == skill_row.id, SkillContentVersion.version == version)
-        .first()
-    )
-    if not target:
-        raise api_error(404, "VERSION_NOT_FOUND", f"Version {version} not found")
-
-    # Apply version content to skill
-    skill_row.name = target.title
-    skill_row.description = target.description
-    skill_row.content_md = target.content_md
-    skill_row.tags = target.tags or []
-    skill_row.collections = target.collections or []
-    skill_row.updated_at = datetime.now(timezone.utc)
-
-    # Create a new version snapshot for the restore
-    _create_content_version(db, skill_row)
-
-    db.commit()
-    db.refresh(skill_row)
-    return skill_row
-
 
 @router.get("/{skill_slug}", response_model=SkillDetail)
 def get_skill(
