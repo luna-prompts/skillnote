@@ -16,8 +16,6 @@ export default function SettingsPage() {
             <h2 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-4">About</h2>
             <div className="space-y-1.5">
               <p className="text-[14px] font-semibold text-foreground">SkillNote <span className="text-[12px] font-normal text-muted-foreground ml-1">v0.1.0</span></p>
-              <p className="text-[13px] text-muted-foreground">Open-source self-hostable Skill CMS</p>
-              <p className="text-[12px] text-muted-foreground">Built with Next.js, Tiptap, Tailwind CSS</p>
               <div className="flex items-center gap-4 pt-2">
                 <a href="https://github.com/luna-prompts/skillnote" target="_blank" rel="noopener noreferrer" className="text-[13px] text-accent hover:underline inline-flex items-center gap-1">
                   View on GitHub <ExternalLink className="h-3 w-3" />

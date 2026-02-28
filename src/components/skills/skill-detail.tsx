@@ -341,9 +341,11 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
                   <Command className="h-3.5 w-3.5" />
                   <kbd className="text-[10px] font-mono text-muted-foreground/50 hidden xl:inline ml-1">⌘K</kbd>
                 </Button>
+                {/* TODO: Re-enable when ACL is ready
                 <Button variant="ghost" size="sm" className="h-8 min-h-[44px] sm:min-h-0 text-[13px] text-muted-foreground px-2" onClick={toggleStar} aria-label={starred ? 'Unstar' : 'Star'}>
                   <Star className={cn('h-3.5 w-3.5', starred ? 'fill-amber-400 text-amber-400' : '')} />
                 </Button>
+                */}
                 {/* ⋯ More menu */}
                 <div className="relative">
                   <Button
@@ -499,7 +501,8 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
               { icon: GitBranch, label: 'View versions', shortcut: '', group: 'Actions', action: () => { router.push(`/skills/${skill.slug}/versions`); setCommandPaletteOpen(false) } },
               { icon: Download, label: 'Export as Markdown', shortcut: '⌘E', group: 'Actions', action: () => { handleExport(); setCommandPaletteOpen(false) } },
               { icon: Link2, label: 'Copy link', shortcut: '⌘L', group: 'Actions', action: () => { navigator.clipboard.writeText(window.location.href); setCommandPaletteOpen(false) } },
-              { icon: Star, label: starred ? 'Unstar skill' : 'Star skill', shortcut: '', group: 'Actions', action: () => { toggleStar(); setCommandPaletteOpen(false) } },
+              // TODO: Re-enable when ACL is ready
+              // { icon: Star, label: starred ? 'Unstar skill' : 'Star skill', shortcut: '', group: 'Actions', action: () => { toggleStar(); setCommandPaletteOpen(false) } },
               { icon: Share2, label: 'Share', shortcut: '', group: 'Actions', action: () => { navigator.clipboard.writeText(window.location.href); setCommandPaletteOpen(false) } },
               { icon: BookOpen, label: 'Skills', shortcut: '', group: 'Navigate', action: () => { router.push('/'); setCommandPaletteOpen(false) } },
               { icon: FolderOpen, label: 'Collections', shortcut: '', group: 'Navigate', action: () => { router.push('/collections'); setCommandPaletteOpen(false) } },
