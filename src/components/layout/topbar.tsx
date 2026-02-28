@@ -21,6 +21,8 @@ type TopBarProps = {
 
 function Breadcrumbs() {
   const pathname = usePathname()
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => { setMounted(true) }, [])
   const segments = pathname.split('/').filter(Boolean)
 
   const crumbs: { label: string; href?: string }[] = []
@@ -29,7 +31,8 @@ function Breadcrumbs() {
     crumbs.push({ label: 'Skills' })
   } else if (segments[0] === 'skills' && segments[1]) {
     crumbs.push({ label: 'Skills', href: '/' })
-    const skill = getSkills().find(s => s.slug === segments[1])
+    // Only read localStorage after mount to avoid hydration mismatch
+    const skill = mounted ? getSkills().find(s => s.slug === segments[1]) : undefined
     crumbs.push({ label: skill?.title ?? segments[1] })
   } else if (segments[0] === 'collections' && segments[1]) {
     crumbs.push({ label: 'Collections', href: '/collections' })

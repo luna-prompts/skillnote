@@ -180,6 +180,7 @@ export function WysiwygEditor({ value, onChange, renderToolbar, onModeChange, sk
   const settingContentRef = useRef(false)
 
   const editor = useEditor({
+    immediatelyRender: false,
     extensions: [
       StarterKit,
       Placeholder.configure({
