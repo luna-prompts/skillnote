@@ -1,10 +1,10 @@
 'use client'
 import { useState, useEffect } from 'react'
-import { ChevronDown, ChevronRight, GitBranch, Check } from 'lucide-react'
+import { ChevronDown, ChevronRight, GitBranch, Check, RotateCcw } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { type ContentVersion } from '@/lib/mock-data'
-import { fetchContentVersions, setLatestVersionApi } from '@/lib/api/skills'
+import { type ContentVersion, type Skill } from '@/lib/mock-data'
+import { fetchContentVersions, setLatestVersionApi, restoreVersionApi } from '@/lib/api/skills'
 import { getSkills } from '@/lib/skills-store'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
@@ -13,12 +13,15 @@ function VersionEntry({
   v,
   isLast,
   onSetLatest,
+  onRestore,
 }: {
   v: ContentVersion
   isLast: boolean
   onSetLatest: (version: number) => void
+  onRestore: (version: number) => void
 }) {
   const [expanded, setExpanded] = useState(false)
+  const [showRestore, setShowRestore] = useState(false)
 
   const date = new Date(v.created_at)
   const dateStr = date.toLocaleDateString('en-US', {
@@ -66,15 +69,26 @@ function VersionEntry({
             </div>
             <div className="flex items-center gap-2 shrink-0">
               {!v.is_latest && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-7 text-[11px] gap-1"
-                  onClick={() => onSetLatest(v.version)}
-                >
-                  <Check className="h-3 w-3" />
-                  Set Latest
-                </Button>
+                <>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-[11px] gap-1 hidden sm:flex"
+                    onClick={() => onSetLatest(v.version)}
+                  >
+                    <Check className="h-3 w-3" />
+                    Set Latest
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-[11px] gap-1"
+                    onClick={() => setShowRestore(true)}
+                  >
+                    <RotateCcw className="h-3 w-3" />
+                    Restore
+                  </Button>
+                </>
               )}
               <button
                 onClick={() => setExpanded(!expanded)}
@@ -114,16 +128,55 @@ function VersionEntry({
           )}
         </div>
       </div>
+
+      {showRestore && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+          onClick={() => setShowRestore(false)}
+        >
+          <div
+            className="w-full max-w-sm bg-card border border-border rounded-xl shadow-2xl p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-sm font-semibold text-foreground mb-2">
+              Restore version {v.version}?
+            </h3>
+            <p className="text-[13px] text-muted-foreground mb-2">
+              This will restore the skill content to version {v.version} and create a new version.
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 text-[13px]"
+                onClick={() => setShowRestore(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                className="h-8 text-[13px]"
+                onClick={() => {
+                  setShowRestore(false)
+                  onRestore(v.version)
+                }}
+              >
+                Restore
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
 type SkillVersionsTabProps = {
   skillSlug: string
-  onVersionChanged?: () => void
+  onRestored?: (updatedSkill: Skill) => void
 }
 
-export function SkillVersionsTab({ skillSlug, onVersionChanged }: SkillVersionsTabProps) {
+export function SkillVersionsTab({ skillSlug, onRestored }: SkillVersionsTabProps) {
   const [versions, setVersions] = useState<ContentVersion[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -156,12 +209,23 @@ export function SkillVersionsTab({ skillSlug, onVersionChanged }: SkillVersionsT
 
   const handleSetLatest = async (version: number) => {
     try {
-      await setLatestVersionApi(skillSlug, version)
-      toast.success(`Switched to version ${version}`)
+      const updated = await setLatestVersionApi(skillSlug, version)
+      toast.success(`Version ${version} set as latest — content updated`)
       loadVersions()
-      onVersionChanged?.()
+      onRestored?.(updated)
     } catch {
       toast.error('Failed to set latest version')
+    }
+  }
+
+  const handleRestore = async (version: number) => {
+    try {
+      const restored = await restoreVersionApi(skillSlug, version)
+      toast.success(`Restored to version ${version}`)
+      loadVersions()
+      onRestored?.(restored)
+    } catch {
+      toast.error('Failed to restore version')
     }
   }
 
@@ -183,6 +247,7 @@ export function SkillVersionsTab({ skillSlug, onVersionChanged }: SkillVersionsT
               v={v}
               isLast={i === versions.length - 1}
               onSetLatest={handleSetLatest}
+              onRestore={handleRestore}
             />
           ))
         ) : (

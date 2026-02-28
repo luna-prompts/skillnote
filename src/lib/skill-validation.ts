@@ -47,6 +47,18 @@ export function validateDescription(description: string): ValidationError[] {
   return errors
 }
 
+/**
+ * Slack-style name normalizer: lowercase, spaces→hyphens, strip invalid chars.
+ * Use on every keystroke in name inputs so the user sees the result live.
+ */
+export function normalizeSkillName(raw: string): string {
+  return raw
+    .toLowerCase()
+    .replace(/\s+/g, '-')       // spaces → hyphens (Slack-style)
+    .replace(/[^a-z0-9-]/g, '') // strip anything invalid
+    .replace(/-+/g, '-')        // collapse consecutive hyphens
+}
+
 export function slugFromName(name: string): string {
   return name
     .toLowerCase()
