@@ -3,7 +3,7 @@ import { useState, useCallback, useEffect, KeyboardEvent } from 'react'
 import { Plus, X, BookOpen, Loader2, AlertCircle, Info } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { createSkill } from '@/lib/skills-store'
-import { validateSkillName, validateDescription, NAME_MAX, DESC_MAX, type ValidationError } from '@/lib/skill-validation'
+import { validateSkillName, validateDescription, normalizeSkillName, NAME_MAX, DESC_MAX, type ValidationError } from '@/lib/skill-validation'
 import { toast } from 'sonner'
 import { useRouter } from 'next/navigation'
 
@@ -118,7 +118,7 @@ export function NewSkillModal({ onClose, collections }: NewSkillModalProps) {
             <input
               autoFocus
               value={name}
-              onChange={e => setName(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
+              onChange={e => setName(normalizeSkillName(e.target.value))}
               onBlur={() => setTouched(prev => ({ ...prev, name: true }))}
               placeholder="e.g. react-hooks-guide"
               maxLength={NAME_MAX}

@@ -12,8 +12,15 @@ export default function SkillHistoryPage() {
   const [skill, setSkill] = useState(() => getSkills().find(s => s.slug === slug) || null)
 
   useEffect(() => {
-    syncSkillsFromApi().then(s => setSkill(s.find(x => x.slug === slug) || null)).catch(() => {})
-  }, [slug])
+    syncSkillsFromApi().then(s => {
+      const found = s.find(x => x.slug === slug) || null
+      setSkill(found)
+      // Redirect if the skill's slug changed (e.g. after a rename)
+      if (found && found.slug !== slug) {
+        router.replace(`/skills/${found.slug}/history`)
+      }
+    }).catch(() => {})
+  }, [slug, router])
 
   if (!skill) {
     return (

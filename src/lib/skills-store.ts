@@ -56,6 +56,7 @@ export async function syncSkillsFromApi(): Promise<Skill[]> {
     const localBySlug = new Map(local.map(s => [s.slug, s]))
     const apiSlugs = new Set(apiSkills.map(s => s.slug))
     const localOnly = local.filter(s => !apiSlugs.has(s.slug))
+    // Preserve locally-set current_version and latest_version
     // Use backend versions as source of truth
     const resolvedApi = apiSkills.map(s => {
       const localSkill = localBySlug.get(s.slug)
@@ -128,30 +129,43 @@ export async function createSkill(data: {
 }
 
 export async function deleteSkillById(slug: string): Promise<void> {
-  try {
-    await deleteSkillApi(slug)
-  } catch {}
+  // Delete from backend first — only remove locally if backend succeeds
+  await deleteSkillApi(slug)
   deleteSkill(slug)
   notifyChanged()
 }
 
 export async function saveSkillEdit(slug: string, patch: { title?: string; description?: string; content_md?: string; tags?: string[]; collections?: string[] }): Promise<Skill> {
   let apiVersion: number | null = null
-  let apiTotalVersions: number | null = null
+  let newSlug: string | null = null
   try {
     const apiSkill = await updateSkillApi(slug, { name: patch.title, description: patch.description, content_md: patch.content_md, tags: patch.tags, collections: patch.collections })
     apiVersion = apiSkill.current_version
-    apiTotalVersions = apiSkill.total_versions ?? null
+    if (apiSkill.slug !== slug) {
+      newSlug = apiSkill.slug
+    }
   } catch {}
 
   // Use the backend's version if available, otherwise increment locally
   const existing = getSkills().find(s => s.slug === slug)
   const nextVersion = apiVersion ?? ((existing?.current_version ?? 0) + 1)
-  const totalVersions = apiTotalVersions ?? nextVersion
-  updateSkill(slug, { ...patch, current_version: nextVersion, total_versions: totalVersions })
+
+  if (newSlug) {
+    // Slug changed: remove old entry, insert updated skill with new slug
+    const skills = getSkills()
+    const idx = skills.findIndex(s => s.slug === slug)
+    if (idx !== -1) {
+      skills[idx] = { ...skills[idx], ...patch, slug: newSlug, current_version: nextVersion, updated_at: new Date().toISOString() }
+      writeStorage(skills)
+    }
+  } else {
+    updateSkill(slug, { ...patch, current_version: nextVersion })
+  }
   notifyChanged()
+
   // Return the updated skill so callers can use it directly
-  const updated = getSkills().find(s => s.slug === slug)
+  const lookupSlug = newSlug ?? slug
+  const updated = getSkills().find(s => s.slug === lookupSlug)
   if (!updated) throw new Error('Skill not found after save')
   return updated
 }

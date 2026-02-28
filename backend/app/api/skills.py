@@ -1,10 +1,9 @@
+import re
 import uuid as uuid_lib
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends
-from fastapi.responses import PlainTextResponse
 from app.core.errors import api_error
-from sqlalchemy import func as sa_func
 from sqlalchemy.orm import Session
 
 from app.db.models import Skill, SkillVersion, SkillContentVersion
@@ -15,6 +14,16 @@ from app.schemas.version import SkillVersionItem, ContentVersionItem
 router = APIRouter(prefix="/v1/skills", tags=["skills"])
 
 
+def _slugify(name: str) -> str:
+    """Convert a skill name to a URL-safe slug (mirrors frontend slugFromName)."""
+    s = name.lower()
+    s = re.sub(r'[^a-z0-9\s-]', '', s)
+    s = re.sub(r'\s+', '-', s)
+    s = re.sub(r'-+', '-', s)
+    s = s.strip('-')
+    return s
+
+
 def _get_skill(slug: str, db: Session) -> Skill:
     skill_row = db.query(Skill).filter(Skill.slug == slug).first()
     if not skill_row:
@@ -22,33 +31,9 @@ def _get_skill(slug: str, db: Session) -> Skill:
     return skill_row
 
 
-def _skill_detail(db: Session, skill: Skill) -> SkillDetail:
-    """Build SkillDetail with computed total_versions."""
-    total = db.query(sa_func.count(SkillContentVersion.id)).filter(
-        SkillContentVersion.skill_id == skill.id
-    ).scalar() or 0
-    return SkillDetail(
-        id=skill.id,
-        name=skill.name,
-        slug=skill.slug,
-        description=skill.description,
-        content_md=skill.content_md or "",
-        tags=skill.tags or [],
-        collections=skill.collections or [],
-        current_version=skill.current_version or 0,
-        total_versions=total,
-        created_at=skill.created_at,
-        updated_at=skill.updated_at,
-    )
-
-
 def _create_content_version(db: Session, skill: Skill) -> SkillContentVersion:
     """Snapshot current skill state as a new content version."""
-    # Use MAX(version) to avoid duplicates when current_version points to an older version
-    max_ver = db.query(sa_func.max(SkillContentVersion.version)).filter(
-        SkillContentVersion.skill_id == skill.id
-    ).scalar() or 0
-    next_ver = max_ver + 1
+    next_ver = (skill.current_version or 0) + 1
 
     # Clear is_latest on all existing versions for this skill
     db.query(SkillContentVersion).filter(
@@ -183,33 +168,57 @@ def set_latest_version(
     skill_row.current_version = target.version
     skill_row.updated_at = datetime.now(timezone.utc)
 
+    # Update slug if name changed
+    new_slug = _slugify(target.title)
+    if new_slug and new_slug != skill_row.slug:
+        existing = db.query(Skill).filter(Skill.slug == new_slug, Skill.id != skill_row.id).first()
+        if existing:
+            raise api_error(409, "SKILL_SLUG_EXISTS", f"Slug '{new_slug}' already exists")
+        skill_row.slug = new_slug
+
     db.commit()
     db.refresh(skill_row)
-    return _skill_detail(db, skill_row)
+    return skill_row
 
 
-@router.get("/{skill_slug}/raw", response_class=PlainTextResponse)
-def get_skill_raw(
+@router.post("/{skill_slug}/content-versions/{version}/restore", response_model=SkillDetail)
+def restore_version(
     skill_slug: str,
+    version: int,
     db: Session = Depends(get_db),
 ):
-    """Return the skill as a plain-text SKILL.md file (YAML frontmatter + markdown body)."""
     skill_row = _get_skill(skill_slug, db)
-    lines = [
-        "---",
-        f"name: {skill_row.slug}",
-        f"description: {skill_row.description or ''}",
-    ]
-    tags = skill_row.tags or []
-    if tags:
-        lines.append(f"tags: [{', '.join(tags)}]")
-    collections = skill_row.collections or []
-    if collections:
-        lines.append(f"collections: [{', '.join(collections)}]")
-    lines.append("---")
-    lines.append("")
-    content = "\n".join(lines) + (skill_row.content_md or "")
-    return PlainTextResponse(content, media_type="text/markdown; charset=utf-8")
+
+    target = (
+        db.query(SkillContentVersion)
+        .filter(SkillContentVersion.skill_id == skill_row.id, SkillContentVersion.version == version)
+        .first()
+    )
+    if not target:
+        raise api_error(404, "VERSION_NOT_FOUND", f"Version {version} not found")
+
+    # Apply version content to skill
+    skill_row.name = target.title
+    skill_row.description = target.description
+    skill_row.content_md = target.content_md
+    skill_row.tags = target.tags or []
+    skill_row.collections = target.collections or []
+    skill_row.updated_at = datetime.now(timezone.utc)
+
+    # Update slug if name changed
+    new_slug = _slugify(target.title)
+    if new_slug and new_slug != skill_row.slug:
+        existing = db.query(Skill).filter(Skill.slug == new_slug, Skill.id != skill_row.id).first()
+        if existing:
+            raise api_error(409, "SKILL_SLUG_EXISTS", f"Slug '{new_slug}' already exists")
+        skill_row.slug = new_slug
+
+    # Create a new version snapshot for the restore
+    _create_content_version(db, skill_row)
+
+    db.commit()
+    db.refresh(skill_row)
+    return skill_row
 
 
 @router.get("/{skill_slug}", response_model=SkillDetail)
@@ -218,7 +227,7 @@ def get_skill(
     db: Session = Depends(get_db),
 ):
     skill_row = _get_skill(skill_slug, db)
-    return _skill_detail(db, skill_row)
+    return skill_row
 
 
 @router.post("", response_model=SkillDetail, status_code=201)
@@ -248,7 +257,7 @@ def create_skill(
 
     db.commit()
     db.refresh(skill)
-    return _skill_detail(db, skill)
+    return skill
 
 
 @router.patch("/{skill_slug}", response_model=SkillDetail)
@@ -261,6 +270,13 @@ def update_skill(
 
     if payload.name is not None:
         skill_row.name = payload.name
+        # Auto-update slug when name changes
+        new_slug = _slugify(payload.name)
+        if new_slug and new_slug != skill_row.slug:
+            existing = db.query(Skill).filter(Skill.slug == new_slug, Skill.id != skill_row.id).first()
+            if existing:
+                raise api_error(409, "SKILL_SLUG_EXISTS", f"Slug '{new_slug}' already exists")
+            skill_row.slug = new_slug
     if payload.description is not None:
         skill_row.description = payload.description
     if payload.content_md is not None:
@@ -276,7 +292,7 @@ def update_skill(
 
     db.commit()
     db.refresh(skill_row)
-    return _skill_detail(db, skill_row)
+    return skill_row
 
 
 @router.delete("/{skill_slug}", status_code=204)

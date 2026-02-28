@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { RotateCcw, Save, Loader2, X, AlertCircle, ArrowRight } from 'lucide-react'
-import { NAME_MAX, DESC_MAX, slugFromName, validateSkillName, validateDescription, type ValidationError } from '@/lib/skill-validation'
+import { NAME_MAX, DESC_MAX, slugFromName, normalizeSkillName, validateSkillName, validateDescription, type ValidationError } from '@/lib/skill-validation'
 import { Button } from '@/components/ui/button'
 import { WysiwygEditor, type EditorMode } from '@/components/skills/WysiwygEditor'
 import { FieldError } from '@/components/skills/FieldError'
@@ -28,15 +28,15 @@ type SkillEditTabProps = {
   saving?: boolean
   /** Active version number of the skill being edited */
   currentVersion?: number
-  /** Total number of content versions (used for next version counter) */
-  totalVersions?: number
+  /** Total versions created (used for next version counter) */
+  latestVersion?: number
 }
 
 export function SkillEditTab({
   editorContent, setEditorContent, editorDirty, onDiscard, onSave, onCancel,
   skillTitle, setSkillTitle, skillDescription, setSkillDescription,
   skillSlug, skillTags = [], setSkillTags, skillCollections = [], setSkillCollections,
-  openFullscreen, mode = 'edit', saving = false, currentVersion, totalVersions,
+  openFullscreen, mode = 'edit', saving = false, currentVersion, latestVersion,
 }: SkillEditTabProps) {
   const [fullscreen, setFullscreen] = useState(false)
   const [touched, setTouched] = useState<Record<string, boolean>>({})
@@ -86,16 +86,11 @@ export function SkillEditTab({
   const descErrors = touched.description ? validateDescription(skillDescription) : []
   const isValid = validateSkillName(skillTitle).length === 0 && validateDescription(skillDescription).length === 0
 
-  const nextVersion = totalVersions ? totalVersions + 1 : (currentVersion ? currentVersion + 1 : 1)
+  const nextVersion = currentVersion ? currentVersion + 1 : 1
   const previewSlug = skillSlug || (skillTitle.trim() ? slugFromName(skillTitle.trim()) : '')
 
   const handleNameChange = (value: string) => {
-    // In create mode, restrict to valid slug characters; in edit mode allow free editing
-    if (mode === 'create') {
-      setSkillTitle(value.toLowerCase().replace(/[^a-z0-9-]/g, ''))
-    } else {
-      setSkillTitle(value.toLowerCase().replace(/[^a-z0-9-]/g, ''))
-    }
+    setSkillTitle(normalizeSkillName(value))
   }
 
   const addTag = useCallback(() => {
@@ -367,7 +362,7 @@ export function SkillEditTab({
               className="min-h-[80vh]"
               skillMeta={{ name: skillTitle, description: skillDescription, tags: skillTags }}
               onMetaChange={(meta) => {
-                setSkillTitle(meta.name)
+                setSkillTitle(normalizeSkillName(meta.name))
                 setSkillDescription(meta.description)
                 if (meta.tags && setSkillTags) setSkillTags(meta.tags)
               }}
