@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends
 from app.core.errors import api_error
+from sqlalchemy import func as sa_func
 from sqlalchemy.orm import Session
 
 from app.db.models import Skill, SkillVersion, SkillContentVersion
@@ -20,9 +21,33 @@ def _get_skill(slug: str, db: Session) -> Skill:
     return skill_row
 
 
+def _skill_detail(db: Session, skill: Skill) -> SkillDetail:
+    """Build SkillDetail with computed total_versions."""
+    total = db.query(sa_func.count(SkillContentVersion.id)).filter(
+        SkillContentVersion.skill_id == skill.id
+    ).scalar() or 0
+    return SkillDetail(
+        id=skill.id,
+        name=skill.name,
+        slug=skill.slug,
+        description=skill.description,
+        content_md=skill.content_md or "",
+        tags=skill.tags or [],
+        collections=skill.collections or [],
+        current_version=skill.current_version or 0,
+        total_versions=total,
+        created_at=skill.created_at,
+        updated_at=skill.updated_at,
+    )
+
+
 def _create_content_version(db: Session, skill: Skill) -> SkillContentVersion:
     """Snapshot current skill state as a new content version."""
-    next_ver = (skill.current_version or 0) + 1
+    # Use MAX(version) to avoid duplicates when current_version points to an older version
+    max_ver = db.query(sa_func.max(SkillContentVersion.version)).filter(
+        SkillContentVersion.skill_id == skill.id
+    ).scalar() or 0
+    next_ver = max_ver + 1
 
     # Clear is_latest on all existing versions for this skill
     db.query(SkillContentVersion).filter(
@@ -159,8 +184,7 @@ def set_latest_version(
 
     db.commit()
     db.refresh(skill_row)
-    return skill_row
-
+    return _skill_detail(db, skill_row)
 
 
 @router.get("/{skill_slug}", response_model=SkillDetail)
@@ -169,7 +193,7 @@ def get_skill(
     db: Session = Depends(get_db),
 ):
     skill_row = _get_skill(skill_slug, db)
-    return skill_row
+    return _skill_detail(db, skill_row)
 
 
 @router.post("", response_model=SkillDetail, status_code=201)
@@ -199,7 +223,7 @@ def create_skill(
 
     db.commit()
     db.refresh(skill)
-    return skill
+    return _skill_detail(db, skill)
 
 
 @router.patch("/{skill_slug}", response_model=SkillDetail)
@@ -227,7 +251,7 @@ def update_skill(
 
     db.commit()
     db.refresh(skill_row)
-    return skill_row
+    return _skill_detail(db, skill_row)
 
 
 @router.delete("/{skill_slug}", status_code=204)

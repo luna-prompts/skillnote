@@ -28,15 +28,15 @@ type SkillEditTabProps = {
   saving?: boolean
   /** Active version number of the skill being edited */
   currentVersion?: number
-  /** Total versions created (used for next version counter) */
-  latestVersion?: number
+  /** Total number of content versions (used for next version counter) */
+  totalVersions?: number
 }
 
 export function SkillEditTab({
   editorContent, setEditorContent, editorDirty, onDiscard, onSave, onCancel,
   skillTitle, setSkillTitle, skillDescription, setSkillDescription,
   skillSlug, skillTags = [], setSkillTags, skillCollections = [], setSkillCollections,
-  openFullscreen, mode = 'edit', saving = false, currentVersion, latestVersion,
+  openFullscreen, mode = 'edit', saving = false, currentVersion, totalVersions,
 }: SkillEditTabProps) {
   const [fullscreen, setFullscreen] = useState(false)
   const [touched, setTouched] = useState<Record<string, boolean>>({})
@@ -86,7 +86,7 @@ export function SkillEditTab({
   const descErrors = touched.description ? validateDescription(skillDescription) : []
   const isValid = validateSkillName(skillTitle).length === 0 && validateDescription(skillDescription).length === 0
 
-  const nextVersion = currentVersion ? currentVersion + 1 : 1
+  const nextVersion = totalVersions ? totalVersions + 1 : (currentVersion ? currentVersion + 1 : 1)
   const previewSlug = skillSlug || (skillTitle.trim() ? slugFromName(skillTitle.trim()) : '')
 
   const handleNameChange = (value: string) => {

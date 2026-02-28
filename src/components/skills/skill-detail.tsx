@@ -511,6 +511,7 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
                 setSkillCollections={setCollectionsValue}
                 openFullscreen={true}
                 currentVersion={skill.current_version}
+                totalVersions={skill.total_versions}
               />
             )}
           </div>
