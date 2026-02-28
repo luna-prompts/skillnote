@@ -154,6 +154,7 @@ def set_latest_version(
     skill_row.content_md = target.content_md
     skill_row.tags = target.tags or []
     skill_row.collections = target.collections or []
+    skill_row.current_version = target.version
     skill_row.updated_at = datetime.now(timezone.utc)
 
     db.commit()
