@@ -14,6 +14,7 @@
   <a href="https://github.com/luna-prompts/skillnote/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License" /></a>
   <a href="https://github.com/luna-prompts/skillnote"><img src="https://img.shields.io/github/stars/luna-prompts/skillnote?style=social" alt="Stars" /></a>
   <a href="https://github.com/luna-prompts/skillnote/issues"><img src="https://img.shields.io/github/issues/luna-prompts/skillnote" alt="Issues" /></a>
+  <a href="https://discord.gg/GazU4amU6H"><img src="https://img.shields.io/badge/Discord-Join%20us-5865F2?logo=discord&logoColor=white" alt="Discord" /></a>
   <img src="https://img.shields.io/badge/docker-ready-2496ED?logo=docker&logoColor=white" alt="Docker Ready" />
   <img src="https://img.shields.io/badge/self--hosted-yes-green" alt="Self-hosted" />
 </p>
@@ -405,6 +406,8 @@ Contributions are welcome! Here's how:
 5. Open a Pull Request
 
 Please follow [Conventional Commits](https://www.conventionalcommits.org/) for commit messages.
+
+Join us on [Discord](https://discord.gg/GazU4amU6H) to discuss ideas, get help, or just hang out.
 
 ---
 
