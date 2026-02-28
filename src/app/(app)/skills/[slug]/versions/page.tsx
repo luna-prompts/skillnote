@@ -3,7 +3,7 @@
 import { use, useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft } from 'lucide-react'
-import { getSkills, syncSkillsFromApi } from '@/lib/skills-store'
+import { getSkills, syncSkillsFromApi, updateSkill } from '@/lib/skills-store'
 import { fetchSkill } from '@/lib/api/skills'
 import { Skill } from '@/lib/mock-data'
 import { TopBar } from '@/components/layout/topbar'
@@ -20,11 +20,14 @@ export default function VersionsPage({ params }: { params: Promise<{ slug: strin
       .catch(() => {})
   }, [slug])
 
-  const handleVersionChanged = useCallback(() => {
-    // Re-fetch skill after version change to get updated current_version
-    fetchSkill(slug).then(setSkill).catch(() => {})
+  const handleRestored = useCallback((updated: Skill) => {
+    setSkill(updated)
     syncSkillsFromApi().catch(() => {})
-  }, [slug])
+    // Redirect if slug changed (e.g. restored version had a different name)
+    if (updated.slug !== slug) {
+      router.replace(`/skills/${updated.slug}/versions`)
+    }
+  }, [slug, router])
 
   if (!skill) {
     return (
@@ -55,7 +58,7 @@ export default function VersionsPage({ params }: { params: Promise<{ slug: strin
             </div>
           </div>
         </div>
-        <SkillVersionsTab skillSlug={slug} onVersionChanged={handleVersionChanged} />
+        <SkillVersionsTab skillSlug={slug} onRestored={handleRestored} />
       </div>
     </>
   )
