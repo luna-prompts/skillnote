@@ -1,7 +1,7 @@
 'use client'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { BookOpen, FolderOpen, Tag, Boxes, Settings, HelpCircle, X } from 'lucide-react'
+import { BookOpen, FolderOpen, Tag, Settings, HelpCircle, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useEffect, useMemo, useState } from 'react'
 import { getSkills, syncSkillsFromApi, getConnectionStatus, onConnectionStatusChange } from '@/lib/skills-store'
@@ -35,10 +35,11 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
     <aside className="w-[220px] h-screen flex flex-col bg-[var(--sidebar)] border-r border-[var(--sidebar-border)]">
       {/* Logo */}
       <div className="h-14 px-4 flex items-center gap-2.5 border-b border-[var(--sidebar-border)]">
-        <div className="w-7 h-7 rounded-lg bg-accent flex items-center justify-center shrink-0">
-          <Boxes className="h-4 w-4 text-white" />
+        <img src="/icon.svg" alt="SkillNote" className="w-7 h-7 rounded-lg shrink-0 border border-[var(--sidebar-border)]" />
+        <div className="flex flex-col">
+          <span className="text-[13px] font-semibold text-[var(--sidebar-foreground)] tracking-tight leading-tight">SkillNote</span>
+          <span className="text-[9px] text-[var(--muted-foreground)]/40 tracking-wide leading-tight">by Luna Prompts</span>
         </div>
-        <span className="text-[13px] font-semibold text-[var(--sidebar-foreground)] tracking-tight">SkillNote</span>
         {onClose && (
           <button onClick={onClose} className="ml-auto p-1 rounded-md text-[var(--muted-foreground)] hover:text-[var(--sidebar-foreground)] lg:hidden min-h-[44px] min-w-[44px] flex items-center justify-center" aria-label="Close sidebar">
             <X className="h-4 w-4" />

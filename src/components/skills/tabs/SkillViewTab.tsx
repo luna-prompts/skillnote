@@ -58,51 +58,7 @@ function HeadingAnchor({ id, size }: { id: string; size: string }) {
   )
 }
 
-export function extractHeadings(md: string): { level: number; text: string; id: string }[] {
-  const headings: { level: number; text: string; id: string }[] = []
-  const lines = md.split('\n')
-  let inCodeBlock = false
-  for (const line of lines) {
-    if (line.trim().startsWith('```')) { inCodeBlock = !inCodeBlock; continue }
-    if (inCodeBlock) continue
-    const match = /^(#{1,4})\s+(.+)$/.exec(line)
-    if (match) {
-      const level = match[1].length
-      const text = match[2].replace(/[*_`\[\]]/g, '')
-      headings.push({ level, text, id: slugify(text) })
-    }
-  }
-  return headings
-}
 
-function TableOfContents({ headings }: { headings: { level: number; text: string; id: string }[] }) {
-  if (headings.length < 2) return null
-  const handleClick = (id: string) => {
-    const el = document.getElementById(id)
-    if (el) el.scrollIntoView({ behavior: 'smooth' })
-  }
-  return (
-    <nav className="hidden xl:block w-48 shrink-0 sticky top-6 self-start max-h-[calc(100vh-12rem)] overflow-y-auto">
-      <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest mb-3">On this page</p>
-      <div className="space-y-1 border-l border-border/60">
-        {headings.filter(h => h.level > 1).map((h, i) => (
-          <button
-            key={`${h.id}-${i}`}
-            onClick={() => handleClick(h.id)}
-            className={cn(
-              'block w-full text-left text-[12px] truncate transition-colors hover:text-accent border-l-2 border-transparent hover:border-accent -ml-px',
-              h.level === 2 && 'pl-3 text-foreground/70',
-              h.level === 3 && 'pl-5 text-muted-foreground',
-              h.level === 4 && 'pl-7 text-muted-foreground/70',
-            )}
-          >
-            {h.text}
-          </button>
-        ))}
-      </div>
-    </nav>
-  )
-}
 
 function ScrollProgressBar({ containerRef }: { containerRef: React.RefObject<HTMLElement | null> }) {
   const [progress, setProgress] = useState(0)
@@ -157,7 +113,6 @@ export function SkillViewTab({ skill, onAddComment }: SkillViewTabProps) {
   const viewContentRef = useRef<HTMLDivElement>(null)
 
   const strippedContent = useMemo(() => stripFrontmatter(skill.content_md), [skill.content_md])
-  const headings = useMemo(() => extractHeadings(strippedContent), [strippedContent])
 
   return (
     <div className="flex-1 mt-0 overflow-y-auto overflow-x-hidden scroll-smooth animate-in fade-in duration-200" ref={viewContentRef}>
@@ -257,7 +212,6 @@ export function SkillViewTab({ skill, onAddComment }: SkillViewTabProps) {
             </ReactMarkdown>
           </div>
         </div>
-        <TableOfContents headings={headings} />
       </div>
 
 
