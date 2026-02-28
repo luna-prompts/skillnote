@@ -16,6 +16,7 @@ import { useRouter } from 'next/navigation'
 import { SkillViewTab } from './tabs/SkillViewTab'
 import { SkillEditTab } from './tabs/SkillEditTab'
 import { InstallDialog } from './InstallDialog'
+import { InstallStrip } from './InstallStrip'
 
 type PaletteAction = {
   icon: React.ComponentType<{ className?: string }>
@@ -200,7 +201,7 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
   const [savedVersion, setSavedVersion] = useState<number | null>(null)
   const [showMoreMenu, setShowMoreMenu] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
-  const [showInstallDialog, setShowInstallDialog] = useState(false)
+  const [showInstall, setShowInstall] = useState(false)
 
   const handleDiscard = useCallback(() => {
     setShowDiscardConfirm(true)
@@ -224,11 +225,15 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
       setSaveToast('saved')
       setActiveTab('view')
       setTimeout(() => setSaveToast(false), 1500)
+      // Redirect if slug changed (e.g. skill was renamed)
+      if (updated.slug !== skill.slug) {
+        router.replace(`/skills/${updated.slug}`)
+      }
     } catch {
       setSaveToast(false)
       toast.error('Failed to save')
     }
-  }, [skill.slug, titleValue, descriptionValue, editorContent, tagsValue, onSkillUpdated])
+  }, [skill.slug, titleValue, descriptionValue, editorContent, tagsValue, onSkillUpdated, router])
 
   const handleCancel = useCallback(() => {
     setActiveTab('view')
@@ -369,6 +374,13 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
                           Copy Link
                         </button>
                         <button
+                          onClick={() => { setShowInstall(true); setShowMoreMenu(false) }}
+                          className="flex items-center gap-2.5 px-3 py-2 text-[13px] hover:bg-muted w-full text-left text-foreground min-h-[44px] sm:min-h-[36px]"
+                        >
+                          <Terminal className="h-3.5 w-3.5 text-muted-foreground" />
+                          Install Skill
+                        </button>
+                        <button
                           onClick={() => { handleExport(); setShowMoreMenu(false) }}
                           className="flex items-center gap-2.5 px-3 py-2 text-[13px] hover:bg-muted w-full text-left text-foreground min-h-[44px] sm:min-h-[36px]"
                         >
@@ -390,83 +402,89 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
               </div>
             </div>
 
-            {/* Hero content */}
+            {/* Hero content — two-column on lg+ */}
             <div className="px-4 sm:px-10 lg:px-14 pt-8 sm:pt-10 pb-6 sm:pb-8">
-              {/* Title row */}
-              <p className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground/40 font-medium mb-1.5">Name</p>
-              <div className="flex items-start justify-between gap-4 mb-4">
-                <h1 className="text-2xl sm:text-3xl font-bold font-mono text-foreground tracking-tight leading-tight">
-                  {titleValue}
-                </h1>
-                {editorDirty && <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shrink-0 mt-2.5" title="Unsaved changes" />}
-              </div>
+              <div className="flex flex-col lg:flex-row lg:gap-12 xl:gap-16">
+                {/* Left: skill info */}
+                <div className="flex-1 min-w-0">
+                  {/* Title row */}
+                  <p className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground/40 font-medium mb-1.5">Name</p>
+                  <div className="flex items-start justify-between gap-4 mb-4">
+                    <h1 className="text-2xl sm:text-3xl font-bold font-mono text-foreground tracking-tight leading-tight">
+                      {titleValue}
+                    </h1>
+                    {editorDirty && <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shrink-0 mt-2.5" title="Unsaved changes" />}
+                  </div>
 
-              {/* Description — prominent */}
-              {descriptionValue && (
-                <div className="mb-5">
-                  <p className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground/40 font-medium mb-1.5">Description</p>
-                  <p className="text-[15px] sm:text-base text-muted-foreground leading-relaxed max-w-2xl">
-                    {descriptionValue}
-                  </p>
-                </div>
-              )}
+                  {/* Description — prominent */}
+                  {descriptionValue && (
+                    <div className="mb-5">
+                      <p className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground/40 font-medium mb-1.5">Description</p>
+                      <p className="text-[15px] sm:text-base text-muted-foreground leading-relaxed max-w-2xl">
+                        {descriptionValue}
+                      </p>
+                    </div>
+                  )}
 
-              {/* Meta pills row */}
-              <div className="flex flex-wrap items-center gap-2 mb-5">
-                {skill.created_by && (
-                  <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground bg-muted/60 px-2.5 py-1 rounded-full">
-                    <User className="h-3 w-3" />
-                    {skill.created_by}
-                  </span>
-                )}
-                {skill.current_version > 0 && (
-                  <span className="inline-flex items-center gap-1.5 text-[11px] font-mono text-muted-foreground bg-muted/60 px-2.5 py-1 rounded-full">
-                    <GitBranch className="h-3 w-3" />
-                    v{skill.current_version}
-                  </span>
-                )}
-                <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground bg-muted/60 px-2.5 py-1 rounded-full">
-                  <Clock className="h-3 w-3" />
-                  {formatRelative(skill.updated_at)}
-                </span>
-                {skill.collections.map(c => (
-                  <span key={c} className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground bg-muted/60 px-2.5 py-1 rounded-full">
-                    <FolderOpen className="h-3 w-3" />
-                    {c}
-                  </span>
-                ))}
-              </div>
-
-              {/* Tags */}
-              {tagsValue.length > 0 && (
-                <div className="flex flex-wrap items-center gap-1.5 mb-6">
-                  <Tag className="h-3 w-3 text-muted-foreground/40 mr-0.5" />
-                  {tagsValue.map(tag => (
-                    <span key={tag} className="text-[11px] font-mono text-accent/80 bg-accent/8 border border-accent/15 px-2 py-0.5 rounded-md">
-                      {tag}
+                  {/* Meta pills row */}
+                  <div className="flex flex-wrap items-center gap-2 mb-5">
+                    {skill.created_by && (
+                      <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground bg-muted/60 px-2.5 py-1 rounded-full">
+                        <User className="h-3 w-3" />
+                        {skill.created_by}
+                      </span>
+                    )}
+                    {skill.current_version > 0 && (
+                      <span className="inline-flex items-center gap-1.5 text-[11px] font-mono text-muted-foreground bg-muted/60 px-2.5 py-1 rounded-full">
+                        <GitBranch className="h-3 w-3" />
+                        v{skill.current_version}
+                      </span>
+                    )}
+                    <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground bg-muted/60 px-2.5 py-1 rounded-full">
+                      <Clock className="h-3 w-3" />
+                      {formatRelative(skill.updated_at)}
                     </span>
-                  ))}
-                </div>
-              )}
+                    {skill.collections.map(c => (
+                      <span key={c} className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground bg-muted/60 px-2.5 py-1 rounded-full">
+                        <FolderOpen className="h-3 w-3" />
+                        {c}
+                      </span>
+                    ))}
+                  </div>
 
-              {/* Action buttons */}
-              <div className="flex items-center gap-2">
-                <Button size="sm" className="h-9 min-h-[44px] sm:min-h-0 gap-2 text-[13px] bg-foreground text-background hover:bg-foreground/90" onClick={() => setActiveTab('edit')}>
-                  <Pencil className="h-3.5 w-3.5" />
-                  Edit Skill
-                </Button>
-                <Button variant="outline" size="sm" className="h-9 min-h-[44px] sm:min-h-0 gap-2 text-[13px]" onClick={() => router.push(`/skills/${skill.slug}/versions`)}>
-                  <GitBranch className="h-3.5 w-3.5" />
-                  Versions
-                </Button>
-                <Button variant="outline" size="sm" className="h-9 min-h-[44px] sm:min-h-0 gap-2 text-[13px]" onClick={() => setShowInstallDialog(true)}>
-                  <Terminal className="h-3.5 w-3.5" />
-                  Install
-                </Button>
-                <Button variant="outline" size="sm" className="h-9 min-h-[44px] sm:min-h-0 gap-2 text-[13px] hidden sm:flex" onClick={handleExport}>
-                  <Download className="h-3.5 w-3.5" />
-                  Export
-                </Button>
+                  {/* Tags */}
+                  {tagsValue.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-1.5 mb-6">
+                      <Tag className="h-3 w-3 text-muted-foreground/40 mr-0.5" />
+                      {tagsValue.map(tag => (
+                        <span key={tag} className="text-[11px] font-mono text-accent/80 bg-accent/8 border border-accent/15 px-2 py-0.5 rounded-md">
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Action buttons */}
+                  <div className="flex items-center gap-2">
+                    <Button size="sm" className="h-9 min-h-[44px] sm:min-h-0 gap-2 text-[13px] bg-foreground text-background hover:bg-foreground/90" onClick={() => setActiveTab('edit')}>
+                      <Pencil className="h-3.5 w-3.5" />
+                      Edit Skill
+                    </Button>
+                    <Button variant="outline" size="sm" className="h-9 min-h-[44px] sm:min-h-0 gap-2 text-[13px]" onClick={() => router.push(`/skills/${skill.slug}/versions`)}>
+                      <GitBranch className="h-3.5 w-3.5" />
+                      Versions
+                    </Button>
+                    <Button variant="outline" size="sm" className="h-9 min-h-[44px] sm:min-h-0 gap-2 text-[13px] hidden sm:flex" onClick={handleExport}>
+                      <Download className="h-3.5 w-3.5" />
+                      Export
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Right: install strip — visible on lg+ */}
+                <div className="hidden lg:block w-64 shrink-0 pt-1">
+                  <InstallStrip slug={skill.slug} />
+                </div>
               </div>
             </div>
 
@@ -477,6 +495,7 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
           {commandPaletteOpen && (() => {
             const actions: PaletteAction[] = [
               { icon: Pencil, label: 'Edit skill', shortcut: 'E', group: 'Actions', action: () => { setActiveTab('edit'); setCommandPaletteOpen(false) } },
+              { icon: Terminal, label: 'Install skill', shortcut: '', group: 'Actions', action: () => { setShowInstall(true); setCommandPaletteOpen(false) } },
               { icon: GitBranch, label: 'View versions', shortcut: '', group: 'Actions', action: () => { router.push(`/skills/${skill.slug}/versions`); setCommandPaletteOpen(false) } },
               { icon: Download, label: 'Export as Markdown', shortcut: '⌘E', group: 'Actions', action: () => { handleExport(); setCommandPaletteOpen(false) } },
               { icon: Link2, label: 'Copy link', shortcut: '⌘L', group: 'Actions', action: () => { navigator.clipboard.writeText(window.location.href); setCommandPaletteOpen(false) } },
@@ -517,7 +536,6 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
                 setSkillCollections={setCollectionsValue}
                 openFullscreen={true}
                 currentVersion={skill.current_version}
-                totalVersions={skill.total_versions}
               />
             )}
           </div>
@@ -552,6 +570,9 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
         </div>
       )}
 
+      {/* Install dialog — mobile fallback (strip is hidden on small screens) */}
+      {showInstall && <InstallDialog slug={skill.slug} onClose={() => setShowInstall(false)} />}
+
       {/* Delete confirm dialog */}
       {showDeleteConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowDeleteConfirm(false)}>
@@ -579,11 +600,6 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
           </div>
         </div>
       )}
-      {/* Install dialog */}
-      {showInstallDialog && (
-        <InstallDialog slug={skill.slug} onClose={() => setShowInstallDialog(false)} />
-      )}
-
       {/* Keyboard help panel */}
       {showHelp && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowHelp(false)}>

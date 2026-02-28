@@ -20,7 +20,6 @@ type ApiSkillDetail = {
   tags: string[]
   collections: string[]
   current_version: number
-  total_versions: number
   created_at: string
   updated_at: string
 }
@@ -57,7 +56,6 @@ function detailToSkill(item: ApiSkillDetail, existingComments?: Comment[]): Skil
     tags: item.tags || [],
     collections: item.collections || [],
     current_version: item.current_version || 0,
-    total_versions: item.total_versions || 0,
     created_at: item.created_at,
     updated_at: item.updated_at,
     comments: existingComments,
@@ -189,3 +187,9 @@ export async function setLatestVersionApi(slug: string, version: number): Promis
   return detailToSkill(detail)
 }
 
+export async function restoreVersionApi(slug: string, version: number): Promise<Skill> {
+  const detail = await apiRequest<ApiSkillDetail>(`/v1/skills/${slug}/content-versions/${version}/restore`, {
+    method: 'POST',
+  })
+  return detailToSkill(detail)
+}

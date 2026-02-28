@@ -5,9 +5,11 @@ import { getSkills, updateSkill } from '@/lib/skills-store'
 import { fetchSkill } from '@/lib/api/skills'
 import { Skill } from '@/lib/mock-data'
 import { SkillDetail } from '@/components/skills/skill-detail'
+import { useRouter } from 'next/navigation'
 
 export default function SkillPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params)
+  const router = useRouter()
   const [skill, setSkill] = useState<Skill | null>(() => getSkills().find(s => s.slug === slug) ?? null)
 
   // Fetch full skill from API on mount + periodic sync every 30s
@@ -23,7 +25,11 @@ export default function SkillPage({ params }: { params: Promise<{ slug: string }
   // Called by SkillDetail after a successful save — update local state directly
   const handleSkillUpdated = useCallback((updated: Skill) => {
     setSkill(updated)
-  }, [])
+    // Redirect if slug changed (e.g. skill was renamed)
+    if (updated.slug !== slug) {
+      router.replace(`/skills/${updated.slug}`)
+    }
+  }, [slug, router])
 
   if (skill === null) {
     return (

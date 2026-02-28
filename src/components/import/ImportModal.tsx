@@ -1,13 +1,15 @@
 'use client'
 
 import { useState, useCallback, useRef, useMemo } from 'react'
-import { Upload, FileText, X, Check, Plus, Tag, FolderOpen } from 'lucide-react'
+import { Upload, FileText, X, Check, Plus, Tag, FolderOpen, AlertCircle, Pencil } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Skill } from '@/lib/mock-data'
-import { createSkill, getSkills } from '@/lib/skills-store'
+import { getSkills } from '@/lib/skills-store'
 import { parseMarkdown } from '@/lib/markdown-utils'
+import { validateSkillName, normalizeSkillName } from '@/lib/skill-validation'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { useRouter } from 'next/navigation'
 
 type ParsedFile = {
   filename: string
@@ -94,9 +96,9 @@ function TagInput({ values, onChange, suggestions, placeholder, icon: Icon }: {
 export function ImportModal({ onClose, onImported }: { onClose: () => void; onImported?: () => void }) {
   const [files, setFiles] = useState<ParsedFile[]>([])
   const [dragging, setDragging] = useState(false)
-  const [importing, setImporting] = useState(false)
   const [editingIdx, setEditingIdx] = useState<number | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const router = useRouter()
 
   // Gather existing tags and collections for suggestions
   const existingSkills = useMemo(() => getSkills(), [])
@@ -161,24 +163,32 @@ export function ImportModal({ onClose, onImported }: { onClose: () => void; onIm
     processFiles(e.dataTransfer.files)
   }, [processFiles])
 
-  const handleImport = useCallback(async () => {
-    setImporting(true)
-    for (const { skill } of files) {
-      await createSkill({
-        title: skill.title,
-        description: skill.description,
-        content_md: skill.content_md,
-        tags: skill.tags,
-        collections: skill.collections,
-      })
-    }
-    toast.success(`Imported ${files.length} skill${files.length !== 1 ? 's' : ''}`)
-    // Delay close so the skills-changed event propagates before React batches the unmount
-    setTimeout(() => {
-      onImported?.()
-      onClose()
-    }, 50)
-  }, [files, onClose, onImported])
+  /** Get name validation errors for a parsed file */
+  const getNameErrors = (skill: ParsedFile['skill']) => {
+    const normalized = normalizeSkillName(skill.title)
+    return validateSkillName(normalized)
+  }
+
+  /** Check if any file has a duplicate name with existing skills */
+  const isDuplicate = (skill: ParsedFile['skill']) => {
+    const normalized = normalizeSkillName(skill.title)
+    return existingSkills.some(s => s.slug === normalized)
+  }
+
+  /** Open skill in the create/edit view instead of directly creating */
+  const handleReviewAndCreate = useCallback((file: ParsedFile) => {
+    const normalized = normalizeSkillName(file.skill.title)
+    const params = new URLSearchParams()
+    params.set('name', normalized)
+    if (file.skill.description) params.set('description', file.skill.description)
+    if (file.skill.content_md) params.set('content', file.skill.content_md)
+    if (file.skill.tags.length > 0) params.set('tags', file.skill.tags.join(','))
+    if (file.skill.collections.length > 0) params.set('collections', file.skill.collections.join(','))
+
+    onImported?.()
+    onClose()
+    router.push(`/skills/new?${params.toString()}`)
+  }, [router, onClose, onImported])
 
   const removeFile = (idx: number) => {
     setFiles(prev => prev.filter((_, i) => i !== idx))
@@ -250,88 +260,123 @@ export function ImportModal({ onClose, onImported }: { onClose: () => void; onIm
               {files.length} file{files.length !== 1 ? 's' : ''} ready
             </p>
             <div className="space-y-1.5 max-h-[300px] overflow-y-auto">
-              {files.map((f, i) => (
-                <div key={i} className="rounded-lg border border-border/30 bg-foreground/[0.01] overflow-hidden">
-                  <div
-                    className="flex items-center gap-2.5 py-2 px-3 cursor-pointer hover:bg-foreground/[0.02] transition-colors"
-                    onClick={() => setEditingIdx(editingIdx === i ? null : i)}
-                  >
-                    <FileText className="h-3.5 w-3.5 text-muted-foreground/30 shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-[12px] font-semibold text-foreground truncate">{f.skill.title}</p>
-                      <p className="text-[10px] text-muted-foreground/40 truncate">
-                        {f.filename}
-                        {(f.skill.tags.length > 0 || f.skill.collections.length > 0) && (
-                          <span className="text-accent/50">
-                            {f.skill.tags.length > 0 && ` · ${f.skill.tags.join(', ')}`}
-                            {f.skill.collections.length > 0 && ` · ${f.skill.collections.join(', ')}`}
-                          </span>
-                        )}
-                      </p>
-                    </div>
-                    <button
-                      onClick={e => { e.stopPropagation(); removeFile(i) }}
-                      className="p-1 text-muted-foreground/30 hover:text-foreground shrink-0"
-                      aria-label="Remove"
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
-                  </div>
+              {files.map((f, i) => {
+                const nameErrors = getNameErrors(f.skill)
+                const duplicate = isDuplicate(f.skill)
+                const hasIssue = nameErrors.length > 0 || duplicate
 
-                  {/* Expanded edit area for tags + collections */}
-                  {editingIdx === i && (
-                    <div className="px-3 pb-3 pt-1 space-y-2 border-t border-border/20">
-                      <div>
-                        <label className="text-[9px] font-bold text-foreground/20 uppercase tracking-[0.15em] mb-1 block">Tags</label>
-                        <TagInput
-                          values={f.skill.tags}
-                          onChange={tags => updateFileTags(i, tags)}
-                          suggestions={tagSuggestions}
-                          placeholder="Add tags..."
-                          icon={Tag}
-                        />
+                return (
+                  <div key={i} className={cn('rounded-lg border overflow-hidden', hasIssue ? 'border-destructive/40 bg-destructive/[0.02]' : 'border-border/30 bg-foreground/[0.01]')}>
+                    <div
+                      className="flex items-center gap-2.5 py-2 px-3 cursor-pointer hover:bg-foreground/[0.02] transition-colors"
+                      onClick={() => setEditingIdx(editingIdx === i ? null : i)}
+                    >
+                      <FileText className="h-3.5 w-3.5 text-muted-foreground/30 shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <p className="text-[12px] font-semibold text-foreground truncate">{f.skill.title}</p>
+                          {hasIssue && <AlertCircle className="h-3 w-3 text-destructive shrink-0" />}
+                        </div>
+                        <p className="text-[10px] text-muted-foreground/40 truncate">
+                          {f.filename}
+                          {duplicate && <span className="text-destructive ml-1">- name already exists</span>}
+                          {nameErrors.length > 0 && <span className="text-destructive ml-1">- {nameErrors[0].message}</span>}
+                          {!hasIssue && (f.skill.tags.length > 0 || f.skill.collections.length > 0) && (
+                            <span className="text-accent/50">
+                              {f.skill.tags.length > 0 && ` · ${f.skill.tags.join(', ')}`}
+                              {f.skill.collections.length > 0 && ` · ${f.skill.collections.join(', ')}`}
+                            </span>
+                          )}
+                        </p>
                       </div>
-                      <div>
-                        <label className="text-[9px] font-bold text-foreground/20 uppercase tracking-[0.15em] mb-1 block">Collection</label>
-                        <TagInput
-                          values={f.skill.collections}
-                          onChange={cols => updateFileCollections(i, cols)}
-                          suggestions={collectionSuggestions}
-                          placeholder="Add to collection..."
-                          icon={FolderOpen}
-                        />
-                      </div>
+                      <button
+                        onClick={e => { e.stopPropagation(); removeFile(i) }}
+                        className="p-1 text-muted-foreground/30 hover:text-foreground shrink-0"
+                        aria-label="Remove"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
                     </div>
-                  )}
-                </div>
-              ))}
+
+                    {/* Expanded edit area for tags + collections */}
+                    {editingIdx === i && (
+                      <div className="px-3 pb-3 pt-1 space-y-2 border-t border-border/20">
+                        {hasIssue && (
+                          <div className="flex items-start gap-1.5 p-2 bg-destructive/5 border border-destructive/10 rounded-lg">
+                            <AlertCircle className="h-3 w-3 text-destructive mt-0.5 shrink-0" />
+                            <p className="text-[10px] text-destructive leading-relaxed">
+                              {duplicate
+                                ? `A skill named "${normalizeSkillName(f.skill.title)}" already exists. You can review and fix the name in the editor.`
+                                : nameErrors.map(e => e.message).join('. ')
+                              }
+                            </p>
+                          </div>
+                        )}
+                        <div>
+                          <label className="text-[9px] font-bold text-foreground/20 uppercase tracking-[0.15em] mb-1 block">Tags</label>
+                          <TagInput
+                            values={f.skill.tags}
+                            onChange={tags => updateFileTags(i, tags)}
+                            suggestions={tagSuggestions}
+                            placeholder="Add tags..."
+                            icon={Tag}
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[9px] font-bold text-foreground/20 uppercase tracking-[0.15em] mb-1 block">Collection</label>
+                          <TagInput
+                            values={f.skill.collections}
+                            onChange={cols => updateFileCollections(i, cols)}
+                            suggestions={collectionSuggestions}
+                            placeholder="Add to collection..."
+                            icon={FolderOpen}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
             </div>
           </div>
         )}
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-border/40 flex items-center justify-end gap-2">
-          <Button variant="outline" size="sm" className="h-8 text-[13px] border-border/40" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button
-            size="sm"
-            className="h-8 text-[13px] gap-1.5 bg-foreground text-background hover:bg-foreground/90"
-            disabled={files.length === 0 || importing}
-            onClick={handleImport}
-          >
-            {importing ? (
-              <>
-                <div className="h-3.5 w-3.5 border-2 border-background/30 border-t-background rounded-full animate-spin" />
-                Importing...
-              </>
+        <div className="px-6 py-4 border-t border-border/40 flex items-center justify-between gap-2">
+          <p className="text-[10px] text-muted-foreground/50">
+            Each skill opens in editor for review before creating
+          </p>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" className="h-8 text-[13px] border-border/40" onClick={onClose}>
+              Cancel
+            </Button>
+            {files.length === 1 ? (
+              <Button
+                size="sm"
+                className="h-8 text-[13px] gap-1.5 bg-foreground text-background hover:bg-foreground/90"
+                onClick={() => handleReviewAndCreate(files[0])}
+              >
+                <Pencil className="h-3.5 w-3.5" />
+                Review &amp; Create
+              </Button>
             ) : (
-              <>
-                <Check className="h-3.5 w-3.5" />
-                Import {files.length > 0 ? `${files.length} skill${files.length !== 1 ? 's' : ''}` : ''}
-              </>
+              <div className="flex items-center gap-1.5">
+                {files.map((f, i) => (
+                  <Button
+                    key={i}
+                    size="sm"
+                    variant="outline"
+                    className="h-8 text-[12px] gap-1 max-w-[140px]"
+                    onClick={() => handleReviewAndCreate(f)}
+                    title={`Review "${f.skill.title}"`}
+                  >
+                    <Pencil className="h-3 w-3 shrink-0" />
+                    <span className="truncate">{f.skill.title || `File ${i + 1}`}</span>
+                  </Button>
+                ))}
+              </div>
             )}
-          </Button>
+          </div>
         </div>
       </div>
     </div>

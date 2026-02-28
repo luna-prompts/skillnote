@@ -1,21 +1,38 @@
 'use client'
 
-import { useState, useCallback, useEffect } from 'react'
+import { Suspense, useState, useCallback, useEffect } from 'react'
 import { SkillEditTab } from '@/components/skills/tabs/SkillEditTab'
 import { createSkill } from '@/lib/skills-store'
-import { validateSkillName, validateDescription } from '@/lib/skill-validation'
+import { validateSkillName, validateDescription, normalizeSkillName } from '@/lib/skill-validation'
 import { parseFrontmatter, stripFrontmatter } from '@/lib/frontmatter'
 import { toast } from 'sonner'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 
 export default function NewSkillPage() {
-  const [name, setName] = useState('')
-  const [description, setDescription] = useState('')
-  const [content, setContent] = useState('')
-  const [tags, setTags] = useState<string[]>([])
-  const [collections, setCollections] = useState<string[]>([])
-  const [saving, setSaving] = useState(false)
+  return (
+    <Suspense fallback={<div className="flex-1 flex items-center justify-center"><div className="h-5 w-5 border-2 border-accent/30 border-t-accent rounded-full animate-spin" /></div>}>
+      <NewSkillContent />
+    </Suspense>
+  )
+}
+
+function NewSkillContent() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+
+  // Pre-fill from URL search params (used by import flow)
+  const [name, setName] = useState(() => normalizeSkillName(searchParams.get('name') || ''))
+  const [description, setDescription] = useState(() => searchParams.get('description') || '')
+  const [content, setContent] = useState(() => searchParams.get('content') || '')
+  const [tags, setTags] = useState<string[]>(() => {
+    const t = searchParams.get('tags')
+    return t ? t.split(',').filter(Boolean) : []
+  })
+  const [collections, setCollections] = useState<string[]>(() => {
+    const c = searchParams.get('collections')
+    return c ? c.split(',').filter(Boolean) : []
+  })
+  const [saving, setSaving] = useState(false)
 
   // Cmd+S → save
   useEffect(() => {
@@ -35,7 +52,7 @@ export default function NewSkillPage() {
     if (md.trimStart().startsWith('---')) {
       const { data } = parseFrontmatter(md)
       if (data.name && typeof data.name === 'string' && !name) {
-        setName(data.name.toLowerCase().replace(/[^a-z0-9-]/g, ''))
+        setName(normalizeSkillName(String(data.name)))
       }
       if (data.description && typeof data.description === 'string' && !description) {
         setDescription(String(data.description))
@@ -64,7 +81,7 @@ export default function NewSkillPage() {
     } finally {
       setSaving(false)
     }
-  }, [name, description, content, tags, router])
+  }, [name, description, content, tags, collections, router])
 
   return (
     <SkillEditTab
