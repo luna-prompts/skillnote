@@ -27,6 +27,7 @@ class SkillDetail(BaseModel):
     tags: List[str] = []
     collections: List[str] = []
     current_version: int = 0
+    total_versions: int = 0
     created_at: datetime
     updated_at: datetime
 

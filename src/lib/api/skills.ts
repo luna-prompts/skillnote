@@ -20,6 +20,7 @@ type ApiSkillDetail = {
   tags: string[]
   collections: string[]
   current_version: number
+  total_versions: number
   created_at: string
   updated_at: string
 }
@@ -56,6 +57,7 @@ function detailToSkill(item: ApiSkillDetail, existingComments?: Comment[]): Skil
     tags: item.tags || [],
     collections: item.collections || [],
     current_version: item.current_version || 0,
+    total_versions: item.total_versions || 0,
     created_at: item.created_at,
     updated_at: item.updated_at,
     comments: existingComments,
