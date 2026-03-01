@@ -12,9 +12,13 @@ Filter skills via URL query params:
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import os
 from collections.abc import Sequence
 from typing import Any
+
+logger = logging.getLogger(__name__)
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 
@@ -27,7 +31,12 @@ DATABASE_URL = os.environ.get(
     "postgresql+psycopg://skillnote:skillnote@localhost:5432/skillnote",
 )
 
-engine = create_engine(DATABASE_URL, future=True)
+engine = create_engine(
+    DATABASE_URL,
+    future=True,
+    pool_pre_ping=True,
+    connect_args={"connect_timeout": 5},
+)
 
 
 class SkillTool(Tool):
@@ -73,7 +82,7 @@ class SkillNoteToolProvider(Provider):
         conditions = []
         params: dict[str, Any] = {}
 
-        if slug:
+        if slug is not None:
             conditions.append("slug = :slug")
             params["slug"] = slug
 
@@ -100,10 +109,14 @@ class SkillNoteToolProvider(Provider):
         collections, tags = self._parse_filters()
         query, params = self._build_query(collections, tags, slug)
 
-        with Session(self.engine) as session:
-            result = session.execute(query, params)
-            rows = result.mappings().all()
-            return [dict(row) for row in rows]
+        try:
+            with Session(self.engine) as session:
+                result = session.execute(query, params)
+                rows = result.mappings().all()
+                return [dict(row) for row in rows]
+        except Exception:
+            logger.exception("DB error fetching skills (slug=%r)", slug)
+            raise
 
     def _to_tool(self, skill: dict) -> SkillTool:
         return SkillTool(
@@ -116,7 +129,12 @@ class SkillNoteToolProvider(Provider):
         )
 
     async def _list_tools(self) -> Sequence[Tool]:
-        return [self._to_tool(s) for s in self._fetch_skills()]
+        skills = await asyncio.to_thread(self._fetch_skills)
+        return [self._to_tool(s) for s in skills]
+
+    async def _get_tool(self, name: str, version=None) -> Tool | None:
+        skills = await asyncio.to_thread(self._fetch_skills, name)
+        return self._to_tool(skills[0]) if skills else None
 
 
 provider = SkillNoteToolProvider(db_engine=engine)
