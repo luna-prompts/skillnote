@@ -12,6 +12,7 @@ audit*.mjs
 mobile-audit*.js
 r7-test.js
 PROMPT.md
+*PROMPT.md
 skillvault-backup-*.tar.gz
 *.log
 .env
