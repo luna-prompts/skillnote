@@ -25,6 +25,7 @@
   <a href="#cli">CLI</a> &nbsp;&middot;&nbsp;
   <a href="#api-reference">API</a> &nbsp;&middot;&nbsp;
   <a href="#self-hosting">Self-Hosting</a> &nbsp;&middot;&nbsp;
+  <a href="#roadmap">Roadmap</a> &nbsp;&middot;&nbsp;
   <a href="#contributing">Contributing</a>
 </p>
 
@@ -382,6 +383,55 @@ Learn more about skills and how they work across different AI coding agents:
 - [Codex Skills](https://developers.openai.com/codex/skills/) - OpenAI Codex skills reference
 - [Antigravity Skills](https://antigravity.google/docs/skills) - Google Antigravity skills documentation
 - [OpenHands Skills](https://docs.openhands.dev/overview/skills) - OpenHands skills overview
+
+---
+
+## Roadmap
+
+What's coming next to SkillNote. Contributions and feedback on priorities are welcome in [Discord](https://discord.gg/GazU4amU6H) or [GitHub Issues](https://github.com/luna-prompts/skillnote/issues).
+
+### MCP Server Support
+
+Expose the SkillNote registry as a [Model Context Protocol](https://modelcontextprotocol.io/) server so any MCP-compatible agent can discover and fetch skills without the CLI.
+
+- **Resource endpoints** — agents read `skillnote://skills/{slug}` to get a skill's content
+- **Tool endpoints** — agents call `search_skills`, `install_skill`, `list_skills` as MCP tools
+- **Auto-discovery** — a `/.well-known/mcp.json` manifest lets agents find the server automatically
+- **Streaming** — skill content is streamed for large files
+
+Tracked in [#mcp-server](https://github.com/luna-prompts/skillnote/labels/mcp-server).
+
+### ACL / Authentication
+
+Fine-grained access control so teams can share a registry without exposing every skill to every user.
+
+> The auth layer was removed in an early migration (`0004_drop_auth`). The backend still has `TODO: Re-enable when ACL is ready` markers where it will slot back in.
+
+Planned capabilities:
+
+| Feature | Description |
+| ------- | ----------- |
+| **Token authentication** | Per-user and per-service API tokens (`skn_…`) |
+| **Role-based access** | `admin`, `editor`, `viewer` roles per skill or collection |
+| **Team workspaces** | Namespace skills by team; members inherit workspace permissions |
+| **Public / private skills** | Skills can be marked public (no token) or private (token required) |
+| **Audit log** | Who created, edited, published, or deleted a skill and when |
+
+Tracked in [#acl](https://github.com/luna-prompts/skillnote/labels/acl).
+
+### Other Planned Features
+
+| Feature | Description | Status |
+| ------- | ----------- | ------ |
+| **MCP server** | Expose skills via MCP protocol | Planned |
+| **ACL & auth** | Role-based access control + API tokens | Planned |
+| **Skill marketplace** | Optional public index of community skills | Exploring |
+| **Import from URL** | Paste a GitHub URL to import a `SKILL.md` directly | Exploring |
+| **Skill testing** | Run a skill against a prompt and evaluate the output | Exploring |
+| **Webhooks** | Notify CI/CD pipelines when a skill is published | Planned |
+| **Collections sharing** | Export / import a collection as a single ZIP | Planned |
+| **i18n** | Skill descriptions and UI in multiple languages | Backlog |
+| **Diff viewer** | Side-by-side visual diff between two content versions | Backlog |
 
 ---
 
