@@ -430,7 +430,7 @@ Tracked in [#acl](https://github.com/luna-prompts/skillnote/labels/acl).
 | **Skill testing** | Run a skill against a prompt and evaluate the output | Exploring |
 | **Webhooks** | Notify CI/CD pipelines when a skill is published | Planned |
 | **Collections sharing** | Export / import a collection as a single ZIP | Planned |
-| **i18n** | Skill descriptions and UI in multiple languages | Backlog |
+| **Docs site** | Dedicated documentation site with guides, API reference, and tutorials | Planned |
 | **Diff viewer** | Side-by-side visual diff between two content versions | Backlog |
 
 ---
