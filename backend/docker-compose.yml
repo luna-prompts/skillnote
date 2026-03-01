@@ -22,6 +22,17 @@ services:
     depends_on:
       - postgres
 
+  mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile.mcp
+    environment:
+      SKILLNOTE_DATABASE_URL: postgresql+psycopg://skillnote:skillnote@postgres:5432/skillnote
+    ports:
+      - "${SKILLNOTE_MCP_PORT:-8083}:8083"
+    depends_on:
+      - postgres
+
 volumes:
   pgdata:
   bundles:
