@@ -7,6 +7,8 @@ from app.validators.skill_validator import validate_skill_name, validate_skill_d
 
 
 class SkillListItem(BaseModel):
+    model_config = {"from_attributes": True}
+
     name: str
     slug: str
     description: str

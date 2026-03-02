@@ -182,7 +182,6 @@ export function SkillVersionsTab({ skillSlug, onRestored }: SkillVersionsTabProp
             title: skill.title,
             description: skill.description,
             content_md: skill.content_md,
-            tags: skill.tags,
             collections: skill.collections,
             is_latest: true,
             created_at: skill.updated_at,

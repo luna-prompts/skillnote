@@ -65,7 +65,6 @@ export function NewSkillModal({ onClose, collections }: NewSkillModalProps) {
         title: name.trim(),
         description: description.trim(),
         content_md: `---\nname: ${name.trim()}\ndescription: ${description.trim()}\n---\n\n# ${name.trim()}\n\n`,
-        tags: [],
         collections: selectedCollections,
       })
       toast.success(`Skill "${skill.title}" created`)

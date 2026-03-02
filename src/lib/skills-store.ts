@@ -109,7 +109,6 @@ export async function createSkill(data: {
   title: string
   description: string
   content_md: string
-  tags: string[]
   collections: string[]
 }): Promise<Skill> {
   const slug = slugFromName(data.title)
@@ -121,7 +120,7 @@ export async function createSkill(data: {
     return skill
   } catch {
     const now = new Date().toISOString()
-    const skill: Skill = { slug, title: data.title, description: data.description, content_md: data.content_md, tags: [], collections: data.collections, current_version: 1, total_versions: 1, created_by: getDisplayName(), created_at: now, updated_at: now }
+    const skill: Skill = { slug, title: data.title, description: data.description, content_md: data.content_md, collections: data.collections, current_version: 1, total_versions: 1, created_by: getDisplayName(), created_at: now, updated_at: now }
     addSkill(skill)
     notifyChanged()
     return skill

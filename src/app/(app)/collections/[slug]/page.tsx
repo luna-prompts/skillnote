@@ -2,11 +2,13 @@
 import { TopBar } from '@/components/layout/topbar'
 import { SkillListItem } from '@/components/skills/skill-list-item'
 import { AddSkillsModal } from '@/components/collections/AddSkillsModal'
-import { ArrowLeft, FolderOpen, Plus } from 'lucide-react'
+import { ArrowLeft, FolderOpen, Plus, X } from 'lucide-react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
-import { getSkills, syncSkillsFromApi } from '@/lib/skills-store'
+import { getSkills, syncSkillsFromApi, saveSkillEdit } from '@/lib/skills-store'
+import { type Skill } from '@/lib/mock-data'
+import { toast } from 'sonner'
 
 export default function CollectionDetailPage() {
   const { slug } = useParams<{ slug: string }>()
@@ -23,6 +25,15 @@ export default function CollectionDetailPage() {
   function refreshSkills() {
     setSkills(getSkills())
     syncSkillsFromApi().then(setSkills).catch(() => {})
+  }
+
+  async function handleRemove(skill: Skill) {
+    const updatedCollections = (skill.collections || []).filter(
+      c => c.toLowerCase() !== collectionName.toLowerCase()
+    )
+    await saveSkillEdit(skill.slug, { collections: updatedCollections })
+    toast.success(`"${skill.title}" removed from ${collectionName}`)
+    refreshSkills()
   }
 
   return (
@@ -74,7 +85,20 @@ export default function CollectionDetailPage() {
             </button>
           </div>
         ) : (
-          <div className="relative">{filtered.map(skill => <SkillListItem key={skill.slug} skill={skill} />)}</div>
+          <div className="relative">
+            {filtered.map(skill => (
+              <div key={skill.slug} className="relative group">
+                <SkillListItem skill={skill} />
+                <button
+                  onClick={() => handleRemove(skill)}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity h-6 w-6 rounded-md flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                  title="Remove from collection"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ))}
+          </div>
         )}
       </main>
 
