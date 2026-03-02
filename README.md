@@ -7,24 +7,22 @@
 <p align="center">
   <strong>The open-source skill registry for AI coding agents.</strong>
   <br />
-  Create, manage, and distribute <code>SKILL.md</code> files across Claude Code, Cursor, Codex, OpenHands, and more.
+  Create, manage, and share <code>SKILL.md</code> files — then connect any AI agent via MCP.
 </p>
 
 <p align="center">
   <a href="https://github.com/luna-prompts/skillnote/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License" /></a>
   <a href="https://github.com/luna-prompts/skillnote"><img src="https://img.shields.io/github/stars/luna-prompts/skillnote?style=social" alt="Stars" /></a>
-  <a href="https://github.com/luna-prompts/skillnote/issues"><img src="https://img.shields.io/github/issues/luna-prompts/skillnote" alt="Issues" /></a>
   <img src="https://img.shields.io/badge/docker-ready-2496ED?logo=docker&logoColor=white" alt="Docker Ready" />
   <img src="https://img.shields.io/badge/self--hosted-yes-green" alt="Self-hosted" />
 </p>
 
 <p align="center">
   <a href="#quick-start">Quick Start</a> &nbsp;&middot;&nbsp;
-  <a href="#features">Features</a> &nbsp;&middot;&nbsp;
+  <a href="#connect-your-ai-agent">Connect Agent</a> &nbsp;&middot;&nbsp;
+  <a href="#creating-skills">Creating Skills</a> &nbsp;&middot;&nbsp;
   <a href="#cli">CLI</a> &nbsp;&middot;&nbsp;
-  <a href="#api-reference">API</a> &nbsp;&middot;&nbsp;
-  <a href="#self-hosting">Self-Hosting</a> &nbsp;&middot;&nbsp;
-  <a href="#contributing">Contributing</a>
+  <a href="#self-hosting">Self-Hosting</a>
 </p>
 
 <br />
@@ -33,15 +31,9 @@
 
 ## Why SkillNote?
 
-AI coding agents like Claude Code, Cursor, and Codex use `SKILL.md` files to learn new capabilities. But managing these files is painful:
+AI agents like Claude Code, Cursor, and Codex learn new behaviours from `SKILL.md` files. The problem: those files live scattered across machines, drift out of sync, and can't be shared across a team.
 
-- They live scattered across `~/.claude/skills/`, `.cursor/skills/`, `.codex/skills/`
-- No versioning, no search, no way to share across projects or teams
-- Writing them from scratch means guessing what works
-
-**SkillNote fixes this.** It's a self-hosted registry with a clean web UI, a CLI for one-command installs, and a versioning system that tracks every edit. Write once, install everywhere.
-
-**Why self-hosted?** Not every skill can live on a public registry. Enterprise workflows, proprietary codebases, internal tooling, compliance-sensitive prompts: these skills contain institutional knowledge that shouldn't leave your infrastructure. SkillNote runs entirely on your machines. Your skills stay private, versioned, and accessible only to your team.
+**SkillNote is a self-hosted registry** that stores your skills in one place and exposes them to any AI agent via the **Model Context Protocol (MCP)**. No file copying. No syncing. Every agent always has the latest version.
 
 <p align="center">
   <img src="docs/screenshots/hero-dashboard.png" width="100%" alt="SkillNote Dashboard" />
@@ -51,7 +43,7 @@ AI coding agents like Claude Code, Cursor, and Codex use `SKILL.md` files to lea
 
 ## Quick Start
 
-Make sure you have [Docker](https://docs.docker.com/get-docker/) and [Docker Compose](https://docs.docker.com/compose/install/) v2+ installed.
+Requires [Docker](https://docs.docker.com/get-docker/) and Docker Compose v2+.
 
 ```bash
 git clone https://github.com/luna-prompts/skillnote.git
@@ -59,75 +51,91 @@ cd skillnote
 docker compose up --build -d
 ```
 
-That's it. Three containers spin up:
+Four containers spin up:
 
-| Service    | URL                        | What it does                            |
-| ---------- | -------------------------- | --------------------------------------- |
-| **Web**    | http://localhost:3000      | Next.js frontend                        |
-| **API**    | http://localhost:8082      | FastAPI backend (auto-migrates + seeds) |
-| **MCP**    | http://localhost:8083/mcp  | MCP server — skills as tools            |
-| **DB**     | localhost:5432             | PostgreSQL 16                           |
+| Service      | URL                       | What it does                            |
+| ------------ | ------------------------- | --------------------------------------- |
+| **Web**      | http://localhost:3000     | Web UI — create and manage skills       |
+| **API**      | http://localhost:8082     | REST API (auto-migrates + seeds)        |
+| **MCP**      | http://localhost:8083/mcp | MCP server — your skills as agent tools |
+| **Postgres** | localhost:5432            | Database                                |
 
-Open **http://localhost:3000** and start creating skills.
+Open **http://localhost:3000** to start creating skills. The MCP server is ready immediately at `http://localhost:8083/mcp`.
 
-> The backend auto-runs migrations and seeds a default skill (`skill-creator`) on first boot. No manual setup needed.
-
----
-
-## Features
-
-### Skill Editor
-A Notion-style WYSIWYG editor powered by Tiptap. Write in rich text or switch to raw markdown. Paste a raw `SKILL.md` file and it auto-extracts the name, description, and body from the frontmatter.
-
-<p align="center">
-  <img src="docs/screenshots/skill-editor.png" width="100%" alt="Skill Editor" />
-</p>
-
-### Version History
-Every save creates a snapshot. Browse the full history, compare versions, and restore any previous state with one click. Published versions use semantic versioning (`1.0.0`, `1.1.0`, ...) and are distributed as checksummed ZIP bundles.
-
-<p align="center">
-  <img src="docs/screenshots/version-history.png" width="100%" alt="Version History" />
-</p>
-
-### Tags & Collections
-Organize skills with tags and collections. Filter, search, and browse by category. Rename or delete tags across all skills at once.
-
-### Multi-Agent Install
-Install skills to any AI coding agent from the web UI or CLI. Supported agents:
-
-| Agent       | Install Path                                |
-| ----------- | ------------------------------------------- |
-| Claude Code | `~/.claude/skills/<skill>/SKILL.md`         |
-| Cursor      | `.cursor/skills/<skill>/SKILL.md`           |
-| Codex       | `.codex/skills/<skill>/SKILL.md`            |
-| OpenClaw    | `~/.openclaw/skills/<skill>/SKILL.md`       |
-| OpenHands   | `~/.openhands/skills/<skill>/SKILL.md`      |
-| Windsurf    | `.windsurf/skills/<skill>/SKILL.md`         |
-| Universal   | `.skills/<skill>/SKILL.md`                  |
-
-### Offline-First
-The frontend works without a backend. Skills are stored in localStorage and sync to PostgreSQL when the API is available. No data loss if the backend goes down.
-
-### Keyboard Shortcuts
-
-| Shortcut       | Action          |
-| -------------- | --------------- |
-| `N`            | New Skill       |
-| `Cmd/Ctrl + K` | Focus search    |
-| `Cmd/Ctrl + S` | Save (in editor)|
-| `Escape`       | Close / Go back |
+> On first boot, two starter skills (`skill-creator`, `secure-migrations`) are seeded automatically.
 
 ---
 
-## SKILL.md Format
+## Connect Your AI Agent
 
-Every skill is a Markdown file with YAML frontmatter:
+Point your AI agent at the MCP server and your skills become available as tools — no file installs needed. Any skill you add or edit in SkillNote is reflected instantly.
+
+### Claude Code
+
+```bash
+claude mcp add --transport http skillnote http://localhost:8083/mcp --scope user
+```
+
+Restart Claude Code, then run `/mcp` to confirm `skillnote` appears. Your skills show up as callable tools.
+
+> On a remote server? Replace `localhost` with your machine's IP or hostname.
+
+### Cursor
+
+Add to `~/.cursor/mcp.json` (global) or `.cursor/mcp.json` (project):
+
+```json
+{
+  "mcpServers": {
+    "skillnote": {
+      "url": "http://localhost:8083/mcp"
+    }
+  }
+}
+```
+
+Restart Cursor. Skills appear in the agent tools panel.
+
+### OpenClaw
+
+```bash
+openclaw mcp add --transport http skillnote http://localhost:8083/mcp --scope user
+```
+
+### Windsurf
+
+Add to `~/.windsurf/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "skillnote": {
+      "url": "http://localhost:8083/mcp"
+    }
+  }
+}
+```
+
+### Any MCP-compatible agent
+
+The MCP endpoint is a standard HTTP MCP server:
+
+```
+http://localhost:8083/mcp
+```
+
+Any agent that supports MCP over HTTP can connect to it directly.
+
+---
+
+## Creating Skills
+
+A skill is a Markdown file with a YAML frontmatter header:
 
 ```markdown
 ---
 name: pdf-extractor
-description: Extract text and tables from PDF files. Use when the user mentions PDFs, scanned documents, or form extraction.
+description: Extract text and tables from PDF files. Use when the user mentions PDFs, scanned documents, or needs to parse a form.
 ---
 
 # PDF Extractor
@@ -139,194 +147,96 @@ When the user provides a PDF file:
 3. Preserve headings and document structure
 ```
 
-### Validation Rules
+### Rules
 
-| Field         | Rule                                                                 |
-| ------------- | -------------------------------------------------------------------- |
-| `name`        | Required. Lowercase `a-z`, `0-9`, `-` only. Max 64 chars. No reserved words (`anthropic`, `claude`). |
-| `description` | Required. Max 1024 chars. Should explain **what** it does and **when** to trigger it. |
+| Field         | Rule                                                                                   |
+| ------------- | -------------------------------------------------------------------------------------- |
+| `name`        | Lowercase `a-z`, `0-9`, `-` only. Max 64 chars.                                       |
+| `description` | Max 1024 chars. Describe **what** it does **and when** to use it. This is the trigger. |
 
-> **Tip:** Be aggressive in descriptions. Claude tends to under-trigger skills. Include specific phrases the user might say.
+> **Tip:** The description is how the AI decides whether to use a skill. Be specific — include phrases the user might actually say.
+
+### Ways to create a skill
+
+**Web UI** — Go to `http://localhost:3000` → New Skill. Paste a raw `SKILL.md` and the editor auto-extracts the frontmatter.
+
+**API**
+```bash
+curl -X POST http://localhost:8082/v1/skills \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "pdf-extractor",
+    "slug": "pdf-extractor",
+    "description": "Extract text from PDF files...",
+    "content_md": "# PDF Extractor\n\n..."
+  }'
+```
+
+**CLI**
+```bash
+skillnote add pdf-extractor
+```
+
+Skills appear in the MCP server immediately — no restart required.
 
 ---
 
 ## CLI
 
-SkillNote includes a CLI for installing and managing skills from the terminal, no browser needed.
-
-### Install
+Install and manage skills from the terminal.
 
 ```bash
-cd cli
-npm install && npm run build
-npm link
-```
+cd cli && npm install && npm run build && npm link
 
-### Login
-
-```bash
 skillnote login --host http://localhost:8082 --token skn_dev_demo_token
-```
 
-### Commands
-
-```bash
-skillnote list                        # List all skills in the registry
-skillnote add pdf-extractor           # Install a skill (auto-detects agent)
+skillnote list                              # List all skills
+skillnote add pdf-extractor                 # Install a skill (auto-detects agent)
 skillnote add pdf-extractor --agent claude  # Install for a specific agent
-skillnote add --all                   # Install everything
-skillnote check                       # Check for updates
-skillnote update --all                # Update all installed skills
-skillnote remove pdf-extractor        # Uninstall a skill
-skillnote doctor                      # Diagnose setup issues
+skillnote add --all                         # Install everything
+skillnote update --all                      # Update all installed skills
+skillnote remove pdf-extractor              # Uninstall
+skillnote doctor                            # Diagnose setup issues
 ```
 
 ---
 
 ## Self-Hosting
 
-### Docker Compose (recommended)
+### Run on a different host or port
 
 ```bash
-git clone https://github.com/luna-prompts/skillnote.git
-cd skillnote
-docker compose up --build -d
+SKILLNOTE_HOST=192.168.1.100 docker compose up --build -d
 ```
 
-#### Custom host or port
+Then connect agents using your machine's IP:
+```bash
+claude mcp add --transport http skillnote http://192.168.1.100:8083/mcp --scope user
+```
+
+### Stop / reset
 
 ```bash
-SKILLNOTE_HOST=192.168.1.100 SKILLNOTE_API_PORT=9000 docker compose up --build -d
+docker compose down        # Stop (keeps data)
+docker compose down -v     # Stop + wipe database
 ```
 
-#### Stop & reset
+### Environment variables
+
+| Variable               | Default            | Description                        |
+| ---------------------- | ------------------ | ---------------------------------- |
+| `SKILLNOTE_HOST`       | `localhost`        | Host IP/domain for CORS and URLs   |
+| `SKILLNOTE_API_PORT`   | `8082`             | API port                           |
+| `SKILLNOTE_MCP_PORT`   | `8083`             | MCP server port                    |
+
+### Local development
 
 ```bash
-docker compose down          # Stop (keeps data)
-docker compose down -v       # Stop + wipe database
-```
+# Backend + DB in Docker
+docker compose up --build -d postgres api mcp
 
-### Local Development
-
-Run the backend in Docker, frontend with hot-reload:
-
-```bash
-# Terminal 1: Backend
-docker compose up --build -d postgres api
-curl http://localhost:8082/health   # Wait for {"status":"ok"}
-
-# Terminal 2: Frontend
-npm install
-npm run dev                         # http://localhost:3000
-```
-
-### Environment Variables
-
-| Variable                     | Default                 | Description                              |
-| ---------------------------- | ----------------------- | ---------------------------------------- |
-| `SKILLNOTE_HOST`             | `localhost`             | Host IP or domain (CORS + frontend URL)  |
-| `SKILLNOTE_API_PORT`         | `8082`                  | Host port for the API                    |
-| `SKILLNOTE_DATABASE_URL`     | *(set in compose)*      | PostgreSQL connection string             |
-| `SKILLNOTE_BUNDLE_STORAGE_DIR` | `/app/data/bundles`  | Where versioned ZIP bundles are stored   |
-| `SKILLNOTE_MAX_BUNDLE_SIZE_BYTES` | `5242880`          | Max bundle upload size (5 MB)            |
-| `SKILLNOTE_CORS_ORIGINS`     | *(auto from host)*      | Comma-separated CORS origins             |
-| `NEXT_PUBLIC_API_BASE_URL`   | `http://localhost:8082` | Frontend API endpoint                    |
-
----
-
-## API Reference
-
-All endpoints except `/health` require `Authorization: Bearer <token>`.
-
-```bash
-curl http://localhost:8082/v1/skills \
-  -H "Authorization: Bearer skn_dev_demo_token"
-```
-
-### Skills
-
-| Method   | Endpoint                                          | Description                |
-| -------- | ------------------------------------------------- | -------------------------- |
-| `GET`    | `/v1/skills`                                      | List all skills            |
-| `POST`   | `/v1/skills`                                      | Create a skill             |
-| `GET`    | `/v1/skills/{slug}`                               | Get skill details          |
-| `PATCH`  | `/v1/skills/{slug}`                               | Update a skill             |
-| `DELETE` | `/v1/skills/{slug}`                               | Delete a skill             |
-
-### Versioning
-
-| Method   | Endpoint                                                       | Description              |
-| -------- | -------------------------------------------------------------- | ------------------------ |
-| `GET`    | `/v1/skills/{slug}/content-versions`                           | List content snapshots   |
-| `POST`   | `/v1/skills/{slug}/content-versions/{version}/set-latest`     | Set version as latest    |
-| `POST`   | `/v1/skills/{slug}/content-versions/{version}/restore`        | Restore a version        |
-| `GET`    | `/v1/skills/{slug}/versions`                                   | List published versions  |
-| `POST`   | `/v1/publish`                                                  | Publish a bundle         |
-| `GET`    | `/v1/skills/{slug}/{version}/download`                        | Download a bundle        |
-
-### Tags
-
-| Method   | Endpoint             | Description                         |
-| -------- | -------------------- | ----------------------------------- |
-| `GET`    | `/v1/tags`           | List all tags with counts           |
-| `PATCH`  | `/v1/tags/{name}`    | Rename a tag (updates all skills)   |
-| `DELETE` | `/v1/tags/{name}`    | Delete a tag (removes from all)     |
-
-### Auth
-
-| Method   | Endpoint                  | Description          |
-| -------- | ------------------------- | -------------------- |
-| `GET`    | `/health`                 | Health check         |
-| `POST`   | `/auth/validate-token`    | Validate a token     |
-
----
-
-## Tech Stack
-
-| Layer      | Technology                                              |
-| ---------- | ------------------------------------------------------- |
-| Frontend   | Next.js 16, React 19, TypeScript, Tailwind CSS 4, Tiptap |
-| Backend    | Python 3.12, FastAPI, SQLAlchemy 2, Alembic, Pydantic 2 |
-| Database   | PostgreSQL 16                                           |
-| CLI        | Node.js, TypeScript, Commander.js                       |
-| Infra      | Docker, Docker Compose                                  |
-
----
-
-## Project Structure
-
-```
-skillnote/
-├── src/                          # Next.js frontend
-│   ├── app/(app)/                #   App Router pages
-│   │   ├── page.tsx              #     Home: skill list + search
-│   │   ├── skills/new/           #     Create skill (full-page editor)
-│   │   ├── skills/[slug]/        #     Skill detail + edit
-│   │   ├── collections/          #     Browse by collection
-│   │   ├── tags/                 #     Browse by tag
-│   │   └── settings/             #     About
-│   ├── components/               #   UI components
-│   │   ├── skills/               #     Editor, detail view, install strip
-│   │   ├── layout/               #     Sidebar, topbar
-│   │   └── ui/                   #     Primitives (Shadcn)
-│   └── lib/                      #   State, API client, validation
-│
-├── backend/                      # FastAPI backend
-│   ├── app/api/                  #   Route handlers
-│   ├── app/db/models/            #   SQLAlchemy models
-│   ├── app/schemas/              #   Pydantic schemas
-│   ├── app/validators/           #   SKILL.md spec validators
-│   ├── alembic/                  #   Database migrations
-│   └── scripts/                  #   Seed data, health checks
-│
-├── cli/                          # CLI tool
-│   └── src/
-│       ├── commands/             #   login, list, add, update, remove, doctor
-│       └── agents/               #   Agent detection + install paths
-│
-├── docker-compose.yml            # Full stack orchestration
-├── Dockerfile                    # Frontend multi-stage build
-└── start.sh                      # One-command startup
+# Frontend with hot-reload
+npm install && npm run dev   # http://localhost:3000
 ```
 
 ---
@@ -334,78 +244,54 @@ skillnote/
 ## Troubleshooting
 
 <details>
-<summary><strong>Containers won't start</strong></summary>
+<summary><strong>MCP server not showing up in my agent</strong></summary>
 
-```bash
-docker compose logs api       # Check API logs
-docker compose logs postgres  # Check DB logs
-```
+1. Verify the MCP server is running: `curl http://localhost:8083/mcp` should return a response
+2. Check the server is healthy: `docker compose ps`
+3. Restart your AI agent after adding the MCP config
+4. On remote machines, make sure port `8083` is accessible
+
 </details>
 
 <details>
-<summary><strong>API returns 401 / 403</strong></summary>
-
-Make sure the backend has been seeded:
+<summary><strong>Containers won't start</strong></summary>
 
 ```bash
-docker compose exec -T api python scripts/seed_data.py
+docker compose logs api
+docker compose logs mcp
+docker compose logs postgres
 ```
 
-Use token `skn_dev_demo_token` for development.
 </details>
 
 <details>
 <summary><strong>Port already in use</strong></summary>
 
 ```bash
-SKILLNOTE_API_PORT=9000 docker compose up --build -d
+SKILLNOTE_API_PORT=9000 SKILLNOTE_MCP_PORT=9001 docker compose up --build -d
 ```
+
+Then update your agent's MCP URL to use the new port.
+
 </details>
 
 <details>
 <summary><strong>Reset everything</strong></summary>
 
 ```bash
-docker compose down -v
-docker compose up --build -d
+docker compose down -v && docker compose up --build -d
 ```
+
 </details>
-
----
-
-## References
-
-Learn more about skills and how they work across different AI coding agents:
-
-- [AgentSkills.io](https://agentskills.io/home) - The skills ecosystem
-- [Claude Code Skills](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview) - Anthropic's official skills documentation
-- [Codex Skills](https://developers.openai.com/codex/skills/) - OpenAI Codex skills reference
-- [Antigravity Skills](https://antigravity.google/docs/skills) - Google Antigravity skills documentation
-- [OpenHands Skills](https://docs.openhands.dev/overview/skills) - OpenHands skills overview
-
----
-
-## Star Us
-
-If you find SkillNote useful, please consider giving it a star on GitHub. It helps others discover the project and motivates us to keep improving it.
-
-<p align="center">
-  <a href="https://github.com/luna-prompts/skillnote"><img src="https://img.shields.io/github/stars/luna-prompts/skillnote?style=for-the-badge&logo=github&label=Star%20on%20GitHub" alt="Star on GitHub" /></a>
-</p>
 
 ---
 
 ## Contributing
 
-Contributions are welcome! Here's how:
-
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feat/my-feature`)
-3. Commit your changes (`git commit -m 'feat: add my feature'`)
-4. Push to the branch (`git push origin feat/my-feature`)
-5. Open a Pull Request
-
-Please follow [Conventional Commits](https://www.conventionalcommits.org/) for commit messages.
+3. Commit your changes following [Conventional Commits](https://www.conventionalcommits.org/)
+4. Open a Pull Request
 
 ---
 

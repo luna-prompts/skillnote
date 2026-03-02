@@ -2,66 +2,64 @@
 set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
-BACKEND_DIR="$PROJECT_DIR/backend"
 
-# Auto-detect LAN IP, fallback to localhost
+# ── Config ────────────────────────────────────────────────────────
 SKILLNOTE_HOST="${SKILLNOTE_HOST:-$(hostname -I 2>/dev/null | awk '{print $1}')}"
 SKILLNOTE_HOST="${SKILLNOTE_HOST:-localhost}"
 API_PORT="${SKILLNOTE_API_PORT:-8082}"
 MCP_PORT="${SKILLNOTE_MCP_PORT:-8083}"
+WEB_URL="http://${SKILLNOTE_HOST}:3000"
 API_URL="http://${SKILLNOTE_HOST}:${API_PORT}"
 MCP_URL="http://${SKILLNOTE_HOST}:${MCP_PORT}/mcp"
 
-# Colors
+# ── Colors ────────────────────────────────────────────────────────
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
+BOLD='\033[1m'
 NC='\033[0m'
 
 log()  { echo -e "${CYAN}[skillnote]${NC} $1"; }
 ok()   { echo -e "${GREEN}[✓]${NC} $1"; }
 warn() { echo -e "${YELLOW}[!]${NC} $1"; }
-err()  { echo -e "${RED}[✗]${NC} $1"; }
+err()  { echo -e "${RED}[✗]${NC} $1"; exit 1; }
 
+# ── Banner ────────────────────────────────────────────────────────
 echo ""
-log "Host: ${SKILLNOTE_HOST}"
-log "API URL (baked into frontend): ${API_URL}"
+echo -e "${BOLD}  SkillNote${NC}"
+echo -e "  Self-hosted skill registry for AI agents"
+echo ""
+echo -e "  Host:     ${SKILLNOTE_HOST}"
+echo -e "  Web:      ${WEB_URL}"
+echo -e "  API:      ${API_URL}"
+echo -e "  MCP:      ${MCP_URL}"
 echo ""
 
-# ── 1. Kill existing containers ──────────────────────────────────
+# ── 1. Stop any existing stack ────────────────────────────────────
 log "Stopping existing containers..."
+docker compose -f "$PROJECT_DIR/docker-compose.yml" down 2>/dev/null || true
+ok "Clean slate"
 
-docker rm -f skillnote 2>/dev/null && warn "Removed standalone 'skillnote' container" || true
-docker compose -f "$PROJECT_DIR/docker-compose.yml" down 2>/dev/null && warn "Stopped root compose stack" || true
-docker compose -f "$BACKEND_DIR/docker-compose.yml" down 2>/dev/null && warn "Stopped backend compose stack" || true
+# ── 2. Start full stack ───────────────────────────────────────────
+log "Starting stack (postgres + api + mcp + web)..."
+SKILLNOTE_HOST="$SKILLNOTE_HOST" \
+SKILLNOTE_API_PORT="$API_PORT" \
+SKILLNOTE_MCP_PORT="$MCP_PORT" \
+  docker compose -f "$PROJECT_DIR/docker-compose.yml" up --build -d
 
-ok "All containers stopped"
-
-# ── 2. Start backend (postgres + api) ────────────────────────────
-log "Starting backend (postgres + api)..."
-SKILLNOTE_API_PORT="$API_PORT" docker compose -f "$BACKEND_DIR/docker-compose.yml" up --build -d
-
-log "Waiting for postgres..."
-for i in $(seq 1 30); do
-  if docker compose -f "$BACKEND_DIR/docker-compose.yml" exec -T postgres pg_isready -U skillnote >/dev/null 2>&1; then
-    ok "Postgres ready"
-    break
-  fi
-  [ "$i" -eq 30 ] && { err "Postgres failed to start"; exit 1; }
-  sleep 1
-done
-
-log "Waiting for API (migrations + seed)..."
+# ── 3. Wait for API ───────────────────────────────────────────────
+log "Waiting for API..."
 for i in $(seq 1 60); do
   if curl -sf "http://localhost:${API_PORT}/health" >/dev/null 2>&1; then
-    ok "API ready on port ${API_PORT}"
+    ok "API ready"
     break
   fi
-  [ "$i" -eq 60 ] && { err "API failed to start"; exit 1; }
+  [ "$i" -eq 60 ] && err "API failed to start — run: docker compose logs api"
   sleep 2
 done
 
+# ── 4. Wait for MCP ───────────────────────────────────────────────
 log "Waiting for MCP server..."
 for i in $(seq 1 30); do
   if curl -sf -X POST "http://localhost:${MCP_PORT}/mcp" \
@@ -69,55 +67,54 @@ for i in $(seq 1 30); do
       -H "Accept: application/json, text/event-stream" \
       -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"healthcheck","version":"1"}}}' \
       >/dev/null 2>&1; then
-    ok "MCP server ready on port ${MCP_PORT}"
+    ok "MCP server ready"
     break
   fi
-  [ "$i" -eq 30 ] && { warn "MCP server not responding (non-fatal)"; break; }
+  [ "$i" -eq 30 ] && { warn "MCP server slow to start — check: docker compose logs mcp"; break; }
   sleep 1
 done
 
-# Get the backend network name
-BACKEND_NETWORK=$(docker network ls --format '{{.Name}}' | grep -m1 backend || echo "")
-if [ -z "$BACKEND_NETWORK" ]; then
-  err "Backend network not found"
-  exit 1
-fi
-
-# ── 3. Build frontend (with correct API URL baked in) ─────────────
-log "Building frontend with NEXT_PUBLIC_API_BASE_URL=${API_URL}..."
-docker build \
-  --build-arg "NEXT_PUBLIC_API_BASE_URL=${API_URL}" \
-  -t skillnote "$PROJECT_DIR"
-ok "Frontend image built"
-
-# ── 4. Start frontend ────────────────────────────────────────────
-log "Starting frontend..."
-docker run -d \
-  --name skillnote \
-  -p 3000:3000 \
-  --network "$BACKEND_NETWORK" \
-  skillnote
-
-log "Waiting for frontend..."
+# ── 5. Wait for Web ───────────────────────────────────────────────
+log "Waiting for web UI..."
 for i in $(seq 1 30); do
-  if curl -sf http://localhost:3000 >/dev/null 2>&1; then
-    ok "Frontend ready on port 3000"
+  if curl -sf "http://localhost:3000" >/dev/null 2>&1; then
+    ok "Web UI ready"
     break
   fi
-  [ "$i" -eq 30 ] && { err "Frontend failed to start"; exit 1; }
+  [ "$i" -eq 30 ] && { warn "Web UI slow to start — check: docker compose logs web"; break; }
   sleep 1
 done
 
-# ── 5. Done ──────────────────────────────────────────────────────
+# ── 6. Done ───────────────────────────────────────────────────────
 echo ""
-echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${GREEN}  SkillNote is running!${NC}"
-echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "  Frontend:  http://${SKILLNOTE_HOST}:3000"
-echo -e "  API:       ${API_URL}"
-echo -e "  MCP:       ${MCP_URL}"
-echo -e "  Postgres:  localhost:5433"
+echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${GREEN}${BOLD}  SkillNote is running!${NC}"
+echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
-echo -e "  ${CYAN}Containers:${NC}"
-docker ps --filter "name=skillnote" --filter "name=backend" --format "    {{.Names}}\t{{.Status}}" 2>/dev/null
+echo -e "  ${BOLD}Web UI${NC}   →  ${WEB_URL}"
+echo -e "  ${BOLD}API${NC}      →  ${API_URL}"
+echo -e "  ${BOLD}MCP${NC}      →  ${MCP_URL}"
+echo ""
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${BOLD}  Connect your AI agent${NC}"
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo ""
+echo -e "  ${BOLD}Claude Code${NC}"
+echo -e "  $ claude mcp add --transport http skillnote ${MCP_URL} --scope user"
+echo ""
+echo -e "  ${BOLD}Cursor / Windsurf${NC}  — add to your mcp.json:"
+echo -e '  { "mcpServers": { "skillnote": { "url": "'"${MCP_URL}"'" } } }'
+echo ""
+echo -e "  ${BOLD}OpenClaw${NC}"
+echo -e "  $ openclaw mcp add --transport http skillnote ${MCP_URL} --scope user"
+echo ""
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${BOLD}  Useful commands${NC}"
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo ""
+echo -e "  docker compose logs -f          # tail all logs"
+echo -e "  docker compose logs -f api      # API logs only"
+echo -e "  docker compose logs -f mcp      # MCP logs only"
+echo -e "  docker compose down             # stop (keeps data)"
+echo -e "  docker compose down -v          # stop + wipe database"
 echo ""
