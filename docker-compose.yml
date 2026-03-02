@@ -49,6 +49,18 @@ services:
              python scripts/seed_data.py &&
              uvicorn app.main:app --host 0.0.0.0 --port 8080"
 
+  mcp:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.mcp
+    environment:
+      SKILLNOTE_DATABASE_URL: postgresql+psycopg://skillnote:skillnote@postgres:5432/skillnote
+    ports:
+      - "${SKILLNOTE_MCP_PORT:-8083}:8083"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   web:
     build:
       context: .

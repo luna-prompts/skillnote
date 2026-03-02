@@ -65,6 +65,7 @@ That's it. Three containers spin up:
 | ---------- | -------------------------- | --------------------------------------- |
 | **Web**    | http://localhost:3000      | Next.js frontend                        |
 | **API**    | http://localhost:8082      | FastAPI backend (auto-migrates + seeds) |
+| **MCP**    | http://localhost:8083/mcp  | MCP server — skills as tools            |
 | **DB**     | localhost:5432             | PostgreSQL 16                           |
 
 Open **http://localhost:3000** and start creating skills.
