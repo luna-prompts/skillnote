@@ -490,6 +490,31 @@ docker compose up --build -d
 
 ---
 
+## Roadmap
+
+### Done
+
+- [x] Skill editor with live preview and SKILL.md validation
+- [x] Version history with restore
+- [x] Tags and collections
+- [x] REST API (CRUD, versioning, publish pipeline)
+- [x] MCP server — expose all skills as tools for any AI agent
+- [x] One-command Docker Compose stack (postgres + api + mcp + web)
+- [x] CLI skill installer (`npx skillnote`)
+- [x] Multi-agent connect guide (Claude Code, OpenClaw, Cursor, Windsurf)
+
+### Up Next
+
+- [ ] **Redis caching** — cache skill listings and content in Redis to cut MCP `tools/list` and tool-call latency; skills invalidated on create/update/delete
+- [ ] **Collection-scoped MCP mounts** — mount a single collection as an MCP server so agents only see relevant skills
+- [ ] **Skill search and semantic ranking** — full-text and embedding-based search in the Web UI and via MCP
+- [ ] **Skill dependencies** — declare that one skill requires another; agents resolve the full tree automatically
+- [ ] **Webhook on skill publish** — notify CI or agent pipelines when a new skill version is published
+- [ ] **Role-based access control** — read-only vs editor vs admin roles with API tokens
+- [ ] **Import from GitHub** — sync a skills repo directly into SkillNote via URL
+
+---
+
 ## Star Us
 
 If you find SkillNote useful, please consider giving it a star on GitHub. It helps others discover the project and motivates us to keep improving it.
