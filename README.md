@@ -77,9 +77,78 @@ Open **http://localhost:3000** and start creating skills.
 
 ---
 
+## Skills vs MCP: What's the Difference?
+
+> Most people building AI agents hear about both and assume they're the same thing. They're not. Understanding the difference is what makes SkillNote click.
+
+### Skills: reusable intelligence
+
+A Skill is a reusable piece of knowledge injected into an agent's context: instructions, workflows, rules, examples. Think of it as a dynamic system prompt loaded on demand:
+
+```
+User message
+    ↓
+Agent picks the right Skill
+    ↓
+Injects SKILL.md content into the prompt
+    ↓
+LLM responds with that context
+```
+
+Skills improve **reasoning**. They teach the agent *how* to do something.
+
+### MCP: context transport
+
+[Model Context Protocol](https://modelcontextprotocol.io) is a standard for delivering context to agents: tools, APIs, documents, prompts. It improves **connectivity**. It doesn't care what the content is; it's the pipe.
+
+```
+Skills = HTML    (the content)
+MCP    = HTTP    (the transport)
+```
+
+HTTP delivers HTML. But HTML isn't part of HTTP. Same relationship.
+
+### How SkillNote combines both
+
+**Version 1: local files:**
+```
+Agent reads skills/making-tea/SKILL.md from disk
+```
+Simple. Works offline. But skills go stale, drift across machines, and require manual installs.
+
+**Version 2: MCP delivery (what SkillNote does):**
+```
+Agent  →  MCP  →  SkillNote  →  Skills DB
+```
+Every skill is exposed as an MCP tool. The agent discovers and calls them live: no files, no installs, always up to date. Update a skill in the Web UI and every connected agent gets the new version instantly.
+
+> **No restart required.** The MCP server queries the database on every `tools/list` request. There is no in-memory cache. Create or update a skill and it is available to all connected agents on their very next call, with zero downtime.
+
+```
+┌──────────┐     tools/list      ┌───────────────┐
+│  Agent   │ ─────────────────▶  │  SkillNote    │
+│          │ ◀─────────────────  │  MCP Server   │
+│          │   [all your skills] │               │
+│          │                     │  reads from   │
+│          │  tools/call         │  PostgreSQL   │
+│          │ ─────────────────▶  │  on every     │
+│          │ ◀─────────────────  │  request      │
+└──────────┘   skill content     └───────────────┘
+```
+
+| | Local Skills | MCP Skills (SkillNote) |
+|---|---|---|
+| Updates | Manual (`git pull` / `npx install`) | Automatic: edit in UI, live instantly |
+| Fragmentation | Different versions per machine | One source of truth |
+| Discovery | Agent must know the file path | Agent discovers via `tools/list` |
+| Sharing | Send files or links | Connect to the same server |
+| Offline | Yes | Needs network |
+
+---
+
 ## MCP Server
 
-SkillNote includes a built-in [Model Context Protocol](https://modelcontextprotocol.io) server. Instead of installing skill files locally, your agent connects to SkillNote directly and gets every skill as a callable tool, live from the database with no restart needed when skills change.
+SkillNote exposes every skill as an MCP tool your agent can discover and call directly: no local files needed, no restart when skills change.
 
 **How it works:**
 - Each skill becomes a tool: `name = slug`, `description = skill description`
@@ -558,20 +627,20 @@ docker compose up --build -d
 - [x] Version history with restore
 - [x] Tags and collections
 - [x] REST API (CRUD, versioning, publish pipeline)
-- [x] MCP server — expose all skills as tools for any AI agent
+- [x] MCP server: expose all skills as tools for any AI agent
 - [x] One-command Docker Compose stack (postgres + api + mcp + web)
 - [x] CLI skill installer (`npx skillnote`)
 - [x] Multi-agent connect guide (Claude Code, OpenClaw, Cursor, Windsurf)
 
 ### Up Next
 
-- [ ] **Redis caching** — cache skill listings and content in Redis to cut MCP `tools/list` and tool-call latency; skills invalidated on create/update/delete
-- [ ] **Collection-scoped MCP mounts** — mount a single collection as an MCP server so agents only see relevant skills
-- [ ] **Skill search and semantic ranking** — full-text and embedding-based search in the Web UI and via MCP
-- [ ] **Skill dependencies** — declare that one skill requires another; agents resolve the full tree automatically
-- [ ] **Webhook on skill publish** — notify CI or agent pipelines when a new skill version is published
-- [ ] **Role-based access control** — read-only vs editor vs admin roles with API tokens
-- [ ] **Import from GitHub** — sync a skills repo directly into SkillNote via URL
+- [ ] **Redis caching**: cache skill listings and content in Redis to cut MCP `tools/list` and tool-call latency; skills invalidated on create/update/delete
+- [ ] **Collection-scoped MCP mounts**: mount a single collection as an MCP server so agents only see relevant skills
+- [ ] **Skill search and semantic ranking**: full-text and embedding-based search in the Web UI and via MCP
+- [ ] **Skill dependencies**: declare that one skill requires another; agents resolve the full tree automatically
+- [ ] **Webhook on skill publish**: notify CI or agent pipelines when a new skill version is published
+- [ ] **Role-based access control**: read-only vs editor vs admin roles with API tokens
+- [ ] **Import from GitHub**: sync a skills repo directly into SkillNote via URL
 
 ---
 
