@@ -102,7 +102,7 @@ class Skill(Base):
 **Step 3: Run migration**
 
 ```bash
-cd /home/homeai/.openclaw-rudra/workspace/skillnote/backend
+cd /path/to/skillnote/backend
 docker exec backend-api-1 alembic upgrade head
 ```
 Expected: `Running upgrade 0001_initial -> 0002_skill_rich_fields, add rich fields to skills and comments table`
@@ -2014,7 +2014,7 @@ git commit -m "fix(ui): wire skill save to backend PATCH endpoint"
 **Step 1: Rebuild Docker image**
 
 ```bash
-cd /home/homeai/.openclaw-rudra/workspace/skillnote
+cd /path/to/skillnote
 docker build -t skillnote-prod . && docker stop skillnote && docker run -d --rm -p 3000:3000 --name skillnote skillnote-prod
 ```
 

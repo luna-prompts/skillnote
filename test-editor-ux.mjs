@@ -71,7 +71,7 @@ async function clickRendered(p) {
 
 try {
   browser = await chromium.launch({
-    executablePath: '/home/homeai/.cache/ms-playwright/chromium-1208/chrome-linux/chrome',
+    
     headless: true,
     args: ['--no-sandbox'],
   })

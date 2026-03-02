@@ -82,7 +82,7 @@ export { NAME_MAX, DESC_MAX }
 
 **Step 2: Verify the file builds**
 
-Run: `cd /home/homeai/.openclaw-rudra/workspace/skillnote && npx tsc --noEmit src/lib/skill-validation.ts 2>&1 || echo "checking with full build..." && npm run build`
+Run: `cd /path/to/skillnote && npx tsc --noEmit src/lib/skill-validation.ts 2>&1 || echo "checking with full build..." && npm run build`
 Expected: No TypeScript errors
 
 **Step 3: Commit**
@@ -372,7 +372,7 @@ Then use `slugFromName(data.title)` in place of the inline slug logic.
 
 **Step 3: Verify build**
 
-Run: `cd /home/homeai/.openclaw-rudra/workspace/skillnote && npm run build`
+Run: `cd /path/to/skillnote && npm run build`
 Expected: Build succeeds
 
 **Step 4: Commit**
@@ -425,7 +425,7 @@ Note: Also removed the `.replace(/-/g, '_')` — skill slugs should stay as-is (
 
 **Step 3: Verify build**
 
-Run: `cd /home/homeai/.openclaw-rudra/workspace/skillnote && npm run build`
+Run: `cd /path/to/skillnote && npm run build`
 Expected: Build succeeds
 
 **Step 4: Commit**
@@ -483,7 +483,7 @@ With:
 
 **Step 3: Verify build**
 
-Run: `cd /home/homeai/.openclaw-rudra/workspace/skillnote && npm run build`
+Run: `cd /path/to/skillnote && npm run build`
 Expected: Build succeeds
 
 **Step 4: Commit**
@@ -566,7 +566,7 @@ And update the API call (line 125):
 
 **Step 5: Verify build**
 
-Run: `cd /home/homeai/.openclaw-rudra/workspace/skillnote && npm run build`
+Run: `cd /path/to/skillnote && npm run build`
 Expected: Build succeeds
 
 **Step 6: Commit**
@@ -948,7 +948,7 @@ To:
 
 **Step 4: Verify build**
 
-Run: `cd /home/homeai/.openclaw-rudra/workspace/skillnote && npm run build`
+Run: `cd /path/to/skillnote && npm run build`
 Expected: Build succeeds
 
 **Step 5: Commit**
@@ -965,7 +965,7 @@ git commit -m "feat: add description editing to skill editor with validation"
 **Step 1: Verify frontend builds and serves**
 
 ```bash
-cd /home/homeai/.openclaw-rudra/workspace/skillnote && npm run build
+cd /path/to/skillnote && npm run build
 ```
 
 **Step 2: Test backend validation via API**
