@@ -1,7 +1,7 @@
 'use client'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { BookOpen, FolderOpen, Tag, Settings, HelpCircle, X } from 'lucide-react'
+import { BookOpen, FolderOpen, Settings, HelpCircle, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useEffect, useMemo, useState } from 'react'
 import { getSkills, syncSkillsFromApi, getConnectionStatus, onConnectionStatusChange } from '@/lib/skills-store'
@@ -18,16 +18,13 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
   }, [])
 
   const navItems = useMemo(() => {
-    const tagSet = new Set<string>()
     const collectionSet = new Set<string>()
     for (const s of skills) {
-      ;(s.tags || []).forEach(t => tagSet.add(t))
       ;(s.collections || []).forEach(c => collectionSet.add(c))
     }
     return [
       { href: '/', label: 'Skills', icon: BookOpen, count: skills.length },
       { href: '/collections', label: 'Collections', icon: FolderOpen, count: collectionSet.size },
-      { href: '/tags', label: 'Tags', icon: Tag, count: tagSet.size },
     ]
   }, [skills])
 

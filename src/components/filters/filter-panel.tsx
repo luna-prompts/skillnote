@@ -140,33 +140,18 @@ function FilterSection<T extends { id: string; name: string; skill_count: number
 }
 
 interface FilterPanelProps {
-  tags: FilterItem[]
   collections: FilterItem[]
-  selectedTags: string[]
   selectedCollections: string[]
-  onToggleTag: (name: string) => void
   onToggleCollection: (name: string) => void
 }
 
 export function FilterPanel({
-  tags,
   collections,
-  selectedTags,
   selectedCollections,
-  onToggleTag,
   onToggleCollection,
 }: FilterPanelProps) {
   return (
     <>
-      <FilterSection
-        label="Tags"
-        items={tags}
-        selected={selectedTags}
-        onToggle={onToggleTag}
-        defaultVisible={8}
-        searchThreshold={12}
-        mono
-      />
       <FilterSection
         label="Collections"
         items={collections}

@@ -48,7 +48,6 @@ def _create_content_version(db: Session, skill: Skill) -> SkillContentVersion:
         title=skill.name,
         description=skill.description,
         content_md=skill.content_md or "",
-        tags=skill.tags or [],
         collections=skill.collections or [],
         is_latest=True,
     )
@@ -75,7 +74,6 @@ def list_skills(db: Session = Depends(get_db)):
                 name=skill.name,
                 slug=skill.slug,
                 description=skill.description,
-                tags=skill.tags or [],
                 collections=skill.collections or [],
                 latestVersion=latest.version if latest else None,
                 status=latest.status if latest else None,
@@ -163,7 +161,6 @@ def set_latest_version(
     skill_row.name = target.title
     skill_row.description = target.description
     skill_row.content_md = target.content_md
-    skill_row.tags = target.tags or []
     skill_row.collections = target.collections or []
     skill_row.current_version = target.version
     skill_row.updated_at = datetime.now(timezone.utc)
@@ -201,7 +198,6 @@ def restore_version(
     skill_row.name = target.title
     skill_row.description = target.description
     skill_row.content_md = target.content_md
-    skill_row.tags = target.tags or []
     skill_row.collections = target.collections or []
     skill_row.updated_at = datetime.now(timezone.utc)
 
@@ -245,7 +241,6 @@ def create_skill(
         slug=payload.slug,
         description=payload.description,
         content_md=payload.content_md,
-        tags=payload.tags,
         collections=payload.collections,
         current_version=0,
     )
@@ -281,8 +276,6 @@ def update_skill(
         skill_row.description = payload.description
     if payload.content_md is not None:
         skill_row.content_md = payload.content_md
-    if payload.tags is not None:
-        skill_row.tags = payload.tags
     if payload.collections is not None:
         skill_row.collections = payload.collections
     skill_row.updated_at = datetime.now(timezone.utc)

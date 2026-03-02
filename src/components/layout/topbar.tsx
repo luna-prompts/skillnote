@@ -40,8 +40,6 @@ function Breadcrumbs() {
     crumbs.push({ label })
   } else if (segments[0] === 'collections') {
     crumbs.push({ label: 'Collections' })
-  } else if (segments[0] === 'tags') {
-    crumbs.push({ label: 'Tags' })
   }
 
   return (
