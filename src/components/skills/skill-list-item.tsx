@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { FileText, MessageSquare, Paperclip } from 'lucide-react'
+import { FileText, MessageSquare, Paperclip, FolderOpen } from 'lucide-react'
 import { Skill } from '@/lib/mock-data'
 import { formatRelative } from '@/lib/format'
 import { cn } from '@/lib/utils'
@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils'
 export function SkillListItem({ skill }: { skill: Skill }) {
   const commentCount = skill.comments?.length ?? 0
   const attachCount = skill.attachments?.length ?? 0
+  const collections = skill.collections ?? []
 
   return (
     <Link
@@ -24,7 +25,6 @@ export function SkillListItem({ skill }: { skill: Skill }) {
             <span className="text-[13px] font-semibold text-foreground group-hover:text-accent transition-colors duration-200 truncate">
               {skill.title}
             </span>
-            {/* Inline metadata indicators */}
             {(commentCount > 0 || attachCount > 0) && (
               <div className="hidden sm:flex items-center gap-1.5 shrink-0">
                 {commentCount > 0 && (
@@ -42,9 +42,29 @@ export function SkillListItem({ skill }: { skill: Skill }) {
               </div>
             )}
           </div>
-          <span className="text-[12px] text-muted-foreground/35 leading-snug truncate hidden lg:block mt-0.5 group-hover:text-muted-foreground/55 transition-colors duration-200">
-            {skill.description}
-          </span>
+          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+            <span className="text-[12px] text-muted-foreground/35 leading-snug truncate hidden lg:block group-hover:text-muted-foreground/55 transition-colors duration-200">
+              {skill.description}
+            </span>
+            {/* Collection chips — stop propagation so clicking goes to collection, not skill */}
+            {collections.length > 0 && (
+              <div className="hidden sm:flex items-center gap-1 shrink-0" onClick={e => e.preventDefault()}>
+                {collections.map(c => {
+                  const colSlug = c.toLowerCase().replace(/\s+/g, '-')
+                  return (
+                    <Link
+                      key={c}
+                      href={`/collections/${colSlug}`}
+                      className="flex items-center gap-0.5 h-[18px] px-1.5 rounded text-[10px] text-muted-foreground/50 bg-muted/60 hover:bg-muted hover:text-foreground transition-colors"
+                    >
+                      <FolderOpen className="h-2.5 w-2.5 shrink-0" />
+                      {c}
+                    </Link>
+                  )
+                })}
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
