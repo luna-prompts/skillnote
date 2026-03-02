@@ -115,13 +115,13 @@ export async function createSkill(data: {
   const slug = slugFromName(data.title)
 
   try {
-    const skill = await createSkillApi({ name: data.title, slug, ...data })
+    const skill = await createSkillApi({ name: data.title, slug, description: data.description, content_md: data.content_md, collections: data.collections })
     addSkill(skill)
     notifyChanged()
     return skill
   } catch {
     const now = new Date().toISOString()
-    const skill: Skill = { slug, title: data.title, description: data.description, content_md: data.content_md, tags: data.tags, collections: data.collections, current_version: 1, total_versions: 1, created_by: getDisplayName(), created_at: now, updated_at: now }
+    const skill: Skill = { slug, title: data.title, description: data.description, content_md: data.content_md, tags: [], collections: data.collections, current_version: 1, total_versions: 1, created_by: getDisplayName(), created_at: now, updated_at: now }
     addSkill(skill)
     notifyChanged()
     return skill
@@ -135,11 +135,11 @@ export async function deleteSkillById(slug: string): Promise<void> {
   notifyChanged()
 }
 
-export async function saveSkillEdit(slug: string, patch: { title?: string; description?: string; content_md?: string; tags?: string[]; collections?: string[] }): Promise<Skill> {
+export async function saveSkillEdit(slug: string, patch: { title?: string; description?: string; content_md?: string; collections?: string[] }): Promise<Skill> {
   let apiVersion: number | null = null
   let newSlug: string | null = null
   try {
-    const apiSkill = await updateSkillApi(slug, { name: patch.title, description: patch.description, content_md: patch.content_md, tags: patch.tags, collections: patch.collections })
+    const apiSkill = await updateSkillApi(slug, { name: patch.title, description: patch.description, content_md: patch.content_md, collections: patch.collections })
     apiVersion = apiSkill.current_version
     if (apiSkill.slug !== slug) {
       newSlug = apiSkill.slug

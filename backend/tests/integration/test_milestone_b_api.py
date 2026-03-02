@@ -85,7 +85,6 @@ def test_skill_crud_lifecycle():
             "slug": "integration-test-skill",
             "description": "Created by integration test",
             "content_md": "# Integration Test",
-            "tags": ["test"],
             "collections": [],
         },
     )

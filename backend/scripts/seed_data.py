@@ -47,7 +47,7 @@ def ensure_bundle(slug: str, skill_md: str) -> tuple[str, str]:
     return storage_key, checksum
 
 
-def seed_skill(db, slug: str, name: str, description: str, content_md: str, tags: list, collections: list):
+def seed_skill(db, slug: str, name: str, description: str, content_md: str, collections: list):
     """Seed a single skill with v1 content version if it doesn't exist."""
     skill = db.query(Skill).filter(Skill.slug == slug).first()
     if skill:
@@ -60,7 +60,6 @@ def seed_skill(db, slug: str, name: str, description: str, content_md: str, tags
         slug=slug,
         description=description,
         content_md=content_md,
-        tags=tags,
         collections=collections,
         current_version=1,
     )
@@ -75,7 +74,6 @@ def seed_skill(db, slug: str, name: str, description: str, content_md: str, tags
         title=name,
         description=description,
         content_md=content_md,
-        tags=tags,
         collections=collections,
         is_latest=True,
     )
@@ -115,7 +113,6 @@ def main():
                 name="skill-creator",
                 description=fm.get("description", "Create new skills, modify and improve existing skills, and measure skill performance."),
                 content_md=body,
-                tags=["meta", "skills", "anthropic"],
                 collections=["Official"],
             )
 
@@ -126,7 +123,6 @@ def main():
             name="secure-migrations",
             description="DB migration safety checklist",
             content_md="# Secure Migrations\n\nA checklist for safely deploying database migrations in production.\n\n## Before You Migrate\n\n- Review backwards compatibility\n- Test the migration on staging first\n- Have a rollback plan (down migration or snapshot)\n- Communicate planned downtime if schema locks are expected\n\n## Running the Migration\n\n```bash\n# Always dry-run first\nalembic upgrade head --sql | less\n\n# Apply\nalembic upgrade head\n```\n\n## After Migration\n\n- Verify row counts on critical tables\n- Run smoke tests against the updated schema\n- Monitor error rates for 15 minutes post-deploy",
-            tags=["database", "devops"],
             collections=["DevOps"],
         )
 

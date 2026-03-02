@@ -1,6 +1,5 @@
 'use client'
 import { useState, useEffect, Suspense } from 'react'
-import { useSearchParams } from 'next/navigation'
 import { TopBar } from '@/components/layout/topbar'
 import { SkillListItem } from '@/components/skills/skill-list-item'
 import { SkillCard } from '@/components/skills/skill-card'
@@ -11,11 +10,7 @@ import { cn } from '@/lib/utils'
 import { SearchX, SlidersHorizontal, X, Sparkles } from 'lucide-react'
 
 function SkillsPageInner() {
-  const searchParams = useSearchParams()
-  const tagFromUrl = searchParams.get('tag')
-
   const [view, setView] = useState<'list' | 'grid'>('list')
-  const [selectedTags, setSelectedTags] = useState<string[]>([])
   const [selectedCollections, setSelectedCollections] = useState<string[]>([])
   const [searchQuery, setSearchQuery] = useState('')
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false)
@@ -37,39 +32,25 @@ function SkillsPageInner() {
     }
   }, [])
 
-  const tagCounts = skills.reduce<Record<string, number>>((acc, s) => {
-    for (const t of s.tags || []) acc[t] = (acc[t] || 0) + 1
-    return acc
-  }, {})
   const collectionCounts = skills.reduce<Record<string, number>>((acc, s) => {
     for (const c of s.collections || []) acc[c] = (acc[c] || 0) + 1
     return acc
   }, {})
-  const tags = Object.entries(tagCounts).map(([name, count], i) => ({ id: String(i + 1), name, skill_count: count }))
   const collections = Object.entries(collectionCounts).map(([name, count], i) => ({ id: String(i + 1), name, skill_count: count }))
 
-  useEffect(() => {
-    if (tagFromUrl && tags.some(t => t.name === tagFromUrl)) {
-      setSelectedTags([tagFromUrl])
-    }
-  }, [tagFromUrl, tags])
-
   const filtered = skills.filter(s => {
-    if (selectedTags.length && !selectedTags.some(t => s.tags.includes(t))) return false
     if (selectedCollections.length && !selectedCollections.some(c => s.collections.includes(c))) return false
     if (searchQuery) {
       const q = searchQuery.toLowerCase()
-      if (!s.title.toLowerCase().includes(q) && !s.description.toLowerCase().includes(q) && !s.tags.some(t => t.toLowerCase().includes(q))) return false
+      if (!s.title.toLowerCase().includes(q) && !s.description.toLowerCase().includes(q)) return false
     }
     return true
   })
 
-  const toggleTag = (tag: string) =>
-    setSelectedTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag])
   const toggleCollection = (name: string) =>
     setSelectedCollections(prev => prev.includes(name) ? prev.filter(c => c !== name) : [...prev, name])
 
-  const activeFilterCount = selectedTags.length + selectedCollections.length
+  const activeFilterCount = selectedCollections.length
   const isFiltered = activeFilterCount > 0 || searchQuery.length > 0
 
   return (
@@ -80,11 +61,8 @@ function SkillsPageInner() {
         <aside className="hidden lg:flex lg:flex-col w-52 border-r border-border/40 shrink-0 overflow-y-auto bg-card/20">
           <div className="px-4 py-5 flex-1">
             <FilterPanel
-              tags={tags}
               collections={collections}
-              selectedTags={selectedTags}
               selectedCollections={selectedCollections}
-              onToggleTag={toggleTag}
               onToggleCollection={toggleCollection}
             />
           </div>
@@ -116,16 +94,6 @@ function SkillsPageInner() {
               {activeFilterCount > 0 && (
                 <div className="flex items-center gap-1 flex-wrap min-w-0">
                   <span className="w-px h-4 bg-border/40 mx-0.5 hidden sm:block" />
-                  {selectedTags.map(tag => (
-                    <button
-                      key={`chip-tag-${tag}`}
-                      onClick={() => toggleTag(tag)}
-                      className="inline-flex items-center gap-1 pl-2 pr-1.5 py-0.5 rounded-md bg-accent/8 text-accent text-[11px] font-mono font-medium hover:bg-accent/15 transition-all duration-150 group/chip"
-                    >
-                      {tag}
-                      <X className="h-3 w-3 opacity-40 group-hover/chip:opacity-100 transition-opacity" />
-                    </button>
-                  ))}
                   {selectedCollections.map(col => (
                     <button
                       key={`chip-col-${col}`}
@@ -137,7 +105,7 @@ function SkillsPageInner() {
                     </button>
                   ))}
                   <button
-                    onClick={() => { setSelectedTags([]); setSelectedCollections([]) }}
+                    onClick={() => { setSelectedCollections([]) }}
                     className="text-[10px] text-muted-foreground/30 hover:text-accent ml-0.5 transition-colors duration-200 font-medium"
                   >
                     clear
@@ -178,7 +146,7 @@ function SkillsPageInner() {
               </p>
               {isFiltered && (
                 <button
-                  onClick={() => { setSelectedTags([]); setSelectedCollections([]); setSearchQuery('') }}
+                  onClick={() => { setSelectedCollections([]); setSearchQuery('') }}
                   className="mt-5 text-[12px] font-semibold text-accent hover:text-accent/80 transition-colors px-4 py-2 rounded-lg bg-accent/5 hover:bg-accent/10"
                 >
                   Clear all filters
@@ -214,7 +182,7 @@ function SkillsPageInner() {
               <div className="flex items-center gap-3">
                 {activeFilterCount > 0 && (
                   <button
-                    onClick={() => { setSelectedTags([]); setSelectedCollections([]) }}
+                    onClick={() => { setSelectedCollections([]) }}
                     className="text-[12px] text-accent font-semibold"
                   >
                     Clear all
@@ -227,11 +195,8 @@ function SkillsPageInner() {
             </div>
             <div className="px-5 py-4">
               <FilterPanel
-                tags={tags}
                 collections={collections}
-                selectedTags={selectedTags}
                 selectedCollections={selectedCollections}
-                onToggleTag={toggleTag}
                 onToggleCollection={toggleCollection}
               />
             </div>

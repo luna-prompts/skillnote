@@ -68,14 +68,6 @@ export function SkillCard({ skill }: { skill: Skill }) {
                 v{skill.current_version}
               </span>
             )}
-            {skill.tags.slice(0, 2).map(tag => (
-              <span
-                key={tag}
-                className="text-[10px] font-mono font-medium text-muted-foreground/40 bg-foreground/[0.03] border border-foreground/[0.04] px-1.5 py-0.5 rounded-md"
-              >
-                {tag}
-              </span>
-            ))}
           </div>
           <span className="text-[10px] text-muted-foreground/30 tabular-nums font-mono">{formatRelative(skill.updated_at)}</span>
         </div>

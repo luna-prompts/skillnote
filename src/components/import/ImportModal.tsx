@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useCallback, useRef, useMemo } from 'react'
-import { Upload, FileText, X, Check, Plus, Tag, FolderOpen, AlertCircle, Pencil } from 'lucide-react'
+import React, { useState, useCallback, useRef, useMemo } from 'react'
+import { Upload, FileText, X, Check, Plus, FolderOpen, AlertCircle, Pencil } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Skill } from '@/lib/mock-data'
 import { getSkills } from '@/lib/skills-store'
@@ -21,7 +21,7 @@ function TagInput({ values, onChange, suggestions, placeholder, icon: Icon }: {
   onChange: (v: string[]) => void
   suggestions: string[]
   placeholder: string
-  icon: typeof Tag
+  icon: React.ComponentType<{ className?: string }>
 }) {
   const [input, setInput] = useState('')
   const [focused, setFocused] = useState(false)
@@ -100,13 +100,8 @@ export function ImportModal({ onClose, onImported }: { onClose: () => void; onIm
   const inputRef = useRef<HTMLInputElement>(null)
   const router = useRouter()
 
-  // Gather existing tags and collections for suggestions
+  // Gather existing collections for suggestions
   const existingSkills = useMemo(() => getSkills(), [])
-  const tagSuggestions = useMemo(() => {
-    const set = new Set<string>()
-    existingSkills.forEach(s => s.tags?.forEach(t => set.add(t)))
-    return Array.from(set).sort()
-  }, [existingSkills])
   const collectionSuggestions = useMemo(() => {
     const set = new Set<string>()
     existingSkills.forEach(s => s.collections?.forEach(c => set.add(c)))
@@ -182,7 +177,6 @@ export function ImportModal({ onClose, onImported }: { onClose: () => void; onIm
     params.set('name', normalized)
     if (file.skill.description) params.set('description', file.skill.description)
     if (file.skill.content_md) params.set('content', file.skill.content_md)
-    if (file.skill.tags.length > 0) params.set('tags', file.skill.tags.join(','))
     if (file.skill.collections.length > 0) params.set('collections', file.skill.collections.join(','))
 
     onImported?.()
@@ -194,10 +188,6 @@ export function ImportModal({ onClose, onImported }: { onClose: () => void; onIm
     setFiles(prev => prev.filter((_, i) => i !== idx))
     if (editingIdx === idx) setEditingIdx(null)
     else if (editingIdx !== null && editingIdx > idx) setEditingIdx(editingIdx - 1)
-  }
-
-  const updateFileTags = (idx: number, tags: string[]) => {
-    setFiles(prev => prev.map((f, i) => i === idx ? { ...f, skill: { ...f.skill, tags } } : f))
   }
 
   const updateFileCollections = (idx: number, collections: string[]) => {
@@ -281,9 +271,8 @@ export function ImportModal({ onClose, onImported }: { onClose: () => void; onIm
                           {f.filename}
                           {duplicate && <span className="text-destructive ml-1">- name already exists</span>}
                           {nameErrors.length > 0 && <span className="text-destructive ml-1">- {nameErrors[0].message}</span>}
-                          {!hasIssue && (f.skill.tags.length > 0 || f.skill.collections.length > 0) && (
+                          {!hasIssue && f.skill.collections.length > 0 && (
                             <span className="text-accent/50">
-                              {f.skill.tags.length > 0 && ` · ${f.skill.tags.join(', ')}`}
                               {f.skill.collections.length > 0 && ` · ${f.skill.collections.join(', ')}`}
                             </span>
                           )}
@@ -312,16 +301,6 @@ export function ImportModal({ onClose, onImported }: { onClose: () => void; onIm
                             </p>
                           </div>
                         )}
-                        <div>
-                          <label className="text-[9px] font-bold text-foreground/20 uppercase tracking-[0.15em] mb-1 block">Tags</label>
-                          <TagInput
-                            values={f.skill.tags}
-                            onChange={tags => updateFileTags(i, tags)}
-                            suggestions={tagSuggestions}
-                            placeholder="Add tags..."
-                            icon={Tag}
-                          />
-                        </div>
                         <div>
                           <label className="text-[9px] font-bold text-foreground/20 uppercase tracking-[0.15em] mb-1 block">Collection</label>
                           <TagInput
