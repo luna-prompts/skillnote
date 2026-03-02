@@ -23,11 +23,11 @@ def test_validate_zip_happy_path(tmp_path: Path):
     zpath = _write_zip(
         tmp_path,
         {
-            "SKILL.md": "---\nname: API Reviewer\ndescription: test\n---\n\n# x",
+            "SKILL.md": "---\nname: api-reviewer\ndescription: test\n---\n\n# x",
         },
     )
     name, slug, description = validate_zip_and_extract_metadata(str(zpath))
-    assert name == "API Reviewer"
+    assert name == "api-reviewer"
     assert slug == "api-reviewer"
     assert description == "test"
 

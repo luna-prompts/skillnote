@@ -17,9 +17,11 @@ def _request(method: str, path: str, headers: dict | None = None, body: dict | N
     )
     try:
         with urllib.request.urlopen(req) as r:
-            return r.status, json.loads(r.read().decode())
+            text = r.read().decode()
+            return r.status, json.loads(text) if text else None
     except urllib.error.HTTPError as e:
-        return e.code, json.loads(e.read().decode())
+        text = e.read().decode()
+        return e.code, json.loads(text) if text else None
     except Exception as e:
         pytest.skip(f"API not reachable for integration test: {e}")
 
@@ -87,7 +89,7 @@ def test_skill_crud_lifecycle():
             "collections": [],
         },
     )
-    assert status == 200
+    assert status == 201
     assert body["slug"] == "integration-test-skill"
     assert body["current_version"] == 1
 
@@ -112,7 +114,7 @@ def test_skill_crud_lifecycle():
 
     # Delete
     status, _ = _request("DELETE", "/v1/skills/integration-test-skill")
-    assert status == 200
+    assert status == 204
 
     # Verify deleted
     status, _ = _request("GET", "/v1/skills/integration-test-skill")

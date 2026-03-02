@@ -7,7 +7,7 @@
 <p align="center">
   <strong>The open-source skill registry for AI coding agents.</strong>
   <br />
-  Create, manage, and distribute <code>SKILL.md</code> files across Claude Code, Cursor, Codex, OpenHands, and more.
+  Create, manage, and distribute <code>SKILL.md</code> files, or connect any agent directly via MCP.
 </p>
 
 <p align="center">
@@ -21,6 +21,7 @@
 
 <p align="center">
   <a href="#quick-start">Quick Start</a> &nbsp;&middot;&nbsp;
+  <a href="#mcp-server">MCP Server</a> &nbsp;&middot;&nbsp;
   <a href="#features">Features</a> &nbsp;&middot;&nbsp;
   <a href="#cli">CLI</a> &nbsp;&middot;&nbsp;
   <a href="#api-reference">API</a> &nbsp;&middot;&nbsp;
@@ -41,9 +42,9 @@ AI coding agents like Claude Code, Cursor, and Codex use `SKILL.md` files to lea
 - No versioning, no search, no way to share across projects or teams
 - Writing them from scratch means guessing what works
 
-**SkillNote fixes this.** It's a self-hosted registry with a clean web UI, a CLI for one-command installs, and a versioning system that tracks every edit. Write once, install everywhere.
+**SkillNote fixes this.** It's a self-hosted registry with a clean web UI, a CLI for one-command installs, and an MCP server that lets any agent connect directly with no file installation needed.
 
-**Why self-hosted?** Not every skill can live on a public registry. Enterprise workflows, proprietary codebases, internal tooling, compliance-sensitive prompts: these skills contain institutional knowledge that shouldn't leave your infrastructure. SkillNote runs entirely on your machines. Your skills stay private, versioned, and accessible only to your team.
+**Why self-hosted?** Enterprise workflows, proprietary codebases, and compliance-sensitive prompts contain institutional knowledge that shouldn't leave your infrastructure. SkillNote runs entirely on your machines. Your skills stay private, versioned, and accessible only to your team.
 
 <p align="center">
   <img src="docs/screenshots/hero-dashboard.png" width="100%" alt="SkillNote Dashboard" />
@@ -61,17 +62,102 @@ cd skillnote
 docker compose up --build -d
 ```
 
-That's it. Three containers spin up:
+Four containers spin up:
 
 | Service    | URL                        | What it does                            |
 | ---------- | -------------------------- | --------------------------------------- |
 | **Web**    | http://localhost:3000      | Next.js frontend                        |
 | **API**    | http://localhost:8082      | FastAPI backend (auto-migrates + seeds) |
+| **MCP**    | http://localhost:8083/mcp  | MCP server, skills as tools             |
 | **DB**     | localhost:5432             | PostgreSQL 16                           |
 
 Open **http://localhost:3000** and start creating skills.
 
 > The backend auto-runs migrations and seeds a default skill (`skill-creator`) on first boot. No manual setup needed.
+
+---
+
+## MCP Server
+
+SkillNote includes a built-in [Model Context Protocol](https://modelcontextprotocol.io) server. Instead of installing skill files locally, your agent connects to SkillNote directly and gets every skill as a callable tool, live from the database with no restart needed when skills change.
+
+**How it works:**
+- Each skill becomes a tool: `name = slug`, `description = skill description`
+- The agent uses the description to decide when to invoke the skill
+- Calling the tool returns the full `SKILL.md` content
+- Skills added or removed in SkillNote are reflected immediately
+
+### Connect from Claude Code
+
+```bash
+claude mcp add --transport http skillnote http://localhost:8083/mcp --scope user
+```
+
+Then restart Claude Code. Run `/mcp` to confirm `skillnote` is listed.
+
+### Connect from OpenClaw
+
+Add to `~/.openclaw/settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "skillnote": {
+      "type": "http",
+      "url": "http://localhost:8083/mcp"
+    }
+  }
+}
+```
+
+### Connect from Cursor
+
+Add to your Cursor MCP config (`~/.cursor/mcp.json` or via Settings → MCP):
+
+```json
+{
+  "mcpServers": {
+    "skillnote": {
+      "type": "http",
+      "url": "http://localhost:8083/mcp"
+    }
+  }
+}
+```
+
+### Connect from Windsurf
+
+Add to `~/.codeium/windsurf/mcp_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "skillnote": {
+      "type": "http",
+      "url": "http://localhost:8083/mcp"
+    }
+  }
+}
+```
+
+### Connect from any MCP-compatible agent
+
+Any agent that supports the MCP HTTP transport can connect:
+
+```
+http://localhost:8083/mcp
+```
+
+### Filter skills by collection or tag
+
+Use environment variables to serve only a subset of skills to a specific agent:
+
+```bash
+SKILLNOTE_MCP_FILTER_COLLECTIONS=devops,security docker compose up -d mcp
+SKILLNOTE_MCP_FILTER_TAGS=admin,internal docker compose up -d mcp
+```
+
+This is useful for scoping what different teams or agents can see.
 
 ---
 
@@ -95,7 +181,7 @@ Every save creates a snapshot. Browse the full history, compare versions, and re
 Organize skills with tags and collections. Filter, search, and browse by category. Rename or delete tags across all skills at once.
 
 ### Multi-Agent Install
-Install skills to any AI coding agent from the web UI or CLI. Supported agents:
+Install skills as local files to any AI coding agent from the web UI or CLI. Supported agents:
 
 | Agent       | Install Path                                |
 | ----------- | ------------------------------------------- |
@@ -147,7 +233,7 @@ When the user provides a PDF file:
 | `name`        | Required. Lowercase `a-z`, `0-9`, `-` only. Max 64 chars. No reserved words (`anthropic`, `claude`). |
 | `description` | Required. Max 1024 chars. Should explain **what** it does and **when** to trigger it. |
 
-> **Tip:** Be aggressive in descriptions. Claude tends to under-trigger skills. Include specific phrases the user might say.
+> **Tip:** Be aggressive in descriptions. Agents tend to under-trigger skills. Include specific phrases the user might say.
 
 ---
 
@@ -212,8 +298,8 @@ docker compose down -v       # Stop + wipe database
 Run the backend in Docker, frontend with hot-reload:
 
 ```bash
-# Terminal 1: Backend
-docker compose up --build -d postgres api
+# Terminal 1: Backend + MCP
+docker compose up --build -d postgres api mcp
 curl http://localhost:8082/health   # Wait for {"status":"ok"}
 
 # Terminal 2: Frontend
@@ -223,15 +309,18 @@ npm run dev                         # http://localhost:3000
 
 ### Environment Variables
 
-| Variable                     | Default                 | Description                              |
-| ---------------------------- | ----------------------- | ---------------------------------------- |
-| `SKILLNOTE_HOST`             | `localhost`             | Host IP or domain (CORS + frontend URL)  |
-| `SKILLNOTE_API_PORT`         | `8082`                  | Host port for the API                    |
-| `SKILLNOTE_DATABASE_URL`     | *(set in compose)*      | PostgreSQL connection string             |
-| `SKILLNOTE_BUNDLE_STORAGE_DIR` | `/app/data/bundles`  | Where versioned ZIP bundles are stored   |
-| `SKILLNOTE_MAX_BUNDLE_SIZE_BYTES` | `5242880`          | Max bundle upload size (5 MB)            |
-| `SKILLNOTE_CORS_ORIGINS`     | *(auto from host)*      | Comma-separated CORS origins             |
-| `NEXT_PUBLIC_API_BASE_URL`   | `http://localhost:8082` | Frontend API endpoint                    |
+| Variable                          | Default                 | Description                              |
+| --------------------------------- | ----------------------- | ---------------------------------------- |
+| `SKILLNOTE_HOST`                  | `localhost`             | Host IP or domain (CORS + frontend URL)  |
+| `SKILLNOTE_API_PORT`              | `8082`                  | Host port for the API                    |
+| `SKILLNOTE_MCP_PORT`              | `8083`                  | Host port for the MCP server             |
+| `SKILLNOTE_DATABASE_URL`          | *(set in compose)*      | PostgreSQL connection string             |
+| `SKILLNOTE_BUNDLE_STORAGE_DIR`    | `/app/data/bundles`     | Where versioned ZIP bundles are stored   |
+| `SKILLNOTE_MAX_BUNDLE_SIZE_BYTES` | `5242880`               | Max bundle upload size (5 MB)            |
+| `SKILLNOTE_CORS_ORIGINS`          | *(auto from host)*      | Comma-separated CORS origins             |
+| `NEXT_PUBLIC_API_BASE_URL`        | `http://localhost:8082` | Frontend API endpoint                    |
+| `SKILLNOTE_MCP_FILTER_COLLECTIONS`| *(all)*                 | Comma-separated collections to expose via MCP |
+| `SKILLNOTE_MCP_FILTER_TAGS`       | *(all)*                 | Comma-separated tags to expose via MCP   |
 
 ---
 
@@ -288,6 +377,7 @@ curl http://localhost:8082/v1/skills \
 | ---------- | ------------------------------------------------------- |
 | Frontend   | Next.js 16, React 19, TypeScript, Tailwind CSS 4, Tiptap |
 | Backend    | Python 3.12, FastAPI, SQLAlchemy 2, Alembic, Pydantic 2 |
+| MCP Server | Python 3.12, FastMCP                                    |
 | Database   | PostgreSQL 16                                           |
 | CLI        | Node.js, TypeScript, Commander.js                       |
 | Infra      | Docker, Docker Compose                                  |
@@ -312,13 +402,15 @@ skillnote/
 │   │   └── ui/                   #     Primitives (Shadcn)
 │   └── lib/                      #   State, API client, validation
 │
-├── backend/                      # FastAPI backend
+├── backend/                      # FastAPI backend + MCP server
 │   ├── app/api/                  #   Route handlers
 │   ├── app/db/models/            #   SQLAlchemy models
 │   ├── app/schemas/              #   Pydantic schemas
 │   ├── app/validators/           #   SKILL.md spec validators
 │   ├── alembic/                  #   Database migrations
-│   └── scripts/                  #   Seed data, health checks
+│   ├── scripts/                  #   Seed data, health checks
+│   ├── mcp_server.py             #   MCP server (FastMCP, port 8083)
+│   └── Dockerfile.mcp            #   MCP container
 │
 ├── cli/                          # CLI tool
 │   └── src/
@@ -339,8 +431,24 @@ skillnote/
 
 ```bash
 docker compose logs api       # Check API logs
+docker compose logs mcp       # Check MCP logs
 docker compose logs postgres  # Check DB logs
 ```
+</details>
+
+<details>
+<summary><strong>MCP server not showing up in agent</strong></summary>
+
+Verify the MCP server is running:
+
+```bash
+curl -s -X POST http://localhost:8083/mcp \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}'
+```
+
+You should see `"name":"SkillNote"` in the response. Then restart your agent.
 </details>
 
 <details>
@@ -359,7 +467,7 @@ Use token `skn_dev_demo_token` for development.
 <summary><strong>Port already in use</strong></summary>
 
 ```bash
-SKILLNOTE_API_PORT=9000 docker compose up --build -d
+SKILLNOTE_API_PORT=9000 SKILLNOTE_MCP_PORT=9001 docker compose up --build -d
 ```
 </details>
 
@@ -376,10 +484,9 @@ docker compose up --build -d
 
 ## References
 
-Learn more about skills and how they work across different AI coding agents:
-
-- [AgentSkills.io](https://agentskills.io/home) - The skills ecosystem
 - [Claude Code Skills](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview) - Anthropic's official skills documentation
+- [Model Context Protocol](https://modelcontextprotocol.io) - MCP specification
+- [AgentSkills.io](https://agentskills.io/home) - The skills ecosystem
 - [Codex Skills](https://developers.openai.com/codex/skills/) - OpenAI Codex skills reference
 - [Antigravity Skills](https://antigravity.google/docs/skills) - Google Antigravity skills documentation
 - [OpenHands Skills](https://docs.openhands.dev/overview/skills) - OpenHands skills overview
@@ -388,50 +495,26 @@ Learn more about skills and how they work across different AI coding agents:
 
 ## Roadmap
 
-What's coming next to SkillNote. Contributions and feedback on priorities are welcome in [Discord](https://discord.gg/GazU4amU6H) or [GitHub Issues](https://github.com/luna-prompts/skillnote/issues).
+### Done
 
-### MCP Server Support
+- [x] Skill editor with live preview and SKILL.md validation
+- [x] Version history with restore
+- [x] Tags and collections
+- [x] REST API (CRUD, versioning, publish pipeline)
+- [x] MCP server — expose all skills as tools for any AI agent
+- [x] One-command Docker Compose stack (postgres + api + mcp + web)
+- [x] CLI skill installer (`npx skillnote`)
+- [x] Multi-agent connect guide (Claude Code, OpenClaw, Cursor, Windsurf)
 
-Expose the SkillNote registry as a [Model Context Protocol](https://modelcontextprotocol.io/) server so any MCP-compatible agent can discover and fetch skills without the CLI.
+### Up Next
 
-- **Resource endpoints** — agents read `skillnote://skills/{slug}` to get a skill's content
-- **Tool endpoints** — agents call `search_skills`, `install_skill`, `list_skills` as MCP tools
-- **Auto-discovery** — a `/.well-known/mcp.json` manifest lets agents find the server automatically
-- **Streaming** — skill content is streamed for large files
-
-Tracked in [#mcp-server](https://github.com/luna-prompts/skillnote/labels/mcp-server).
-
-### ACL / Authentication
-
-Fine-grained access control so teams can share a registry without exposing every skill to every user.
-
-> The auth layer was removed in an early migration (`0004_drop_auth`). The backend still has `TODO: Re-enable when ACL is ready` markers where it will slot back in.
-
-Planned capabilities:
-
-| Feature | Description |
-| ------- | ----------- |
-| **Token authentication** | Per-user and per-service API tokens (`skn_…`) |
-| **Role-based access** | `admin`, `editor`, `viewer` roles per skill or collection |
-| **Team workspaces** | Namespace skills by team; members inherit workspace permissions |
-| **Public / private skills** | Skills can be marked public (no token) or private (token required) |
-| **Audit log** | Who created, edited, published, or deleted a skill and when |
-
-Tracked in [#acl](https://github.com/luna-prompts/skillnote/labels/acl).
-
-### Other Planned Features
-
-| Feature | Description | Status |
-| ------- | ----------- | ------ |
-| **MCP server** | Expose skills via MCP protocol | Planned |
-| **ACL & auth** | Role-based access control + API tokens | Planned |
-| **Skill marketplace** | Optional public index of community skills | Exploring |
-| **Import from URL** | Paste a GitHub URL to import a `SKILL.md` directly | Exploring |
-| **Skill testing** | Run a skill against a prompt and evaluate the output | Exploring |
-| **Webhooks** | Notify CI/CD pipelines when a skill is published | Planned |
-| **Collections sharing** | Export / import a collection as a single ZIP | Planned |
-| **Docs site** | Dedicated documentation site with guides, API reference, and tutorials | Planned |
-| **Diff viewer** | Side-by-side visual diff between two content versions | Backlog |
+- [ ] **Redis caching** — cache skill listings and content in Redis to cut MCP `tools/list` and tool-call latency; skills invalidated on create/update/delete
+- [ ] **Collection-scoped MCP mounts** — mount a single collection as an MCP server so agents only see relevant skills
+- [ ] **Skill search and semantic ranking** — full-text and embedding-based search in the Web UI and via MCP
+- [ ] **Skill dependencies** — declare that one skill requires another; agents resolve the full tree automatically
+- [ ] **Webhook on skill publish** — notify CI or agent pipelines when a new skill version is published
+- [ ] **Role-based access control** — read-only vs editor vs admin roles with API tokens
+- [ ] **Import from GitHub** — sync a skills repo directly into SkillNote via URL
 
 ---
 
