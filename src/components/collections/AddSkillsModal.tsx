@@ -197,7 +197,11 @@ export function AddSkillsModal({ collectionName, allSkills, onClose, onAdded }: 
                 {addedCount} skill{addedCount > 1 ? 's' : ''} added
               </span>
             ) : (
-              <span>Click a skill to add it</span>
+              <span className="flex items-center gap-2">
+                <span>Click or</span>
+                <kbd className="px-1 py-0.5 text-[10px] font-mono bg-muted border border-border/60 rounded">↵</kbd>
+                <span>to add</span>
+              </span>
             )}
           </p>
           <button
