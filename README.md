@@ -7,7 +7,7 @@
 <p align="center">
   <strong>The open-source skill registry for AI coding agents.</strong>
   <br />
-  Create, manage, and distribute <code>SKILL.md</code> files — or connect any agent directly via MCP.
+  Create, manage, and distribute <code>SKILL.md</code> files, or connect any agent directly via MCP.
 </p>
 
 <p align="center">
@@ -40,7 +40,7 @@ AI coding agents like Claude Code, Cursor, and Codex use `SKILL.md` files to lea
 - No versioning, no search, no way to share across projects or teams
 - Writing them from scratch means guessing what works
 
-**SkillNote fixes this.** It's a self-hosted registry with a clean web UI, a CLI for one-command installs, and an MCP server that lets any agent connect directly — no file installation needed.
+**SkillNote fixes this.** It's a self-hosted registry with a clean web UI, a CLI for one-command installs, and an MCP server that lets any agent connect directly with no file installation needed.
 
 **Why self-hosted?** Enterprise workflows, proprietary codebases, and compliance-sensitive prompts contain institutional knowledge that shouldn't leave your infrastructure. SkillNote runs entirely on your machines. Your skills stay private, versioned, and accessible only to your team.
 
@@ -66,7 +66,7 @@ Four containers spin up:
 | ---------- | -------------------------- | --------------------------------------- |
 | **Web**    | http://localhost:3000      | Next.js frontend                        |
 | **API**    | http://localhost:8082      | FastAPI backend (auto-migrates + seeds) |
-| **MCP**    | http://localhost:8083/mcp  | MCP server — skills as tools            |
+| **MCP**    | http://localhost:8083/mcp  | MCP server, skills as tools             |
 | **DB**     | localhost:5432             | PostgreSQL 16                           |
 
 Open **http://localhost:3000** and start creating skills.
@@ -77,7 +77,7 @@ Open **http://localhost:3000** and start creating skills.
 
 ## MCP Server
 
-SkillNote includes a built-in [Model Context Protocol](https://modelcontextprotocol.io) server. Instead of installing skill files locally, your agent connects to SkillNote directly and gets every skill as a callable tool — live from the database, no restart needed when skills change.
+SkillNote includes a built-in [Model Context Protocol](https://modelcontextprotocol.io) server. Instead of installing skill files locally, your agent connects to SkillNote directly and gets every skill as a callable tool, live from the database with no restart needed when skills change.
 
 **How it works:**
 - Each skill becomes a tool: `name = slug`, `description = skill description`
