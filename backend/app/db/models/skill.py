@@ -17,7 +17,6 @@ class Skill(Base):
     slug: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     content_md: Mapped[str] = mapped_column(Text, nullable=True, default="")
-    tags: Mapped[List[str]] = mapped_column(ARRAY(Text), nullable=True, default=list)
     collections: Mapped[List[str]] = mapped_column(ARRAY(Text), nullable=True, default=list)
     current_version: Mapped[int] = mapped_column(Integer, nullable=True, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

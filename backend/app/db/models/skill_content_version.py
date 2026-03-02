@@ -18,7 +18,6 @@ class SkillContentVersion(Base):
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     content_md: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    tags: Mapped[List[str]] = mapped_column(ARRAY(Text), nullable=True, default=list)
     collections: Mapped[List[str]] = mapped_column(ARRAY(Text), nullable=True, default=list)
     is_latest: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
