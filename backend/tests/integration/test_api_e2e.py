@@ -119,7 +119,6 @@ def skill():
         "slug": slug,
         "description": "E2E integration test skill",
         "content_md": "# E2E Skill\n\nAuto-created by pytest.",
-        "tags": ["e2e"],
         "collections": ["testing"],
     })
     assert status == 201, f"Failed to create skill: {data}"
@@ -156,13 +155,11 @@ class TestSkillsCRUD:
             assert "slug" in s
             assert "name" in s
             assert "description" in s
-            assert "tags" in s
             assert "collections" in s
 
     def test_create_skill(self, skill):
         assert skill["slug"] is not None
         assert skill["description"] == "E2E integration test skill"
-        assert "e2e" in skill["tags"]
 
     def test_get_skill_by_slug(self, skill):
         status, data = api("GET", f"/v1/skills/{skill['slug']}", expected=200)
@@ -178,10 +175,6 @@ class TestSkillsCRUD:
         new_desc = "Updated description for E2E test"
         status, data = api("PATCH", f"/v1/skills/{skill['slug']}", {"description": new_desc}, expected=200)
         assert data["description"] == new_desc
-
-    def test_update_skill_tags(self, skill):
-        status, data = api("PATCH", f"/v1/skills/{skill['slug']}", {"tags": ["e2e", "updated"]}, expected=200)
-        assert "updated" in data["tags"]
 
     def test_update_skill_content(self, skill):
         new_content = "# Updated\n\nNew content body."
@@ -289,56 +282,6 @@ class TestComments:
     def test_create_comment_empty_body_returns_error(self, skill):
         status, _ = api("POST", f"/v1/skills/{skill['slug']}/comments", {"body": ""})
         assert status in (400, 422)
-
-
-# ─── TESTS: TAGS ─────────────────────────────────────────────────────────────
-
-class TestTags:
-    def test_list_tags(self):
-        status, tags = api("GET", "/v1/tags", expected=200)
-        assert isinstance(tags, list)
-
-    def test_tags_have_name_and_count(self):
-        status, tags = api("GET", "/v1/tags", expected=200)
-        for tag in tags:
-            assert "name" in tag
-            assert "skill_count" in tag
-            assert tag["skill_count"] >= 0
-
-    def test_tag_count_matches_skill_count(self):
-        _, skills = api("GET", "/v1/skills", expected=200)
-        _, tags = api("GET", "/v1/tags", expected=200)
-        all_tags_in_skills: set[str] = set()
-        for s in skills:
-            all_tags_in_skills.update(s.get("tags", []))
-        tag_names = {t["name"] for t in tags}
-        # Every tag in the tags endpoint must exist in at least one skill
-        for tag_name in tag_names:
-            assert tag_name in all_tags_in_skills, f"Tag '{tag_name}' not found in any skill"
-
-    def test_create_skill_with_tag_appears_in_tags_list(self):
-        slug = unique_slug("e2e-tag")
-        unique_tag = f"tag-{slug}"
-        api("POST", "/v1/skills", {"name": slug, "slug": slug, "description": "tag test", "content_md": "# t", "tags": [unique_tag]}, expected=201)
-        try:
-            _, tags = api("GET", "/v1/tags", expected=200)
-            tag_names = [t["name"] for t in tags]
-            assert unique_tag in tag_names
-        finally:
-            api("DELETE", f"/v1/skills/{slug}")
-
-    def test_delete_tag(self):
-        # Create a skill with a unique tag, then delete the tag
-        slug = unique_slug("e2e-dtag")
-        unique_tag = f"dtag-{slug}"
-        api("POST", "/v1/skills", {"name": slug, "slug": slug, "description": "d", "content_md": "# d", "tags": [unique_tag]}, expected=201)
-        try:
-            status, _ = api("DELETE", f"/v1/tags/{unique_tag}")
-            assert status == 204
-            _, tags = api("GET", "/v1/tags", expected=200)
-            assert not any(t["name"] == unique_tag for t in tags)
-        finally:
-            api("DELETE", f"/v1/skills/{slug}")
 
 
 # ─── TESTS: MCP ───────────────────────────────────────────────────────────────

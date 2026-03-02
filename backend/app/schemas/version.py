@@ -18,7 +18,6 @@ class ContentVersionItem(BaseModel):
     title: str
     description: str
     content_md: str
-    tags: List[str] = []
     collections: List[str] = []
     is_latest: bool
     created_at: datetime

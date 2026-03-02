@@ -14,3 +14,4 @@ skillvault-backup-*.tar.gz
 *.log
 .env
 .env.local
+tsconfig.tsbuildinfo

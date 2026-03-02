@@ -60,11 +60,6 @@ function VersionEntry({
               <p className="text-[12px] text-muted-foreground truncate">{v.title}</p>
               <p className="text-[11px] text-muted-foreground/60 mt-1">
                 {dateStr}
-                {v.tags.length > 0 && (
-                  <span className="ml-2 text-[10px]">
-                    {v.tags.slice(0, 3).join(', ')}
-                  </span>
-                )}
               </p>
             </div>
             <div className="flex items-center gap-2 shrink-0">
@@ -109,12 +104,6 @@ function VersionEntry({
                 <div>
                   <span className="font-semibold text-muted-foreground">Description:</span>{' '}
                   <span className="text-foreground/80">{v.description || '(none)'}</span>
-                </div>
-                <div>
-                  <span className="font-semibold text-muted-foreground">Tags:</span>{' '}
-                  <span className="text-foreground/80">
-                    {v.tags.length > 0 ? v.tags.join(', ') : '(none)'}
-                  </span>
                 </div>
                 <div>
                   <span className="font-semibold text-muted-foreground">Content preview:</span>
@@ -193,7 +182,6 @@ export function SkillVersionsTab({ skillSlug, onRestored }: SkillVersionsTabProp
             title: skill.title,
             description: skill.description,
             content_md: skill.content_md,
-            tags: skill.tags,
             collections: skill.collections,
             is_latest: true,
             created_at: skill.updated_at,

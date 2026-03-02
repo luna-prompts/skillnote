@@ -16,7 +16,6 @@ const SKILLS = [
     slug: 'react-hooks',
     description: 'Patterns for writing clean React hooks.',
     content_md: '# React Hooks\n\nUse hooks for state and effects.',
-    tags: ['react', 'frontend'],
     collections: ['frontend'],
     current_version: 3,
     total_versions: 3,
@@ -29,7 +28,6 @@ const SKILLS = [
     slug: 'db-migrations',
     description: 'Safe database migration checklist.',
     content_md: '# DB Migrations\n\nAlways backup first.',
-    tags: ['database', 'devops'],
     collections: ['devops'],
     current_version: 1,
     total_versions: 1,
@@ -38,12 +36,6 @@ const SKILLS = [
   },
 ]
 
-const TAGS_RESPONSE = [
-  { name: 'react', skill_count: 1 },
-  { name: 'frontend', skill_count: 1 },
-  { name: 'database', skill_count: 1 },
-  { name: 'devops', skill_count: 1 },
-]
 
 // ─── MOCK SETUP ────────────────────────────────────────────────────────────────
 
@@ -85,7 +77,7 @@ async function setupMocks(page: Page, skills = SKILLS) {
       if (req.method() === 'GET') {
         return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([{
           version: skill.current_version, title: skill.name, description: skill.description,
-          content_md: skill.content_md, tags: skill.tags, collections: skill.collections,
+          content_md: skill.content_md, collections: skill.collections,
           is_latest: true, created_at: skill.created_at,
         }]) })
       }
@@ -103,11 +95,6 @@ async function setupMocks(page: Page, skills = SKILLS) {
     })
   }
 
-  // Tags
-  await page.route('**/v1/tags', (route, req) => {
-    if (req.method() === 'GET') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(TAGS_RESPONSE) })
-    return route.continue()
-  })
 }
 
 // ─── TESTS: HOME PAGE ─────────────────────────────────────────────────────────
@@ -164,13 +151,6 @@ test.describe('Skill Detail Page', () => {
     await setupMocks(page)
     await page.goto('/skills/react-hooks')
     await expect(page.getByText(/React Hooks/)).toBeVisible()
-  })
-
-  test('shows tags on skill detail', async ({ page }) => {
-    await setupMocks(page)
-    await page.goto('/skills/react-hooks')
-    // Use exact match to avoid matching "react-hooks" heading or "React Hooks" prose
-    await expect(page.getByText('react', { exact: true }).first()).toBeVisible()
   })
 
   test('shows version number', async ({ page }) => {
@@ -287,23 +267,8 @@ test.describe('Navigation', () => {
     await page.route('**/v1/skills', route =>
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(SKILLS.map(({ content_md: _cm, ...s }) => s)) })
     )
-    await page.route('**/v1/tags', route =>
-      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(TAGS_RESPONSE) })
-    )
     await page.goto('/collections')
     await expect(page).toHaveURL('/collections')
-    await expect(page.locator('body')).toBeVisible()
-  })
-
-  test('tags page loads', async ({ page }) => {
-    await page.route('**/v1/skills', route =>
-      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(SKILLS.map(({ content_md: _cm, ...s }) => s)) })
-    )
-    await page.route('**/v1/tags', route =>
-      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(TAGS_RESPONSE) })
-    )
-    await page.goto('/tags')
-    await expect(page).toHaveURL('/tags')
     await expect(page.locator('body')).toBeVisible()
   })
 })

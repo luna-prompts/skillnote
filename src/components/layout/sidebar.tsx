@@ -1,7 +1,7 @@
 'use client'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { BookOpen, FolderOpen, Tag, Settings, HelpCircle, X } from 'lucide-react'
+import { BookOpen, FolderOpen, Settings, HelpCircle, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useEffect, useMemo, useState } from 'react'
 import { getSkills, syncSkillsFromApi, getConnectionStatus, onConnectionStatusChange } from '@/lib/skills-store'
@@ -18,16 +18,13 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
   }, [])
 
   const navItems = useMemo(() => {
-    const tagSet = new Set<string>()
     const collectionSet = new Set<string>()
     for (const s of skills) {
-      ;(s.tags || []).forEach(t => tagSet.add(t))
       ;(s.collections || []).forEach(c => collectionSet.add(c))
     }
     return [
       { href: '/', label: 'Skills', icon: BookOpen, count: skills.length },
       { href: '/collections', label: 'Collections', icon: FolderOpen, count: collectionSet.size },
-      { href: '/tags', label: 'Tags', icon: Tag, count: tagSet.size },
     ]
   }, [skills])
 
@@ -82,10 +79,16 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
           <Settings className="h-[15px] w-[15px] shrink-0" />
           Settings
         </Link>
-        <button aria-label="Help" className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-md text-[13px] font-medium text-[var(--muted-foreground)] hover:text-[var(--sidebar-foreground)] hover:bg-[var(--sidebar-accent)] transition-all duration-150">
+        <a
+          href="https://github.com/luna-prompts/skillnote#readme"
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="Help"
+          className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-md text-[13px] font-medium text-[var(--muted-foreground)] hover:text-[var(--sidebar-foreground)] hover:bg-[var(--sidebar-accent)] transition-all duration-150"
+        >
           <HelpCircle className="h-[15px] w-[15px] shrink-0" />
           Help
-        </button>
+        </a>
         <div className="flex items-center gap-1.5 px-2.5 pt-2" title={connStatus === 'online' ? 'Connected to backend' : connStatus === 'offline' ? 'Backend offline' : 'Running locally'}>
           <div className={cn('w-1.5 h-1.5 rounded-full shrink-0', connStatus === 'online' ? 'bg-emerald-500' : connStatus === 'offline' ? 'bg-red-500' : 'bg-teal-500')} />
           <p className="text-[10px] text-[var(--muted-foreground)]/40">

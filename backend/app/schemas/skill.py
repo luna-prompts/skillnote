@@ -7,10 +7,11 @@ from app.validators.skill_validator import validate_skill_name, validate_skill_d
 
 
 class SkillListItem(BaseModel):
+    model_config = {"from_attributes": True}
+
     name: str
     slug: str
     description: str
-    tags: List[str] = []
     collections: List[str] = []
     latestVersion: Optional[str] = None
     status: Optional[str] = None
@@ -24,7 +25,6 @@ class SkillDetail(BaseModel):
     slug: str
     description: str
     content_md: Optional[str] = ""
-    tags: List[str] = []
     collections: List[str] = []
     current_version: int = 0
     total_versions: int = 0
@@ -39,7 +39,6 @@ class SkillCreate(BaseModel):
     slug: str
     description: str
     content_md: str = ""
-    tags: List[str] = []
     collections: List[str] = []
 
     @field_validator("name")
@@ -63,7 +62,6 @@ class SkillUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     content_md: Optional[str] = None
-    tags: Optional[List[str]] = None
     collections: Optional[List[str]] = None
 
     @field_validator("name")
