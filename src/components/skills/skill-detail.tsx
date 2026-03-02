@@ -13,6 +13,7 @@ import { toast } from 'sonner'
 import { formatRelative } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { SkillViewTab } from './tabs/SkillViewTab'
 import { SkillEditTab } from './tabs/SkillEditTab'
 import { InstallDialog } from './InstallDialog'
@@ -443,10 +444,14 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
                       {formatRelative(skill.updated_at)}
                     </span>
                     {skill.collections.map(c => (
-                      <span key={c} className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground bg-muted/60 px-2.5 py-1 rounded-full">
+                      <Link
+                        key={c}
+                        href={`/collections/${c.toLowerCase().replace(/\s+/g, '-')}`}
+                        className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground bg-muted/60 px-2.5 py-1 rounded-full hover:bg-muted hover:text-foreground transition-colors"
+                      >
                         <FolderOpen className="h-3 w-3" />
                         {c}
-                      </span>
+                      </Link>
                     ))}
                   </div>
 
