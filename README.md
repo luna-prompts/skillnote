@@ -77,9 +77,76 @@ Open **http://localhost:3000** and start creating skills.
 
 ---
 
+## Skills vs MCP — What's the Difference?
+
+> Most people building AI agents hear about both and assume they're the same thing. They're not. Understanding the difference is what makes SkillNote click.
+
+### Skills: reusable intelligence
+
+A Skill is a reusable piece of knowledge injected into an agent's context — instructions, workflows, rules, examples. Think of it as a dynamic system prompt loaded on demand:
+
+```
+User message
+    ↓
+Agent picks the right Skill
+    ↓
+Injects SKILL.md content into the prompt
+    ↓
+LLM responds with that context
+```
+
+Skills improve **reasoning**. They teach the agent *how* to do something.
+
+### MCP: context transport
+
+[Model Context Protocol](https://modelcontextprotocol.io) is a standard for delivering context to agents — tools, APIs, documents, prompts. It improves **connectivity**. It doesn't care what the content is; it's the pipe.
+
+```
+Skills = HTML    (the content)
+MCP    = HTTP    (the transport)
+```
+
+HTTP delivers HTML. But HTML isn't part of HTTP. Same relationship.
+
+### How SkillNote combines both
+
+**Version 1 — local files:**
+```
+Agent reads skills/making-tea/SKILL.md from disk
+```
+Simple. Works offline. But skills go stale, drift across machines, and require manual installs.
+
+**Version 2 — MCP delivery (what SkillNote does):**
+```
+Agent  →  MCP  →  SkillNote  →  Skills DB
+```
+Every skill is exposed as an MCP tool. The agent discovers and calls them live — no files, no installs, always up to date. Update a skill in the Web UI and every connected agent gets the new version instantly.
+
+```
+┌──────────┐     tools/list      ┌───────────────┐
+│  Agent   │ ─────────────────▶  │  SkillNote    │
+│          │ ◀─────────────────  │  MCP Server   │
+│          │   [all your skills] │               │
+│          │                     │  reads from   │
+│          │  tools/call         │  PostgreSQL   │
+│          │ ─────────────────▶  │  on every     │
+│          │ ◀─────────────────  │  request      │
+└──────────┘   skill content     └───────────────┘
+```
+
+| | Local Skills | MCP Skills (SkillNote) |
+|---|---|---|
+| Updates | Manual (`git pull` / `npx install`) | Automatic — edit in UI, live instantly |
+| Fragmentation | Different versions per machine | One source of truth |
+| Discovery | Agent must know the file path | Agent discovers via `tools/list` |
+| Sharing | Send files or links | Connect to the same server |
+| Offline | Yes | Needs network |
+
+---
+
 ## MCP Server
 
-SkillNote includes a built-in [Model Context Protocol](https://modelcontextprotocol.io) server. Instead of installing skill files locally, your agent connects to SkillNote directly and gets every skill as a callable tool, live from the database with no restart needed when skills change.
+SkillNote exposes every skill as an MCP tool your agent can discover and call directly — no local files needed, no restart when skills change.
 
 **How it works:**
 - Each skill becomes a tool: `name = slug`, `description = skill description`
