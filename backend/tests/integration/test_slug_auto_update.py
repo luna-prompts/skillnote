@@ -64,7 +64,7 @@ class TestSlugAutoUpdate:
                 "collections": [],
             },
         )
-        assert status == 200, f"Create failed: {body}"
+        assert status == 201, f"Create failed: {body}"
         return body
 
     def test_slug_updates_on_rename(self):
