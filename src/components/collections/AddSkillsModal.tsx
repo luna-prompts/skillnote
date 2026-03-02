@@ -15,8 +15,8 @@ type Props = {
 export function AddSkillsModal({ collectionName, allSkills, onClose, onAdded }: Props) {
   const [query, setQuery] = useState('')
   const [toggling, setToggling] = useState<Set<string>>(new Set())
-  // slugs added in this session (initially empty)
   const [addedSlugs, setAddedSlugs] = useState<Set<string>>(new Set())
+  const [confirmRemove, setConfirmRemove] = useState<string | null>(null)
   const searchRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => { searchRef.current?.focus() }, [])
@@ -160,8 +160,11 @@ export function AddSkillsModal({ collectionName, allSkills, onClose, onAdded }: 
                       skill={skill}
                       state="added"
                       loading={toggling.has(skill.slug)}
+                      pendingRemove={confirmRemove === skill.slug}
                       onClick={() => {}}
-                      onRemove={() => handleToggle(skill)}
+                      onRemove={() => setConfirmRemove(skill.slug)}
+                      onConfirmRemove={() => { setConfirmRemove(null); handleToggle(skill) }}
+                      onCancelRemove={() => setConfirmRemove(null)}
                     />
                   ))}
                   {availableItems.length > 0 && (
@@ -215,24 +218,52 @@ export function AddSkillsModal({ collectionName, allSkills, onClose, onAdded }: 
 
 /* ── Skill row ── */
 type RowState = 'available' | 'added'
-function SkillRow({ skill, state, loading, onClick, onRemove }: {
+function SkillRow({ skill, state, loading, pendingRemove, onClick, onRemove, onConfirmRemove, onCancelRemove }: {
   skill: Skill
   state: RowState
   loading: boolean
+  pendingRemove?: boolean
   onClick: () => void
   onRemove?: () => void
+  onConfirmRemove?: () => void
+  onCancelRemove?: () => void
 }) {
   const isAdded = state === 'added'
 
+  /* Inline remove confirmation — replaces the normal row */
+  if (isAdded && pendingRemove) {
+    return (
+      <div className="flex items-center justify-between px-4 py-2.5 bg-destructive/[0.04] animate-in fade-in duration-100">
+        <p className="text-[13px] text-foreground/80 truncate min-w-0 mr-3">
+          Remove <span className="font-medium">{skill.title}</span>?
+        </p>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <button
+            onMouseDown={e => { e.stopPropagation(); onCancelRemove?.() }}
+            className="h-6 px-2.5 rounded text-[12px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted/70 transition-colors"
+          >
+            Keep
+          </button>
+          <button
+            onMouseDown={e => { e.stopPropagation(); onConfirmRemove?.() }}
+            className="h-6 px-2.5 rounded text-[12px] font-medium text-destructive bg-destructive/10 hover:bg-destructive/20 transition-colors flex items-center gap-1"
+          >
+            {loading && <Loader2 className="h-3 w-3 animate-spin" />}
+            Remove
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div className={`flex items-center gap-3 px-4 py-2.5 ${isAdded ? '' : 'hover:bg-muted/60 cursor-pointer'} transition-colors`}
+    <div
+      className={`flex items-center gap-3 px-4 py-2.5 ${isAdded ? '' : 'hover:bg-muted/60 cursor-pointer'} transition-colors`}
       onClick={isAdded ? undefined : onClick}
     >
       {/* Checkbox */}
       <div className={`w-[18px] h-[18px] rounded-[4px] border flex items-center justify-center shrink-0 transition-all duration-150 ${
-        isAdded
-          ? 'bg-emerald-500 border-emerald-500'
-          : 'border-border/60 bg-transparent'
+        isAdded ? 'bg-emerald-500 border-emerald-500' : 'border-border/60 bg-transparent'
       }`}>
         {loading ? (
           <Loader2 className="h-2.5 w-2.5 animate-spin text-white" />
@@ -243,9 +274,7 @@ function SkillRow({ skill, state, loading, onClick, onRemove }: {
 
       {/* Text */}
       <div className="flex-1 min-w-0">
-        <p className="text-[13px] font-medium truncate text-foreground">
-          {skill.title}
-        </p>
+        <p className="text-[13px] font-medium truncate text-foreground">{skill.title}</p>
         {skill.description && (
           <p className="text-[11px] text-muted-foreground/50 truncate mt-0.5">{skill.description}</p>
         )}
@@ -255,10 +284,10 @@ function SkillRow({ skill, state, loading, onClick, onRemove }: {
       {isAdded && onRemove && (
         <button
           onMouseDown={e => { e.stopPropagation(); onRemove() }}
-          className="h-5 w-5 rounded flex items-center justify-center text-muted-foreground/40 hover:text-foreground hover:bg-muted/80 transition-colors shrink-0"
+          className="h-5 w-5 rounded flex items-center justify-center text-muted-foreground/30 hover:text-foreground hover:bg-muted/80 transition-colors shrink-0"
           title="Remove"
         >
-          {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <X className="h-3 w-3" />}
+          <X className="h-3 w-3" />
         </button>
       )}
     </div>
