@@ -1,7 +1,7 @@
 'use client'
 import Link from 'next/link'
 import { TopBar } from '@/components/layout/topbar'
-import { FolderOpen, Plus, FileText } from 'lucide-react'
+import { FolderOpen, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { formatRelative } from '@/lib/format'
 import { useEffect, useMemo, useState } from 'react'
@@ -10,16 +10,10 @@ import { deriveCollections } from '@/lib/derived'
 import { NewCollectionModal } from '@/components/collections/NewCollectionModal'
 import type { Skill } from '@/lib/mock-data'
 
-const COLLECTION_COLORS = [
-  { bg: 'bg-violet-100 dark:bg-violet-950/40', icon: 'text-violet-600 dark:text-violet-400', hover: 'hover:border-violet-400/40', accent: '#8b5cf6' },
-  { bg: 'bg-blue-100 dark:bg-blue-950/40',     icon: 'text-blue-600 dark:text-blue-400',     hover: 'hover:border-blue-400/40',   accent: '#3b82f6' },
-  { bg: 'bg-teal-100 dark:bg-teal-950/40',     icon: 'text-teal-600 dark:text-teal-400',     hover: 'hover:border-teal-400/40',   accent: '#14b8a6' },
-  { bg: 'bg-amber-100 dark:bg-amber-950/40',   icon: 'text-amber-600 dark:text-amber-400',   hover: 'hover:border-amber-400/40',  accent: '#f59e0b' },
-  { bg: 'bg-rose-100 dark:bg-rose-950/40',     icon: 'text-rose-600 dark:text-rose-400',     hover: 'hover:border-rose-400/40',   accent: '#f43f5e' },
-]
-
 function getSkillsForCollection(skills: Skill[], name: string): Skill[] {
-  return skills.filter(s => (s.collections || []).some(c => c.toLowerCase() === name.toLowerCase()))
+  return skills.filter(s =>
+    (s.collections || []).some(c => c.toLowerCase() === name.toLowerCase())
+  )
 }
 
 export default function CollectionsPage() {
@@ -32,7 +26,7 @@ export default function CollectionsPage() {
 
   const collections = useMemo(() => deriveCollections(skills), [skills])
 
-  function handleCollectionCreated(_name: string, _desc: string) {
+  function handleCollectionCreated() {
     setSkills(s => [...s])
     setNewCollectionOpen(false)
   }
@@ -41,11 +35,15 @@ export default function CollectionsPage() {
     <>
       <TopBar />
       <main className="flex-1 p-4 sm:p-6 overflow-auto">
+
+        {/* Page header */}
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-lg font-semibold text-foreground">Collections</h1>
             <p className="text-[13px] text-muted-foreground mt-0.5">
-              {collections.length === 0 ? 'No collections yet' : `${collections.length} collection${collections.length === 1 ? '' : 's'}`}
+              {collections.length === 0
+                ? 'No collections yet'
+                : `${collections.length} collection${collections.length === 1 ? '' : 's'}`}
             </p>
           </div>
           <Button
@@ -58,15 +56,15 @@ export default function CollectionsPage() {
           </Button>
         </div>
 
-        {/* Empty state */}
         {collections.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-24 px-6">
-            <div className="w-16 h-16 rounded-2xl bg-muted/60 border border-border/40 flex items-center justify-center mb-5">
-              <FolderOpen className="h-8 w-8 text-muted-foreground/30" />
+          /* ── Empty state ── */
+          <div className="flex flex-col items-center justify-center py-28 px-6">
+            <div className="w-14 h-14 rounded-2xl bg-muted/70 border border-border/40 flex items-center justify-center mb-5">
+              <FolderOpen className="h-7 w-7 text-muted-foreground/30" />
             </div>
             <p className="text-[15px] font-semibold text-foreground mb-2">No collections yet</p>
-            <p className="text-[13px] text-muted-foreground text-center max-w-[260px] mb-6 leading-relaxed">
-              Group your skills into collections to keep things organised.
+            <p className="text-[13px] text-muted-foreground/70 text-center max-w-[240px] mb-6 leading-relaxed">
+              Group your skills to keep things organised and easy to find.
             </p>
             <Button
               size="sm"
@@ -78,64 +76,68 @@ export default function CollectionsPage() {
             </Button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pb-24 lg:pb-0">
-            {collections.map((col, i) => {
-              const color = COLLECTION_COLORS[i % COLLECTION_COLORS.length]
+          /* ── Collection grid ── */
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pb-24 lg:pb-0">
+            {collections.map(col => {
               const slug = col.name.toLowerCase().replace(/\s+/g, '-')
-              const preview = getSkillsForCollection(skills, col.name).slice(0, 3)
+              const preview = getSkillsForCollection(skills, col.name).slice(0, 4)
               const overflow = col.skill_count - preview.length
+              const initial = col.name.charAt(0).toUpperCase()
+              const hasDesc = col.description && col.description !== `${col.name} skills`
 
               return (
                 <Link
                   key={col.id}
                   href={`/collections/${slug}`}
-                  className={`bg-card rounded-xl border border-border/60 overflow-hidden ${color.hover} hover:shadow-[0_4px_24px_rgba(0,0,0,0.08)] dark:hover:shadow-[0_4px_24px_rgba(0,0,0,0.4)] hover:-translate-y-0.5 active:scale-[0.99] transition-all duration-200 cursor-pointer group block`}
+                  className="group bg-card border border-border/50 rounded-xl overflow-hidden hover:border-border hover:shadow-md dark:hover:shadow-black/30 transition-all duration-200 cursor-pointer block"
                 >
-                  {/* Accent top stripe */}
-                  <div className="h-[3px] w-full" style={{ background: `linear-gradient(90deg, ${color.accent}, ${color.accent}60)` }} />
-
-                  <div className="p-5">
-                    {/* Icon + name + description */}
-                    <div className="flex items-start gap-3 mb-4">
-                      <div className={`w-9 h-9 rounded-lg ${color.bg} flex items-center justify-center shrink-0 mt-0.5`}>
-                        <FolderOpen className={`h-4 w-4 ${color.icon}`} />
+                  <div className="p-4">
+                    {/* Icon + title row */}
+                    <div className="flex items-start gap-3 mb-3">
+                      <div className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center shrink-0 text-[15px] font-semibold text-foreground/60 select-none">
+                        {initial}
                       </div>
-                      <div className="min-w-0 flex-1">
-                        <h3 className="text-[14px] font-semibold text-foreground group-hover:text-accent transition-colors truncate">
+                      <div className="min-w-0 flex-1 pt-0.5">
+                        <h3 className="text-[14px] font-semibold text-foreground group-hover:text-accent transition-colors truncate leading-snug">
                           {col.name}
                         </h3>
-                        {col.description && col.description !== `${col.name} skills` && (
-                          <p className="text-[11px] text-muted-foreground/60 mt-0.5 line-clamp-1">{col.description}</p>
+                        {hasDesc && (
+                          <p className="text-[11px] text-muted-foreground/60 mt-0.5 line-clamp-1 leading-snug">
+                            {col.description}
+                          </p>
                         )}
                       </div>
                     </div>
 
-                    {/* Skill name preview */}
+                    {/* Skill preview */}
                     {preview.length > 0 ? (
-                      <div className="mb-4 space-y-1">
+                      <div className="mb-3 space-y-1">
                         {preview.map(s => (
-                          <div key={s.slug} className="flex items-center gap-1.5">
-                            <FileText className="h-3 w-3 text-muted-foreground/25 shrink-0" />
-                            <span className="text-[12px] text-muted-foreground/60 truncate">{s.title}</span>
-                          </div>
+                          <p key={s.slug} className="text-[12px] text-muted-foreground/55 truncate font-mono">
+                            {s.title}
+                          </p>
                         ))}
                         {overflow > 0 && (
-                          <p className="text-[11px] text-muted-foreground/35 pl-4.5">+{overflow} more</p>
+                          <p className="text-[11px] text-muted-foreground/35">
+                            +{overflow} more
+                          </p>
                         )}
                       </div>
                     ) : (
-                      <div className="mb-4">
-                        <p className="text-[12px] text-muted-foreground/30 italic">Empty collection</p>
-                      </div>
+                      <p className="text-[12px] text-muted-foreground/30 italic mb-3">
+                        No skills yet
+                      </p>
                     )}
 
-                    {/* Footer row */}
-                    <div className="flex items-center justify-between pt-3 border-t border-border/40">
-                      <span className="text-[12px] text-muted-foreground">
-                        <span className="text-foreground font-semibold">{col.skill_count}</span>{' '}
+                    {/* Footer */}
+                    <div className="pt-2.5 border-t border-border/30 flex items-center justify-between">
+                      <span className="text-[11px] text-muted-foreground/60">
+                        <span className="font-medium text-foreground/70">{col.skill_count}</span>{' '}
                         {col.skill_count === 1 ? 'skill' : 'skills'}
                       </span>
-                      <span className="text-[11px] text-muted-foreground/40 tabular-nums">{formatRelative(col.updated_at)}</span>
+                      <span className="text-[11px] text-muted-foreground/35 tabular-nums">
+                        {formatRelative(col.updated_at)}
+                      </span>
                     </div>
                   </div>
                 </Link>
