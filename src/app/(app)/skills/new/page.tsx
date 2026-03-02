@@ -67,7 +67,6 @@ function NewSkillContent() {
         title: name.trim(),
         description: description.trim(),
         content_md: bodyContent,
-        tags: [],
         collections,
       })
       toast.success(`"${skill.title}" created`)

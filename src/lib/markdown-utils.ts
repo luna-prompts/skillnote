@@ -6,9 +6,6 @@ export function generateMarkdown(skill: Skill): string {
     `name: ${skill.slug}`,
     `description: ${skill.description}`,
   ]
-  if (skill.tags && skill.tags.length > 0) {
-    lines.push(`tags: [${skill.tags.join(', ')}]`)
-  }
   if (skill.collections && skill.collections.length > 0) {
     lines.push(`collections: [${skill.collections.join(', ')}]`)
   }
@@ -20,7 +17,6 @@ export function parseMarkdown(raw: string, filename: string): Omit<Skill, 'comme
   const now = new Date().toISOString()
   let title = filename.replace(/\.md$/i, '')
   let description = ''
-  let tags: string[] = []
   let collections: string[] = []
   let content = raw
 
@@ -41,11 +37,6 @@ export function parseMarkdown(raw: string, filename: string): Omit<Skill, 'comme
     // Extract description from frontmatter
     const descMatch = fm.match(/^description:\s*(.+)$/m)
     if (descMatch) description = descMatch[1].trim()
-
-    const tagsMatch = fm.match(/^tags:\s*\[([^\]]*)\]$/m)
-    if (tagsMatch) {
-      tags = tagsMatch[1].split(',').map(t => t.trim()).filter(Boolean)
-    }
 
     const colMatch = fm.match(/^collections:\s*\[([^\]]*)\]$/m)
     if (colMatch) {
@@ -76,7 +67,6 @@ export function parseMarkdown(raw: string, filename: string): Omit<Skill, 'comme
     title,
     description,
     content_md: content.trim(),
-    tags,
     collections,
     current_version: 1,
     total_versions: 1,
