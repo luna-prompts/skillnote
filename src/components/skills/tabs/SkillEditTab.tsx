@@ -5,6 +5,7 @@ import { NAME_MAX, DESC_MAX, slugFromName, normalizeSkillName, validateSkillName
 import { Button } from '@/components/ui/button'
 import { WysiwygEditor, type EditorMode } from '@/components/skills/WysiwygEditor'
 import { FieldError } from '@/components/skills/FieldError'
+import { CollectionPicker } from '@/components/collections/CollectionPicker'
 
 type SkillEditTabProps = {
   editorContent: string
@@ -39,7 +40,6 @@ export function SkillEditTab({
   const [fullscreen, setFullscreen] = useState(false)
   const [touched, setTouched] = useState<Record<string, boolean>>({})
   const [showSaveConfirm, setShowSaveConfirm] = useState(false)
-  const [collectionInput, setCollectionInput] = useState('')
   const [editorMode, setEditorMode] = useState<EditorMode>('wysiwyg')
   const nameRef = useRef<HTMLInputElement>(null)
   const descRef = useRef<HTMLTextAreaElement>(null)
@@ -90,11 +90,6 @@ export function SkillEditTab({
     setSkillTitle(normalizeSkillName(value))
   }
 
-  const addCollection = useCallback(() => {
-    const c = collectionInput.trim()
-    if (c && !skillCollections.includes(c)) setSkillCollections?.([...skillCollections, c])
-    setCollectionInput('')
-  }, [collectionInput, skillCollections, setSkillCollections])
 
   /** Validate fields, then either save directly (create) or show confirmation (edit) */
   const handleSaveClick = useCallback(() => {
@@ -278,25 +273,11 @@ export function SkillEditTab({
       {setSkillCollections && (
         <div className="mb-6">
           <label className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/70 mb-2 block">Collections</label>
-          <div className="flex flex-wrap items-center gap-1.5">
-            {skillCollections.map(col => (
-              <span key={col} className="flex items-center gap-1 px-2 py-0.5 bg-muted text-foreground/70 text-[11px] rounded-md">
-                {col}
-                <button onClick={() => setSkillCollections(skillCollections.filter(c => c !== col))} className="hover:opacity-70"><X className="h-2.5 w-2.5" /></button>
-              </span>
-            ))}
-            <input
-              value={collectionInput}
-              onChange={e => setCollectionInput(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); addCollection() }
-                if (e.key === 'Backspace' && !collectionInput && skillCollections.length) setSkillCollections(skillCollections.slice(0, -1))
-              }}
-              onBlur={addCollection}
-              placeholder={skillCollections.length === 0 ? '+ Add to collection' : ''}
-              className="min-w-[80px] bg-transparent text-[12px] text-muted-foreground focus:outline-none placeholder:text-muted-foreground/30"
-            />
-          </div>
+          <CollectionPicker
+            selected={skillCollections}
+            onChange={setSkillCollections}
+            compact
+          />
         </div>
       )}
 

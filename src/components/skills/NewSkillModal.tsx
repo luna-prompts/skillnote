@@ -4,12 +4,13 @@ import { Plus, X, BookOpen, Loader2, AlertCircle, Info } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { createSkill } from '@/lib/skills-store'
 import { validateSkillName, validateDescription, normalizeSkillName, NAME_MAX, DESC_MAX, type ValidationError } from '@/lib/skill-validation'
+import { CollectionPicker } from '@/components/collections/CollectionPicker'
 import { toast } from 'sonner'
 import { useRouter } from 'next/navigation'
 
 type NewSkillModalProps = {
   onClose: () => void
-  collections: string[]
+  collections?: string[]
 }
 
 function FieldError({ errors }: { errors: ValidationError[] }) {
@@ -52,9 +53,6 @@ export function NewSkillModal({ onClose, collections }: NewSkillModalProps) {
   const nameErrors = touched.name ? validateSkillName(name) : []
   const descErrors = touched.description ? validateDescription(description) : []
   const isValid = validateSkillName(name).length === 0 && validateDescription(description).length === 0
-
-  const toggleCollection = (col: string) =>
-    setSelectedCollections(prev => prev.includes(col) ? prev.filter(c => c !== col) : [...prev, col])
 
   const handleSubmit = useCallback(async () => {
     setTouched({ name: true, description: true })
@@ -150,26 +148,14 @@ export function NewSkillModal({ onClose, collections }: NewSkillModalProps) {
           </div>
 
           {/* Collections */}
-          {collections.length > 0 && (
-            <div>
-              <label className="block text-[12px] font-medium text-foreground mb-1.5">Collection</label>
-              <div className="flex flex-wrap gap-1.5">
-                {collections.map(col => (
-                  <button
-                    key={col}
-                    onClick={() => toggleCollection(col)}
-                    className={`px-2.5 py-1 rounded-lg text-[12px] border transition-colors ${
-                      selectedCollections.includes(col)
-                        ? 'bg-accent/10 text-accent border-accent/30'
-                        : 'bg-muted text-muted-foreground border-border/60 hover:text-foreground'
-                    }`}
-                  >
-                    {col}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
+          <div>
+            <label className="block text-[12px] font-medium text-foreground mb-1.5">Collection</label>
+            <CollectionPicker
+              selected={selectedCollections}
+              onChange={setSelectedCollections}
+              placeholder="Add to a collection..."
+            />
+          </div>
         </div>
 
         <div className="px-6 py-4 border-t border-border/60 flex items-center justify-end gap-2">

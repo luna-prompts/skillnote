@@ -2,7 +2,7 @@
 import { TopBar } from '@/components/layout/topbar'
 import { SkillListItem } from '@/components/skills/skill-list-item'
 import { AddSkillsModal } from '@/components/collections/AddSkillsModal'
-import { ArrowLeft, FolderOpen, Plus, X } from 'lucide-react'
+import { ArrowLeft, FolderOpen, Minus, Plus, Loader2 } from 'lucide-react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
@@ -14,13 +14,18 @@ export default function CollectionDetailPage() {
   const { slug } = useParams<{ slug: string }>()
   const [skills, setSkills] = useState(getSkills())
   const [showAddModal, setShowAddModal] = useState(false)
+  const [confirmRemove, setConfirmRemove] = useState<string | null>(null)
+  const [removing, setRemoving] = useState<string | null>(null)
 
   useEffect(() => {
     syncSkillsFromApi().then(setSkills).catch(() => {})
   }, [])
 
   const collectionName = decodeURIComponent(slug).replace(/-/g, ' ')
-  const filtered = useMemo(() => skills.filter(s => (s.collections || []).some(c => c.toLowerCase() === collectionName.toLowerCase())), [skills, collectionName])
+  const filtered = useMemo(
+    () => skills.filter(s => (s.collections || []).some(c => c.toLowerCase() === collectionName.toLowerCase())),
+    [skills, collectionName]
+  )
 
   function refreshSkills() {
     setSkills(getSkills())
@@ -28,38 +33,55 @@ export default function CollectionDetailPage() {
   }
 
   async function handleRemove(skill: Skill) {
-    const updatedCollections = (skill.collections || []).filter(
-      c => c.toLowerCase() !== collectionName.toLowerCase()
-    )
-    await saveSkillEdit(skill.slug, { collections: updatedCollections })
-    toast.success(`"${skill.title}" removed from ${collectionName}`)
-    refreshSkills()
+    setRemoving(skill.slug)
+    try {
+      const updatedCollections = (skill.collections || []).filter(
+        c => c.toLowerCase() !== collectionName.toLowerCase()
+      )
+      await saveSkillEdit(skill.slug, { collections: updatedCollections })
+      toast.success(`Removed from ${collectionName}`, { description: skill.title })
+      setConfirmRemove(null)
+      refreshSkills()
+    } catch {
+      toast.error('Failed to remove skill')
+    } finally {
+      setRemoving(null)
+    }
   }
 
   return (
     <>
       <TopBar />
       <main className="flex-1 overflow-auto">
+
+        {/* Header */}
         <div className="px-6 py-5 border-b border-border/60">
-          <div className="flex items-center gap-2 mb-3">
-            <Link href="/collections" className="text-muted-foreground hover:text-foreground transition-colors p-0.5" aria-label="Back to collections">
-              <ArrowLeft className="h-4 w-4" />
+          <div className="flex items-center gap-1.5 mb-4">
+            <Link
+              href="/collections"
+              className="flex items-center gap-1.5 text-[12px] text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" />
+              Collections
             </Link>
-            <span className="text-[12px] text-muted-foreground">Collections</span>
           </div>
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-lg bg-accent/10 flex items-center justify-center shrink-0">
-                <FolderOpen className="h-4.5 w-4.5 text-accent" />
+
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-xl bg-accent/10 border border-accent/20 flex items-center justify-center shrink-0">
+                <FolderOpen className="h-5 w-5 text-accent" />
               </div>
-              <div>
-                <h1 className="text-lg font-semibold text-foreground">{collectionName}</h1>
-                <p className="text-[13px] text-muted-foreground">Collection details from live skills</p>
+              <div className="min-w-0">
+                <h1 className="text-[17px] font-semibold text-foreground leading-tight capitalize">{collectionName}</h1>
+                <p className="text-[12px] text-muted-foreground mt-0.5">
+                  {filtered.length} {filtered.length === 1 ? 'skill' : 'skills'}
+                </p>
               </div>
             </div>
+
             <button
               onClick={() => setShowAddModal(true)}
-              className="flex items-center gap-1.5 h-8 px-3 rounded-lg text-[13px] font-medium bg-foreground text-background hover:bg-foreground/90 transition-colors shrink-0"
+              className="flex items-center gap-1.5 h-8 px-3 rounded-lg text-[13px] font-medium bg-foreground text-background hover:bg-foreground/90 active:scale-95 transition-all shrink-0 mt-0.5"
             >
               <Plus className="h-3.5 w-3.5" />
               Add Skills
@@ -67,37 +89,77 @@ export default function CollectionDetailPage() {
           </div>
         </div>
 
-        <div className="px-5 py-3 border-b border-border/60 bg-card/20">
-          <p className="text-[12px] text-muted-foreground"><span className="font-medium text-foreground">{filtered.length}</span> skill{filtered.length !== 1 ? 's' : ''} in this collection</p>
-        </div>
-
+        {/* Skill list */}
         {filtered.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-24 px-6">
-            <div className="w-12 h-12 rounded-xl bg-muted/80 flex items-center justify-center mb-4"><FolderOpen className="h-6 w-6 text-muted-foreground/60" /></div>
-            <p className="text-[14px] font-medium text-foreground mb-1">No skills yet</p>
-            <p className="text-[13px] text-muted-foreground text-center max-w-xs mb-4">This collection doesn&apos;t have any skills yet.</p>
+          <div className="flex flex-col items-center justify-center py-20 px-6">
+            <div className="w-14 h-14 rounded-2xl bg-muted/60 border border-border/40 flex items-center justify-center mb-4">
+              <FolderOpen className="h-7 w-7 text-muted-foreground/40" />
+            </div>
+            <p className="text-[14px] font-medium text-foreground mb-1">Empty collection</p>
+            <p className="text-[13px] text-muted-foreground text-center max-w-[260px] mb-5 leading-relaxed">
+              Add your first skill to start building this collection.
+            </p>
             <button
               onClick={() => setShowAddModal(true)}
-              className="flex items-center gap-1.5 h-8 px-3 rounded-lg text-[13px] font-medium bg-foreground text-background hover:bg-foreground/90 transition-colors"
+              className="flex items-center gap-1.5 h-8 px-4 rounded-lg text-[13px] font-medium bg-foreground text-background hover:bg-foreground/90 active:scale-95 transition-all"
             >
               <Plus className="h-3.5 w-3.5" />
               Add Skills
             </button>
           </div>
         ) : (
-          <div className="relative">
-            {filtered.map(skill => (
-              <div key={skill.slug} className="relative group">
-                <SkillListItem skill={skill} />
-                <button
-                  onClick={() => handleRemove(skill)}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity h-6 w-6 rounded-md flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                  title="Remove from collection"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            ))}
+          <div>
+            {filtered.map(skill => {
+              const isPending = confirmRemove === skill.slug
+              const isRemoving = removing === skill.slug
+
+              return (
+                <div key={skill.slug} className="border-b border-border/40 last:border-0">
+                  {isPending ? (
+                    /* Inline remove confirmation */
+                    <div className="flex items-center justify-between px-4 py-3.5 bg-destructive/[0.04] animate-in fade-in slide-in-from-top-1 duration-150">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-8 h-8 rounded-lg bg-destructive/10 flex items-center justify-center shrink-0">
+                          <Minus className="h-3.5 w-3.5 text-destructive" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-[13px] font-medium text-foreground truncate">{skill.title}</p>
+                          <p className="text-[12px] text-muted-foreground">Remove from &quot;{collectionName}&quot;?</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0 ml-3">
+                        <button
+                          onClick={() => setConfirmRemove(null)}
+                          className="h-7 px-3 rounded-md text-[12px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted/70 transition-colors"
+                        >
+                          Keep
+                        </button>
+                        <button
+                          onClick={() => handleRemove(skill)}
+                          disabled={isRemoving}
+                          className="h-7 px-3 rounded-md text-[12px] font-medium text-destructive bg-destructive/10 hover:bg-destructive/20 transition-colors disabled:opacity-60 flex items-center gap-1.5"
+                        >
+                          {isRemoving ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    /* Normal row with hover remove trigger */
+                    <div className="relative group/row">
+                      <SkillListItem skill={skill} />
+                      <button
+                        onClick={() => setConfirmRemove(skill.slug)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 opacity-0 group-hover/row:opacity-100 transition-all duration-150 h-6 w-6 rounded-md flex items-center justify-center text-muted-foreground/50 hover:text-muted-foreground hover:bg-muted/60"
+                        title="Remove from collection"
+                      >
+                        <Minus className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
         )}
       </main>
