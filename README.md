@@ -122,7 +122,7 @@ Agent  →  MCP  →  SkillNote  →  Skills DB
 ```
 Every skill is exposed as an MCP tool. The agent discovers and calls them live: no files, no installs, always up to date. Update a skill in the Web UI and every connected agent gets the new version instantly.
 
-> **No restart required.** The MCP server queries the database on every `tools/list` request — there is no in-memory cache. Create or update a skill and it is available to all connected agents on their very next call, with zero downtime.
+> **No restart required.** The MCP server queries the database on every `tools/list` request. There is no in-memory cache. Create or update a skill and it is available to all connected agents on their very next call, with zero downtime.
 
 ```
 ┌──────────┐     tools/list      ┌───────────────┐
