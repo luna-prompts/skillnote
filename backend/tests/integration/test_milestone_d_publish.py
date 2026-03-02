@@ -1,11 +1,16 @@
 import io
 import json
 import os
+import time
 import urllib.error
 import urllib.request
 import zipfile
 
 import pytest
+
+
+def _unique(prefix: str) -> str:
+    return f"{prefix}-{int(time.time() * 1000) % 10_000_000}"
 
 BASE_URL = "http://127.0.0.1:8080"
 
@@ -63,9 +68,10 @@ def _multipart_publish(
 
 def test_publish_success():
     """Publish is open (no auth) — any caller can publish."""
-    status, body = _multipart_publish("admin-published-skill", "0.1.0")
+    slug = _unique("pub-ok")
+    status, body = _multipart_publish(slug, "0.1.0")
     assert status == 200
-    assert body["skill"] == "admin-published-skill"
+    assert body["skill"] == slug
     assert body["version"] == "0.1.0"
     assert body["checksumSha256"]
 
@@ -87,10 +93,11 @@ def test_publish_rejects_missing_skill_md():
 
 
 def test_publish_rejects_duplicate_version():
-    status, _ = _multipart_publish("dup-skill", "1.2.3")
+    slug = _unique("dup-skill")
+    status, _ = _multipart_publish(slug, "1.2.3")
     assert status == 200
 
-    status, body = _multipart_publish("dup-skill", "1.2.3")
+    status, body = _multipart_publish(slug, "1.2.3")
     assert status == 409
     assert body["error"]["code"] == "VERSION_EXISTS"
 

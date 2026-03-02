@@ -8,7 +8,9 @@ BACKEND_DIR="$PROJECT_DIR/backend"
 SKILLNOTE_HOST="${SKILLNOTE_HOST:-$(hostname -I 2>/dev/null | awk '{print $1}')}"
 SKILLNOTE_HOST="${SKILLNOTE_HOST:-localhost}"
 API_PORT="${SKILLNOTE_API_PORT:-8082}"
+MCP_PORT="${SKILLNOTE_MCP_PORT:-8083}"
 API_URL="http://${SKILLNOTE_HOST}:${API_PORT}"
+MCP_URL="http://${SKILLNOTE_HOST}:${MCP_PORT}/mcp"
 
 # Colors
 RED='\033[0;31m'
@@ -60,6 +62,20 @@ for i in $(seq 1 60); do
   sleep 2
 done
 
+log "Waiting for MCP server..."
+for i in $(seq 1 30); do
+  if curl -sf -X POST "http://localhost:${MCP_PORT}/mcp" \
+      -H "Content-Type: application/json" \
+      -H "Accept: application/json, text/event-stream" \
+      -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"healthcheck","version":"1"}}}' \
+      >/dev/null 2>&1; then
+    ok "MCP server ready on port ${MCP_PORT}"
+    break
+  fi
+  [ "$i" -eq 30 ] && { warn "MCP server not responding (non-fatal)"; break; }
+  sleep 1
+done
+
 # Get the backend network name
 BACKEND_NETWORK=$(docker network ls --format '{{.Name}}' | grep -m1 backend || echo "")
 if [ -z "$BACKEND_NETWORK" ]; then
@@ -99,6 +115,7 @@ echo -e "${GREEN}  SkillNote is running!${NC}"
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "  Frontend:  http://${SKILLNOTE_HOST}:3000"
 echo -e "  API:       ${API_URL}"
+echo -e "  MCP:       ${MCP_URL}"
 echo -e "  Postgres:  localhost:5433"
 echo ""
 echo -e "  ${CYAN}Containers:${NC}"
