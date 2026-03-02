@@ -110,7 +110,7 @@ echo ""
 echo -e "     ${BOLD}OpenClaw${NC}"
 echo -e "     \$ openclaw mcp add --transport http skillnote ${MCP_URL} --scope user"
 echo ""
-echo -e "     ${BOLD}Cursor / Windsurf${NC}  (add to mcp.json)"
+echo -e "     ${BOLD}OpenHands / Codex / Antigravity / Cursor${NC}  (add to mcp.json)"
 echo -e '     { "mcpServers": { "skillnote": { "url": "'"${MCP_URL}"'" } } }'
 echo ""
 echo -e "  ${BOLD}3. Use a skill in your agent${NC}"

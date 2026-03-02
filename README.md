@@ -87,17 +87,27 @@ SkillNote includes a built-in [Model Context Protocol](https://modelcontextproto
 - Calling the tool returns the full `SKILL.md` content
 - Skills added or removed in SkillNote are reflected immediately
 
-### Connect from Claude Code
+---
+
+<details>
+<summary><strong>Claude Code</strong></summary>
 
 ```bash
 claude mcp add --transport http skillnote http://localhost:8083/mcp --scope user
 ```
 
-Then restart Claude Code. Run `/mcp` to confirm `skillnote` is listed.
+Restart Claude Code, then run `/mcp` to confirm `skillnote` is listed.
 
-### Connect from OpenClaw
+</details>
 
-Add to `~/.openclaw/settings.json`:
+<details>
+<summary><strong>OpenClaw</strong></summary>
+
+```bash
+openclaw mcp add --transport http skillnote http://localhost:8083/mcp --scope user
+```
+
+Or add to `~/.openclaw/settings.json`:
 
 ```json
 {
@@ -110,24 +120,12 @@ Add to `~/.openclaw/settings.json`:
 }
 ```
 
-### Connect from Cursor
+</details>
 
-Add to your Cursor MCP config (`~/.cursor/mcp.json` or via Settings → MCP):
+<details>
+<summary><strong>OpenHands</strong></summary>
 
-```json
-{
-  "mcpServers": {
-    "skillnote": {
-      "type": "http",
-      "url": "http://localhost:8083/mcp"
-    }
-  }
-}
-```
-
-### Connect from Windsurf
-
-Add to `~/.codeium/windsurf/mcp_config.json`:
+In the OpenHands settings, add a new MCP server under **MCP Servers**:
 
 ```json
 {
@@ -140,13 +138,72 @@ Add to `~/.codeium/windsurf/mcp_config.json`:
 }
 ```
 
-### Connect from any MCP-compatible agent
+</details>
+
+<details>
+<summary><strong>Codex (OpenAI)</strong></summary>
+
+Add to your `codex.json` config:
+
+```json
+{
+  "mcpServers": {
+    "skillnote": {
+      "type": "http",
+      "url": "http://localhost:8083/mcp"
+    }
+  }
+}
+```
+
+</details>
+
+<details>
+<summary><strong>Antigravity</strong></summary>
+
+Add to your Antigravity MCP config:
+
+```json
+{
+  "mcpServers": {
+    "skillnote": {
+      "type": "http",
+      "url": "http://localhost:8083/mcp"
+    }
+  }
+}
+```
+
+</details>
+
+<details>
+<summary><strong>Cursor</strong></summary>
+
+Add to `~/.cursor/mcp.json` or via Settings → MCP:
+
+```json
+{
+  "mcpServers": {
+    "skillnote": {
+      "type": "http",
+      "url": "http://localhost:8083/mcp"
+    }
+  }
+}
+```
+
+</details>
+
+<details>
+<summary><strong>Any other MCP-compatible agent</strong></summary>
 
 Any agent that supports the MCP HTTP transport can connect:
 
 ```
 http://localhost:8083/mcp
 ```
+
+</details>
 
 ### Filter skills by collection or tag
 
