@@ -1,8 +1,5 @@
 node_modules/
 .next/
-.ralph/
-.ralphrc
-audit-screenshots/
 test-results/
 tests/
 !backend/tests/
