@@ -1,15 +1,16 @@
 'use client'
-import { useState, useCallback, useEffect, KeyboardEvent } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { Plus, X, BookOpen, Loader2, AlertCircle, Info } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { createSkill } from '@/lib/skills-store'
 import { validateSkillName, validateDescription, normalizeSkillName, NAME_MAX, DESC_MAX, type ValidationError } from '@/lib/skill-validation'
+import { CollectionPicker } from '@/components/collections/CollectionPicker'
 import { toast } from 'sonner'
 import { useRouter } from 'next/navigation'
 
 type NewSkillModalProps = {
   onClose: () => void
-  collections: string[]
+  collections?: string[]
 }
 
 function FieldError({ errors }: { errors: ValidationError[] }) {
@@ -38,8 +39,6 @@ function CharCounter({ current, max }: { current: number; max: number }) {
 export function NewSkillModal({ onClose, collections }: NewSkillModalProps) {
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
-  const [tagInput, setTagInput] = useState('')
-  const [tags, setTags] = useState<string[]>([])
   const [selectedCollections, setSelectedCollections] = useState<string[]>([])
   const [saving, setSaving] = useState(false)
   const [touched, setTouched] = useState<Record<string, boolean>>({})
@@ -55,20 +54,6 @@ export function NewSkillModal({ onClose, collections }: NewSkillModalProps) {
   const descErrors = touched.description ? validateDescription(description) : []
   const isValid = validateSkillName(name).length === 0 && validateDescription(description).length === 0
 
-  const addTag = useCallback(() => {
-    const t = tagInput.trim().toLowerCase().replace(/\s+/g, '-')
-    if (t && !tags.includes(t)) setTags(prev => [...prev, t])
-    setTagInput('')
-  }, [tagInput, tags])
-
-  const handleTagKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); addTag() }
-    if (e.key === 'Backspace' && !tagInput && tags.length) setTags(prev => prev.slice(0, -1))
-  }
-
-  const toggleCollection = (col: string) =>
-    setSelectedCollections(prev => prev.includes(col) ? prev.filter(c => c !== col) : [...prev, col])
-
   const handleSubmit = useCallback(async () => {
     setTouched({ name: true, description: true })
     if (!isValid) return
@@ -78,7 +63,6 @@ export function NewSkillModal({ onClose, collections }: NewSkillModalProps) {
         title: name.trim(),
         description: description.trim(),
         content_md: `---\nname: ${name.trim()}\ndescription: ${description.trim()}\n---\n\n# ${name.trim()}\n\n`,
-        tags,
         collections: selectedCollections,
       })
       toast.success(`Skill "${skill.title}" created`)
@@ -89,7 +73,7 @@ export function NewSkillModal({ onClose, collections }: NewSkillModalProps) {
     } finally {
       setSaving(false)
     }
-  }, [name, description, tags, selectedCollections, isValid, router, onClose])
+  }, [name, description, selectedCollections, isValid, router, onClose])
 
   const previewSlug = name.trim()
     ? name.trim().toLowerCase().replace(/[^a-z0-9\s-]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '')
@@ -163,48 +147,15 @@ export function NewSkillModal({ onClose, collections }: NewSkillModalProps) {
             </div>
           </div>
 
-          {/* Tags */}
-          <div>
-            <label className="block text-[12px] font-medium text-foreground mb-1.5">Tags</label>
-            <div className="flex flex-wrap gap-1.5 p-2 bg-muted/60 border border-border/60 rounded-lg min-h-[36px]">
-              {tags.map(tag => (
-                <span key={tag} className="flex items-center gap-1 px-2 py-0.5 bg-accent/10 text-accent text-[11px] font-mono rounded-md">
-                  {tag}
-                  <button onClick={() => setTags(prev => prev.filter(t => t !== tag))} className="hover:opacity-70"><X className="h-2.5 w-2.5" /></button>
-                </span>
-              ))}
-              <input
-                value={tagInput}
-                onChange={e => setTagInput(e.target.value)}
-                onKeyDown={handleTagKeyDown}
-                onBlur={addTag}
-                placeholder={tags.length === 0 ? 'type tag + Enter' : ''}
-                className="flex-1 min-w-[80px] bg-transparent text-[12px] font-mono focus:outline-none placeholder:text-muted-foreground/50"
-              />
-            </div>
-          </div>
-
           {/* Collections */}
-          {collections.length > 0 && (
-            <div>
-              <label className="block text-[12px] font-medium text-foreground mb-1.5">Collection</label>
-              <div className="flex flex-wrap gap-1.5">
-                {collections.map(col => (
-                  <button
-                    key={col}
-                    onClick={() => toggleCollection(col)}
-                    className={`px-2.5 py-1 rounded-lg text-[12px] border transition-colors ${
-                      selectedCollections.includes(col)
-                        ? 'bg-accent/10 text-accent border-accent/30'
-                        : 'bg-muted text-muted-foreground border-border/60 hover:text-foreground'
-                    }`}
-                  >
-                    {col}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
+          <div>
+            <label className="block text-[12px] font-medium text-foreground mb-1.5">Collection</label>
+            <CollectionPicker
+              selected={selectedCollections}
+              onChange={setSelectedCollections}
+              placeholder="Add to a collection..."
+            />
+          </div>
         </div>
 
         <div className="px-6 py-4 border-t border-border/60 flex items-center justify-end gap-2">

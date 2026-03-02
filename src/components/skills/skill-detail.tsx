@@ -3,7 +3,7 @@ import { useState, useCallback, useEffect, useRef } from 'react'
 import { TopBar } from '@/components/layout/topbar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Download, Pencil, GitBranch, Check, BookOpen, ArrowLeft, Hash, Link2, Star, Command, X, Keyboard, FileText, Search, FolderOpen, Share2, MoreHorizontal, Trash2, Clock, Tag, User, Terminal } from 'lucide-react'
+import { Download, Pencil, GitBranch, Check, BookOpen, ArrowLeft, Link2, Star, Command, X, Keyboard, FileText, Search, FolderOpen, Share2, MoreHorizontal, Trash2, Clock, User, Terminal } from 'lucide-react'
 import { Skill, type Comment } from '@/lib/mock-data'
 import { getSkills, updateSkill, deleteSkillById, saveSkillEdit } from '@/lib/skills-store'
 import { validateSkillName, validateDescription } from '@/lib/skill-validation'
@@ -13,6 +13,7 @@ import { toast } from 'sonner'
 import { formatRelative } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { SkillViewTab } from './tabs/SkillViewTab'
 import { SkillEditTab } from './tabs/SkillEditTab'
 import { InstallDialog } from './InstallDialog'
@@ -117,7 +118,6 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
   const [editorContent, setEditorContent] = useState(skill.content_md)
   const [titleValue, setTitleValue] = useState(skill.title)
   const [descriptionValue, setDescriptionValue] = useState(skill.description)
-  const [tagsValue, setTagsValue] = useState<string[]>(skill.tags)
   const [collectionsValue, setCollectionsValue] = useState<string[]>(skill.collections)
   const [starred, setStarred] = useState(false)
 
@@ -131,7 +131,6 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
       setEditorContent(skill.content_md)
       setTitleValue(skill.title)
       setDescriptionValue(skill.description)
-      setTagsValue(skill.tags)
       setCollectionsValue(skill.collections)
       setLastSyncedSlug(skill.slug)
       setInitialContentLoaded(!!skill.content_md)
@@ -140,7 +139,6 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
       setEditorContent(skill.content_md)
       setTitleValue(skill.title)
       setDescriptionValue(skill.description)
-      setTagsValue(skill.tags)
       setCollectionsValue(skill.collections)
       setInitialContentLoaded(true)
     }
@@ -182,7 +180,7 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
     }
   }, [prevSkill, nextSkill, router])
 
-  const editorDirty = editorContent !== skill.content_md || titleValue !== skill.title || descriptionValue !== skill.description || JSON.stringify(tagsValue) !== JSON.stringify(skill.tags) || JSON.stringify(collectionsValue) !== JSON.stringify(skill.collections)
+  const editorDirty = editorContent !== skill.content_md || titleValue !== skill.title || descriptionValue !== skill.description || JSON.stringify(collectionsValue) !== JSON.stringify(skill.collections)
 
   useEffect(() => {
     const saved = localStorage.getItem(`starred-${skill.slug}`)
@@ -211,15 +209,14 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
     setEditorContent(skill.content_md)
     setTitleValue(skill.title)
     setDescriptionValue(skill.description)
-    setTagsValue(skill.tags)
     setCollectionsValue(skill.collections)
     setShowDiscardConfirm(false)
-  }, [skill.content_md, skill.title, skill.description, skill.tags, skill.collections])
+  }, [skill.content_md, skill.title, skill.description, skill.collections])
 
   const handleSave = useCallback(async () => {
     setSaveToast('saving')
     try {
-      const updated = await saveSkillEdit(skill.slug, { title: titleValue, description: descriptionValue, content_md: editorContent, tags: tagsValue, collections: collectionsValue })
+      const updated = await saveSkillEdit(skill.slug, { title: titleValue, description: descriptionValue, content_md: editorContent, collections: collectionsValue })
       onSkillUpdated?.(updated)
       setSavedVersion(updated.current_version)
       setSaveToast('saved')
@@ -233,7 +230,7 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
       setSaveToast(false)
       toast.error('Failed to save')
     }
-  }, [skill.slug, titleValue, descriptionValue, editorContent, tagsValue, onSkillUpdated, router])
+  }, [skill.slug, titleValue, descriptionValue, editorContent, onSkillUpdated, router])
 
   const handleCancel = useCallback(() => {
     setActiveTab('view')
@@ -447,24 +444,16 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
                       {formatRelative(skill.updated_at)}
                     </span>
                     {skill.collections.map(c => (
-                      <span key={c} className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground bg-muted/60 px-2.5 py-1 rounded-full">
+                      <Link
+                        key={c}
+                        href={`/collections/${c.toLowerCase().replace(/\s+/g, '-')}`}
+                        className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground bg-muted/60 px-2.5 py-1 rounded-full hover:bg-muted hover:text-foreground transition-colors"
+                      >
                         <FolderOpen className="h-3 w-3" />
                         {c}
-                      </span>
+                      </Link>
                     ))}
                   </div>
-
-                  {/* Tags */}
-                  {tagsValue.length > 0 && (
-                    <div className="flex flex-wrap items-center gap-1.5 mb-6">
-                      <Tag className="h-3 w-3 text-muted-foreground/40 mr-0.5" />
-                      {tagsValue.map(tag => (
-                        <span key={tag} className="text-[11px] font-mono text-accent/80 bg-accent/8 border border-accent/15 px-2 py-0.5 rounded-md">
-                          {tag}
-                        </span>
-                      ))}
-                    </div>
-                  )}
 
                   {/* Action buttons */}
                   <div className="flex items-center gap-2">
@@ -506,7 +495,6 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
               { icon: Share2, label: 'Share', shortcut: '', group: 'Actions', action: () => { navigator.clipboard.writeText(window.location.href); setCommandPaletteOpen(false) } },
               { icon: BookOpen, label: 'Skills', shortcut: '', group: 'Navigate', action: () => { router.push('/'); setCommandPaletteOpen(false) } },
               { icon: FolderOpen, label: 'Collections', shortcut: '', group: 'Navigate', action: () => { router.push('/collections'); setCommandPaletteOpen(false) } },
-              { icon: Hash, label: 'Tags', shortcut: '', group: 'Navigate', action: () => { router.push('/tags'); setCommandPaletteOpen(false) } },
               ...allSkills.map(s => ({
                 icon: FileText, label: s.title, shortcut: '', group: 'Skills',
                 action: () => { router.push(`/skills/${s.slug}`); setCommandPaletteOpen(false) },
@@ -533,8 +521,6 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
                 skillDescription={descriptionValue}
                 setSkillDescription={setDescriptionValue}
                 skillSlug={skill.slug}
-                skillTags={tagsValue}
-                setSkillTags={setTagsValue}
                 skillCollections={collectionsValue}
                 setSkillCollections={setCollectionsValue}
                 openFullscreen={true}

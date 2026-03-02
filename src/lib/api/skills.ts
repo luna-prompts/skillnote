@@ -5,7 +5,6 @@ type ApiSkillListItem = {
   name: string
   slug: string
   description: string
-  tags?: string[]
   collections?: string[]
   latestVersion?: string
   currentVersion?: number
@@ -17,7 +16,6 @@ type ApiSkillDetail = {
   slug: string
   description: string
   content_md: string
-  tags: string[]
   collections: string[]
   current_version: number
   created_at: string
@@ -39,7 +37,6 @@ function listItemToSkill(item: ApiSkillListItem): Skill {
     title: item.name,
     description: item.description,
     content_md: '',
-    tags: item.tags || [],
     collections: item.collections || [],
     current_version: item.currentVersion || 0,
     created_at: now,
@@ -53,7 +50,6 @@ function detailToSkill(item: ApiSkillDetail, existingComments?: Comment[]): Skil
     title: item.name,
     description: item.description,
     content_md: item.content_md || '',
-    tags: item.tags || [],
     collections: item.collections || [],
     current_version: item.current_version || 0,
     created_at: item.created_at,
@@ -80,7 +76,6 @@ export async function createSkillApi(data: {
   slug: string
   description: string
   content_md: string
-  tags: string[]
   collections: string[]
 }): Promise<Skill> {
   const detail = await apiRequest<ApiSkillDetail>('/v1/skills', {
@@ -94,7 +89,6 @@ export async function updateSkillApi(slug: string, data: {
   name?: string
   description?: string
   content_md?: string
-  tags?: string[]
   collections?: string[]
 }): Promise<Skill> {
   const detail = await apiRequest<ApiSkillDetail>(`/v1/skills/${slug}`, {
@@ -139,28 +133,12 @@ export async function deleteCommentApi(slug: string, commentId: string): Promise
   await apiRequest(`/v1/skills/${slug}/comments/${commentId}`, { method: 'DELETE' })
 }
 
-export async function fetchTagsApi(): Promise<{ name: string; skill_count: number }[]> {
-  return apiRequest('/v1/tags')
-}
-
-export async function renameTagApi(oldName: string, newName: string): Promise<void> {
-  await apiRequest(`/v1/tags/${encodeURIComponent(oldName)}`, {
-    method: 'PATCH',
-    body: JSON.stringify({ new_name: newName }),
-  })
-}
-
-export async function deleteTagApi(name: string): Promise<void> {
-  await apiRequest(`/v1/tags/${encodeURIComponent(name)}`, { method: 'DELETE' })
-}
-
 // Content versions
 type ApiContentVersion = {
   version: number
   title: string
   description: string
   content_md: string
-  tags: string[]
   collections: string[]
   is_latest: boolean
   created_at: string
@@ -173,7 +151,6 @@ export async function fetchContentVersions(slug: string): Promise<ContentVersion
     title: v.title,
     description: v.description,
     content_md: v.content_md,
-    tags: v.tags || [],
     collections: v.collections || [],
     is_latest: v.is_latest,
     created_at: v.created_at,

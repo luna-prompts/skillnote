@@ -7,7 +7,6 @@ Calling a tool returns the full SKILL.md content.
 
 Filter skills via URL query params:
   ?collections=frontend,enterprise
-  ?tags=security,testing
 """
 
 from __future__ import annotations
@@ -51,7 +50,7 @@ class SkillTool(Tool):
 
 
 class SkillNoteToolProvider(Provider):
-    """Queries PostgreSQL for skills, optionally filtered by collections/tags.
+    """Queries PostgreSQL for skills, optionally filtered by collections.
 
     Called on every list_tools/get_tool request so database changes
     are reflected immediately without server restart.
@@ -61,23 +60,19 @@ class SkillNoteToolProvider(Provider):
         super().__init__()
         self.engine = db_engine
 
-    def _parse_filters(self) -> tuple[list[str], list[str]]:
-        """Extract collections and tags filters from the MCP connection URL.
+    def _parse_filters(self) -> list[str]:
+        """Extract collections filter from the MCP connection URL.
 
         FastMCP passes query params through the transport layer. We parse
         the SKILLNOTE_MCP_FILTER_* env vars as a fallback for testing.
         """
         collections = []
-        tags = []
         filter_collections = os.environ.get("SKILLNOTE_MCP_FILTER_COLLECTIONS", "")
-        filter_tags = os.environ.get("SKILLNOTE_MCP_FILTER_TAGS", "")
         if filter_collections:
             collections = [c.strip() for c in filter_collections.split(",") if c.strip()]
-        if filter_tags:
-            tags = [t.strip() for t in filter_tags.split(",") if t.strip()]
-        return collections, tags
+        return collections
 
-    def _build_query(self, collections: list[str], tags: list[str], slug: str | None = None):
+    def _build_query(self, collections: list[str], slug: str | None = None):
         """Build a SQL query for skills with optional filters."""
         conditions = []
         params: dict[str, Any] = {}
@@ -90,24 +85,20 @@ class SkillNoteToolProvider(Provider):
             conditions.append("collections && :collections")
             params["collections"] = collections
 
-        if tags:
-            conditions.append("tags && :tags")
-            params["tags"] = tags
-
         where = ""
         if conditions:
             where = "WHERE " + " AND ".join(conditions)
 
         query = text(
-            f"SELECT slug, name, description, content_md, tags, collections "
+            f"SELECT slug, name, description, content_md, collections "
             f"FROM skills {where} ORDER BY name"
         )
         return query, params
 
     def _fetch_skills(self, slug: str | None = None) -> list[dict]:
         """Fetch skills from the database."""
-        collections, tags = self._parse_filters()
-        query, params = self._build_query(collections, tags, slug)
+        collections = self._parse_filters()
+        query, params = self._build_query(collections, slug)
 
         try:
             with Session(self.engine) as session:

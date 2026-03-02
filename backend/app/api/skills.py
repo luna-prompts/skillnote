@@ -24,6 +24,11 @@ def _slugify(name: str) -> str:
     return s
 
 
+def _skill_total_versions(db: Session, skill_id) -> int:
+    from app.db.models.skill_content_version import SkillContentVersion as _SCV
+    return db.query(_SCV).filter(_SCV.skill_id == skill_id).count()
+
+
 def _get_skill(slug: str, db: Session) -> Skill:
     skill_row = db.query(Skill).filter(Skill.slug == slug).first()
     if not skill_row:
@@ -48,7 +53,6 @@ def _create_content_version(db: Session, skill: Skill) -> SkillContentVersion:
         title=skill.name,
         description=skill.description,
         content_md=skill.content_md or "",
-        tags=skill.tags or [],
         collections=skill.collections or [],
         is_latest=True,
     )
@@ -75,7 +79,6 @@ def list_skills(db: Session = Depends(get_db)):
                 name=skill.name,
                 slug=skill.slug,
                 description=skill.description,
-                tags=skill.tags or [],
                 collections=skill.collections or [],
                 latestVersion=latest.version if latest else None,
                 status=latest.status if latest else None,
@@ -163,7 +166,6 @@ def set_latest_version(
     skill_row.name = target.title
     skill_row.description = target.description
     skill_row.content_md = target.content_md
-    skill_row.tags = target.tags or []
     skill_row.collections = target.collections or []
     skill_row.current_version = target.version
     skill_row.updated_at = datetime.now(timezone.utc)
@@ -178,7 +180,18 @@ def set_latest_version(
 
     db.commit()
     db.refresh(skill_row)
-    return skill_row
+    return SkillDetail(
+        id=skill_row.id,
+        name=skill_row.name,
+        slug=skill_row.slug,
+        description=skill_row.description,
+        content_md=skill_row.content_md,
+        collections=skill_row.collections or [],
+        current_version=skill_row.current_version or 0,
+        total_versions=_skill_total_versions(db, skill_row.id),
+        created_at=skill_row.created_at,
+        updated_at=skill_row.updated_at,
+    )
 
 
 @router.post("/{skill_slug}/content-versions/{version}/restore", response_model=SkillDetail)
@@ -201,7 +214,6 @@ def restore_version(
     skill_row.name = target.title
     skill_row.description = target.description
     skill_row.content_md = target.content_md
-    skill_row.tags = target.tags or []
     skill_row.collections = target.collections or []
     skill_row.updated_at = datetime.now(timezone.utc)
 
@@ -218,7 +230,18 @@ def restore_version(
 
     db.commit()
     db.refresh(skill_row)
-    return skill_row
+    return SkillDetail(
+        id=skill_row.id,
+        name=skill_row.name,
+        slug=skill_row.slug,
+        description=skill_row.description,
+        content_md=skill_row.content_md,
+        collections=skill_row.collections or [],
+        current_version=skill_row.current_version or 0,
+        total_versions=_skill_total_versions(db, skill_row.id),
+        created_at=skill_row.created_at,
+        updated_at=skill_row.updated_at,
+    )
 
 
 @router.get("/{skill_slug}", response_model=SkillDetail)
@@ -227,7 +250,18 @@ def get_skill(
     db: Session = Depends(get_db),
 ):
     skill_row = _get_skill(skill_slug, db)
-    return skill_row
+    return SkillDetail(
+        id=skill_row.id,
+        name=skill_row.name,
+        slug=skill_row.slug,
+        description=skill_row.description,
+        content_md=skill_row.content_md,
+        collections=skill_row.collections or [],
+        current_version=skill_row.current_version or 0,
+        total_versions=_skill_total_versions(db, skill_row.id),
+        created_at=skill_row.created_at,
+        updated_at=skill_row.updated_at,
+    )
 
 
 @router.post("", response_model=SkillDetail, status_code=201)
@@ -245,7 +279,6 @@ def create_skill(
         slug=payload.slug,
         description=payload.description,
         content_md=payload.content_md,
-        tags=payload.tags,
         collections=payload.collections,
         current_version=0,
     )
@@ -257,7 +290,18 @@ def create_skill(
 
     db.commit()
     db.refresh(skill)
-    return skill
+    return SkillDetail(
+        id=skill.id,
+        name=skill.name,
+        slug=skill.slug,
+        description=skill.description,
+        content_md=skill.content_md,
+        collections=skill.collections or [],
+        current_version=skill.current_version or 0,
+        total_versions=_skill_total_versions(db, skill.id),
+        created_at=skill.created_at,
+        updated_at=skill.updated_at,
+    )
 
 
 @router.patch("/{skill_slug}", response_model=SkillDetail)
@@ -281,8 +325,6 @@ def update_skill(
         skill_row.description = payload.description
     if payload.content_md is not None:
         skill_row.content_md = payload.content_md
-    if payload.tags is not None:
-        skill_row.tags = payload.tags
     if payload.collections is not None:
         skill_row.collections = payload.collections
     skill_row.updated_at = datetime.now(timezone.utc)
@@ -292,7 +334,18 @@ def update_skill(
 
     db.commit()
     db.refresh(skill_row)
-    return skill_row
+    return SkillDetail(
+        id=skill_row.id,
+        name=skill_row.name,
+        slug=skill_row.slug,
+        description=skill_row.description,
+        content_md=skill_row.content_md,
+        collections=skill_row.collections or [],
+        current_version=skill_row.current_version or 0,
+        total_versions=_skill_total_versions(db, skill_row.id),
+        created_at=skill_row.created_at,
+        updated_at=skill_row.updated_at,
+    )
 
 
 @router.delete("/{skill_slug}", status_code=204)

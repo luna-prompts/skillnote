@@ -2,7 +2,7 @@
 Unit tests for the SkillNote MCP server.
 
 Tests cover:
-- _build_query: slug/collections/tags filter combinations
+- _build_query: slug/collections filter combinations
 - _parse_filters: env-var parsing
 - _to_tool: field mapping and NULL handling
 - _fetch_skills: empty-string slug bug (was: `if slug:` → now `if slug is not None:`)
@@ -48,7 +48,6 @@ def make_provider():
                 name TEXT NOT NULL,
                 description TEXT NOT NULL DEFAULT '',
                 content_md TEXT DEFAULT '',
-                tags TEXT DEFAULT '{}',
                 collections TEXT DEFAULT '{}'
             )
         """))
@@ -57,13 +56,13 @@ def make_provider():
 
 
 def insert_skill(engine, slug, name="Skill Name", description="desc",
-                 content_md="## content", tags="[]", collections="[]"):
+                 content_md="## content", collections="[]"):
     with engine.connect() as conn:
         conn.execute(text(
-            "INSERT INTO skills (slug, name, description, content_md, tags, collections) "
-            "VALUES (:slug, :name, :desc, :content, :tags, :collections)"
+            "INSERT INTO skills (slug, name, description, content_md, collections) "
+            "VALUES (:slug, :name, :desc, :content, :collections)"
         ), {"slug": slug, "name": name, "desc": description,
-            "content": content_md, "tags": tags, "collections": collections})
+            "content": content_md, "collections": collections})
         conn.commit()
 
 
@@ -77,20 +76,20 @@ class TestBuildQuery:
         self.p = SkillNoteToolProvider(db_engine=MagicMock())
 
     def test_no_filters_no_slug(self):
-        q, params = self.p._build_query([], [], None)
+        q, params = self.p._build_query([], None)
         sql = str(q)
         assert "WHERE" not in sql
         assert params == {}
 
     def test_slug_filter_added(self):
-        q, params = self.p._build_query([], [], "my-slug")
+        q, params = self.p._build_query([], "my-slug")
         assert "slug = :slug" in str(q)
         assert params["slug"] == "my-slug"
 
     def test_empty_string_slug_adds_filter(self):
         """BUG FIX: empty string '' must still produce WHERE slug = :slug,
         not be treated as falsy and skipped."""
-        q, params = self.p._build_query([], [], "")
+        q, params = self.p._build_query([], "")
         assert "slug = :slug" in str(q), (
             "Empty string slug should still add a slug condition — "
             "if slug: skips it, if slug is not None: does not"
@@ -98,39 +97,27 @@ class TestBuildQuery:
         assert params["slug"] == ""
 
     def test_none_slug_no_filter(self):
-        q, params = self.p._build_query([], [], None)
+        q, params = self.p._build_query([], None)
         # The SELECT clause contains "slug" as a column name; we only check
         # that no WHERE condition on slug was injected.
         assert "slug = :slug" not in str(q)
         assert "slug" not in params
 
     def test_collections_filter(self):
-        q, params = self.p._build_query(["devops"], [], None)
+        q, params = self.p._build_query(["devops"], None)
         assert "collections" in str(q)
         assert params["collections"] == ["devops"]
 
-    def test_tags_filter(self):
-        q, params = self.p._build_query([], ["admin"], None)
-        assert "tags" in str(q)
-        assert params["tags"] == ["admin"]
-
-    def test_slug_and_tags_combined(self):
-        q, params = self.p._build_query([], ["admin"], "my-slug")
-        sql = str(q)
-        assert "slug = :slug" in sql
-        assert "tags" in sql
-        assert params["slug"] == "my-slug"
-        assert params["tags"] == ["admin"]
-
-    def test_all_filters(self):
-        q, params = self.p._build_query(["frontend"], ["admin"], "the-slug")
+    def test_slug_and_collections_combined(self):
+        q, params = self.p._build_query(["devops"], "my-slug")
         sql = str(q)
         assert "slug = :slug" in sql
         assert "collections" in sql
-        assert "tags" in sql
+        assert params["slug"] == "my-slug"
+        assert params["collections"] == ["devops"]
 
     def test_order_by_always_present(self):
-        q, _ = self.p._build_query([], [], None)
+        q, _ = self.p._build_query([], None)
         assert "ORDER BY name" in str(q)
 
 
@@ -146,36 +133,28 @@ class TestParseFilters:
     def test_no_env_vars(self):
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop("SKILLNOTE_MCP_FILTER_COLLECTIONS", None)
-            os.environ.pop("SKILLNOTE_MCP_FILTER_TAGS", None)
-            colls, tags = self.p._parse_filters()
+            colls = self.p._parse_filters()
         assert colls == []
-        assert tags == []
 
     def test_collections_parsed(self):
         with patch.dict(os.environ, {"SKILLNOTE_MCP_FILTER_COLLECTIONS": "frontend,backend"}):
-            colls, tags = self.p._parse_filters()
+            colls = self.p._parse_filters()
         assert colls == ["frontend", "backend"]
-        assert tags == []
-
-    def test_tags_parsed(self):
-        with patch.dict(os.environ, {"SKILLNOTE_MCP_FILTER_TAGS": "admin,security"}):
-            colls, tags = self.p._parse_filters()
-        assert tags == ["admin", "security"]
 
     def test_whitespace_stripped(self):
         with patch.dict(os.environ, {"SKILLNOTE_MCP_FILTER_COLLECTIONS": " a , b , c "}):
-            colls, _ = self.p._parse_filters()
+            colls = self.p._parse_filters()
         assert colls == ["a", "b", "c"]
 
     def test_empty_string_env_var_returns_empty_list(self):
-        with patch.dict(os.environ, {"SKILLNOTE_MCP_FILTER_TAGS": ""}):
-            _, tags = self.p._parse_filters()
-        assert tags == []
+        with patch.dict(os.environ, {"SKILLNOTE_MCP_FILTER_COLLECTIONS": ""}):
+            colls = self.p._parse_filters()
+        assert colls == []
 
     def test_trailing_comma_ignored(self):
-        with patch.dict(os.environ, {"SKILLNOTE_MCP_FILTER_TAGS": "admin,"}):
-            _, tags = self.p._parse_filters()
-        assert tags == ["admin"]
+        with patch.dict(os.environ, {"SKILLNOTE_MCP_FILTER_COLLECTIONS": "admin,"}):
+            colls = self.p._parse_filters()
+        assert colls == ["admin"]
 
 
 # ---------------------------------------------------------------------------

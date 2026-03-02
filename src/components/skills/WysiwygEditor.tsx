@@ -47,19 +47,16 @@ interface Props {
   /** Called when editor mode changes so parent can react (e.g. hide metadata in raw mode) */
   onModeChange?: (mode: EditorMode) => void
   /** Skill metadata — used to compose full SKILL.md frontmatter in raw mode */
-  skillMeta?: { name: string; description: string; tags?: string[] }
+  skillMeta?: { name: string; description: string }
   /** Called when frontmatter fields are edited in raw mode */
-  onMetaChange?: (meta: { name: string; description: string; tags?: string[] }) => void
+  onMetaChange?: (meta: { name: string; description: string }) => void
   /** Extra className for the root wrapper */
   className?: string
 }
 
 /** Compose full SKILL.md content with frontmatter from metadata + body */
-function composeSkillMd(meta: { name: string; description: string; tags?: string[] }, body: string): string {
+function composeSkillMd(meta: { name: string; description: string }, body: string): string {
   const lines = ['---', `name: ${meta.name}`, `description: ${meta.description}`]
-  if (meta.tags && meta.tags.length > 0) {
-    lines.push(`tags: [${meta.tags.join(', ')}]`)
-  }
   lines.push('---', '')
   const bodyTrimmed = body.replace(/^\n+/, '')
   return lines.join('\n') + (bodyTrimmed ? '\n' + bodyTrimmed : '\n')
@@ -236,7 +233,6 @@ export function WysiwygEditor({ value, onChange, renderToolbar, onModeChange, sk
         onMetaChange({
           name: typeof data.name === 'string' ? data.name : skillMeta?.name ?? '',
           description: typeof data.description === 'string' ? data.description : skillMeta?.description ?? '',
-          tags: Array.isArray(data.tags) ? data.tags.map(String) : skillMeta?.tags,
         })
       }
       // Update the body content (without frontmatter)

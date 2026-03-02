@@ -61,11 +61,10 @@ class TestSlugAutoUpdate:
                 "slug": self.ORIGINAL_NAME,
                 "description": "Test skill for slug auto-update",
                 "content_md": "# Original",
-                "tags": ["test"],
                 "collections": [],
             },
         )
-        assert status == 200, f"Create failed: {body}"
+        assert status == 201, f"Create failed: {body}"
         return body
 
     def test_slug_updates_on_rename(self):
@@ -150,7 +149,6 @@ class TestSlugAutoUpdate:
                 "slug": self.RENAMED_NAME,
                 "description": "Second skill",
                 "content_md": "# Second",
-                "tags": [],
                 "collections": [],
             },
         )
@@ -202,7 +200,6 @@ class TestNameValidation:
                 "slug": "invaliduppercase",
                 "description": "Test",
                 "content_md": "",
-                "tags": [],
                 "collections": [],
             },
         )
@@ -217,7 +214,6 @@ class TestNameValidation:
                 "slug": "has-spaces",
                 "description": "Test",
                 "content_md": "",
-                "tags": [],
                 "collections": [],
             },
         )
@@ -232,7 +228,6 @@ class TestNameValidation:
                 "slug": "claude-helper",
                 "description": "Test",
                 "content_md": "",
-                "tags": [],
                 "collections": [],
             },
         )
@@ -247,7 +242,6 @@ class TestNameValidation:
                 "slug": "",
                 "description": "Test",
                 "content_md": "",
-                "tags": [],
                 "collections": [],
             },
         )
@@ -263,7 +257,6 @@ class TestNameValidation:
                 "slug": "valid-test-skill",
                 "description": "Test",
                 "content_md": "",
-                "tags": [],
                 "collections": [],
             },
         )
@@ -285,7 +278,6 @@ class TestNameValidation:
                 "slug": "a" * 65,
                 "description": "Test",
                 "content_md": "",
-                "tags": [],
                 "collections": [],
             },
         )

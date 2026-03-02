@@ -49,7 +49,6 @@ export type ContentVersion = {
   title: string
   description: string
   content_md: string
-  tags: string[]
   collections: string[]
   is_latest: boolean
   created_at: string
@@ -60,7 +59,6 @@ export type Skill = {
   title: string
   description: string
   content_md: string
-  tags: string[]
   collections: string[]
   current_version: number
   /** Total number of content versions (used for next version counter) */
@@ -81,27 +79,11 @@ export type Collection = {
   updated_at: string
 }
 
-export type Tag = {
-  id: string
-  name: string
-  skill_count: number
-}
-
 export const mockTeamMembers: TeamMember[] = [
   { name: 'Alice', color: '#8b5cf6' },
   { name: 'Bob', color: '#ef4444' },
   { name: 'Carol', color: '#3b82f6' },
   { name: 'Dan', color: '#f59e0b' },
-]
-
-export const mockTags: Tag[] = [
-  { id: '1', name: 'api', skill_count: 8 },
-  { id: '2', name: 'react', skill_count: 12 },
-  { id: '3', name: 'typescript', skill_count: 6 },
-  { id: '4', name: 'testing', skill_count: 5 },
-  { id: '5', name: 'workflow', skill_count: 9 },
-  { id: '6', name: 'devops', skill_count: 4 },
-  { id: '7', name: 'nextjs', skill_count: 7 },
 ]
 
 export const mockCollections: Collection[] = [
@@ -117,7 +99,6 @@ export const mockSkills: Skill[] = [
     title: 'React Component Patterns',
     description: 'Best practices for building reusable React components including compound components, render props, and hooks.',
     content_md: `\`\`\`tsx\nfunction useDebounce<T>(value: T, delay: number): T {\n  const [debounced, setDebounced] = useState(value)\n  useEffect(() => {\n    const timer = setTimeout(() => setDebounced(value), delay)\n    return () => clearTimeout(timer)\n  }, [value, delay])\n  return debounced\n}\n\`\`\``,
-    tags: ['react', 'typescript'],
     collections: ['Frontend'],
     current_version: 3,
     created_by: 'Nova Vex',
@@ -176,7 +157,6 @@ export const mockSkills: Skill[] = [
     title: 'API Error Handling',
     description: 'Structured approach to handling errors in REST APIs with proper status codes and response formats.',
     content_md: `- 400 Bad Request — invalid input\n- 401 Unauthorized — missing/invalid auth\n- 403 Forbidden — insufficient permissions\n- 404 Not Found — resource missing\n- 500 Internal Server Error — unexpected failure`,
-    tags: ['api', 'typescript'],
     collections: ['Backend'],
     current_version: 1,
     created_by: 'Dev Patel',
@@ -191,7 +171,6 @@ export const mockSkills: Skill[] = [
     title: 'TDD Workflow',
     description: 'Test-driven development workflow for writing reliable, maintainable code from day one.',
     content_md: `// Step 2: Minimal implementation\nfunction add(a: number, b: number) {\n  return a + b\n}\n\`\`\``,
-    tags: ['testing', 'workflow'],
     collections: ['Frontend', 'Backend'],
     current_version: 1,
     created_by: 'Sarah Kim',
@@ -203,7 +182,6 @@ export const mockSkills: Skill[] = [
     title: 'Next.js App Router Patterns',
     description: 'Routing, layouts, server components, and data fetching patterns for Next.js 13+ App Router.',
     content_md: `Default: Server Components (no JS sent to client)\nAdd \`'use client'\` only when you need browser APIs or interactivity.`,
-    tags: ['nextjs', 'react'],
     collections: ['Frontend'],
     current_version: 1,
     created_by: 'Jordan Lee',
@@ -216,7 +194,6 @@ export const mockSkills: Skill[] = [
     description: 'Manage Trello boards, lists, and cards via the Trello REST API.',
     current_version: 1,
     content_md: `---\nname: trello\ndescription: Manage Trello boards, lists, and cards via the Trello REST API.\nhomepage: https://developer.atlassian.com/cloud/trello/rest/\nmetadata: {"clawdbot":{"emoji":"📋","requires":{"bins":["jq"],"env":["TRELLO_API_KEY","TRELLO_TOKEN"]}}}\n---\n# Trello Skill\n\nManage Trello boards, lists, and cards directly from Clawdbot.\n\n## Setup\n\n1. Get your API key: https://trello.com/app-key\n2. Generate a token (click "Token" link on that page)\n3. Set environment variables:\n\n\`\`\`bash\nexport TRELLO_API_KEY="your-api-key"\nexport TRELLO_TOKEN="your-token"\n\`\`\`\n\n## Usage\n\nAll commands use curl to hit the Trello REST API.\n\n### List boards\n\n\`\`\`bash\ncurl -s "https://api.trello.com/1/members/me/boards?key=\$TRELLO_API_KEY&token=\$TRELLO_TOKEN" | jq '.[] | {name, id}'\n\`\`\`\n\n### List lists in a board\n\n\`\`\`bash\ncurl -s "https://api.trello.com/1/boards/{boardId}/lists?key=\$TRELLO_API_KEY&token=\$TRELLO_TOKEN" | jq '.[] | {name, id}'\n\`\`\``,
-    tags: ['api', 'productivity'],
     collections: ['Integrations'],
     created_at: '2026-02-23T00:00:00Z',
     updated_at: '2026-02-23T00:00:00Z',
@@ -226,7 +203,6 @@ export const mockSkills: Skill[] = [
     title: 'Docker Compose Setup',
     description: 'Standard Docker Compose configuration for local development with postgres, redis, and app containers.',
     content_md: `\`\`\`yaml\nservices:\n  app:\n    build: .\n    ports:\n      - "3000:3000"\n    depends_on:\n      - db\n  db:\n    image: postgres:16\n    environment:\n      POSTGRES_PASSWORD: password\n    volumes:\n      - pgdata:/var/lib/postgresql/data\nvolumes:\n  pgdata:\n\`\`\``,
-    tags: ['devops', 'workflow'],
     collections: ['DevOps'],
     current_version: 1,
     created_at: '2026-02-01T10:00:00Z',

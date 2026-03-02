@@ -24,10 +24,6 @@ function NewSkillContent() {
   const [name, setName] = useState(() => normalizeSkillName(searchParams.get('name') || ''))
   const [description, setDescription] = useState(() => searchParams.get('description') || '')
   const [content, setContent] = useState(() => searchParams.get('content') || '')
-  const [tags, setTags] = useState<string[]>(() => {
-    const t = searchParams.get('tags')
-    return t ? t.split(',').filter(Boolean) : []
-  })
   const [collections, setCollections] = useState<string[]>(() => {
     const c = searchParams.get('collections')
     return c ? c.split(',').filter(Boolean) : []
@@ -71,7 +67,6 @@ function NewSkillContent() {
         title: name.trim(),
         description: description.trim(),
         content_md: bodyContent,
-        tags,
         collections,
       })
       toast.success(`"${skill.title}" created`)
@@ -81,7 +76,7 @@ function NewSkillContent() {
     } finally {
       setSaving(false)
     }
-  }, [name, description, content, tags, collections, router])
+  }, [name, description, content, collections, router])
 
   return (
     <SkillEditTab
@@ -96,8 +91,6 @@ function NewSkillContent() {
       setSkillTitle={setName}
       skillDescription={description}
       setSkillDescription={setDescription}
-      skillTags={tags}
-      setSkillTags={setTags}
       skillCollections={collections}
       setSkillCollections={setCollections}
       saving={saving}
