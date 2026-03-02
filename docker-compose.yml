@@ -4,7 +4,7 @@ name: skillnote
 # Set SKILLNOTE_HOST to your machine's IP or domain.
 # All services use this single value for URLs and CORS.
 #
-#   SKILLNOTE_HOST=192.168.29.69 docker compose up --build -d
+#   SKILLNOTE_HOST=192.168.1.100 docker compose up --build -d
 #
 # Defaults to localhost (works when browser is on the same machine).
 # ─────────────────────────────────────────────────────────────────
