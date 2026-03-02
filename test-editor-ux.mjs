@@ -71,7 +71,6 @@ async function clickRendered(p) {
 
 try {
   browser = await chromium.launch({
-    
     headless: true,
     args: ['--no-sandbox'],
   })
