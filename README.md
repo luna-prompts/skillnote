@@ -274,13 +274,12 @@ http://localhost:8083/mcp
 
 </details>
 
-### Filter skills by collection or tag
+### Filter skills by collection
 
 Use environment variables to serve only a subset of skills to a specific agent:
 
 ```bash
 SKILLNOTE_MCP_FILTER_COLLECTIONS=devops,security docker compose up -d mcp
-SKILLNOTE_MCP_FILTER_TAGS=admin,internal docker compose up -d mcp
 ```
 
 This is useful for scoping what different teams or agents can see.
@@ -303,8 +302,8 @@ Every save creates a snapshot. Browse the full history, compare versions, and re
   <img src="docs/screenshots/version-history.png" width="100%" alt="Version History" />
 </p>
 
-### Tags & Collections
-Organize skills with tags and collections. Filter, search, and browse by category. Rename or delete tags across all skills at once.
+### Collections
+Organise skills into collections. Filter, search, and browse by category. Add or remove skills from any collection with inline confirmation.
 
 ### Multi-Agent Install
 Install skills as local files to any AI coding agent from the web UI or CLI. Supported agents:
@@ -446,7 +445,6 @@ npm run dev                         # http://localhost:3000
 | `SKILLNOTE_CORS_ORIGINS`          | *(auto from host)*      | Comma-separated CORS origins             |
 | `NEXT_PUBLIC_API_BASE_URL`        | `http://localhost:8082` | Frontend API endpoint                    |
 | `SKILLNOTE_MCP_FILTER_COLLECTIONS`| *(all)*                 | Comma-separated collections to expose via MCP |
-| `SKILLNOTE_MCP_FILTER_TAGS`       | *(all)*                 | Comma-separated tags to expose via MCP   |
 
 ---
 
@@ -480,14 +478,6 @@ curl http://localhost:8082/v1/skills \
 | `POST`   | `/v1/publish`                                                  | Publish a bundle         |
 | `GET`    | `/v1/skills/{slug}/{version}/download`                        | Download a bundle        |
 
-### Tags
-
-| Method   | Endpoint             | Description                         |
-| -------- | -------------------- | ----------------------------------- |
-| `GET`    | `/v1/tags`           | List all tags with counts           |
-| `PATCH`  | `/v1/tags/{name}`    | Rename a tag (updates all skills)   |
-| `DELETE` | `/v1/tags/{name}`    | Delete a tag (removes from all)     |
-
 ### Auth
 
 | Method   | Endpoint                  | Description          |
@@ -520,8 +510,7 @@ skillnote/
 │   │   ├── skills/new/           #     Create skill (full-page editor)
 │   │   ├── skills/[slug]/        #     Skill detail + edit
 │   │   ├── collections/          #     Browse by collection
-│   │   ├── tags/                 #     Browse by tag
-│   │   └── settings/             #     About
+│   │   └── settings/             #     Settings
 │   ├── components/               #   UI components
 │   │   ├── skills/               #     Editor, detail view, install strip
 │   │   ├── layout/               #     Sidebar, topbar
@@ -625,7 +614,7 @@ docker compose up --build -d
 
 - [x] Skill editor with live preview and SKILL.md validation
 - [x] Version history with restore
-- [x] Tags and collections
+- [x] Collections
 - [x] REST API (CRUD, versioning, publish pipeline)
 - [x] MCP server: expose all skills as tools for any AI agent
 - [x] One-command Docker Compose stack (postgres + api + mcp + web)
