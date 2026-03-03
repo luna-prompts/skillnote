@@ -102,52 +102,82 @@ class ConnectionTrackerMiddleware(BaseHTTPMiddleware):
             scope  = request.query_params.get("collections") or None
             existing_sid = request.headers.get("mcp-session-id")
 
-            # 1. Update known session by header
-            if existing_sid and existing_sid in _active_connections:
-                sess = _active_connections[existing_sid]
-                sess["last_seen"]  = time.time()
-                sess["call_count"] = sess.get("call_count", 0) + 1
-
-            # 2. Fallback: match by (remote, ua) for clients that omit the header
-            elif not existing_sid:
-                for sess in _active_connections.values():
-                    if sess.get("remote") == remote and sess.get("user_agent") == ua:
-                        sess["last_seen"]  = time.time()
-                        sess["call_count"] = sess.get("call_count", 0) + 1
-                        break
-
-            # 3. Session termination
-            if request.method == "DELETE" and existing_sid:
-                _active_connections.pop(existing_sid, None)
-                return await call_next(request)
-
-            # 4. Detect initialize and pre-create session BEFORE call_next
-            #    so the entry exists even if the response header is never read.
+            # ── 1. Parse body early — must happen before any branching ────────
+            # Starlette caches request.body() so downstream handlers are unaffected.
+            # Detecting `initialize` here lets every subsequent step behave correctly.
+            is_initialize = False
             client_name, client_version, proto_version = "", "", ""
-            pre_sid: str | None = None
             if request.method == "POST" and not existing_sid:
                 try:
                     data  = _json.loads(await request.body())
                     items = data if isinstance(data, list) else [data]
                     for item in items:
                         if isinstance(item, dict) and item.get("method") == "initialize":
-                            params = item.get("params", {})
-                            ci     = params.get("clientInfo", {})
-                            client_name    = ci.get("name", "") or ""
+                            is_initialize  = True
+                            params         = item.get("params", {})
+                            ci             = params.get("clientInfo", {})
+                            client_name    = ci.get("name", "")    or ""
                             client_version = ci.get("version", "") or ""
                             proto_version  = params.get("protocolVersion", "") or ""
-                            pre_sid = str(uuid.uuid4())
-                            _active_connections[pre_sid] = _make_session(
-                                pre_sid, ua, remote, scope,
-                                client_name, client_version, proto_version,
-                            )
                             break
                 except Exception:
                     pass
 
+            # ── 2. Session termination ────────────────────────────────────────
+            if request.method == "DELETE" and existing_sid:
+                _active_connections.pop(existing_sid, None)
+                return await call_next(request)
+
+            # ── 3. Update known session by Mcp-Session-Id header ─────────────
+            if existing_sid and existing_sid in _active_connections:
+                sess = _active_connections[existing_sid]
+                sess["last_seen"]  = time.time()
+                sess["call_count"] = sess.get("call_count", 0) + 1
+
+            # ── 4. IP+UA fallback (non-initialize only) ───────────────────────
+            # Clients that don't echo Mcp-Session-Id (curl, some libs) still
+            # keep their session alive via fingerprinting.
+            # Skip for initialize — that creates a fresh session in step 5.
+            # When multiple sessions share the same fingerprint, update the most
+            # recently seen one (highest last_seen) to match the active client.
+            elif not existing_sid and not is_initialize:
+                match = max(
+                    (s for s in _active_connections.values()
+                     if s.get("remote") == remote and s.get("user_agent") == ua),
+                    key=lambda s: s.get("last_seen", 0),
+                    default=None,
+                )
+                if match:
+                    match["last_seen"]  = time.time()
+                    match["call_count"] = match.get("call_count", 0) + 1
+
+            # ── 5. Pre-create session for initialize ──────────────────────────
+            # Create BEFORE call_next so the entry exists regardless of whether
+            # the server returns Mcp-Session-Id in the response headers.
+            # On reconnect: remove any previous sessions from the same client
+            # (same remote+ua+client_name) so we don't accumulate orphans.
+            pre_sid: str | None = None
+            if is_initialize:
+                stale = [
+                    sid for sid, s in _active_connections.items()
+                    if (s.get("remote") == remote
+                        and s.get("user_agent") == ua
+                        and s.get("client_name", "") == client_name)
+                ]
+                for sid in stale:
+                    _active_connections.pop(sid, None)
+
+                pre_sid = str(uuid.uuid4())
+                _active_connections[pre_sid] = _make_session(
+                    pre_sid, ua, remote, scope,
+                    client_name, client_version, proto_version,
+                )
+
             response = await call_next(request)
 
-            # 5. Migrate pre-created entry to the real Mcp-Session-Id if available
+            # ── 6. Migrate pre-created entry to real Mcp-Session-Id ───────────
+            # If the server returned a session ID, rename our pre-created entry
+            # so subsequent requests (which carry that ID) match correctly.
             new_sid = response.headers.get("mcp-session-id")
             if new_sid:
                 if pre_sid and pre_sid in _active_connections:
@@ -155,6 +185,8 @@ class ConnectionTrackerMiddleware(BaseHTTPMiddleware):
                     entry["id"] = new_sid
                     _active_connections[new_sid] = entry
                 elif new_sid not in _active_connections:
+                    # Server returned session ID but we didn't detect initialize
+                    # (e.g. body parse failed) — register now as fallback.
                     _active_connections[new_sid] = _make_session(
                         new_sid, ua, remote, scope,
                         client_name, client_version, proto_version,
