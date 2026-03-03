@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { Copy, Check, Search, ChevronDown, X, Wifi, WifiOff, Clock, Users, Radio } from 'lucide-react'
+import { Copy, Check, Search, ChevronDown, X, Wifi, WifiOff, Clock, Users, Radio, Activity, ChevronRight, ArrowUpDown } from 'lucide-react'
 import { TopBar } from '@/components/layout/topbar'
 import { getSkills, syncSkillsFromApi } from '@/lib/skills-store'
 import { getApiBaseUrl } from '@/lib/api/client'
@@ -35,19 +35,67 @@ function buildUrl(col: string | null) {
 // ─── types ────────────────────────────────────────────────────────────────────
 
 type McpConnection = {
-  id: string; connected_at: number; duration_seconds: number
+  id: string; connected_at: number; duration_seconds: number; last_seen: number
   user_agent: string; remote: string; scope: string | null
+  client_name: string; client_version: string; proto_version: string; call_count: number
 }
 type McpStatus = {
   status: 'online' | 'offline'; uptime_seconds: number
   active_connections: number; connections: McpConnection[]
 }
 
+// ─── agent resolution ─────────────────────────────────────────────────────────
+
+// Maps a normalized category key → display label + dot color
+const AGENT_CATALOG: Record<string, { label: string; color: string }> = {
+  'claude-code': { label: 'Claude Code', color: '#8B5CF6' },
+  openclaw:      { label: 'OpenClaw',    color: '#A855F7' },
+  cursor:        { label: 'Cursor',      color: '#06B6D4' },
+  openhands:     { label: 'OpenHands',   color: '#F59E0B' },
+  codex:         { label: 'Codex',       color: '#10B981' },
+  cline:         { label: 'Cline',       color: '#3B82F6' },
+  windsurf:      { label: 'Windsurf',    color: '#14B8A6' },
+  python:        { label: 'Python',      color: '#EAB308' },
+  node:          { label: 'Node.js',     color: '#84CC16' },
+  curl:          { label: 'curl',        color: '#6B7280' },
+  other:         { label: 'Other',       color: '#6B7280' },
+}
+
+function categorize(s: string): string {
+  const n = s.toLowerCase()
+  if (n.includes('claude'))    return 'claude-code'
+  if (n.includes('openclaw'))  return 'openclaw'
+  if (n.includes('cursor'))    return 'cursor'
+  if (n.includes('openhands')) return 'openhands'
+  if (n.includes('codex'))     return 'codex'
+  if (n.includes('cline'))     return 'cline'
+  if (n.includes('windsurf'))  return 'windsurf'
+  if (n.includes('python') || n.includes('httpx') || n.includes('requests')) return 'python'
+  if (n.includes('node') || n.includes('axios') || n.includes('undici'))     return 'node'
+  if (n.includes('curl'))      return 'curl'
+  return 'other'
+}
+
+function parseUaVersion(ua: string): string {
+  const m = ua.match(/[/@ ](\d+\.\d+[\d.]*)/)
+  return m ? m[1] : ''
+}
+
+function resolveAgent(conn: McpConnection) {
+  // MCP clientInfo is authoritative; fall back to UA sniffing
+  const primary   = conn.client_name || conn.user_agent
+  const category  = categorize(primary)
+  const cat       = AGENT_CATALOG[category] ?? AGENT_CATALOG.other
+  const name      = conn.client_name ? conn.client_name : cat.label
+  const version   = conn.client_version || parseUaVersion(conn.user_agent)
+  return { category, label: cat.label, color: cat.color, name, version }
+}
+
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
 function fmtDuration(s: number) {
   if (s < 60) return `${s}s`
-  if (s < 3600) return `${Math.floor(s / 60)}m`
+  if (s < 3600) return `${Math.floor(s / 60)}m ${s % 60}s`
   return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`
 }
 function fmtUptime(s: number) {
@@ -55,17 +103,6 @@ function fmtUptime(s: number) {
   if (s < 3600) return `${Math.floor(s / 60)}m`
   const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60)
   return m ? `${h}h ${m}m` : `${h}h`
-}
-function guessAgent(ua: string) {
-  const u = ua.toLowerCase()
-  if (u.includes('openclaw'))  return 'OpenClaw'
-  if (u.includes('claude'))    return 'Claude Code'
-  if (u.includes('cursor'))    return 'Cursor'
-  if (u.includes('openhands')) return 'OpenHands'
-  if (u.includes('python'))    return 'Python'
-  if (u.includes('node'))      return 'Node.js'
-  if (!ua.trim())              return 'Unknown agent'
-  return ua.length > 24 ? ua.slice(0, 22) + '…' : ua
 }
 
 // ─── copy button ──────────────────────────────────────────────────────────────
@@ -445,21 +482,109 @@ function ConfigPanel({ agent, setAgent, config, agentDef, mcpUrl }: {
   )
 }
 
+// ─── connection row ───────────────────────────────────────────────────────────
+
+function ConnRow({ conn, elapsed }: { conn: McpConnection; elapsed: number }) {
+  const { name, version, color, category } = resolveAgent(conn)
+  const duration = fmtDuration(conn.duration_seconds + elapsed)
+  const calls = conn.call_count ?? 0
+  return (
+    <div className="flex items-center gap-3 px-5 py-3 hover:bg-muted/20 transition-colors group">
+      <span className="w-2 h-2 rounded-full shrink-0 conn-pulse" style={{ backgroundColor: color }} />
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className="text-[13px] font-medium text-foreground truncate leading-snug">{name}</span>
+          {version && (
+            <span className="text-[10.5px] font-mono text-muted-foreground/35 shrink-0">v{version}</span>
+          )}
+        </div>
+        <div className="flex items-center gap-1.5 mt-0.5 min-w-0">
+          <span className="text-[11px] font-mono text-muted-foreground/40 shrink-0">{conn.remote}</span>
+          {conn.scope && (
+            <>
+              <span className="text-muted-foreground/20 shrink-0">·</span>
+              <span className="text-[11px] text-accent/60 truncate">{conn.scope}</span>
+            </>
+          )}
+          {conn.proto_version && (
+            <>
+              <span className="text-muted-foreground/15 shrink-0 hidden sm:inline">·</span>
+              <span className="text-[10px] font-mono text-muted-foreground/20 hidden sm:inline shrink-0">MCP {conn.proto_version}</span>
+            </>
+          )}
+        </div>
+      </div>
+      <div className="flex flex-col items-end gap-0.5 shrink-0">
+        <div className="flex items-center gap-1 text-muted-foreground/40">
+          <Clock className="h-3 w-3" />
+          <span className="text-[11px] font-mono tabular-nums">{duration}</span>
+        </div>
+        <div className="flex items-center gap-1 text-muted-foreground/25 group-hover:text-muted-foreground/40 transition-colors">
+          <Activity className="h-2.5 w-2.5" />
+          <span className="text-[10.5px] font-mono tabular-nums">{calls} calls</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── group section ────────────────────────────────────────────────────────────
+
+function GroupSection({ category, conns, elapsed, open, onToggle }: {
+  category: string; conns: McpConnection[]; elapsed: number; open: boolean; onToggle: () => void
+}) {
+  const cat = AGENT_CATALOG[category] ?? AGENT_CATALOG.other
+  const totalCalls = conns.reduce((s, c) => s + (c.call_count ?? 0), 0)
+  return (
+    <div>
+      <button
+        onClick={onToggle}
+        className="w-full flex items-center gap-2.5 px-5 py-2.5 bg-muted/20 hover:bg-muted/30 transition-colors border-b border-border/20 text-left"
+      >
+        <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: cat.color }} />
+        <span className="flex-1 text-[12px] font-semibold text-foreground/70">{cat.label}</span>
+        <span className="text-[11px] text-muted-foreground/40 tabular-nums">{conns.length} connected</span>
+        {totalCalls > 0 && (
+          <span className="text-[10.5px] text-muted-foreground/25 tabular-nums hidden sm:block">{totalCalls} calls</span>
+        )}
+        <ChevronRight className={cn(
+          'h-3.5 w-3.5 text-muted-foreground/30 transition-transform duration-150',
+          open && 'rotate-90'
+        )} />
+      </button>
+      {open && (
+        <div className="divide-y divide-border/20">
+          {conns.map(c => <ConnRow key={c.id} conn={c} elapsed={elapsed} />)}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── live connections panel ───────────────────────────────────────────────────
 
 function ConnectionsPanel() {
   const [status, setStatus]     = useState<McpStatus | null>(null)
   const [error, setError]       = useState(false)
   const [lastPoll, setLastPoll] = useState<number | null>(null)
-  const [, setTick]             = useState(0)   // forces re-render every second
+  const [, setTick]             = useState(0)
   const [q, setQ]               = useState('')
+  const [sort, setSort]         = useState<'duration' | 'calls'>('duration')
+  const [openGroups, setOpenGroups] = useState<Set<string>>(new Set())
 
   const poll = async () => {
     try {
       const res = await fetch(`${buildMcpBase()}/status`, { signal: AbortSignal.timeout(3000) })
       if (!res.ok) throw new Error()
-      setStatus(await res.json())
+      const data: McpStatus = await res.json()
+      setStatus(data)
       setError(false)
+      // auto-open all groups on first load
+      setOpenGroups(prev => {
+        if (prev.size > 0) return prev
+        const cats = new Set(data.connections.map(c => resolveAgent(c).category))
+        return cats
+      })
     } catch {
       setError(true)
       setStatus(null)
@@ -472,26 +597,70 @@ function ConnectionsPanel() {
     const pollId = setInterval(poll, 5000)
     const tickId = setInterval(() => setTick(t => t + 1), 1000)
     return () => { clearInterval(pollId); clearInterval(tickId) }
-  }, [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const online    = !error && status !== null
-  // seconds elapsed since last successful poll — added to server timestamps for live counters
+  const online           = !error && status !== null
   const elapsedSincePoll = lastPoll ? Math.floor((Date.now() - lastPoll) / 1000) : 0
 
-  const filtered = useMemo(() => {
+  // Filtered + sorted flat list
+  const sorted = useMemo(() => {
     if (!online || !status) return []
-    if (!q) return status.connections
-    const lq = q.toLowerCase()
-    return status.connections.filter(c =>
-      guessAgent(c.user_agent).toLowerCase().includes(lq) ||
-      c.remote.includes(lq) ||
-      (c.scope ?? '').toLowerCase().includes(lq)
+    let conns = status.connections
+    if (q) {
+      const lq = q.toLowerCase()
+      conns = conns.filter(c => {
+        const { name, version } = resolveAgent(c)
+        return (
+          name.toLowerCase().includes(lq) ||
+          version.includes(lq) ||
+          c.remote.includes(lq) ||
+          (c.scope ?? '').toLowerCase().includes(lq) ||
+          c.user_agent.toLowerCase().includes(lq)
+        )
+      })
+    }
+    return [...conns].sort((a, b) =>
+      sort === 'calls'
+        ? (b.call_count ?? 0) - (a.call_count ?? 0)
+        : (b.duration_seconds + elapsedSincePoll) - (a.duration_seconds + elapsedSincePoll)
     )
-  }, [status, q, online])
+  }, [status, q, sort, online, elapsedSincePoll])
+
+  // Groups (category → connections), sorted by group size desc
+  const groups = useMemo(() => {
+    const map = new Map<string, McpConnection[]>()
+    sorted.forEach(c => {
+      const { category } = resolveAgent(c)
+      if (!map.has(category)) map.set(category, [])
+      map.get(category)!.push(c)
+    })
+    return [...map.entries()].sort((a, b) => b[1].length - a[1].length)
+  }, [sorted])
+
+  // Agent distribution for the stats strip
+  const stats = useMemo(() => {
+    if (!status) return []
+    const map = new Map<string, number>()
+    status.connections.forEach(c => {
+      const { category } = resolveAgent(c)
+      map.set(category, (map.get(category) ?? 0) + 1)
+    })
+    return [...map.entries()].sort((a, b) => b[1] - a[1]).map(([cat, count]) => ({
+      cat, count, color: (AGENT_CATALOG[cat] ?? AGENT_CATALOG.other).color,
+      label: (AGENT_CATALOG[cat] ?? AGENT_CATALOG.other).label,
+    }))
+  }, [status])
+
+  // Auto-group when many connections and no search active
+  const useGrouped = sorted.length > 8 && !q
+
+  const toggleGroup = (cat: string) =>
+    setOpenGroups(prev => { const s = new Set(prev); s.has(cat) ? s.delete(cat) : s.add(cat); return s })
 
   return (
     <div className="bg-card border border-border/40 rounded-2xl overflow-hidden flex flex-col h-full">
-      {/* header */}
+
+      {/* ── header ──────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between px-5 py-3.5 border-b border-border/40">
         <div className="flex items-center gap-2.5">
           <span className="text-[13px] font-semibold text-foreground">Live Connections</span>
@@ -522,26 +691,49 @@ function ConnectionsPanel() {
         </div>
       </div>
 
-      {/* search — shows when there are connections */}
+      {/* ── agent distribution strip ─────────────────────────────────────── */}
+      {online && stats.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5 px-4 py-2.5 border-b border-border/25 bg-muted/10">
+          {stats.map(s => (
+            <span key={s.cat}
+              className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-muted/50 border border-border/30 text-[11px] select-none"
+            >
+              <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
+              <span className="text-muted-foreground/60 font-medium">{s.label}</span>
+              <span className="text-muted-foreground/35 tabular-nums font-mono">{s.count}</span>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* ── search + sort ────────────────────────────────────────────────── */}
       {online && status!.active_connections > 0 && (
-        <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border/30 bg-muted/10">
+        <div className="flex items-center gap-2 px-4 py-2 border-b border-border/30 bg-muted/5">
           <Search className="h-3.5 w-3.5 text-muted-foreground/30 shrink-0" />
           <input
             value={q}
             onChange={e => setQ(e.target.value)}
-            placeholder={`Filter ${status!.active_connections} connections…`}
-            className="flex-1 bg-transparent text-[12.5px] text-foreground placeholder:text-muted-foreground/30 outline-none"
+            placeholder={`Search ${status!.active_connections} connections…`}
+            className="flex-1 bg-transparent text-[12.5px] text-foreground placeholder:text-muted-foreground/30 outline-none min-w-0"
           />
           {q && (
-            <button onClick={() => setQ('')} className="text-muted-foreground/40 hover:text-muted-foreground transition-colors">
+            <button onClick={() => setQ('')} className="text-muted-foreground/40 hover:text-muted-foreground transition-colors shrink-0">
               <X className="h-3 w-3" />
             </button>
           )}
+          <button
+            onClick={() => setSort(s => s === 'duration' ? 'calls' : 'duration')}
+            title={sort === 'duration' ? 'Sorted by duration — click for calls' : 'Sorted by calls — click for duration'}
+            className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] text-muted-foreground/40 hover:text-muted-foreground hover:bg-muted/50 transition-colors shrink-0"
+          >
+            <ArrowUpDown className="h-3 w-3" />
+            <span className="hidden sm:inline">{sort === 'duration' ? 'duration' : 'calls'}</span>
+          </button>
         </div>
       )}
 
-      {/* body */}
-      <div className="flex-1 overflow-y-auto" style={{ maxHeight: 380 }}>
+      {/* ── body ────────────────────────────────────────────────────────── */}
+      <div className="flex-1 overflow-y-auto" style={{ maxHeight: 420 }}>
         {!online ? (
           <div className="flex flex-col items-center gap-2.5 py-10 px-6">
             <div className="w-10 h-10 rounded-xl bg-muted/50 border border-border/30 flex items-center justify-center">
@@ -550,48 +742,41 @@ function ConnectionsPanel() {
             <p className="text-[13px] text-muted-foreground/50">MCP server not reachable</p>
             <p className="text-[11px] font-mono text-muted-foreground/25">{buildMcpBase()}/status</p>
           </div>
-        ) : filtered.length === 0 && !q ? (
+        ) : sorted.length === 0 && !q ? (
           <div className="flex flex-col items-center gap-2.5 py-10 px-6">
             <div className="w-10 h-10 rounded-xl bg-muted/50 border border-border/30 flex items-center justify-center">
               <Users className="h-4 w-4 text-muted-foreground/20" />
             </div>
             <p className="text-[13px] text-muted-foreground/50">No agents connected</p>
-            <p className="text-[11px] text-muted-foreground/30">Connect using the config</p>
+            <p className="text-[11px] text-muted-foreground/30">Connect using the config on the left</p>
           </div>
-        ) : filtered.length === 0 && q ? (
+        ) : sorted.length === 0 ? (
           <div className="px-5 py-8 text-center text-[13px] text-muted-foreground/40">
-            No connections match "{q}"
+            No connections match &ldquo;{q}&rdquo;
+          </div>
+        ) : useGrouped ? (
+          // ── grouped view (auto-triggered for 8+ connections) ──
+          <div className="divide-y divide-border/20">
+            {groups.map(([cat, conns]) => (
+              <GroupSection
+                key={cat}
+                category={cat}
+                conns={conns}
+                elapsed={elapsedSincePoll}
+                open={openGroups.has(cat)}
+                onToggle={() => toggleGroup(cat)}
+              />
+            ))}
           </div>
         ) : (
-          <div className="divide-y divide-border/30">
-            {filtered.map(conn => (
-              <div key={conn.id} className="flex items-center gap-3 px-5 py-3 hover:bg-muted/20 transition-colors">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0 conn-pulse" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-[13px] font-medium text-foreground leading-snug truncate">
-                    {guessAgent(conn.user_agent)}
-                  </p>
-                  <div className="flex items-center gap-1.5 mt-0.5">
-                    <span className="text-[11px] text-muted-foreground/40 font-mono">{conn.remote}</span>
-                    {conn.scope && (
-                      <>
-                        <span className="text-muted-foreground/20">·</span>
-                        <span className="text-[11px] text-accent/60 truncate max-w-[80px]">{conn.scope}</span>
-                      </>
-                    )}
-                  </div>
-                </div>
-                <div className="flex items-center gap-1 text-muted-foreground/35 shrink-0">
-                  <Clock className="h-3 w-3" />
-                  <span className="text-[11px] font-mono tabular-nums">{fmtDuration(conn.duration_seconds + elapsedSincePoll)}</span>
-                </div>
-              </div>
-            ))}
+          // ── flat view ──
+          <div className="divide-y divide-border/20">
+            {sorted.map(c => <ConnRow key={c.id} conn={c} elapsed={elapsedSincePoll} />)}
           </div>
         )}
       </div>
 
-      {/* footer */}
+      {/* ── footer ──────────────────────────────────────────────────────── */}
       <div className="px-5 py-2 border-t border-border/30 bg-muted/10 flex items-center justify-between">
         <span className="text-[11px] text-muted-foreground/30">
           {lastPoll

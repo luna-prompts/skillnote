@@ -12,6 +12,7 @@ Filter skills via URL query params:
 from __future__ import annotations
 
 import asyncio
+import json as _json
 import logging
 import os
 import time
@@ -60,16 +61,18 @@ class ConnectionTrackerMiddleware(BaseHTTPMiddleware):
         # ── SSE: genuine persistent connection ──────────────────────────────
         if path == "/sse":
             conn_id = str(uuid.uuid4())
-            ua = request.headers.get("user-agent", "")
-            remote = request.client.host if request.client else "unknown"
             now = time.time()
             _active_connections[conn_id] = {
                 "id": conn_id,
                 "connected_at": now,
                 "last_seen": now,
-                "user_agent": ua,
+                "user_agent": request.headers.get("user-agent", ""),
                 "remote": request.client.host if request.client else "unknown",
                 "scope": request.query_params.get("collections") or None,
+                "client_name": "",
+                "client_version": "",
+                "proto_version": "",
+                "call_count": 0,
             }
             try:
                 return await call_next(request)
@@ -83,18 +86,38 @@ class ConnectionTrackerMiddleware(BaseHTTPMiddleware):
             scope = request.query_params.get("collections") or None
             existing_sid = request.headers.get("mcp-session-id")
 
-            # Touch last_seen on every request for an existing session
+            # Touch last_seen + count every tool call on existing session
             if existing_sid and existing_sid in _active_connections:
-                _active_connections[existing_sid]["last_seen"] = time.time()
+                sess = _active_connections[existing_sid]
+                sess["last_seen"] = time.time()
+                sess["call_count"] = sess.get("call_count", 0) + 1
 
             # Client is terminating the session
             if request.method == "DELETE" and existing_sid:
                 _active_connections.pop(existing_sid, None)
                 return await call_next(request)
 
+            # Extract MCP clientInfo from initialize request body.
+            # Starlette caches request.body() so downstream handlers are unaffected.
+            client_name, client_version, proto_version = "", "", ""
+            if request.method == "POST" and not existing_sid:
+                try:
+                    data = _json.loads(await request.body())
+                    items = data if isinstance(data, list) else [data]
+                    for item in items:
+                        if isinstance(item, dict) and item.get("method") == "initialize":
+                            params = item.get("params", {})
+                            ci = params.get("clientInfo", {})
+                            client_name    = ci.get("name", "") or ""
+                            client_version = ci.get("version", "") or ""
+                            proto_version  = params.get("protocolVersion", "") or ""
+                            break
+                except Exception:
+                    pass
+
             response = await call_next(request)
 
-            # Capture new session ID returned by the initialize response
+            # Register new session from initialize response
             new_sid = response.headers.get("mcp-session-id")
             if new_sid and new_sid not in _active_connections:
                 now = time.time()
@@ -105,6 +128,10 @@ class ConnectionTrackerMiddleware(BaseHTTPMiddleware):
                     "user_agent": ua,
                     "remote": remote,
                     "scope": scope,
+                    "client_name": client_name,
+                    "client_version": client_version,
+                    "proto_version": proto_version,
+                    "call_count": 0,
                 }
 
             return response
