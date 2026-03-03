@@ -14,16 +14,52 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import time
+import uuid
 from collections.abc import Sequence
 from typing import Any
 
 logger = logging.getLogger(__name__)
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request as StarletteRequest
+from starlette.responses import JSONResponse
 
 from fastmcp import FastMCP
 from fastmcp.server.providers import Provider
 from fastmcp.tools.tool import Tool, ToolResult
+
+# ── connection tracking ───────────────────────────────────────────────────────
+
+_server_start: float = time.time()
+
+# conn_id -> {connected_at, user_agent, remote, scope}
+_active_connections: dict[str, dict] = {}
+
+
+class ConnectionTrackerMiddleware(BaseHTTPMiddleware):
+    """Tracks active MCP/SSE connections by wrapping the request lifecycle."""
+
+    async def dispatch(self, request: StarletteRequest, call_next):
+        # Only track MCP endpoint connections (SSE keeps the connection open)
+        if request.url.path.rstrip("/") in ("/mcp", "/sse"):
+            conn_id = str(uuid.uuid4())
+            ua = request.headers.get("user-agent", "")
+            remote = request.client.host if request.client else "unknown"
+            scope = request.query_params.get("collections") or None
+            _active_connections[conn_id] = {
+                "id": conn_id,
+                "connected_at": time.time(),
+                "user_agent": ua,
+                "remote": remote,
+                "scope": scope,
+            }
+            try:
+                return await call_next(request)
+            finally:
+                _active_connections.pop(conn_id, None)
+        return await call_next(request)
 
 DATABASE_URL = os.environ.get(
     "SKILLNOTE_DATABASE_URL",
@@ -141,5 +177,33 @@ mcp = FastMCP(
     providers=[provider],
 )
 
+
+@mcp.custom_route("/status", methods=["GET"])
+async def status_endpoint(request: StarletteRequest) -> JSONResponse:
+    """Returns server uptime, active connection count, and per-connection info."""
+    now = time.time()
+    connections = [
+        {
+            **c,
+            "duration_seconds": int(now - c["connected_at"]),
+        }
+        for c in _active_connections.values()
+    ]
+    return JSONResponse(
+        {
+            "status": "online",
+            "uptime_seconds": int(now - _server_start),
+            "active_connections": len(connections),
+            "connections": connections,
+        },
+        headers={"Access-Control-Allow-Origin": "*"},
+    )
+
+
 if __name__ == "__main__":
-    mcp.run(transport="http", host="0.0.0.0", port=8083)
+    import uvicorn
+    from starlette.middleware import Middleware
+
+    http_app = mcp.http_app(transport="http")
+    http_app.add_middleware(ConnectionTrackerMiddleware)
+    uvicorn.run(http_app, host="0.0.0.0", port=8083)

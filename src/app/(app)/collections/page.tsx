@@ -3,7 +3,6 @@ import Link from 'next/link'
 import { TopBar } from '@/components/layout/topbar'
 import { FolderOpen, Plus, ArrowRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { formatRelative } from '@/lib/format'
 import { useEffect, useMemo, useState } from 'react'
 import { getSkills, syncSkillsFromApi } from '@/lib/skills-store'
 import { deriveCollections } from '@/lib/derived'
@@ -140,9 +139,6 @@ export default function CollectionsPage() {
                       {col.skill_count === 1 ? 'skill' : 'skills'}
                     </span>
                     <div className="flex items-center gap-1.5">
-                      <span className="text-[11px] text-muted-foreground/35 tabular-nums">
-                        {formatRelative(col.updated_at)}
-                      </span>
                       <ArrowRight className="h-3 w-3 text-muted-foreground/20 group-hover:text-muted-foreground/60 group-hover:translate-x-0.5 transition-all duration-150" />
                     </div>
                   </div>

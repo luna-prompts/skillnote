@@ -1,10 +1,11 @@
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { FileText, MessageSquare, Paperclip, FolderOpen } from 'lucide-react'
 import { Skill } from '@/lib/mock-data'
-import { formatRelative } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 export function SkillListItem({ skill }: { skill: Skill }) {
+  const router = useRouter()
   const commentCount = skill.comments?.length ?? 0
   const attachCount = skill.attachments?.length ?? 0
   const collections = skill.collections ?? []
@@ -46,20 +47,23 @@ export function SkillListItem({ skill }: { skill: Skill }) {
             <span className="text-[12px] text-muted-foreground/35 leading-snug truncate hidden lg:block group-hover:text-muted-foreground/55 transition-colors duration-200">
               {skill.description}
             </span>
-            {/* Collection chips — stop propagation so clicking goes to collection, not skill */}
+            {/* Collection chips — use span+router.push to avoid <a> inside <a> */}
             {collections.length > 0 && (
-              <div className="hidden sm:flex items-center gap-1 shrink-0" onClick={e => e.preventDefault()}>
+              <div className="hidden sm:flex items-center gap-1 shrink-0">
                 {collections.map(c => {
                   const colSlug = c.toLowerCase().replace(/\s+/g, '-')
                   return (
-                    <Link
+                    <span
                       key={c}
-                      href={`/collections/${colSlug}`}
-                      className="flex items-center gap-0.5 h-[18px] px-1.5 rounded text-[10px] text-muted-foreground/50 bg-muted/60 hover:bg-muted hover:text-foreground transition-colors"
+                      role="link"
+                      tabIndex={0}
+                      onClick={e => { e.preventDefault(); e.stopPropagation(); router.push(`/collections/${colSlug}`) }}
+                      onKeyDown={e => { if (e.key === 'Enter') { e.stopPropagation(); router.push(`/collections/${colSlug}`) } }}
+                      className="flex items-center gap-0.5 h-[18px] px-1.5 rounded text-[10px] text-muted-foreground/50 bg-muted/60 hover:bg-muted hover:text-foreground transition-colors cursor-pointer"
                     >
                       <FolderOpen className="h-2.5 w-2.5 shrink-0" />
                       {c}
-                    </Link>
+                    </span>
                   )
                 })}
               </div>
@@ -73,9 +77,6 @@ export function SkillListItem({ skill }: { skill: Skill }) {
               v{skill.current_version}
             </span>
           )}
-          <span className="text-[11px] text-muted-foreground/25 w-14 text-right tabular-nums font-mono group-hover:text-muted-foreground/40 transition-colors duration-200">
-            {formatRelative(skill.updated_at)}
-          </span>
         </div>
       </div>
     </Link>
