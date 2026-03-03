@@ -95,10 +95,22 @@ function resolveAgent(conn: McpConnection) {
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
+/** Break a CLI command at --flag boundaries for readable display.
+ *  Each --flag starts on a new indented line with a backslash continuation.
+ *  The raw single-line form is preserved for clipboard copying. */
+function fmtCli(cmd: string): string {
+  // Split before each --flag, keeping the flag attached
+  const parts = cmd.split(/ (?=--\w)/)
+  if (parts.length <= 1) return cmd
+  return parts[0] + ' \\\n' + parts.slice(1).map(p => `  ${p}`).join(' \\\n')
+}
+
 function fmtDuration(s: number) {
   if (s < 60) return `${s}s`
-  if (s < 3600) return `${Math.floor(s / 60)}m ${s % 60}s`
-  return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`
+  const secs = s % 60
+  if (s < 3600) return secs ? `${Math.floor(s / 60)}m ${secs}s` : `${Math.floor(s / 60)}m`
+  const mins = Math.floor((s % 3600) / 60)
+  return mins ? `${Math.floor(s / 3600)}h ${mins}m` : `${Math.floor(s / 3600)}h`
 }
 function fmtUptime(s: number) {
   if (s < 60) return `${s}s`
@@ -109,29 +121,61 @@ function fmtUptime(s: number) {
 
 // ─── copy button ──────────────────────────────────────────────────────────────
 
-function copyText(text: string): void {
+async function copyText(text: string): Promise<boolean> {
   if (navigator.clipboard?.writeText) {
-    navigator.clipboard.writeText(text).catch(() => execCopy(text))
-  } else {
-    execCopy(text)
+    try { await navigator.clipboard.writeText(text); return true } catch { /* fall through */ }
   }
+  return execCopy(text)
 }
-function execCopy(text: string): void {
+function execCopy(text: string): boolean {
   const el = document.createElement('textarea')
   el.value = text
   el.style.cssText = 'position:fixed;opacity:0;pointer-events:none'
   document.body.appendChild(el)
   el.focus()
   el.select()
-  try { document.execCommand('copy') } catch { /* ignore */ }
+  try { document.execCommand('copy'); document.body.removeChild(el); return true } catch { /* ignore */ }
   document.body.removeChild(el)
+  return false
+}
+
+// ─── tooltip ──────────────────────────────────────────────────────────────────
+// Uses position:fixed + portal so it escapes any overflow-hidden/clip ancestor.
+
+function Tip({ text, children }: { text: string; children: React.ReactNode }) {
+  const anchorRef = useRef<HTMLSpanElement>(null)
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
+
+  const show = () => {
+    if (!anchorRef.current) return
+    const r = anchorRef.current.getBoundingClientRect()
+    setPos({ top: r.top, left: r.left + r.width / 2 })
+  }
+
+  return (
+    <span ref={anchorRef} className="inline-flex items-center" onMouseEnter={show} onMouseLeave={() => setPos(null)}>
+      {children}
+      {pos && createPortal(
+        <span
+          style={{ position: 'fixed', top: pos.top - 8, left: pos.left, transform: 'translate(-50%, -100%)', zIndex: 9999 }}
+          className="pointer-events-none w-max max-w-[220px] rounded-lg bg-popover border border-border/40 px-2.5 py-1.5 text-[11px] leading-snug text-popover-foreground shadow-lg whitespace-normal text-left"
+        >
+          {text}
+        </span>,
+        document.body
+      )}
+    </span>
+  )
 }
 
 function CopyBtn({ text, label = 'Copy', size = 'md' }: { text: string; label?: string; size?: 'sm' | 'md' }) {
   const [ok, setOk] = useState(false)
   return (
     <button
-      onClick={() => { copyText(text); setOk(true); setTimeout(() => setOk(false), 2000) }}
+      onClick={async () => {
+        const success = await copyText(text)
+        if (success) { setOk(true); setTimeout(() => setOk(false), 2000) }
+      }}
       className={cn(
         'inline-flex items-center gap-1.5 font-medium rounded-lg transition-all shrink-0',
         'text-muted-foreground/60 hover:text-foreground hover:bg-muted/60',
@@ -416,7 +460,7 @@ function ScopeSelector({ collections, totalSkills, value, onChange }: {
               </div>
             )}
 
-            {collections.length === 0 && (
+            {collections.length === 0 && !q && (
               <div className="px-4 py-8 text-center">
                 <p className="text-[13px] text-muted-foreground/50">No collections yet</p>
                 <p className="text-[12px] text-muted-foreground/30 mt-1">Add collections to your skills</p>
@@ -480,7 +524,7 @@ function ConfigPanel({ agent, setAgent, config, agentDef, mcpUrl }: {
   mcpUrl: string
 }) {
   return (
-    <div className="bg-card border border-border/40 rounded-2xl overflow-hidden flex flex-col">
+    <div className="bg-card border border-border/40 rounded-2xl overflow-hidden flex flex-col min-w-0 w-full">
       {/* agent tabs */}
       <div className="flex items-center gap-0 border-b border-border/40 overflow-x-auto scrollbar-hide">
         {AGENTS.map(a => (
@@ -523,8 +567,8 @@ function ConfigPanel({ agent, setAgent, config, agentDef, mcpUrl }: {
             <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/35">CLI install</span>
             <CopyBtn text={agentDef.cli(mcpUrl)} label="Copy" size="sm" />
           </div>
-          <pre className="bg-[hsl(var(--card))] dark:bg-zinc-950/70 px-5 py-4 text-[12px] font-mono text-muted-foreground overflow-x-auto">
-            <code>{agentDef.cli(mcpUrl)}</code>
+          <pre className="bg-[hsl(var(--card))] dark:bg-zinc-950/70 px-5 py-4 text-[12px] font-mono text-muted-foreground whitespace-pre-wrap break-words">
+            <code>{fmtCli(agentDef.cli(mcpUrl))}</code>
           </pre>
         </div>
       )}
@@ -553,7 +597,7 @@ function ScopeChip({ scope, highlight }: { scope: string | null; highlight: bool
           : 'bg-muted/60 text-accent/60'
     )}>
       <Layers className="h-2.5 w-2.5 shrink-0" />
-      {isAll ? 'All Skills' : scope}
+      <span className="truncate max-w-[100px]">{isAll ? 'All Skills' : scope}</span>
     </span>
   )
 }
@@ -629,7 +673,7 @@ function GroupSection({ category, conns, elapsed, open, onToggle, selectedScope 
         <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: cat.color }} />
         <span className="flex-1 text-[12px] font-semibold text-foreground/70">{cat.label}</span>
         {selectedScope && matchCount > 0 && (
-          <span className="text-[10px] font-medium text-accent/70 bg-accent/10 px-1.5 py-0.5 rounded tabular-nums">
+          <span className="text-[10px] font-medium text-accent/70 bg-accent/10 px-1.5 py-0.5 rounded tabular-nums max-w-[140px] truncate">
             {matchCount} on {selectedScope}
           </span>
         )}
@@ -709,12 +753,14 @@ function ConnectionsPanel({ selectedScope }: { selectedScope: string | null }) {
         )
       })
     }
+    // elapsedSincePoll is intentionally excluded: adding the same constant to all
+    // duration_seconds values doesn't change relative order, so sort is stable.
     return [...conns].sort((a, b) =>
       sort === 'calls'
         ? (b.call_count ?? 0) - (a.call_count ?? 0)
-        : (b.duration_seconds + elapsedSincePoll) - (a.duration_seconds + elapsedSincePoll)
+        : b.duration_seconds - a.duration_seconds
     )
-  }, [status, q, sort, online, elapsedSincePoll])
+  }, [status, q, sort, online]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Groups (category → connections), sorted by group size desc
   const groups = useMemo(() => {
@@ -748,7 +794,7 @@ function ConnectionsPanel({ selectedScope }: { selectedScope: string | null }) {
     setOpenGroups(prev => { const s = new Set(prev); s.has(cat) ? s.delete(cat) : s.add(cat); return s })
 
   return (
-    <div className="bg-card border border-border/40 rounded-2xl overflow-hidden flex flex-col h-full">
+    <div className="bg-card border border-border/40 rounded-2xl overflow-hidden flex flex-col">
 
       {/* ── header ──────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between px-5 py-3.5 border-b border-border/40">
@@ -917,17 +963,17 @@ function SessionStatus({ mcpUrl, agentLabel, skillCount, scopeLabel }: {
       {/* vertical stack — fits 340px sidebar cleanly */}
       <div className="divide-y divide-border/25">
         {items.filter(i => !('emerald' in i && i.emerald)).map((item, i) => (
-          <div key={i} className="flex items-center justify-between px-5 py-3">
-            <span className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/35">
+          <div key={i} className="flex items-center justify-between gap-3 px-5 py-3">
+            <span className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/35 shrink-0">
               {item.label}
               {item.label === 'Tools' && (
-                <span title="Every skill in the selected collection is exposed as an MCP tool. Agents call tools/list to discover them." className="cursor-default">
-                  <Info className="w-3 h-3 text-muted-foreground/30 hover:text-muted-foreground/60 transition-colors" />
-                </span>
+                <Tip text="Every skill in the collection is an MCP tool. Agents call tools/list to discover them and tools/call to get the content.">
+                  <Info className="w-3 h-3 text-muted-foreground/30 hover:text-muted-foreground/60 transition-colors cursor-default" />
+                </Tip>
               )}
             </span>
             <span className={cn(
-              'text-[12.5px] font-medium text-right',
+              'text-[12.5px] font-medium text-right truncate min-w-0',
               'accent' in item && item.accent ? 'text-accent' : 'text-foreground/75'
             )}>
               {item.value}
@@ -1018,8 +1064,8 @@ export default function IntegrationsPage() {
           {/* ── two-column: config + session ─────────────────────────── */}
           <div className="i-3 grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-5 items-start mb-5">
 
-            {/* config */}
-            <div className="cfg" key={agent + (col ?? '_')}>
+            {/* config — min-w-0 prevents long URLs/CLI from blowing the grid column */}
+            <div className="cfg min-w-0" key={agent + (col ?? '_')}>
               <ConfigPanel
                 agent={agent}
                 setAgent={setAgent}
