@@ -35,24 +35,46 @@ from fastmcp.tools.tool import Tool, ToolResult
 
 _server_start: float = time.time()
 
-# session_id -> {id, connected_at, last_seen, user_agent, remote, scope}
+# session_id -> {id, connected_at, last_seen, user_agent, remote, scope, ...}
 _active_connections: dict[str, dict] = {}
 
-# Sessions idle longer than this are considered disconnected
-SESSION_TIMEOUT = 60  # seconds
+# Sessions idle longer than this are considered disconnected.
+# 30 minutes — Claude Code initializes once at startup and may sit idle
+# for a long time before the user actually invokes a skill.
+SESSION_TIMEOUT = 1800  # seconds
+
+
+def _make_session(sid: str, ua: str, remote: str, scope: str | None,
+                  client_name: str, client_version: str, proto_version: str) -> dict:
+    now = time.time()
+    return {
+        "id": sid,
+        "connected_at": now,
+        "last_seen": now,
+        "user_agent": ua,
+        "remote": remote,
+        "scope": scope,
+        "client_name": client_name,
+        "client_version": client_version,
+        "proto_version": proto_version,
+        "call_count": 0,
+    }
 
 
 class ConnectionTrackerMiddleware(BaseHTTPMiddleware):
-    """Tracks MCP sessions via Mcp-Session-Id header (streamable-http transport).
+    """Tracks MCP sessions for both streamable-http and SSE transports.
 
-    Streamable-http sends a short POST per tool call — there is no persistent
-    TCP connection to wrap. Instead we track logical MCP sessions:
-      - Session starts: server returns Mcp-Session-Id on the initialize response
-      - Session active: every subsequent request carries that header (last_seen updated)
-      - Session ends: client sends DELETE /mcp, or session times out after inactivity
+    Streamable-http (POST /mcp):
+      - On initialize: pre-create session immediately from request body so we
+        don't depend on the response header arriving before a timeout fires.
+        If the server returns Mcp-Session-Id, migrate the entry to that ID.
+      - On subsequent calls: update last_seen via Mcp-Session-Id header first,
+        then fall back to (remote, ua) fingerprint for clients that omit the
+        header.
+      - On DELETE: remove session immediately.
+      - Idle sessions expire after SESSION_TIMEOUT (30 min) via /status.
 
-    SSE transport (/sse) maintains a real long-lived connection so we track it
-    with a synthetic conn_id for the duration of the response stream.
+    SSE (/sse): genuine long-lived TCP connection — track for its lifetime.
     """
 
     async def dispatch(self, request: StarletteRequest, call_next):
@@ -61,19 +83,13 @@ class ConnectionTrackerMiddleware(BaseHTTPMiddleware):
         # ── SSE: genuine persistent connection ──────────────────────────────
         if path == "/sse":
             conn_id = str(uuid.uuid4())
-            now = time.time()
-            _active_connections[conn_id] = {
-                "id": conn_id,
-                "connected_at": now,
-                "last_seen": now,
-                "user_agent": request.headers.get("user-agent", ""),
-                "remote": request.client.host if request.client else "unknown",
-                "scope": request.query_params.get("collections") or None,
-                "client_name": "",
-                "client_version": "",
-                "proto_version": "",
-                "call_count": 0,
-            }
+            ua     = request.headers.get("user-agent", "")
+            remote = request.client.host if request.client else "unknown"
+            _active_connections[conn_id] = _make_session(
+                conn_id, ua, remote,
+                request.query_params.get("collections") or None,
+                "", "", "",
+            )
             try:
                 return await call_next(request)
             finally:
@@ -81,62 +97,73 @@ class ConnectionTrackerMiddleware(BaseHTTPMiddleware):
 
         # ── streamable-http: session-based tracking ──────────────────────────
         if path == "/mcp":
-            ua = request.headers.get("user-agent", "")
+            ua     = request.headers.get("user-agent", "")
             remote = request.client.host if request.client else "unknown"
-            scope = request.query_params.get("collections") or None
+            scope  = request.query_params.get("collections") or None
             existing_sid = request.headers.get("mcp-session-id")
 
-            # Touch last_seen + count every tool call on existing session
+            # 1. Update known session by header
             if existing_sid and existing_sid in _active_connections:
                 sess = _active_connections[existing_sid]
-                sess["last_seen"] = time.time()
+                sess["last_seen"]  = time.time()
                 sess["call_count"] = sess.get("call_count", 0) + 1
 
-            # Client is terminating the session
+            # 2. Fallback: match by (remote, ua) for clients that omit the header
+            elif not existing_sid:
+                for sess in _active_connections.values():
+                    if sess.get("remote") == remote and sess.get("user_agent") == ua:
+                        sess["last_seen"]  = time.time()
+                        sess["call_count"] = sess.get("call_count", 0) + 1
+                        break
+
+            # 3. Session termination
             if request.method == "DELETE" and existing_sid:
                 _active_connections.pop(existing_sid, None)
                 return await call_next(request)
 
-            # Extract MCP clientInfo from initialize request body.
-            # Starlette caches request.body() so downstream handlers are unaffected.
+            # 4. Detect initialize and pre-create session BEFORE call_next
+            #    so the entry exists even if the response header is never read.
             client_name, client_version, proto_version = "", "", ""
+            pre_sid: str | None = None
             if request.method == "POST" and not existing_sid:
                 try:
-                    data = _json.loads(await request.body())
+                    data  = _json.loads(await request.body())
                     items = data if isinstance(data, list) else [data]
                     for item in items:
                         if isinstance(item, dict) and item.get("method") == "initialize":
                             params = item.get("params", {})
-                            ci = params.get("clientInfo", {})
+                            ci     = params.get("clientInfo", {})
                             client_name    = ci.get("name", "") or ""
                             client_version = ci.get("version", "") or ""
                             proto_version  = params.get("protocolVersion", "") or ""
+                            pre_sid = str(uuid.uuid4())
+                            _active_connections[pre_sid] = _make_session(
+                                pre_sid, ua, remote, scope,
+                                client_name, client_version, proto_version,
+                            )
                             break
                 except Exception:
                     pass
 
             response = await call_next(request)
 
-            # Register new session from initialize response
+            # 5. Migrate pre-created entry to the real Mcp-Session-Id if available
             new_sid = response.headers.get("mcp-session-id")
-            if new_sid and new_sid not in _active_connections:
-                now = time.time()
-                _active_connections[new_sid] = {
-                    "id": new_sid,
-                    "connected_at": now,
-                    "last_seen": now,
-                    "user_agent": ua,
-                    "remote": remote,
-                    "scope": scope,
-                    "client_name": client_name,
-                    "client_version": client_version,
-                    "proto_version": proto_version,
-                    "call_count": 0,
-                }
+            if new_sid:
+                if pre_sid and pre_sid in _active_connections:
+                    entry = _active_connections.pop(pre_sid)
+                    entry["id"] = new_sid
+                    _active_connections[new_sid] = entry
+                elif new_sid not in _active_connections:
+                    _active_connections[new_sid] = _make_session(
+                        new_sid, ua, remote, scope,
+                        client_name, client_version, proto_version,
+                    )
 
             return response
 
         return await call_next(request)
+
 
 DATABASE_URL = os.environ.get(
     "SKILLNOTE_DATABASE_URL",
