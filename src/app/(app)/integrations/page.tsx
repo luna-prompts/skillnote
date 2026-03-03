@@ -509,14 +509,17 @@ function ConfigPanel({ agent, setAgent, config, agentDef, mcpUrl }: {
 // ─── connection row ───────────────────────────────────────────────────────────
 
 function ConnRow({ conn, elapsed }: { conn: McpConnection; elapsed: number }) {
-  const { name, version, color, category } = resolveAgent(conn)
+  const { name, version, color } = resolveAgent(conn)
   const duration = fmtDuration(conn.duration_seconds + elapsed)
   const calls = conn.call_count ?? 0
   return (
     <div className="flex items-center gap-3 px-5 py-3 hover:bg-muted/20 transition-colors group">
-      <span className="w-2 h-2 rounded-full shrink-0 conn-pulse" style={{ backgroundColor: color }} />
+      {/* emerald = session is alive — consistent with the header count badge */}
+      <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0 conn-pulse" />
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5 min-w-0">
+          {/* category color on the name dot so agent type is still visible */}
+          <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
           <span className="text-[13px] font-medium text-foreground truncate leading-snug">{name}</span>
           {version && (
             <span className="text-[10.5px] font-mono text-muted-foreground/35 shrink-0">v{version}</span>
