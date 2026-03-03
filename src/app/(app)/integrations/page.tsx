@@ -95,6 +95,16 @@ function resolveAgent(conn: McpConnection) {
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
+/** Break a CLI command at --flag boundaries for readable display.
+ *  Each --flag starts on a new indented line with a backslash continuation.
+ *  The raw single-line form is preserved for clipboard copying. */
+function fmtCli(cmd: string): string {
+  // Split before each --flag, keeping the flag attached
+  const parts = cmd.split(/ (?=--\w)/)
+  if (parts.length <= 1) return cmd
+  return parts[0] + ' \\\n' + parts.slice(1).map(p => `  ${p}`).join(' \\\n')
+}
+
 function fmtDuration(s: number) {
   if (s < 60) return `${s}s`
   const secs = s % 60
@@ -557,8 +567,8 @@ function ConfigPanel({ agent, setAgent, config, agentDef, mcpUrl }: {
             <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/35">CLI install</span>
             <CopyBtn text={agentDef.cli(mcpUrl)} label="Copy" size="sm" />
           </div>
-          <pre className="bg-[hsl(var(--card))] dark:bg-zinc-950/70 px-5 py-4 text-[12px] font-mono text-muted-foreground overflow-x-auto whitespace-pre">
-            <code>{agentDef.cli(mcpUrl)}</code>
+          <pre className="bg-[hsl(var(--card))] dark:bg-zinc-950/70 px-5 py-4 text-[12px] font-mono text-muted-foreground whitespace-pre-wrap break-words">
+            <code>{fmtCli(agentDef.cli(mcpUrl))}</code>
           </pre>
         </div>
       )}
