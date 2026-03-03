@@ -405,6 +405,36 @@ skillnote doctor                      # Diagnose setup issues
 
 ## Self-Hosting
 
+### System Requirements
+
+SkillNote is lightweight. Here's what it uses on a typical machine at idle:
+
+| Container    | Image size | RAM (idle) | RAM (under load) |
+| ------------ | ---------- | ---------- | ---------------- |
+| **Web**      | ~302 MB    | ~37 MB     | ~60 MB           |
+| **API**      | ~456 MB    | ~71 MB     | ~120 MB          |
+| **MCP**      | ~456 MB    | ~104 MB    | ~160 MB          |
+| **Postgres** | ~663 MB    | ~38 MB     | ~80 MB           |
+| **Total**    | ~1.9 GB    | **~250 MB**| **~420 MB**      |
+
+> The API and MCP images share base layers — the combined pull is ~600 MB, not 912 MB.
+
+**Minimum recommended specs:**
+- CPU: 1 core (2+ recommended for MCP-heavy workloads)
+- RAM: 512 MB free
+- Disk: 2 GB for images + space for skill bundles (5 MB each by default)
+
+**Disk usage over time:**
+- Each published skill version creates a ZIP bundle (≤ 5 MB by default)
+- PostgreSQL data grows slowly — a typical install with 100 skills is < 10 MB
+- Logs are written to stdout (captured by Docker); no files accumulate on disk
+
+To check live resource usage at any time:
+
+```bash
+docker stats
+```
+
 ### Docker Compose (recommended)
 
 ```bash
