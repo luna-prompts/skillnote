@@ -109,29 +109,51 @@ function fmtUptime(s: number) {
 
 // ─── copy button ──────────────────────────────────────────────────────────────
 
-function copyText(text: string): void {
+async function copyText(text: string): Promise<boolean> {
   if (navigator.clipboard?.writeText) {
-    navigator.clipboard.writeText(text).catch(() => execCopy(text))
-  } else {
-    execCopy(text)
+    try { await navigator.clipboard.writeText(text); return true } catch { /* fall through */ }
   }
+  return execCopy(text)
 }
-function execCopy(text: string): void {
+function execCopy(text: string): boolean {
   const el = document.createElement('textarea')
   el.value = text
   el.style.cssText = 'position:fixed;opacity:0;pointer-events:none'
   document.body.appendChild(el)
   el.focus()
   el.select()
-  try { document.execCommand('copy') } catch { /* ignore */ }
+  try { document.execCommand('copy'); document.body.removeChild(el); return true } catch { /* ignore */ }
   document.body.removeChild(el)
+  return false
+}
+
+// ─── tooltip ──────────────────────────────────────────────────────────────────
+
+function Tip({ text, children }: { text: string; children: React.ReactNode }) {
+  return (
+    <span className="relative group/tip inline-flex items-center">
+      {children}
+      <span className={cn(
+        'pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2',
+        'w-max max-w-[220px] rounded-lg bg-popover border border-border/40',
+        'px-2.5 py-1.5 text-[11px] leading-snug text-popover-foreground shadow-lg',
+        'opacity-0 group-hover/tip:opacity-100 transition-opacity duration-150 z-50',
+        'whitespace-normal text-left'
+      )}>
+        {text}
+      </span>
+    </span>
+  )
 }
 
 function CopyBtn({ text, label = 'Copy', size = 'md' }: { text: string; label?: string; size?: 'sm' | 'md' }) {
   const [ok, setOk] = useState(false)
   return (
     <button
-      onClick={() => { copyText(text); setOk(true); setTimeout(() => setOk(false), 2000) }}
+      onClick={async () => {
+        const success = await copyText(text)
+        if (success) { setOk(true); setTimeout(() => setOk(false), 2000) }
+      }}
       className={cn(
         'inline-flex items-center gap-1.5 font-medium rounded-lg transition-all shrink-0',
         'text-muted-foreground/60 hover:text-foreground hover:bg-muted/60',
@@ -523,7 +545,7 @@ function ConfigPanel({ agent, setAgent, config, agentDef, mcpUrl }: {
             <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/35">CLI install</span>
             <CopyBtn text={agentDef.cli(mcpUrl)} label="Copy" size="sm" />
           </div>
-          <pre className="bg-[hsl(var(--card))] dark:bg-zinc-950/70 px-5 py-4 text-[12px] font-mono text-muted-foreground overflow-x-auto">
+          <pre className="bg-[hsl(var(--card))] dark:bg-zinc-950/70 px-5 py-4 text-[12px] font-mono text-muted-foreground overflow-x-auto whitespace-pre">
             <code>{agentDef.cli(mcpUrl)}</code>
           </pre>
         </div>
@@ -553,7 +575,7 @@ function ScopeChip({ scope, highlight }: { scope: string | null; highlight: bool
           : 'bg-muted/60 text-accent/60'
     )}>
       <Layers className="h-2.5 w-2.5 shrink-0" />
-      {isAll ? 'All Skills' : scope}
+      <span className="truncate max-w-[100px]">{isAll ? 'All Skills' : scope}</span>
     </span>
   )
 }
@@ -917,17 +939,17 @@ function SessionStatus({ mcpUrl, agentLabel, skillCount, scopeLabel }: {
       {/* vertical stack — fits 340px sidebar cleanly */}
       <div className="divide-y divide-border/25">
         {items.filter(i => !('emerald' in i && i.emerald)).map((item, i) => (
-          <div key={i} className="flex items-center justify-between px-5 py-3">
-            <span className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/35">
+          <div key={i} className="flex items-center justify-between gap-3 px-5 py-3">
+            <span className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/35 shrink-0">
               {item.label}
               {item.label === 'Tools' && (
-                <span title="Every skill in the selected collection is exposed as an MCP tool. Agents call tools/list to discover them." className="cursor-default">
-                  <Info className="w-3 h-3 text-muted-foreground/30 hover:text-muted-foreground/60 transition-colors" />
-                </span>
+                <Tip text="Every skill in the collection is an MCP tool. Agents call tools/list to discover them and tools/call to get the content.">
+                  <Info className="w-3 h-3 text-muted-foreground/30 hover:text-muted-foreground/60 transition-colors cursor-default" />
+                </Tip>
               )}
             </span>
             <span className={cn(
-              'text-[12.5px] font-medium text-right',
+              'text-[12.5px] font-medium text-right truncate min-w-0',
               'accent' in item && item.accent ? 'text-accent' : 'text-foreground/75'
             )}>
               {item.value}
