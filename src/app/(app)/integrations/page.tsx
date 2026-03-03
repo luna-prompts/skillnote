@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { Copy, Check, Search, ChevronDown, X, Wifi, WifiOff, Clock, Users, Radio, Activity, ChevronRight, ArrowUpDown, FolderOpen } from 'lucide-react'
+import { Copy, Check, Search, ChevronDown, X, Wifi, WifiOff, Clock, Users, Radio, Activity, ChevronRight, ArrowUpDown, FolderOpen, Layers } from 'lucide-react'
 import { TopBar } from '@/components/layout/topbar'
 import { getSkills, syncSkillsFromApi } from '@/lib/skills-store'
 import { getApiBaseUrl } from '@/lib/api/client'
@@ -506,14 +506,40 @@ function ConfigPanel({ agent, setAgent, config, agentDef, mcpUrl }: {
   )
 }
 
+// ─── scope chip ───────────────────────────────────────────────────────────────
+
+function ScopeChip({ scope, highlight }: { scope: string | null; highlight: boolean }) {
+  const isAll = !scope
+  return (
+    <span className={cn(
+      'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium shrink-0 transition-all duration-150',
+      isAll
+        ? 'bg-muted/60 text-muted-foreground/40'
+        : highlight
+          ? 'bg-accent/15 text-accent border border-accent/20'
+          : 'bg-muted/60 text-accent/60'
+    )}>
+      <Layers className="h-2.5 w-2.5 shrink-0" />
+      {isAll ? 'All Skills' : scope}
+    </span>
+  )
+}
+
 // ─── connection row ───────────────────────────────────────────────────────────
 
-function ConnRow({ conn, elapsed }: { conn: McpConnection; elapsed: number }) {
+function ConnRow({ conn, elapsed, selectedScope }: {
+  conn: McpConnection; elapsed: number; selectedScope: string | null
+}) {
   const { name, version, color } = resolveAgent(conn)
   const duration = fmtDuration(conn.duration_seconds + elapsed)
   const calls = conn.call_count ?? 0
+  // Dim rows that don't match the scope the user is currently viewing
+  const scopeMatch = !selectedScope || conn.scope === selectedScope
   return (
-    <div className="flex items-center gap-3 px-5 py-3 hover:bg-muted/20 transition-colors group">
+    <div className={cn(
+      'flex items-center gap-3 px-5 py-3 hover:bg-muted/20 transition-all duration-150 group',
+      !scopeMatch && 'opacity-35 hover:opacity-60'
+    )}>
       {/* emerald = session is alive — consistent with the header count badge */}
       <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0 conn-pulse" />
       <div className="flex-1 min-w-0">
@@ -525,14 +551,11 @@ function ConnRow({ conn, elapsed }: { conn: McpConnection; elapsed: number }) {
             <span className="text-[10.5px] font-mono text-muted-foreground/35 shrink-0">v{version}</span>
           )}
         </div>
-        <div className="flex items-center gap-1.5 mt-0.5 min-w-0">
+        <div className="flex items-center gap-1.5 mt-1 min-w-0 flex-wrap">
+          {/* scope chip — always shown, "All Skills" when unscoped */}
+          <ScopeChip scope={conn.scope} highlight={!!(selectedScope && conn.scope === selectedScope)} />
+          <span className="text-muted-foreground/20 shrink-0">·</span>
           <span className="text-[11px] font-mono text-muted-foreground/40 shrink-0">{conn.remote}</span>
-          {conn.scope && (
-            <>
-              <span className="text-muted-foreground/20 shrink-0">·</span>
-              <span className="text-[11px] text-accent/60 truncate">{conn.scope}</span>
-            </>
-          )}
           {conn.proto_version && (
             <>
               <span className="text-muted-foreground/15 shrink-0 hidden sm:inline">·</span>
@@ -557,11 +580,13 @@ function ConnRow({ conn, elapsed }: { conn: McpConnection; elapsed: number }) {
 
 // ─── group section ────────────────────────────────────────────────────────────
 
-function GroupSection({ category, conns, elapsed, open, onToggle }: {
-  category: string; conns: McpConnection[]; elapsed: number; open: boolean; onToggle: () => void
+function GroupSection({ category, conns, elapsed, open, onToggle, selectedScope }: {
+  category: string; conns: McpConnection[]; elapsed: number
+  open: boolean; onToggle: () => void; selectedScope: string | null
 }) {
   const cat = AGENT_CATALOG[category] ?? AGENT_CATALOG.other
   const totalCalls = conns.reduce((s, c) => s + (c.call_count ?? 0), 0)
+  const matchCount = selectedScope ? conns.filter(c => c.scope === selectedScope).length : conns.length
   return (
     <div>
       <button
@@ -570,7 +595,12 @@ function GroupSection({ category, conns, elapsed, open, onToggle }: {
       >
         <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: cat.color }} />
         <span className="flex-1 text-[12px] font-semibold text-foreground/70">{cat.label}</span>
-        <span className="text-[11px] text-muted-foreground/40 tabular-nums">{conns.length} connected</span>
+        {selectedScope && matchCount > 0 && (
+          <span className="text-[10px] font-medium text-accent/70 bg-accent/10 px-1.5 py-0.5 rounded tabular-nums">
+            {matchCount} on {selectedScope}
+          </span>
+        )}
+        <span className="text-[11px] text-muted-foreground/40 tabular-nums">{conns.length} total</span>
         {totalCalls > 0 && (
           <span className="text-[10.5px] text-muted-foreground/25 tabular-nums hidden sm:block">{totalCalls} calls</span>
         )}
@@ -581,7 +611,7 @@ function GroupSection({ category, conns, elapsed, open, onToggle }: {
       </button>
       {open && (
         <div className="divide-y divide-border/20">
-          {conns.map(c => <ConnRow key={c.id} conn={c} elapsed={elapsed} />)}
+          {conns.map(c => <ConnRow key={c.id} conn={c} elapsed={elapsed} selectedScope={selectedScope} />)}
         </div>
       )}
     </div>
@@ -590,7 +620,7 @@ function GroupSection({ category, conns, elapsed, open, onToggle }: {
 
 // ─── live connections panel ───────────────────────────────────────────────────
 
-function ConnectionsPanel() {
+function ConnectionsPanel({ selectedScope }: { selectedScope: string | null }) {
   const [status, setStatus]     = useState<McpStatus | null>(null)
   const [error, setError]       = useState(false)
   const [lastPoll, setLastPoll] = useState<number | null>(null)
@@ -689,13 +719,23 @@ function ConnectionsPanel() {
 
       {/* ── header ──────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between px-5 py-3.5 border-b border-border/40">
-        <div className="flex items-center gap-2.5">
-          <span className="text-[13px] font-semibold text-foreground">Live Connections</span>
+        <div className="flex items-center gap-2.5 min-w-0">
+          <span className="text-[13px] font-semibold text-foreground shrink-0">Live Connections</span>
           {online && status!.active_connections > 0 && (
-            <span className="inline-flex items-center h-5 px-1.5 rounded-md bg-emerald-500/10 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 tabular-nums">
+            <span className="inline-flex items-center h-5 px-1.5 rounded-md bg-emerald-500/10 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 tabular-nums shrink-0">
               {status!.active_connections}
             </span>
           )}
+          {/* Context note — makes clear this panel is independent of the scope filter */}
+          {online && selectedScope && status!.active_connections > 0 ? (
+            <span className="text-[11px] text-muted-foreground/40 truncate hidden sm:block">
+              {status!.connections.filter(c => c.scope === selectedScope).length} on &ldquo;{selectedScope}&rdquo;
+              {' · '}
+              {status!.connections.filter(c => !c.scope).length} on all skills
+            </span>
+          ) : online && status!.active_connections > 0 ? (
+            <span className="text-[11px] text-muted-foreground/30 hidden sm:block">all scopes</span>
+          ) : null}
         </div>
         <div className="flex items-center gap-2">
           {online && (
@@ -792,13 +832,14 @@ function ConnectionsPanel() {
                 elapsed={elapsedSincePoll}
                 open={openGroups.has(cat)}
                 onToggle={() => toggleGroup(cat)}
+                selectedScope={selectedScope}
               />
             ))}
           </div>
         ) : (
           // ── flat view ──
           <div className="divide-y divide-border/20">
-            {sorted.map(c => <ConnRow key={c.id} conn={c} elapsed={elapsedSincePoll} />)}
+            {sorted.map(c => <ConnRow key={c.id} conn={c} elapsed={elapsedSincePoll} selectedScope={selectedScope} />)}
           </div>
         )}
       </div>
@@ -962,7 +1003,7 @@ export default function IntegrationsPage() {
 
           {/* ── live connections — full width so 100+ connections have room ── */}
           <div className="i-4">
-            <ConnectionsPanel />
+            <ConnectionsPanel selectedScope={col} />
           </div>
 
         </div>
