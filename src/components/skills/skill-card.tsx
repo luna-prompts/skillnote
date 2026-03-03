@@ -1,6 +1,5 @@
 import Link from 'next/link'
 import { Skill } from '@/lib/mock-data'
-import { formatRelative } from '@/lib/format'
 import { MessageSquare, Paperclip } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -69,7 +68,6 @@ export function SkillCard({ skill }: { skill: Skill }) {
               </span>
             )}
           </div>
-          <span className="text-[10px] text-muted-foreground/30 tabular-nums font-mono">{formatRelative(skill.updated_at)}</span>
         </div>
       </div>
     </Link>
