@@ -516,14 +516,16 @@ function ConfigPanel({ agent, setAgent, config, agentDef, mcpUrl }: {
         </pre>
       )}
 
-      {/* cli row — only for agents that have a CLI install command */}
+      {/* cli block — same editor style as config, no chrome */}
       {'cli' in agentDef && agentDef.cli && (
-        <div className="flex items-start gap-3 px-4 py-3 border-t border-border/30 bg-muted/5">
-          <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/30 mt-0.5 shrink-0 w-6">CLI</span>
-          <code className="flex-1 text-[11px] font-mono text-muted-foreground/55 break-all leading-relaxed min-w-0">
-            $ {agentDef.cli(mcpUrl)}
-          </code>
-          <CopyBtn text={agentDef.cli(mcpUrl)} label="Copy" size="sm" />
+        <div className="border-t border-border/30">
+          <div className="flex items-center justify-between px-4 py-2 bg-muted/20 border-b border-border/20">
+            <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/35">CLI install</span>
+            <CopyBtn text={agentDef.cli(mcpUrl)} label="Copy" size="sm" />
+          </div>
+          <pre className="bg-[hsl(var(--card))] dark:bg-zinc-950/70 px-5 py-4 text-[12px] font-mono text-muted-foreground overflow-x-auto">
+            <code>{agentDef.cli(mcpUrl)}</code>
+          </pre>
         </div>
       )}
 
