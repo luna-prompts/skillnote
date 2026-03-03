@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { Copy, Check, Search, ChevronDown, X, Wifi, WifiOff, Clock, Users, Radio, Activity, ChevronRight, ArrowUpDown, FolderOpen, Layers } from 'lucide-react'
+import { Copy, Check, Search, ChevronDown, X, Wifi, WifiOff, Clock, Users, Radio, Activity, ChevronRight, ArrowUpDown, FolderOpen, Layers, Info } from 'lucide-react'
 import { TopBar } from '@/components/layout/topbar'
 import { getSkills, syncSkillsFromApi } from '@/lib/skills-store'
 import { getApiBaseUrl } from '@/lib/api/client'
@@ -885,8 +885,13 @@ function SessionStatus({ mcpUrl, agentLabel, skillCount, scopeLabel }: {
       <div className="divide-y divide-border/25">
         {items.filter(i => !('emerald' in i && i.emerald)).map((item, i) => (
           <div key={i} className="flex items-center justify-between px-5 py-3">
-            <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/35">
+            <span className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/35">
               {item.label}
+              {item.label === 'Tools' && (
+                <span title="Every skill in the selected collection is exposed as an MCP tool. Agents call tools/list to discover them." className="cursor-help">
+                  <Info className="w-3 h-3 text-muted-foreground/30 hover:text-muted-foreground/60 transition-colors" />
+                </span>
+              )}
             </span>
             <span className={cn(
               'text-[12.5px] font-medium text-right',
