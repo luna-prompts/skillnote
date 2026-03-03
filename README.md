@@ -150,6 +150,8 @@ Every skill is exposed as an MCP tool. The agent discovers and calls them live: 
 
 SkillNote exposes every skill as an MCP tool your agent can discover and call directly: no local files needed, no restart when skills change.
 
+> **Every skill = one MCP tool.** The tool name is the skill slug, the description is what the agent reads to decide when to invoke it, and calling the tool returns the full `SKILL.md` content. Filter by collection to control which skills (tools) each agent sees.
+
 **How it works:**
 - Each skill becomes a tool: `name = slug`, `description = skill description`
 - The agent uses the description to decide when to invoke the skill
