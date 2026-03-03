@@ -34,31 +34,81 @@ from fastmcp.tools.tool import Tool, ToolResult
 
 _server_start: float = time.time()
 
-# conn_id -> {connected_at, user_agent, remote, scope}
+# session_id -> {id, connected_at, last_seen, user_agent, remote, scope}
 _active_connections: dict[str, dict] = {}
+
+# Sessions idle longer than this are considered disconnected
+SESSION_TIMEOUT = 60  # seconds
 
 
 class ConnectionTrackerMiddleware(BaseHTTPMiddleware):
-    """Tracks active MCP/SSE connections by wrapping the request lifecycle."""
+    """Tracks MCP sessions via Mcp-Session-Id header (streamable-http transport).
+
+    Streamable-http sends a short POST per tool call — there is no persistent
+    TCP connection to wrap. Instead we track logical MCP sessions:
+      - Session starts: server returns Mcp-Session-Id on the initialize response
+      - Session active: every subsequent request carries that header (last_seen updated)
+      - Session ends: client sends DELETE /mcp, or session times out after inactivity
+
+    SSE transport (/sse) maintains a real long-lived connection so we track it
+    with a synthetic conn_id for the duration of the response stream.
+    """
 
     async def dispatch(self, request: StarletteRequest, call_next):
-        # Only track MCP endpoint connections (SSE keeps the connection open)
-        if request.url.path.rstrip("/") in ("/mcp", "/sse"):
+        path = request.url.path.rstrip("/")
+
+        # ── SSE: genuine persistent connection ──────────────────────────────
+        if path == "/sse":
             conn_id = str(uuid.uuid4())
             ua = request.headers.get("user-agent", "")
             remote = request.client.host if request.client else "unknown"
-            scope = request.query_params.get("collections") or None
+            now = time.time()
             _active_connections[conn_id] = {
                 "id": conn_id,
-                "connected_at": time.time(),
+                "connected_at": now,
+                "last_seen": now,
                 "user_agent": ua,
-                "remote": remote,
-                "scope": scope,
+                "remote": request.client.host if request.client else "unknown",
+                "scope": request.query_params.get("collections") or None,
             }
             try:
                 return await call_next(request)
             finally:
                 _active_connections.pop(conn_id, None)
+
+        # ── streamable-http: session-based tracking ──────────────────────────
+        if path == "/mcp":
+            ua = request.headers.get("user-agent", "")
+            remote = request.client.host if request.client else "unknown"
+            scope = request.query_params.get("collections") or None
+            existing_sid = request.headers.get("mcp-session-id")
+
+            # Touch last_seen on every request for an existing session
+            if existing_sid and existing_sid in _active_connections:
+                _active_connections[existing_sid]["last_seen"] = time.time()
+
+            # Client is terminating the session
+            if request.method == "DELETE" and existing_sid:
+                _active_connections.pop(existing_sid, None)
+                return await call_next(request)
+
+            response = await call_next(request)
+
+            # Capture new session ID returned by the initialize response
+            new_sid = response.headers.get("mcp-session-id")
+            if new_sid and new_sid not in _active_connections:
+                now = time.time()
+                _active_connections[new_sid] = {
+                    "id": new_sid,
+                    "connected_at": now,
+                    "last_seen": now,
+                    "user_agent": ua,
+                    "remote": remote,
+                    "scope": scope,
+                }
+
+            return response
+
         return await call_next(request)
 
 DATABASE_URL = os.environ.get(
@@ -182,6 +232,12 @@ mcp = FastMCP(
 async def status_endpoint(request: StarletteRequest) -> JSONResponse:
     """Returns server uptime, active connection count, and per-connection info."""
     now = time.time()
+
+    # Expire sessions that have been idle longer than SESSION_TIMEOUT
+    stale = [sid for sid, c in _active_connections.items() if now - c["last_seen"] > SESSION_TIMEOUT]
+    for sid in stale:
+        _active_connections.pop(sid, None)
+
     connections = [
         {
             **c,
