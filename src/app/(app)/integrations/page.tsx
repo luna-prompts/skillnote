@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { Copy, Check, Search, ChevronDown, X, Wifi, WifiOff, Clock, Users, Radio, Activity, ChevronRight, ArrowUpDown } from 'lucide-react'
+import { Copy, Check, Search, ChevronDown, X, Wifi, WifiOff, Clock, Users, Radio, Activity, ChevronRight, ArrowUpDown, FolderOpen } from 'lucide-react'
 import { TopBar } from '@/components/layout/topbar'
 import { getSkills, syncSkillsFromApi } from '@/lib/skills-store'
 import { getApiBaseUrl } from '@/lib/api/client'
@@ -238,33 +238,57 @@ function ScopeSelector({ collections, totalSkills, value, onChange }: {
 
   return (
     <div>
+      {/* label row */}
+      <div className="flex items-center gap-1.5 mb-2">
+        <FolderOpen className="h-3.5 w-3.5 text-muted-foreground/40" />
+        <span className="text-[12px] font-medium text-muted-foreground/55">Filter by collection</span>
+        {value && (
+          <span className="ml-auto text-[11px] text-accent/60 font-medium">filtered</span>
+        )}
+      </div>
+
       {/* trigger */}
       <button
         ref={triggerRef}
         onClick={() => open ? setOpen(false) : openDrop()}
         className={cn(
-          'w-full flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-all duration-150 focus:outline-none',
+          'w-full flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-all duration-150 focus:outline-none cursor-pointer',
           open
-            ? 'border-accent/40 bg-card ring-2 ring-accent/8'
-            : 'border-border/60 bg-card hover:border-border'
+            ? 'border-accent/50 bg-accent/3 ring-2 ring-accent/10 shadow-sm'
+            : value
+              ? 'border-accent/30 bg-accent/3 hover:border-accent/50 hover:bg-accent/5 shadow-sm'
+              : 'border-border bg-card hover:border-border/80 hover:bg-muted/30 hover:shadow-sm'
         )}
       >
         <div className="flex-1 min-w-0 flex items-center gap-3">
           <div className={cn(
             'w-2 h-2 rounded-full shrink-0 transition-colors duration-200',
-            value ? 'bg-accent' : 'bg-muted-foreground/20'
+            value ? 'bg-accent' : 'bg-muted-foreground/30'
           )} />
-          <span className="text-[13px] font-medium text-foreground truncate">
-            {value ?? 'All Skills'}
-          </span>
+          <div className="flex flex-col min-w-0">
+            <span className={cn(
+              'text-[13px] font-medium truncate leading-snug',
+              value ? 'text-foreground' : 'text-foreground/70'
+            )}>
+              {value ?? 'All Skills'}
+            </span>
+            {!value && (
+              <span className="text-[11px] text-muted-foreground/35">
+                click to filter by collection
+              </span>
+            )}
+          </div>
           {value && (
-            <span className="text-[11px] text-muted-foreground/40 truncate hidden sm:block">
+            <span className="text-[11px] text-muted-foreground/40 truncate hidden sm:block shrink-0">
               collection
             </span>
           )}
         </div>
         <div className="flex items-center gap-2.5 shrink-0">
-          <span className="text-[12px] text-muted-foreground/50 tabular-nums">
+          <span className={cn(
+            'text-[12px] tabular-nums transition-colors duration-150',
+            value ? 'text-accent/70 font-semibold' : 'text-muted-foreground/50'
+          )}>
             {activeCount} {activeCount === 1 ? 'skill' : 'skills'}
           </span>
           {value && (
@@ -278,8 +302,8 @@ function ScopeSelector({ collections, totalSkills, value, onChange }: {
             </span>
           )}
           <ChevronDown className={cn(
-            'h-3.5 w-3.5 text-muted-foreground/40 transition-transform duration-200',
-            open && 'rotate-180'
+            'h-4 w-4 transition-transform duration-200',
+            open ? 'text-accent rotate-180' : 'text-muted-foreground/50'
           )} />
         </div>
       </button>
@@ -733,7 +757,7 @@ function ConnectionsPanel() {
       )}
 
       {/* ── body ────────────────────────────────────────────────────────── */}
-      <div className="flex-1 overflow-y-auto" style={{ maxHeight: 420 }}>
+      <div className="flex-1 overflow-y-auto" style={{ maxHeight: 480 }}>
         {!online ? (
           <div className="flex flex-col items-center gap-2.5 py-10 px-6">
             <div className="w-10 h-10 rounded-xl bg-muted/50 border border-border/30 flex items-center justify-center">
@@ -808,29 +832,31 @@ function SessionStatus({ mcpUrl, agentLabel, skillCount, scopeLabel }: {
     <div className="bg-card border border-border/40 rounded-2xl overflow-hidden">
       <div className="flex items-center justify-between px-5 py-3.5 border-b border-border/30">
         <span className="text-[12px] font-semibold text-foreground/60 uppercase tracking-wide">Session</span>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           <span className="w-2 h-2 rounded-full bg-emerald-500 conn-pulse" />
-          <code className="text-[11px] font-mono text-muted-foreground/40 truncate max-w-[280px] hidden sm:block">{mcpUrl}</code>
+          <span className="text-[11.5px] font-medium text-emerald-600 dark:text-emerald-400">ready</span>
         </div>
       </div>
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 divide-x divide-y sm:divide-y-0 divide-border/30">
-        {items.map((item, i) => (
-          <div key={i} className="px-5 py-3.5">
-            <p className="text-[10.5px] font-semibold uppercase tracking-widest text-muted-foreground/35 mb-1">
+      {/* vertical stack — fits 340px sidebar cleanly */}
+      <div className="divide-y divide-border/25">
+        {items.filter(i => !('emerald' in i && i.emerald)).map((item, i) => (
+          <div key={i} className="flex items-center justify-between px-5 py-3">
+            <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/35">
               {item.label}
-            </p>
-            <p className={cn(
-              'text-[13px] font-medium leading-snug',
-              'emerald' in item && item.emerald
-                ? 'text-emerald-600 dark:text-emerald-400'
-                : 'accent' in item && item.accent
-                  ? 'text-accent'
-                  : 'text-foreground/80'
+            </span>
+            <span className={cn(
+              'text-[12.5px] font-medium text-right',
+              'accent' in item && item.accent ? 'text-accent' : 'text-foreground/75'
             )}>
               {item.value}
-            </p>
+            </span>
           </div>
         ))}
+      </div>
+      {/* MCP URL footer */}
+      <div className="flex items-center gap-2.5 px-5 py-3 border-t border-border/25 bg-muted/10">
+        <code className="flex-1 text-[10.5px] font-mono text-muted-foreground/35 truncate min-w-0">{mcpUrl}</code>
+        <CopyBtn text={mcpUrl} label="Copy" size="sm" />
       </div>
     </div>
   )
@@ -907,7 +933,7 @@ export default function IntegrationsPage() {
             />
           </div>
 
-          {/* ── two-column: config + connections ─────────────────────── */}
+          {/* ── two-column: config + session ─────────────────────────── */}
           <div className="i-3 grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-5 items-start mb-5">
 
             {/* config */}
@@ -921,19 +947,19 @@ export default function IntegrationsPage() {
               />
             </div>
 
-            {/* connections */}
-            <ConnectionsPanel />
-
-          </div>
-
-          {/* ── session status ────────────────────────────────────────── */}
-          <div className="i-4">
+            {/* session — fits neatly in the sidebar width */}
             <SessionStatus
               mcpUrl={mcpUrl}
               agentLabel={agentDef.label}
               skillCount={scopedCount}
               scopeLabel={col}
             />
+
+          </div>
+
+          {/* ── live connections — full width so 100+ connections have room ── */}
+          <div className="i-4">
+            <ConnectionsPanel />
           </div>
 
         </div>
