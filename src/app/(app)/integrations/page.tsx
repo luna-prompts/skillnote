@@ -888,7 +888,7 @@ function SessionStatus({ mcpUrl, agentLabel, skillCount, scopeLabel }: {
             <span className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/35">
               {item.label}
               {item.label === 'Tools' && (
-                <span title="Every skill in the selected collection is exposed as an MCP tool. Agents call tools/list to discover them." className="cursor-help">
+                <span title="Every skill in the selected collection is exposed as an MCP tool. Agents call tools/list to discover them." className="cursor-default">
                   <Info className="w-3 h-3 text-muted-foreground/30 hover:text-muted-foreground/60 transition-colors" />
                 </span>
               )}
