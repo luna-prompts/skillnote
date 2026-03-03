@@ -109,11 +109,29 @@ function fmtUptime(s: number) {
 
 // ─── copy button ──────────────────────────────────────────────────────────────
 
+function copyText(text: string): void {
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(text).catch(() => execCopy(text))
+  } else {
+    execCopy(text)
+  }
+}
+function execCopy(text: string): void {
+  const el = document.createElement('textarea')
+  el.value = text
+  el.style.cssText = 'position:fixed;opacity:0;pointer-events:none'
+  document.body.appendChild(el)
+  el.focus()
+  el.select()
+  try { document.execCommand('copy') } catch { /* ignore */ }
+  document.body.removeChild(el)
+}
+
 function CopyBtn({ text, label = 'Copy', size = 'md' }: { text: string; label?: string; size?: 'sm' | 'md' }) {
   const [ok, setOk] = useState(false)
   return (
     <button
-      onClick={() => { navigator.clipboard.writeText(text); setOk(true); setTimeout(() => setOk(false), 2000) }}
+      onClick={() => { copyText(text); setOk(true); setTimeout(() => setOk(false), 2000) }}
       className={cn(
         'inline-flex items-center gap-1.5 font-medium rounded-lg transition-all shrink-0',
         'text-muted-foreground/60 hover:text-foreground hover:bg-muted/60',
