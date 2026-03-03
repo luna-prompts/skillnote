@@ -4,7 +4,7 @@ import { usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { Sidebar } from '@/components/layout/sidebar'
 import { ConnectionBanner } from '@/components/layout/connection-banner'
-import { BookOpen, FolderOpen } from 'lucide-react'
+import { BookOpen, FolderOpen, Plug2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { SidebarContext } from '@/lib/sidebar-context'
 
@@ -45,6 +45,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         {[
           { href: '/', icon: BookOpen, label: 'Skills' },
           { href: '/collections', icon: FolderOpen, label: 'Collections' },
+          { href: '/integrations', icon: Plug2, label: 'Integrations' },
         ].map(({ href, icon: Icon, label }) => {
           const active = href === '/' ? pathname === '/' : pathname.startsWith(href)
           return (
