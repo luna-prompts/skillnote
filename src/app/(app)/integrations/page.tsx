@@ -130,20 +130,30 @@ function execCopy(text: string): boolean {
 }
 
 // ─── tooltip ──────────────────────────────────────────────────────────────────
+// Uses position:fixed + portal so it escapes any overflow-hidden/clip ancestor.
 
 function Tip({ text, children }: { text: string; children: React.ReactNode }) {
+  const anchorRef = useRef<HTMLSpanElement>(null)
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
+
+  const show = () => {
+    if (!anchorRef.current) return
+    const r = anchorRef.current.getBoundingClientRect()
+    setPos({ top: r.top, left: r.left + r.width / 2 })
+  }
+
   return (
-    <span className="relative group/tip inline-flex items-center">
+    <span ref={anchorRef} className="inline-flex items-center" onMouseEnter={show} onMouseLeave={() => setPos(null)}>
       {children}
-      <span className={cn(
-        'pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2',
-        'w-max max-w-[220px] rounded-lg bg-popover border border-border/40',
-        'px-2.5 py-1.5 text-[11px] leading-snug text-popover-foreground shadow-lg',
-        'opacity-0 group-hover/tip:opacity-100 transition-opacity duration-150 z-50',
-        'whitespace-normal text-left'
-      )}>
-        {text}
-      </span>
+      {pos && createPortal(
+        <span
+          style={{ position: 'fixed', top: pos.top - 8, left: pos.left, transform: 'translate(-50%, -100%)', zIndex: 9999 }}
+          className="pointer-events-none w-max max-w-[220px] rounded-lg bg-popover border border-border/40 px-2.5 py-1.5 text-[11px] leading-snug text-popover-foreground shadow-lg whitespace-normal text-left"
+        >
+          {text}
+        </span>,
+        document.body
+      )}
     </span>
   )
 }
@@ -504,7 +514,7 @@ function ConfigPanel({ agent, setAgent, config, agentDef, mcpUrl }: {
   mcpUrl: string
 }) {
   return (
-    <div className="bg-card border border-border/40 rounded-2xl overflow-hidden flex flex-col">
+    <div className="bg-card border border-border/40 rounded-2xl overflow-hidden flex flex-col min-w-0 w-full">
       {/* agent tabs */}
       <div className="flex items-center gap-0 border-b border-border/40 overflow-x-auto scrollbar-hide">
         {AGENTS.map(a => (
@@ -774,7 +784,7 @@ function ConnectionsPanel({ selectedScope }: { selectedScope: string | null }) {
     setOpenGroups(prev => { const s = new Set(prev); s.has(cat) ? s.delete(cat) : s.add(cat); return s })
 
   return (
-    <div className="bg-card border border-border/40 rounded-2xl overflow-clip flex flex-col">
+    <div className="bg-card border border-border/40 rounded-2xl overflow-hidden flex flex-col">
 
       {/* ── header ──────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between px-5 py-3.5 border-b border-border/40">
@@ -932,7 +942,7 @@ function SessionStatus({ mcpUrl, agentLabel, skillCount, scopeLabel }: {
   ]
 
   return (
-    <div className="bg-card border border-border/40 rounded-2xl overflow-clip">
+    <div className="bg-card border border-border/40 rounded-2xl overflow-hidden">
       <div className="flex items-center justify-between px-5 py-3.5 border-b border-border/30">
         <span className="text-[12px] font-semibold text-foreground/60 uppercase tracking-wide">Session</span>
         <div className="flex items-center gap-1.5">
@@ -1044,8 +1054,8 @@ export default function IntegrationsPage() {
           {/* ── two-column: config + session ─────────────────────────── */}
           <div className="i-3 grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-5 items-start mb-5">
 
-            {/* config */}
-            <div className="cfg" key={agent + (col ?? '_')}>
+            {/* config — min-w-0 prevents long URLs/CLI from blowing the grid column */}
+            <div className="cfg min-w-0" key={agent + (col ?? '_')}>
               <ConfigPanel
                 agent={agent}
                 setAgent={setAgent}
