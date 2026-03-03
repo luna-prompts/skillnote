@@ -97,8 +97,10 @@ function resolveAgent(conn: McpConnection) {
 
 function fmtDuration(s: number) {
   if (s < 60) return `${s}s`
-  if (s < 3600) return `${Math.floor(s / 60)}m ${s % 60}s`
-  return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`
+  const secs = s % 60
+  if (s < 3600) return secs ? `${Math.floor(s / 60)}m ${secs}s` : `${Math.floor(s / 60)}m`
+  const mins = Math.floor((s % 3600) / 60)
+  return mins ? `${Math.floor(s / 3600)}h ${mins}m` : `${Math.floor(s / 3600)}h`
 }
 function fmtUptime(s: number) {
   if (s < 60) return `${s}s`
@@ -438,7 +440,7 @@ function ScopeSelector({ collections, totalSkills, value, onChange }: {
               </div>
             )}
 
-            {collections.length === 0 && (
+            {collections.length === 0 && !q && (
               <div className="px-4 py-8 text-center">
                 <p className="text-[13px] text-muted-foreground/50">No collections yet</p>
                 <p className="text-[12px] text-muted-foreground/30 mt-1">Add collections to your skills</p>
@@ -651,7 +653,7 @@ function GroupSection({ category, conns, elapsed, open, onToggle, selectedScope 
         <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: cat.color }} />
         <span className="flex-1 text-[12px] font-semibold text-foreground/70">{cat.label}</span>
         {selectedScope && matchCount > 0 && (
-          <span className="text-[10px] font-medium text-accent/70 bg-accent/10 px-1.5 py-0.5 rounded tabular-nums">
+          <span className="text-[10px] font-medium text-accent/70 bg-accent/10 px-1.5 py-0.5 rounded tabular-nums max-w-[140px] truncate">
             {matchCount} on {selectedScope}
           </span>
         )}
@@ -731,12 +733,14 @@ function ConnectionsPanel({ selectedScope }: { selectedScope: string | null }) {
         )
       })
     }
+    // elapsedSincePoll is intentionally excluded: adding the same constant to all
+    // duration_seconds values doesn't change relative order, so sort is stable.
     return [...conns].sort((a, b) =>
       sort === 'calls'
         ? (b.call_count ?? 0) - (a.call_count ?? 0)
-        : (b.duration_seconds + elapsedSincePoll) - (a.duration_seconds + elapsedSincePoll)
+        : b.duration_seconds - a.duration_seconds
     )
-  }, [status, q, sort, online, elapsedSincePoll])
+  }, [status, q, sort, online]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Groups (category → connections), sorted by group size desc
   const groups = useMemo(() => {
@@ -770,7 +774,7 @@ function ConnectionsPanel({ selectedScope }: { selectedScope: string | null }) {
     setOpenGroups(prev => { const s = new Set(prev); s.has(cat) ? s.delete(cat) : s.add(cat); return s })
 
   return (
-    <div className="bg-card border border-border/40 rounded-2xl overflow-hidden flex flex-col h-full">
+    <div className="bg-card border border-border/40 rounded-2xl overflow-clip flex flex-col">
 
       {/* ── header ──────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between px-5 py-3.5 border-b border-border/40">
@@ -928,7 +932,7 @@ function SessionStatus({ mcpUrl, agentLabel, skillCount, scopeLabel }: {
   ]
 
   return (
-    <div className="bg-card border border-border/40 rounded-2xl overflow-hidden">
+    <div className="bg-card border border-border/40 rounded-2xl overflow-clip">
       <div className="flex items-center justify-between px-5 py-3.5 border-b border-border/30">
         <span className="text-[12px] font-semibold text-foreground/60 uppercase tracking-wide">Session</span>
         <div className="flex items-center gap-1.5">
