@@ -13,8 +13,10 @@ type AgentId = 'openclaw' | 'claude' | 'cursor' | 'openhands' | 'universal'
 
 const AGENTS = [
   { id: 'openclaw'  as AgentId, label: 'OpenClaw',    file: '~/.openclaw/settings.json',
+    cli: (url: string) => `openclaw mcp add --transport http skillnote ${url} --scope user`,
     generate: (url: string) => JSON.stringify({ mcpServers: { skillnote: { type: 'http', url } } }, null, 2) },
   { id: 'claude'    as AgentId, label: 'Claude Code', file: '~/.claude/settings.json',
+    cli: (url: string) => `claude mcp add --transport http skillnote ${url} --scope user`,
     generate: (url: string) => JSON.stringify({ mcpServers: { skillnote: { type: 'http', url } } }, null, 2) },
   { id: 'cursor'    as AgentId, label: 'Cursor',      file: '.cursor/mcp.json',
     generate: (url: string) => JSON.stringify({ mcpServers: { skillnote: { url } } }, null, 2) },
@@ -494,6 +496,17 @@ function ConfigPanel({ agent, setAgent, config, agentDef, mcpUrl }: {
         <pre className="bg-[hsl(var(--card))] dark:bg-zinc-950/70 px-5 py-5 text-[12.5px] font-mono leading-[1.9] text-muted-foreground overflow-x-auto flex-1">
           <code>{config}</code>
         </pre>
+      )}
+
+      {/* cli row — only for agents that have a CLI install command */}
+      {'cli' in agentDef && agentDef.cli && (
+        <div className="flex items-start gap-3 px-4 py-3 border-t border-border/30 bg-muted/5">
+          <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/30 mt-0.5 shrink-0 w-6">CLI</span>
+          <code className="flex-1 text-[11px] font-mono text-muted-foreground/55 break-all leading-relaxed min-w-0">
+            $ {agentDef.cli(mcpUrl)}
+          </code>
+          <CopyBtn text={agentDef.cli(mcpUrl)} label="Copy" size="sm" />
+        </div>
       )}
 
       {/* url row */}
