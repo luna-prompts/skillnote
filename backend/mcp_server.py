@@ -134,12 +134,18 @@ class ConnectionTrackerMiddleware(BaseHTTPMiddleware):
                 sess["last_seen"]  = time.time()
                 sess["call_count"] = sess.get("call_count", 0) + 1
 
+            # ── 3b. Unknown session ID — server restarted, client still alive ──
+            # Client is sending an Mcp-Session-Id we've never seen (our in-memory
+            # dict was wiped). Re-register it under the existing ID so the client's
+            # calls show up in the live view without requiring a reconnect.
+            elif existing_sid and existing_sid not in _active_connections and not is_initialize:
+                _active_connections[existing_sid] = _make_session(
+                    existing_sid, ua, remote, scope, "", "", "",
+                )
+
             # ── 4. IP+UA fallback (non-initialize only) ───────────────────────
             # Clients that don't echo Mcp-Session-Id (curl, some libs) still
             # keep their session alive via fingerprinting.
-            # Skip for initialize — that creates a fresh session in step 5.
-            # When multiple sessions share the same fingerprint, update the most
-            # recently seen one (highest last_seen) to match the active client.
             elif not existing_sid and not is_initialize:
                 match = max(
                     (s for s in _active_connections.values()
