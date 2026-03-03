@@ -150,6 +150,8 @@ Every skill is exposed as an MCP tool. The agent discovers and calls them live: 
 
 SkillNote exposes every skill as an MCP tool your agent can discover and call directly: no local files needed, no restart when skills change.
 
+> **Every skill = one MCP tool.** The tool name is the skill slug, the description is what the agent reads to decide when to invoke it, and calling the tool returns the full `SKILL.md` content. Filter by collection to control which skills (tools) each agent sees.
+
 **How it works:**
 - Each skill becomes a tool: `name = slug`, `description = skill description`
 - The agent uses the description to decide when to invoke the skill
@@ -284,6 +286,14 @@ SKILLNOTE_MCP_FILTER_COLLECTIONS=devops,security docker compose up -d mcp
 
 This is useful for scoping what different teams or agents can see.
 
+### MCP Integrations UI
+
+The **MCP Integrations** page (sidebar → Connect → MCP Integrations) gives you ready-to-copy config snippets for every supported agent, a scope selector to generate collection-filtered URLs, and a live connection monitor that shows every connected agent — its name, version, IP, call count, and session duration — updating every 5 seconds.
+
+<p align="center">
+  <img src="docs/screenshots/mcp-integrations.png" width="100%" alt="MCP Integrations" />
+</p>
+
 ---
 
 ## Features
@@ -396,6 +406,36 @@ skillnote doctor                      # Diagnose setup issues
 ---
 
 ## Self-Hosting
+
+### System Requirements
+
+SkillNote is lightweight. Here's what it uses on a typical machine at idle:
+
+| Container    | Image size | RAM (idle) | RAM (under load) |
+| ------------ | ---------- | ---------- | ---------------- |
+| **Web**      | ~302 MB    | ~37 MB     | ~60 MB           |
+| **API**      | ~456 MB    | ~71 MB     | ~120 MB          |
+| **MCP**      | ~456 MB    | ~104 MB    | ~160 MB          |
+| **Postgres** | ~663 MB    | ~38 MB     | ~80 MB           |
+| **Total**    | ~1.9 GB    | **~250 MB**| **~420 MB**      |
+
+> The API and MCP images share base layers — the combined pull is ~600 MB, not 912 MB.
+
+**Minimum recommended specs:**
+- CPU: 1 core (2+ recommended for MCP-heavy workloads)
+- RAM: 512 MB free
+- Disk: 2 GB for images + space for skill bundles (5 MB each by default)
+
+**Disk usage over time:**
+- Each published skill version creates a ZIP bundle (≤ 5 MB by default)
+- PostgreSQL data grows slowly — a typical install with 100 skills is < 10 MB
+- Logs are written to stdout (captured by Docker); no files accumulate on disk
+
+To check live resource usage at any time:
+
+```bash
+docker stats
+```
 
 ### Docker Compose (recommended)
 
