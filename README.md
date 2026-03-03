@@ -284,6 +284,14 @@ SKILLNOTE_MCP_FILTER_COLLECTIONS=devops,security docker compose up -d mcp
 
 This is useful for scoping what different teams or agents can see.
 
+### MCP Integrations UI
+
+The **MCP Integrations** page (sidebar → Connect → MCP Integrations) gives you ready-to-copy config snippets for every supported agent, a scope selector to generate collection-filtered URLs, and a live connection monitor that shows every connected agent — its name, version, IP, call count, and session duration — updating every 5 seconds.
+
+<p align="center">
+  <img src="docs/screenshots/mcp-integrations.png" width="100%" alt="MCP Integrations" />
+</p>
+
 ---
 
 ## Features
