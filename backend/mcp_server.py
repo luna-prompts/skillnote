@@ -7,6 +7,13 @@ Calling a tool returns the full SKILL.md content.
 
 Filter skills via URL query params:
   ?collections=frontend,enterprise
+
+Real-time notifications:
+  When a skill is created, updated, or deleted (via the REST API), the API
+  issues a PostgreSQL NOTIFY skillnote_skills_changed.  This server listens
+  for that notification and broadcasts notifications/tools/list_changed to
+  every currently connected MCP client so clients can re-fetch the tool list
+  without reconnecting.
 """
 
 from __future__ import annotations
@@ -20,6 +27,7 @@ import uuid
 from collections.abc import Sequence
 from typing import Any
 
+import mcp.types as mcp_types
 logger = logging.getLogger(__name__)
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
@@ -28,6 +36,8 @@ from starlette.requests import Request as StarletteRequest
 from starlette.responses import JSONResponse
 
 from fastmcp import FastMCP
+from fastmcp.server.middleware import Middleware
+from fastmcp.server.middleware.middleware import MiddlewareContext
 from fastmcp.server.providers import Provider
 from fastmcp.tools.tool import Tool, ToolResult
 
@@ -59,6 +69,114 @@ def _make_session(sid: str, ua: str, remote: str, scope: str | None,
         "proto_version": proto_version,
         "call_count": 0,
     }
+
+
+# ── MCP session registry ──────────────────────────────────────────────────────
+# Maps id(session) -> ServerSession for all currently initialised MCP sessions.
+# Strong references kept here; entries are pruned when send_notification() fails
+# (meaning the client has disconnected).
+_session_registry: dict[int, Any] = {}
+
+
+class SessionCapturingMiddleware(Middleware):
+    """FastMCP middleware that registers every MCP session on initialize.
+
+    Storing the ServerSession object lets broadcast_tools_changed() push
+    notifications/tools/list_changed to every live client without polling.
+    """
+
+    async def on_initialize(
+        self,
+        context: MiddlewareContext,
+        call_next,
+    ):
+        result = await call_next(context)
+        if context.fastmcp_context and context.fastmcp_context.session is not None:
+            session = context.fastmcp_context.session
+            _session_registry[id(session)] = session
+            logger.debug("Registered MCP session %d (total: %d)",
+                         id(session), len(_session_registry))
+        return result
+
+
+async def broadcast_tools_changed() -> None:
+    """Push notifications/tools/list_changed to every connected MCP client.
+
+    Called whenever a skill is created, updated, or deleted.  Sessions that
+    fail (disconnected clients) are removed from the registry automatically.
+    """
+    notification = mcp_types.ServerNotification(
+        root=mcp_types.ToolListChangedNotification()
+    )
+    snapshot = list(_session_registry.items())
+    if not snapshot:
+        logger.debug("broadcast_tools_changed: no active sessions, skipping")
+        return
+
+    logger.info("Broadcasting notifications/tools/list_changed to %d session(s)",
+                len(snapshot))
+    stale: list[int] = []
+    for key, session in snapshot:
+        try:
+            await session.send_notification(notification)
+        except Exception:
+            logger.debug("Session %d unreachable, marking stale", key, exc_info=True)
+            stale.append(key)
+
+    for key in stale:
+        _session_registry.pop(key, None)
+
+    if stale:
+        logger.debug("Removed %d stale session(s) from registry", len(stale))
+
+
+# ── PostgreSQL LISTEN/NOTIFY loop ─────────────────────────────────────────────
+
+async def _pg_listen_loop() -> None:
+    """Background coroutine: waits for PostgreSQL NOTIFY skillnote_skills_changed.
+
+    The REST API sends a NOTIFY inside the same transaction as each skill
+    create / update / delete, so this fires immediately after the commit.
+    On receipt we broadcast notifications/tools/list_changed to all live clients.
+
+    Connection errors use exponential back-off (2 s → 60 s max).
+    """
+    import psycopg  # type: ignore[import]
+
+    # Convert SQLAlchemy URL to plain libpq URL for psycopg async
+    pg_url = DATABASE_URL.replace("postgresql+psycopg", "postgresql", 1)
+
+    retry_delay = 2.0
+    while True:
+        try:
+            async with await psycopg.AsyncConnection.connect(
+                pg_url, autocommit=True
+            ) as aconn:
+                await aconn.execute("LISTEN skillnote_skills_changed")
+                logger.info(
+                    "MCP server listening for skill changes via PostgreSQL NOTIFY"
+                )
+                retry_delay = 2.0  # reset after successful connect
+
+                async for notify in aconn.notifies():
+                    logger.debug(
+                        "Received NOTIFY: channel=%s payload=%r",
+                        notify.channel, notify.payload,
+                    )
+                    asyncio.create_task(
+                        broadcast_tools_changed(),
+                        name="broadcast-tools-changed",
+                    )
+
+        except asyncio.CancelledError:
+            logger.info("PG listen loop cancelled, shutting down")
+            break
+        except Exception:
+            logger.exception(
+                "PG listen loop error; reconnecting in %.0f s", retry_delay
+            )
+            await asyncio.sleep(retry_delay)
+            retry_delay = min(retry_delay * 2, 60.0)
 
 
 class ConnectionTrackerMiddleware(BaseHTTPMiddleware):
@@ -373,6 +491,10 @@ mcp = FastMCP(
     providers=[provider],
 )
 
+# Register the session-capturing middleware so every initialized session is
+# stored in _session_registry and can receive tool-change notifications.
+mcp.add_middleware(SessionCapturingMiddleware())
+
 
 @mcp.custom_route("/status", methods=["GET"])
 async def status_endpoint(request: StarletteRequest) -> JSONResponse:
@@ -404,8 +526,29 @@ async def status_endpoint(request: StarletteRequest) -> JSONResponse:
 
 if __name__ == "__main__":
     import uvicorn
+    from contextlib import asynccontextmanager as _acm
     from starlette.middleware import Middleware
 
     http_app = mcp.http_app(transport="http")
     http_app.add_middleware(ConnectionTrackerMiddleware)
+
+    # Wrap the existing lifespan so that the PostgreSQL NOTIFY listener
+    # runs for the full lifetime of the server process.
+    _original_lifespan = http_app.router.lifespan_context
+
+    @_acm
+    async def _lifespan_with_pg(app):
+        pg_task = asyncio.create_task(_pg_listen_loop(), name="pg-listener")
+        try:
+            async with _original_lifespan(app):
+                yield
+        finally:
+            pg_task.cancel()
+            try:
+                await pg_task
+            except asyncio.CancelledError:
+                pass
+
+    http_app.router.lifespan_context = _lifespan_with_pg
+
     uvicorn.run(http_app, host="0.0.0.0", port=8083)
