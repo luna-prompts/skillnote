@@ -7,6 +7,13 @@ Calling a tool returns the full SKILL.md content.
 
 Filter skills via URL query params:
   ?collections=frontend,enterprise
+
+Real-time notifications:
+  When a skill is created, updated, or deleted (via the REST API), the API
+  issues a PostgreSQL NOTIFY skillnote_skills_changed.  This server listens
+  for that notification and broadcasts notifications/tools/list_changed to
+  every currently connected MCP client so clients can re-fetch the tool list
+  without reconnecting.
 """
 
 from __future__ import annotations
@@ -20,6 +27,7 @@ import uuid
 from collections.abc import Sequence
 from typing import Any
 
+import mcp.types as mcp_types
 logger = logging.getLogger(__name__)
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
@@ -28,6 +36,8 @@ from starlette.requests import Request as StarletteRequest
 from starlette.responses import JSONResponse
 
 from fastmcp import FastMCP
+from fastmcp.server.middleware import Middleware
+from fastmcp.server.middleware.middleware import MiddlewareContext
 from fastmcp.server.providers import Provider
 from fastmcp.tools.tool import Tool, ToolResult
 
@@ -59,6 +69,114 @@ def _make_session(sid: str, ua: str, remote: str, scope: str | None,
         "proto_version": proto_version,
         "call_count": 0,
     }
+
+
+# ── MCP session registry ──────────────────────────────────────────────────────
+# Maps id(session) -> ServerSession for all currently initialised MCP sessions.
+# Strong references kept here; entries are pruned when send_notification() fails
+# (meaning the client has disconnected).
+_session_registry: dict[int, Any] = {}
+
+
+class SessionCapturingMiddleware(Middleware):
+    """FastMCP middleware that registers every MCP session on initialize.
+
+    Storing the ServerSession object lets broadcast_tools_changed() push
+    notifications/tools/list_changed to every live client without polling.
+    """
+
+    async def on_initialize(
+        self,
+        context: MiddlewareContext,
+        call_next,
+    ):
+        result = await call_next(context)
+        if context.fastmcp_context and context.fastmcp_context.session is not None:
+            session = context.fastmcp_context.session
+            _session_registry[id(session)] = session
+            logger.debug("Registered MCP session %d (total: %d)",
+                         id(session), len(_session_registry))
+        return result
+
+
+async def broadcast_tools_changed() -> None:
+    """Push notifications/tools/list_changed to every connected MCP client.
+
+    Called whenever a skill is created, updated, or deleted.  Sessions that
+    fail (disconnected clients) are removed from the registry automatically.
+    """
+    notification = mcp_types.ServerNotification(
+        root=mcp_types.ToolListChangedNotification()
+    )
+    snapshot = list(_session_registry.items())
+    if not snapshot:
+        logger.debug("broadcast_tools_changed: no active sessions, skipping")
+        return
+
+    logger.info("Broadcasting notifications/tools/list_changed to %d session(s)",
+                len(snapshot))
+    stale: list[int] = []
+    for key, session in snapshot:
+        try:
+            await session.send_notification(notification)
+        except Exception:
+            logger.debug("Session %d unreachable, marking stale", key, exc_info=True)
+            stale.append(key)
+
+    for key in stale:
+        _session_registry.pop(key, None)
+
+    if stale:
+        logger.debug("Removed %d stale session(s) from registry", len(stale))
+
+
+# ── PostgreSQL LISTEN/NOTIFY loop ─────────────────────────────────────────────
+
+async def _pg_listen_loop() -> None:
+    """Background coroutine: waits for PostgreSQL NOTIFY skillnote_skills_changed.
+
+    The REST API sends a NOTIFY inside the same transaction as each skill
+    create / update / delete, so this fires immediately after the commit.
+    On receipt we broadcast notifications/tools/list_changed to all live clients.
+
+    Connection errors use exponential back-off (2 s → 60 s max).
+    """
+    import psycopg  # type: ignore[import]
+
+    # Convert SQLAlchemy URL to plain libpq URL for psycopg async
+    pg_url = DATABASE_URL.replace("postgresql+psycopg", "postgresql", 1)
+
+    retry_delay = 2.0
+    while True:
+        try:
+            async with await psycopg.AsyncConnection.connect(
+                pg_url, autocommit=True
+            ) as aconn:
+                await aconn.execute("LISTEN skillnote_skills_changed")
+                logger.info(
+                    "MCP server listening for skill changes via PostgreSQL NOTIFY"
+                )
+                retry_delay = 2.0  # reset after successful connect
+
+                async for notify in aconn.notifies():
+                    logger.debug(
+                        "Received NOTIFY: channel=%s payload=%r",
+                        notify.channel, notify.payload,
+                    )
+                    asyncio.create_task(
+                        broadcast_tools_changed(),
+                        name="broadcast-tools-changed",
+                    )
+
+        except asyncio.CancelledError:
+            logger.info("PG listen loop cancelled, shutting down")
+            break
+        except Exception:
+            logger.exception(
+                "PG listen loop error; reconnecting in %.0f s", retry_delay
+            )
+            await asyncio.sleep(retry_delay)
+            retry_delay = min(retry_delay * 2, 60.0)
 
 
 class ConnectionTrackerMiddleware(BaseHTTPMiddleware):
@@ -123,6 +241,19 @@ class ConnectionTrackerMiddleware(BaseHTTPMiddleware):
                 except Exception:
                     pass
 
+            # ── 1b. Detect tools/call for analytics (all POST /mcp requests) ──
+            skill_call_slug: str | None = None
+            if request.method == "POST":
+                try:
+                    data = _json.loads(await request.body())
+                    items = data if isinstance(data, list) else [data]
+                    for item in items:
+                        if isinstance(item, dict) and item.get("method") == "tools/call":
+                            skill_call_slug = item.get("params", {}).get("name")
+                            break
+                except Exception:
+                    pass
+
             # ── 2. Session termination ────────────────────────────────────────
             if request.method == "DELETE" and existing_sid:
                 _active_connections.pop(existing_sid, None)
@@ -180,6 +311,12 @@ class ConnectionTrackerMiddleware(BaseHTTPMiddleware):
                 )
 
             response = await call_next(request)
+
+            # ── 5b. Log analytics for tools/call ─────────────────────────────
+            if skill_call_slug:
+                resolved_sid = existing_sid or pre_sid or ""
+                sess_for_log = _active_connections.get(resolved_sid)
+                asyncio.create_task(_log_event(skill_call_slug, sess_for_log, scope, remote))
 
             # ── 6. Migrate pre-created entry to real Mcp-Session-Id ───────────
             # If the server returned a session ID, rename our pre-created entry
@@ -306,6 +443,41 @@ class SkillNoteToolProvider(Provider):
         return self._to_tool(skills[0]) if skills else None
 
 
+def _log_event_sync(skill_slug: str, agent_name: str, agent_version: str,
+                     session_id: str, collection_scope: str | None, remote_ip: str) -> None:
+    import uuid as _uuid
+    try:
+        with Session(engine) as db:
+            db.execute(
+                text("""INSERT INTO skill_call_events
+                    (id, skill_slug, event_type, agent_name, agent_version, session_id, collection_scope, remote_ip)
+                    VALUES (:id, :slug, 'called', :agent, :version, :session, :scope, :remote)"""),
+                {
+                    "id": str(_uuid.uuid4()),
+                    "slug": skill_slug,
+                    "agent": agent_name,
+                    "version": agent_version,
+                    "session": session_id,
+                    "scope": collection_scope,
+                    "remote": remote_ip,
+                }
+            )
+            db.commit()
+    except Exception:
+        logger.exception("Failed to log skill call event")
+
+
+async def _log_event(skill_slug: str, session_meta: dict | None, scope: str | None, remote: str) -> None:
+    agent_name = ""
+    agent_version = ""
+    session_id = ""
+    if session_meta:
+        agent_name = session_meta.get("client_name", "")
+        agent_version = session_meta.get("client_version", "")
+        session_id = session_meta.get("id", "")
+    await asyncio.to_thread(_log_event_sync, skill_slug, agent_name, agent_version, session_id, scope, remote)
+
+
 provider = SkillNoteToolProvider(db_engine=engine)
 
 mcp = FastMCP(
@@ -318,6 +490,10 @@ mcp = FastMCP(
     ),
     providers=[provider],
 )
+
+# Register the session-capturing middleware so every initialized session is
+# stored in _session_registry and can receive tool-change notifications.
+mcp.add_middleware(SessionCapturingMiddleware())
 
 
 @mcp.custom_route("/status", methods=["GET"])
@@ -350,8 +526,29 @@ async def status_endpoint(request: StarletteRequest) -> JSONResponse:
 
 if __name__ == "__main__":
     import uvicorn
+    from contextlib import asynccontextmanager as _acm
     from starlette.middleware import Middleware
 
     http_app = mcp.http_app(transport="http")
     http_app.add_middleware(ConnectionTrackerMiddleware)
+
+    # Wrap the existing lifespan so that the PostgreSQL NOTIFY listener
+    # runs for the full lifetime of the server process.
+    _original_lifespan = http_app.router.lifespan_context
+
+    @_acm
+    async def _lifespan_with_pg(app):
+        pg_task = asyncio.create_task(_pg_listen_loop(), name="pg-listener")
+        try:
+            async with _original_lifespan(app):
+                yield
+        finally:
+            pg_task.cancel()
+            try:
+                await pg_task
+            except asyncio.CancelledError:
+                pass
+
+    http_app.router.lifespan_context = _lifespan_with_pg
+
     uvicorn.run(http_app, host="0.0.0.0", port=8083)
