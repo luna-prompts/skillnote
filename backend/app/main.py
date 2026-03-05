@@ -3,6 +3,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
+from app.api.analytics import router as analytics_router
 from app.api.skills import router as skills_router
 from app.api.downloads import router as downloads_router
 from app.api.publish import router as publish_router
@@ -46,6 +47,7 @@ app.include_router(skills_router)
 app.include_router(downloads_router)
 app.include_router(publish_router)
 app.include_router(comments_router)
+app.include_router(analytics_router)
 
 
 @app.get("/health")

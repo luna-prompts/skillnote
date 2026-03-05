@@ -265,6 +265,194 @@ test.describe('MCP — Error Handling', () => {
   })
 })
 
+// ─── TESTS: notifications/tools/list_changed ──────────────────────────────────
+
+test.describe('MCP — notifications/tools/list_changed', () => {
+  /**
+   * Opens a GET /mcp SSE stream for the given session and resolves once a
+   * "notifications/tools/list_changed" event is received, or rejects after
+   * the timeout.
+   *
+   * Uses Node.js `http.request()` because Playwright's `request` fixture does
+   * not support streaming/long-poll responses.
+   */
+  function waitForToolsChangedNotification(
+    sessionId: string,
+    timeoutMs = 6000,
+  ): Promise<object> {
+    const http = require('http') as typeof import('http')
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        req.destroy()
+        reject(new Error(`tools/list_changed notification not received within ${timeoutMs}ms`))
+      }, timeoutMs)
+
+      const req = http.request(
+        {
+          hostname: 'localhost',
+          port: 8083,
+          path: '/mcp',
+          method: 'GET',
+          headers: {
+            Accept: 'text/event-stream',
+            'Mcp-Session-Id': sessionId,
+          },
+        },
+        (res) => {
+          let buffer = ''
+          res.on('data', (chunk: Buffer) => {
+            buffer += chunk.toString()
+            // SSE lines look like: "event: message\ndata: {...}\n\n"
+            const lines = buffer.split('\n')
+            for (const line of lines) {
+              if (!line.startsWith('data: ')) continue
+              try {
+                const payload = JSON.parse(line.replace('data: ', ''))
+                if (
+                  payload?.method === 'notifications/tools/list_changed' ||
+                  JSON.stringify(payload).includes('tools/list_changed')
+                ) {
+                  clearTimeout(timer)
+                  req.destroy()
+                  resolve(payload)
+                  return
+                }
+              } catch {
+                // Partial JSON line — keep buffering
+              }
+            }
+          })
+          res.on('end', () => {
+            clearTimeout(timer)
+            reject(new Error('SSE stream ended without tools/list_changed'))
+          })
+          res.on('error', (err: Error) => {
+            clearTimeout(timer)
+            reject(err)
+          })
+        },
+      )
+      req.on('error', (err: Error) => {
+        clearTimeout(timer)
+        // AbortError / connection reset after resolve is expected — ignore
+        if (!err.message?.includes('socket hang up') && !err.message?.includes('aborted')) {
+          reject(err)
+        }
+      })
+      req.end()
+    })
+  }
+
+  test('server advertises tools listChanged capability on initialize', async ({ request }) => {
+    const resp = await request.post(MCP_URL, {
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream' },
+      data: {
+        jsonrpc: '2.0', id: 1, method: 'initialize',
+        params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'test', version: '1' } },
+      },
+    })
+    const text = await resp.text()
+    // The server must advertise tools.listChanged in the capabilities
+    expect(text).toContain('listChanged')
+  })
+
+  test('client receives notifications/tools/list_changed when a skill is created', async ({ request }) => {
+    const slug = `e2e-notify-create-${Date.now()}`
+    const { sessionId } = await initSession(request)
+
+    // Start listening on the SSE stream BEFORE creating the skill so we
+    // don't miss the notification due to a race condition.
+    const notificationPromise = waitForToolsChangedNotification(sessionId)
+
+    // Small delay to ensure the SSE GET request is established
+    await new Promise((r) => setTimeout(r, 300))
+
+    // Trigger via REST API
+    const createResp = await request.post('http://localhost:8082/v1/skills', {
+      headers: { 'Content-Type': 'application/json' },
+      data: { name: slug, slug, description: 'Notification test', content_md: '# Notify Test' },
+    })
+    expect(createResp.status()).toBe(201)
+
+    // Wait for the MCP notification
+    const notification = await notificationPromise
+    expect(JSON.stringify(notification)).toContain('tools/list_changed')
+
+    // Cleanup
+    await request.delete(`http://localhost:8082/v1/skills/${slug}`)
+  })
+
+  test('client receives notifications/tools/list_changed when a skill is updated', async ({ request }) => {
+    const slug = `e2e-notify-update-${Date.now()}`
+
+    // Pre-create the skill
+    await request.post('http://localhost:8082/v1/skills', {
+      headers: { 'Content-Type': 'application/json' },
+      data: { name: slug, slug, description: 'Before update', content_md: '# Before' },
+    })
+
+    const { sessionId } = await initSession(request)
+    const notificationPromise = waitForToolsChangedNotification(sessionId)
+    await new Promise((r) => setTimeout(r, 300))
+
+    // Trigger via update
+    const patchResp = await request.patch(`http://localhost:8082/v1/skills/${slug}`, {
+      headers: { 'Content-Type': 'application/json' },
+      data: { description: 'After update' },
+    })
+    expect(patchResp.status()).toBe(200)
+
+    const notification = await notificationPromise
+    expect(JSON.stringify(notification)).toContain('tools/list_changed')
+
+    // Cleanup
+    await request.delete(`http://localhost:8082/v1/skills/${slug}`)
+  })
+
+  test('client receives notifications/tools/list_changed when a skill is deleted', async ({ request }) => {
+    const slug = `e2e-notify-delete-${Date.now()}`
+
+    await request.post('http://localhost:8082/v1/skills', {
+      headers: { 'Content-Type': 'application/json' },
+      data: { name: slug, slug, description: 'To be deleted', content_md: '# Delete me' },
+    })
+
+    const { sessionId } = await initSession(request)
+    const notificationPromise = waitForToolsChangedNotification(sessionId)
+    await new Promise((r) => setTimeout(r, 300))
+
+    const deleteResp = await request.delete(`http://localhost:8082/v1/skills/${slug}`)
+    expect(deleteResp.status()).toBe(204)
+
+    const notification = await notificationPromise
+    expect(JSON.stringify(notification)).toContain('tools/list_changed')
+  })
+
+  test('multiple clients each receive the notification independently', async ({ request }) => {
+    const slug = `e2e-notify-multi-${Date.now()}`
+
+    // Open two independent sessions
+    const session1 = await initSession(request)
+    const session2 = await initSession(request)
+
+    const p1 = waitForToolsChangedNotification(session1.sessionId)
+    const p2 = waitForToolsChangedNotification(session2.sessionId)
+
+    await new Promise((r) => setTimeout(r, 300))
+
+    await request.post('http://localhost:8082/v1/skills', {
+      headers: { 'Content-Type': 'application/json' },
+      data: { name: slug, slug, description: 'Multi-client test', content_md: '# Multi' },
+    })
+
+    const [n1, n2] = await Promise.all([p1, p2])
+    expect(JSON.stringify(n1)).toContain('tools/list_changed')
+    expect(JSON.stringify(n2)).toContain('tools/list_changed')
+
+    await request.delete(`http://localhost:8082/v1/skills/${slug}`)
+  })
+})
+
 // ─── TESTS: LIVE SKILL UPDATES ────────────────────────────────────────────────
 
 test.describe('MCP — Live Skill Discovery', () => {
