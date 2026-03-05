@@ -23,10 +23,7 @@
   <a href="#quick-start">Quick Start</a> &nbsp;&middot;&nbsp;
   <a href="#mcp-server">MCP Server</a> &nbsp;&middot;&nbsp;
   <a href="#features">Features</a> &nbsp;&middot;&nbsp;
-  <a href="#cli">CLI</a> &nbsp;&middot;&nbsp;
-  <a href="#api-reference">API</a> &nbsp;&middot;&nbsp;
   <a href="#self-hosting">Self-Hosting</a> &nbsp;&middot;&nbsp;
-  <a href="#roadmap">Roadmap</a> &nbsp;&middot;&nbsp;
   <a href="#contributing">Contributing</a>
 </p>
 
@@ -333,18 +330,6 @@ Install skills as local files to any AI coding agent from the web UI or CLI. Sup
 | Windsurf    | `.windsurf/skills/<skill>/SKILL.md`         |
 | Universal   | `.skills/<skill>/SKILL.md`                  |
 
-### Offline-First
-The frontend works without a backend. Skills are stored in localStorage and sync to PostgreSQL when the API is available. No data loss if the backend goes down.
-
-### Keyboard Shortcuts
-
-| Shortcut       | Action          |
-| -------------- | --------------- |
-| `N`            | New Skill       |
-| `Cmd/Ctrl + K` | Focus search    |
-| `Cmd/Ctrl + S` | Save (in editor)|
-| `Escape`       | Close / Go back |
-
 ---
 
 ## SKILL.md Format
@@ -364,48 +349,6 @@ When the user provides a PDF file:
 1. Use `pdftotext` to extract raw text
 2. Identify tables and format them as markdown
 3. Preserve headings and document structure
-```
-
-### Validation Rules
-
-| Field         | Rule                                                                 |
-| ------------- | -------------------------------------------------------------------- |
-| `name`        | Required. Lowercase `a-z`, `0-9`, `-` only. Max 64 chars. No reserved words (`anthropic`, `claude`). |
-| `description` | Required. Max 1024 chars. Should explain **what** it does and **when** to trigger it. |
-
-> **Tip:** Be aggressive in descriptions. Agents tend to under-trigger skills. Include specific phrases the user might say.
-
----
-
-## CLI
-
-SkillNote includes a CLI for installing and managing skills from the terminal, no browser needed.
-
-### Install
-
-```bash
-cd cli
-npm install && npm run build
-npm link
-```
-
-### Login
-
-```bash
-skillnote login --host http://localhost:8082 --token skn_dev_demo_token
-```
-
-### Commands
-
-```bash
-skillnote list                        # List all skills in the registry
-skillnote add pdf-extractor           # Install a skill (auto-detects agent)
-skillnote add pdf-extractor --agent claude  # Install for a specific agent
-skillnote add --all                   # Install everything
-skillnote check                       # Check for updates
-skillnote update --all                # Update all installed skills
-skillnote remove pdf-extractor        # Uninstall a skill
-skillnote doctor                      # Diagnose setup issues
 ```
 
 ---
@@ -493,45 +436,6 @@ npm run dev                         # http://localhost:3000
 
 ---
 
-## API Reference
-
-All endpoints except `/health` require `Authorization: Bearer <token>`.
-
-```bash
-curl http://localhost:8082/v1/skills \
-  -H "Authorization: Bearer skn_dev_demo_token"
-```
-
-### Skills
-
-| Method   | Endpoint                                          | Description                |
-| -------- | ------------------------------------------------- | -------------------------- |
-| `GET`    | `/v1/skills`                                      | List all skills            |
-| `POST`   | `/v1/skills`                                      | Create a skill             |
-| `GET`    | `/v1/skills/{slug}`                               | Get skill details          |
-| `PATCH`  | `/v1/skills/{slug}`                               | Update a skill             |
-| `DELETE` | `/v1/skills/{slug}`                               | Delete a skill             |
-
-### Versioning
-
-| Method   | Endpoint                                                       | Description              |
-| -------- | -------------------------------------------------------------- | ------------------------ |
-| `GET`    | `/v1/skills/{slug}/content-versions`                           | List content snapshots   |
-| `POST`   | `/v1/skills/{slug}/content-versions/{version}/set-latest`     | Set version as latest    |
-| `POST`   | `/v1/skills/{slug}/content-versions/{version}/restore`        | Restore a version        |
-| `GET`    | `/v1/skills/{slug}/versions`                                   | List published versions  |
-| `POST`   | `/v1/publish`                                                  | Publish a bundle         |
-| `GET`    | `/v1/skills/{slug}/{version}/download`                        | Download a bundle        |
-
-### Auth
-
-| Method   | Endpoint                  | Description          |
-| -------- | ------------------------- | -------------------- |
-| `GET`    | `/health`                 | Health check         |
-| `POST`   | `/auth/validate-token`    | Validate a token     |
-
----
-
 ## Tech Stack
 
 | Layer      | Technology                                              |
@@ -545,103 +449,6 @@ curl http://localhost:8082/v1/skills \
 
 ---
 
-## Project Structure
-
-```
-skillnote/
-├── src/                          # Next.js frontend
-│   ├── app/(app)/                #   App Router pages
-│   │   ├── page.tsx              #     Home: skill list + search
-│   │   ├── skills/new/           #     Create skill (full-page editor)
-│   │   ├── skills/[slug]/        #     Skill detail + edit
-│   │   ├── collections/          #     Browse by collection
-│   │   └── settings/             #     Settings
-│   ├── components/               #   UI components
-│   │   ├── skills/               #     Editor, detail view, install strip
-│   │   ├── layout/               #     Sidebar, topbar
-│   │   └── ui/                   #     Primitives (Shadcn)
-│   └── lib/                      #   State, API client, validation
-│
-├── backend/                      # FastAPI backend + MCP server
-│   ├── app/api/                  #   Route handlers
-│   ├── app/db/models/            #   SQLAlchemy models
-│   ├── app/schemas/              #   Pydantic schemas
-│   ├── app/validators/           #   SKILL.md spec validators
-│   ├── alembic/                  #   Database migrations
-│   ├── scripts/                  #   Seed data, health checks
-│   ├── mcp_server.py             #   MCP server (FastMCP, port 8083)
-│   └── Dockerfile.mcp            #   MCP container
-│
-├── cli/                          # CLI tool
-│   └── src/
-│       ├── commands/             #   login, list, add, update, remove, doctor
-│       └── agents/               #   Agent detection + install paths
-│
-├── docker-compose.yml            # Full stack orchestration
-├── Dockerfile                    # Frontend multi-stage build
-└── start.sh                      # One-command startup
-```
-
----
-
-## Troubleshooting
-
-<details>
-<summary><strong>Containers won't start</strong></summary>
-
-```bash
-docker compose logs api       # Check API logs
-docker compose logs mcp       # Check MCP logs
-docker compose logs postgres  # Check DB logs
-```
-</details>
-
-<details>
-<summary><strong>MCP server not showing up in agent</strong></summary>
-
-Verify the MCP server is running:
-
-```bash
-curl -s -X POST http://localhost:8083/mcp \
-  -H "Content-Type: application/json" \
-  -H "Accept: application/json, text/event-stream" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}'
-```
-
-You should see `"name":"SkillNote"` in the response. Then restart your agent.
-</details>
-
-<details>
-<summary><strong>API returns 401 / 403</strong></summary>
-
-Make sure the backend has been seeded:
-
-```bash
-docker compose exec -T api python scripts/seed_data.py
-```
-
-Use token `skn_dev_demo_token` for development.
-</details>
-
-<details>
-<summary><strong>Port already in use</strong></summary>
-
-```bash
-SKILLNOTE_API_PORT=9000 SKILLNOTE_MCP_PORT=9001 docker compose up --build -d
-```
-</details>
-
-<details>
-<summary><strong>Reset everything</strong></summary>
-
-```bash
-docker compose down -v
-docker compose up --build -d
-```
-</details>
-
----
-
 ## References
 
 - [Claude Code Skills](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview) - Anthropic's official skills documentation
@@ -650,32 +457,6 @@ docker compose up --build -d
 - [Codex Skills](https://developers.openai.com/codex/skills/) - OpenAI Codex skills reference
 - [Antigravity Skills](https://antigravity.google/docs/skills) - Google Antigravity skills documentation
 - [OpenHands Skills](https://docs.openhands.dev/overview/skills) - OpenHands skills overview
-
----
-
-## Roadmap
-
-### Done
-
-- [x] Skill editor with live preview and SKILL.md validation
-- [x] Version history with restore
-- [x] Collections
-- [x] REST API (CRUD, versioning, publish pipeline)
-- [x] MCP server: expose all skills as tools for any AI agent
-- [x] One-command Docker Compose stack (postgres + api + mcp + web)
-- [x] CLI skill installer (`npx skillnote`)
-- [x] Multi-agent connect guide (Claude Code, OpenClaw, Cursor, Windsurf)
-- [x] **Real-time `notifications/tools/list_changed`**: skill create/update/delete triggers an instant push to every connected agent via PostgreSQL LISTEN/NOTIFY; no reconnect needed
-
-### Up Next
-
-- [ ] **Redis caching**: cache skill listings and content in Redis to cut MCP `tools/list` and tool-call latency; skills invalidated on create/update/delete
-- [ ] **Collection-scoped MCP mounts**: mount a single collection as an MCP server so agents only see relevant skills
-- [ ] **Skill search and semantic ranking**: full-text and embedding-based search in the Web UI and via MCP
-- [ ] **Skill dependencies**: declare that one skill requires another; agents resolve the full tree automatically
-- [ ] **Webhook on skill publish**: notify CI or agent pipelines when a new skill version is published
-- [ ] **Role-based access control**: read-only vs editor vs admin roles with API tokens
-- [ ] **Import from GitHub**: sync a skills repo directly into SkillNote via URL
 
 ---
 
