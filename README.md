@@ -314,6 +314,13 @@ Every save creates a snapshot. Browse the full history, compare versions, and re
   <img src="docs/screenshots/version-history.png" width="100%" alt="Version History" />
 </p>
 
+### Analytics
+Track how your skills are used across every connected agent. The Analytics dashboard shows total calls, unique skills invoked, active agents, a skill leaderboard, agent breakdown by client, an activity timeline, collection usage, and a live connections panel — all filterable by 7d / 30d / 90d / all-time.
+
+<p align="center">
+  <img src="docs/screenshots/analytics-dashboard.png" width="100%" alt="Analytics Dashboard" />
+</p>
+
 ### Collections
 Organise skills into collections. Filter, search, and browse by category. Add or remove skills from any collection with inline confirmation.
 
