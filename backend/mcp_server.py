@@ -123,6 +123,19 @@ class ConnectionTrackerMiddleware(BaseHTTPMiddleware):
                 except Exception:
                     pass
 
+            # ── 1b. Detect tools/call for analytics (all POST /mcp requests) ──
+            skill_call_slug: str | None = None
+            if request.method == "POST":
+                try:
+                    data = _json.loads(await request.body())
+                    items = data if isinstance(data, list) else [data]
+                    for item in items:
+                        if isinstance(item, dict) and item.get("method") == "tools/call":
+                            skill_call_slug = item.get("params", {}).get("name")
+                            break
+                except Exception:
+                    pass
+
             # ── 2. Session termination ────────────────────────────────────────
             if request.method == "DELETE" and existing_sid:
                 _active_connections.pop(existing_sid, None)
@@ -180,6 +193,12 @@ class ConnectionTrackerMiddleware(BaseHTTPMiddleware):
                 )
 
             response = await call_next(request)
+
+            # ── 5b. Log analytics for tools/call ─────────────────────────────
+            if skill_call_slug:
+                resolved_sid = existing_sid or pre_sid or ""
+                sess_for_log = _active_connections.get(resolved_sid)
+                asyncio.create_task(_log_event(skill_call_slug, sess_for_log, scope, remote))
 
             # ── 6. Migrate pre-created entry to real Mcp-Session-Id ───────────
             # If the server returned a session ID, rename our pre-created entry
@@ -304,6 +323,41 @@ class SkillNoteToolProvider(Provider):
     async def _get_tool(self, name: str, version=None) -> Tool | None:
         skills = await asyncio.to_thread(self._fetch_skills, name)
         return self._to_tool(skills[0]) if skills else None
+
+
+def _log_event_sync(skill_slug: str, agent_name: str, agent_version: str,
+                     session_id: str, collection_scope: str | None, remote_ip: str) -> None:
+    import uuid as _uuid
+    try:
+        with Session(engine) as db:
+            db.execute(
+                text("""INSERT INTO skill_call_events
+                    (id, skill_slug, event_type, agent_name, agent_version, session_id, collection_scope, remote_ip)
+                    VALUES (:id, :slug, 'called', :agent, :version, :session, :scope, :remote)"""),
+                {
+                    "id": str(_uuid.uuid4()),
+                    "slug": skill_slug,
+                    "agent": agent_name,
+                    "version": agent_version,
+                    "session": session_id,
+                    "scope": collection_scope,
+                    "remote": remote_ip,
+                }
+            )
+            db.commit()
+    except Exception:
+        logger.exception("Failed to log skill call event")
+
+
+async def _log_event(skill_slug: str, session_meta: dict | None, scope: str | None, remote: str) -> None:
+    agent_name = ""
+    agent_version = ""
+    session_id = ""
+    if session_meta:
+        agent_name = session_meta.get("client_name", "")
+        agent_version = session_meta.get("client_version", "")
+        session_id = session_meta.get("id", "")
+    await asyncio.to_thread(_log_event_sync, skill_slug, agent_name, agent_version, session_id, scope, remote)
 
 
 provider = SkillNoteToolProvider(db_engine=engine)
