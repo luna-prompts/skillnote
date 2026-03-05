@@ -122,18 +122,23 @@ Agent  →  MCP  →  SkillNote  →  Skills DB
 ```
 Every skill is exposed as an MCP tool. The agent discovers and calls them live: no files, no installs, always up to date. Update a skill in the Web UI and every connected agent gets the new version instantly.
 
-> **No restart required.** The MCP server queries the database on every `tools/list` request. There is no in-memory cache. Create or update a skill and it is available to all connected agents on their very next call, with zero downtime.
+> **Real-time push notifications.** When a skill is created, updated, or deleted the MCP server immediately pushes a `notifications/tools/list_changed` event to every connected agent over their open SSE stream. Compliant clients (Claude Code, OpenClaw, Cursor, …) re-fetch `tools/list` automatically — no reconnect, no polling, no restart required.
 
 ```
 ┌──────────┐     tools/list      ┌───────────────┐
 │  Agent   │ ─────────────────▶  │  SkillNote    │
 │          │ ◀─────────────────  │  MCP Server   │
 │          │   [all your skills] │               │
-│          │                     │  reads from   │
-│          │  tools/call         │  PostgreSQL   │
-│          │ ─────────────────▶  │  on every     │
-│          │ ◀─────────────────  │  request      │
-└──────────┘   skill content     └───────────────┘
+│          │                     │  PostgreSQL   │
+│          │  tools/call         │  LISTEN/      │
+│          │ ─────────────────▶  │  NOTIFY       │
+│          │ ◀─────────────────  │               │
+│          │   skill content     │               │
+│          │                     │               │
+│          │ ◀─────────────────  │  push:        │
+│          │  notifications/     │  tools/list   │
+│          │  tools/list_changed │  _changed     │
+└──────────┘  (SSE stream)       └───────────────┘
 ```
 
 | | Local Skills | MCP Skills (SkillNote) |
@@ -156,7 +161,7 @@ SkillNote exposes every skill as an MCP tool your agent can discover and call di
 - Each skill becomes a tool: `name = slug`, `description = skill description`
 - The agent uses the description to decide when to invoke the skill
 - Calling the tool returns the full `SKILL.md` content
-- Skills added or removed in SkillNote are reflected immediately
+- Skills added, updated, or deleted in SkillNote trigger a `notifications/tools/list_changed` push to every connected agent — no reconnect needed
 
 ---
 
@@ -660,6 +665,7 @@ docker compose up --build -d
 - [x] One-command Docker Compose stack (postgres + api + mcp + web)
 - [x] CLI skill installer (`npx skillnote`)
 - [x] Multi-agent connect guide (Claude Code, OpenClaw, Cursor, Windsurf)
+- [x] **Real-time `notifications/tools/list_changed`**: skill create/update/delete triggers an instant push to every connected agent via PostgreSQL LISTEN/NOTIFY; no reconnect needed
 
 ### Up Next
 
