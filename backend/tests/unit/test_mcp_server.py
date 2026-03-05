@@ -406,3 +406,231 @@ class TestAsyncProviderMethods:
         from mcp_server import SkillTool
         for t in tools:
             assert isinstance(t, SkillTool)
+
+
+# ---------------------------------------------------------------------------
+# broadcast_tools_changed
+# ---------------------------------------------------------------------------
+
+class TestBroadcastToolsChanged:
+    """Tests for the broadcast_tools_changed() function.
+
+    We use fake session objects (plain MagicMock) because the real
+    ServerSession class does not support weakrefs; the broadcast function
+    only needs send_notification() to exist.
+    """
+
+    def setup_method(self):
+        from mcp_server import _session_registry
+        _session_registry.clear()
+
+    def teardown_method(self):
+        from mcp_server import _session_registry
+        _session_registry.clear()
+
+    def _run(self, coro):
+        return asyncio.get_event_loop().run_until_complete(coro)
+
+    def _make_session(self):
+        """Return a mock that mimics ServerSession.send_notification()."""
+        session = MagicMock()
+        session.send_notification = MagicMock(return_value=asyncio.coroutine(lambda *a: None)())
+        # Patch with an async mock
+        async def async_send(notification):
+            pass
+        session.send_notification = MagicMock(side_effect=async_send)
+        return session
+
+    def test_broadcast_with_no_sessions_does_nothing(self):
+        from mcp_server import broadcast_tools_changed
+        # Should not raise
+        self._run(broadcast_tools_changed())
+
+    def test_broadcast_calls_send_notification_on_each_session(self):
+        from mcp_server import broadcast_tools_changed, _session_registry
+        import mcp.types as mcp_types
+
+        calls = []
+
+        async def capture_send(notification):
+            calls.append(notification)
+
+        s1 = MagicMock()
+        s2 = MagicMock()
+        s1.send_notification = MagicMock(side_effect=capture_send)
+        s2.send_notification = MagicMock(side_effect=capture_send)
+
+        _session_registry[id(s1)] = s1
+        _session_registry[id(s2)] = s2
+
+        self._run(broadcast_tools_changed())
+
+        assert len(calls) == 2
+        for call in calls:
+            # Each call should be a ServerNotification wrapping ToolListChangedNotification
+            assert isinstance(call.root, mcp_types.ToolListChangedNotification)
+
+    def test_broadcast_removes_stale_sessions_on_failure(self):
+        from mcp_server import broadcast_tools_changed, _session_registry
+
+        async def raise_on_send(notification):
+            raise RuntimeError("connection closed")
+
+        good_calls = []
+
+        async def good_send(notification):
+            good_calls.append(notification)
+
+        good = MagicMock()
+        good.send_notification = MagicMock(side_effect=good_send)
+        dead = MagicMock()
+        dead.send_notification = MagicMock(side_effect=raise_on_send)
+
+        _session_registry[id(good)] = good
+        _session_registry[id(dead)] = dead
+
+        self._run(broadcast_tools_changed())
+
+        # Good session should have received the notification
+        assert len(good_calls) == 1
+        # Dead session should have been pruned
+        assert id(dead) not in _session_registry
+        # Good session should still be registered
+        assert id(good) in _session_registry
+
+    def test_broadcast_clears_all_stale_sessions(self):
+        from mcp_server import broadcast_tools_changed, _session_registry
+
+        async def fail(notification):
+            raise RuntimeError("dead")
+
+        sessions = [MagicMock() for _ in range(3)]
+        for s in sessions:
+            s.send_notification = MagicMock(side_effect=fail)
+            _session_registry[id(s)] = s
+
+        self._run(broadcast_tools_changed())
+
+        assert len(_session_registry) == 0
+
+    def test_broadcast_notification_type_is_tools_list_changed(self):
+        from mcp_server import broadcast_tools_changed, _session_registry
+        import mcp.types as mcp_types
+
+        received = []
+
+        async def capture(notification):
+            received.append(notification)
+
+        s = MagicMock()
+        s.send_notification = MagicMock(side_effect=capture)
+        _session_registry[id(s)] = s
+
+        self._run(broadcast_tools_changed())
+
+        assert len(received) == 1
+        notif = received[0]
+        assert isinstance(notif, mcp_types.ServerNotification)
+        assert isinstance(notif.root, mcp_types.ToolListChangedNotification)
+        assert notif.root.method == "notifications/tools/list_changed"
+
+
+# ---------------------------------------------------------------------------
+# SessionCapturingMiddleware
+# ---------------------------------------------------------------------------
+
+class TestSessionCapturingMiddleware:
+    """Tests for the FastMCP middleware that registers sessions."""
+
+    def setup_method(self):
+        from mcp_server import _session_registry
+        _session_registry.clear()
+
+    def teardown_method(self):
+        from mcp_server import _session_registry
+        _session_registry.clear()
+
+    def _run(self, coro):
+        return asyncio.get_event_loop().run_until_complete(coro)
+
+    def _make_context(self, session=None):
+        """Build a minimal MiddlewareContext mock for on_initialize."""
+        from unittest.mock import MagicMock
+        ctx = MagicMock()
+        ctx.fastmcp_context = MagicMock()
+        ctx.fastmcp_context.session = session
+        return ctx
+
+    def test_session_registered_after_initialize(self):
+        from mcp_server import SessionCapturingMiddleware, _session_registry
+
+        mw = SessionCapturingMiddleware()
+        mock_session = MagicMock()
+        ctx = self._make_context(mock_session)
+
+        async def call_next(ctx):
+            return None
+
+        self._run(mw.on_initialize(ctx, call_next))
+
+        assert id(mock_session) in _session_registry
+        assert _session_registry[id(mock_session)] is mock_session
+
+    def test_no_session_in_context_does_not_register(self):
+        from mcp_server import SessionCapturingMiddleware, _session_registry
+
+        mw = SessionCapturingMiddleware()
+        ctx = self._make_context(None)
+
+        async def call_next(ctx):
+            return None
+
+        self._run(mw.on_initialize(ctx, call_next))
+
+        assert len(_session_registry) == 0
+
+    def test_no_fastmcp_context_does_not_register(self):
+        from mcp_server import SessionCapturingMiddleware, _session_registry
+
+        mw = SessionCapturingMiddleware()
+        ctx = MagicMock()
+        ctx.fastmcp_context = None
+
+        async def call_next(ctx):
+            return None
+
+        self._run(mw.on_initialize(ctx, call_next))
+
+        assert len(_session_registry) == 0
+
+    def test_multiple_sessions_all_registered(self):
+        from mcp_server import SessionCapturingMiddleware, _session_registry
+
+        mw = SessionCapturingMiddleware()
+        sessions = [MagicMock() for _ in range(3)]
+
+        for s in sessions:
+            ctx = self._make_context(s)
+
+            async def call_next(ctx):
+                return None
+
+            self._run(mw.on_initialize(ctx, call_next))
+
+        assert len(_session_registry) == 3
+        for s in sessions:
+            assert id(s) in _session_registry
+
+    def test_call_next_result_is_returned(self):
+        from mcp_server import SessionCapturingMiddleware
+
+        mw = SessionCapturingMiddleware()
+        expected = object()
+        ctx = self._make_context(MagicMock())
+
+        async def call_next(ctx):
+            return expected
+
+        result = self._run(mw.on_initialize(ctx, call_next))
+
+        assert result is expected

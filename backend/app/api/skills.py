@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends
 from app.core.errors import api_error
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.db.models import Skill, SkillVersion, SkillContentVersion
@@ -288,6 +289,8 @@ def create_skill(
     # Create initial version (v1)
     _create_content_version(db, skill)
 
+    # Notify MCP server of tool-list change (delivered on commit)
+    db.execute(text("SELECT pg_notify('skillnote_skills_changed', 'created')"))
     db.commit()
     db.refresh(skill)
     return SkillDetail(
@@ -332,6 +335,8 @@ def update_skill(
     # Auto-create a new content version on every save
     _create_content_version(db, skill_row)
 
+    # Notify MCP server of tool-list change (delivered on commit)
+    db.execute(text("SELECT pg_notify('skillnote_skills_changed', 'updated')"))
     db.commit()
     db.refresh(skill_row)
     return SkillDetail(
@@ -355,4 +360,6 @@ def delete_skill(
 ):
     skill_row = _get_skill(skill_slug, db)
     db.delete(skill_row)
+    # Notify MCP server of tool-list change (delivered on commit)
+    db.execute(text("SELECT pg_notify('skillnote_skills_changed', 'deleted')"))
     db.commit()
