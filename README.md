@@ -49,6 +49,24 @@ AI coding agents like Claude Code, Cursor, and Codex use `SKILL.md` files to lea
 
 ---
 
+## Skill Reviews & Ratings
+
+SkillNote is the only skill registry with a **built-in feedback loop**. After an agent uses a skill, it rates it (1-5 stars) and optionally describes what it did — giving you real data on which skills actually work.
+
+```
+Agent uses skill  →  complete_skill(rating: 4, outcome: "built auth flow")  →  SkillNote
+```
+
+**What you get:**
+- **Per-version ratings** — see how each version of a skill performs, right in the version history
+- **Agent reviews** — read what agents actually did with the skill (outcome messages)
+- **Analytics dashboard** — top skills, rating distribution, completion rates, and trends over time
+- **Settings control** — toggle rating collection and outcome fields on/off from the Settings page
+
+This creates a data-driven workflow: write a skill → agents use it → review the ratings → improve → repeat. Skills get better over time because you have real feedback, not guesswork.
+
+---
+
 ## Quick Start
 
 Make sure you have [Docker](https://docs.docker.com/get-docker/) and [Docker Compose](https://docs.docker.com/compose/install/) v2+ installed.
@@ -308,14 +326,14 @@ A Notion-style WYSIWYG editor powered by Tiptap. Write in rich text or switch to
 </p>
 
 ### Version History
-Every save creates a snapshot. Browse the full history, compare versions, and restore any previous state with one click. Published versions use semantic versioning (`1.0.0`, `1.1.0`, ...) and are distributed as checksummed ZIP bundles.
+Every save creates a snapshot. Browse the full history, compare versions, and restore any previous state with one click. Each version shows its average rating and agent reviews inline, so you can see exactly how a version performed before deciding to restore or build on it.
 
 <p align="center">
   <img src="docs/screenshots/version-history.png" width="100%" alt="Version History" />
 </p>
 
 ### Analytics
-Track how your skills are used across every connected agent. The Analytics dashboard shows total calls, unique skills invoked, active agents, a skill leaderboard, agent breakdown by client, an activity timeline, collection usage, and a live connections panel — all filterable by 7d / 30d / 90d / all-time.
+Track how your skills are used across every connected agent. The Analytics dashboard shows total calls, unique skills invoked, active agents, a skill leaderboard with ratings, agent breakdown by client, rating distribution and trends, an activity timeline, collection usage, and a live connections panel — all filterable by 7d / 30d / 90d / all-time.
 
 <p align="center">
   <img src="docs/screenshots/analytics-dashboard.png" width="100%" alt="Analytics Dashboard" />
