@@ -232,7 +232,7 @@ test.describe('Scope selector dropdown', () => {
     await setupMocks(page)
     await goToIntegrations(page)
 
-    const trigger = page.locator('button').filter({ hasText: /All Skills/ })
+    const trigger = page.locator('button').filter({ hasText: /All Skills/ }).first()
     await trigger.click()
 
     const searchInput = page.locator('input[placeholder*="collections"]').first()
@@ -244,9 +244,8 @@ test.describe('Scope selector dropdown', () => {
     await page.keyboard.press('Enter')
 
     // Some collection should be selected now (trigger no longer says "All Skills")
-    const updatedTrigger = page.locator('button').first()
-    // The trigger text should NOT contain "All Skills" after Enter-selecting
-    await expect(page.locator('button').filter({ hasText: /All Skills/ })).not.toBeVisible({ timeout: 3000 })
+    // The trigger is the first button matching "click to filter by" which changes text
+    await expect(page.getByRole('button', { name: 'All Skills click to filter by' })).not.toBeVisible({ timeout: 3000 })
   })
 })
 

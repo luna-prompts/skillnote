@@ -11,7 +11,7 @@ const CARD_ACCENTS = [
   { bg: 'bg-rose-500/10 dark:bg-rose-500/15', text: 'text-rose-600 dark:text-rose-400', border: 'border-rose-500/15', dot: 'bg-rose-400' },
 ]
 
-export function SkillCard({ skill, rating }: { skill: Skill; rating?: { avg_rating: number; rating_count: number } }) {
+export function SkillCard({ skill, rating }: { skill: Skill; rating?: { avg_rating: number | null; rating_count: number } }) {
   const initials = skill.title.split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase()
   const colorIdx = skill.title.charCodeAt(0) % CARD_ACCENTS.length
   const accent = CARD_ACCENTS[colorIdx]
@@ -68,10 +68,10 @@ export function SkillCard({ skill, rating }: { skill: Skill; rating?: { avg_rati
               </span>
             )}
           </div>
-          {rating && rating.rating_count > 0 && (
+          {rating && rating.rating_count > 0 && rating.avg_rating != null && (
             <span className="flex items-center gap-1 text-[10px] text-amber-600 dark:text-amber-400">
               <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
-              {rating.avg_rating}
+              {rating.avg_rating.toFixed(1)}
               <span className="text-muted-foreground/40">({rating.rating_count})</span>
             </span>
           )}

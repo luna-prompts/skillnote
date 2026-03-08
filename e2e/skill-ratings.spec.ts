@@ -94,7 +94,7 @@ test.describe('Skill Ratings', () => {
 
     // Per-version breakdown (on lg+ screens)
     await expect(page.locator('text=Rating by Version')).toBeVisible()
-    await expect(page.locator('text=v3')).toBeVisible()
+    await expect(page.locator('text=v3').first()).toBeVisible()
     await expect(page.locator('text=2.1')).toBeVisible()
   })
 })

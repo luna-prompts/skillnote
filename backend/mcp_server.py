@@ -163,6 +163,9 @@ async def _pg_listen_loop() -> None:
                         "Received NOTIFY: channel=%s payload=%r",
                         notify.channel, notify.payload,
                     )
+                    # Refresh instructions in case settings changed
+                    if notify.payload == "settings":
+                        await asyncio.to_thread(_refresh_mcp_instructions)
                     asyncio.create_task(
                         broadcast_tools_changed(),
                         name="broadcast-tools-changed",
@@ -353,19 +356,43 @@ engine = create_engine(
 )
 
 
+_SETTINGS_DEFAULTS = {"complete_skill_enabled": "true", "complete_skill_outcome_enabled": "false"}
+
+
+def _read_settings_sync(db_engine=None) -> dict[str, str]:
+    """Read all settings from the database. Returns dict of key->value.
+
+    Falls back to safe defaults if the database is unreachable (e.g. during
+    startup before migrations have run, or in test environments).
+    """
+    try:
+        with Session(db_engine or engine) as db:
+            rows = db.execute(text("SELECT key, value FROM settings")).mappings().all()
+            return {row["key"]: row["value"] for row in rows}
+    except Exception:
+        logger.exception("Failed to read settings, using defaults")
+        return dict(_SETTINGS_DEFAULTS)
+
+
 class SkillTool(Tool):
     """A tool that returns SKILL.md content for a specific skill."""
 
     skill_slug: str
     content_md: str
     skill_name: str
+    complete_skill_enabled: bool = True
+    complete_skill_outcome_enabled: bool = False
 
     async def run(self, arguments: dict[str, Any]) -> ToolResult:
-        return ToolResult(
-            content=f"# {self.skill_name}\n\n{self.content_md}"
-                    f"\n\n---\n_When you're done applying this skill, close the loop:_\n"
-                    f"`complete_skill(skill_slug=\"{self.skill_slug}\", rating=<1-5>, outcome=\"what you did\")`"
-        )
+        safe_slug = self.skill_slug.replace('"', '\\"').replace('`', '')
+        content = f"# {self.skill_name}\n\n{self.content_md}"
+        if self.complete_skill_enabled:
+            if self.complete_skill_outcome_enabled:
+                hint = f'`complete_skill(skill_slug="{safe_slug}", rating=<1-5>, outcome="what you did")`'
+            else:
+                hint = f'`complete_skill(skill_slug="{safe_slug}", rating=<1-5>)`'
+            content += f"\n\n---\n_When you're done applying this skill, close the loop:_\n{hint}"
+        return ToolResult(content=content)
 
 
 class SkillNoteToolProvider(Provider):
@@ -428,7 +455,9 @@ class SkillNoteToolProvider(Provider):
             logger.exception("DB error fetching skills (slug=%r)", slug)
             raise
 
-    def _to_tool(self, skill: dict) -> SkillTool:
+    def _to_tool(self, skill: dict, settings: dict[str, str]) -> SkillTool:
+        cs_enabled = settings.get("complete_skill_enabled", "true") == "true"
+        outcome_enabled = settings.get("complete_skill_outcome_enabled", "false") == "true"
         return SkillTool(
             name=skill["slug"],
             description=skill["description"] or "",
@@ -436,15 +465,57 @@ class SkillNoteToolProvider(Provider):
             skill_slug=skill["slug"],
             skill_name=skill["name"],
             content_md=skill["content_md"] or "",
+            complete_skill_enabled=cs_enabled,
+            complete_skill_outcome_enabled=outcome_enabled,
         )
 
+    def _make_complete_skill_tool(self, settings: dict[str, str]) -> "CompleteSkillTool":
+        """Build the complete_skill Tool dynamically based on settings."""
+        outcome_enabled = settings.get("complete_skill_outcome_enabled", "false") == "true"
+        properties: dict[str, Any] = {
+            "skill_slug": {"type": "string", "description": "The slug of the skill you used."},
+            "rating": {"type": "integer", "description": "Your rating from 1 (unhelpful) to 5 (excellent)."},
+        }
+        required = ["skill_slug", "rating"]
+        if outcome_enabled:
+            properties["outcome"] = {
+                "type": "string",
+                "default": "",
+                "description": "Brief description of what you accomplished with the skill.",
+            }
+
+        return CompleteSkillTool(
+            name="complete_skill",
+            description="Complete a skill session after applying it. Rate 1-5 and describe what you did.\n\nArgs:\n    skill_slug: The slug of the skill you used.\n    rating: Your rating from 1 (unhelpful) to 5 (excellent)."
+                + ("\n    outcome: Brief description of what you accomplished with the skill." if outcome_enabled else ""),
+            parameters={
+                "type": "object",
+                "properties": properties,
+                "required": required,
+            },
+        )
+
+    def _read_settings(self) -> dict[str, str]:
+        return _read_settings_sync(self.engine)
+
     async def _list_tools(self) -> Sequence[Tool]:
-        skills = await asyncio.to_thread(self._fetch_skills)
-        return [self._to_tool(s) for s in skills]
+        skills, settings = await asyncio.gather(
+            asyncio.to_thread(self._fetch_skills),
+            asyncio.to_thread(self._read_settings),
+        )
+        tools: list[Tool] = [self._to_tool(s, settings) for s in skills]
+        if settings.get("complete_skill_enabled", "true") == "true":
+            tools.append(self._make_complete_skill_tool(settings))
+        return tools
 
     async def _get_tool(self, name: str, version=None) -> Tool | None:
+        settings = await asyncio.to_thread(self._read_settings)
+        if name == "complete_skill":
+            if settings.get("complete_skill_enabled", "true") == "true":
+                return self._make_complete_skill_tool(settings)
+            return None
         skills = await asyncio.to_thread(self._fetch_skills, name)
-        return self._to_tool(skills[0]) if skills else None
+        return self._to_tool(skills[0], settings) if skills else None
 
 
 def _log_event_sync(skill_slug: str, agent_name: str, agent_version: str,
@@ -482,22 +553,29 @@ async def _log_event(skill_slug: str, session_meta: dict | None, scope: str | No
     await asyncio.to_thread(_log_event_sync, skill_slug, agent_name, agent_version, session_id, scope, remote)
 
 
-def _get_skill_version_sync(slug: str) -> int | None:
-    """Look up current_version for a skill by slug. Returns None if not found."""
+def _get_skill_version_sync(slug: str) -> tuple[int | None, str | None]:
+    """Look up current_version for a skill by slug.
+
+    Returns (version, None) on success, (None, None) if not found,
+    or (None, error_msg) on database error.
+    """
     try:
         with Session(engine) as db:
             row = db.execute(
                 text("SELECT current_version FROM skills WHERE slug = :slug"),
                 {"slug": slug},
             ).mappings().first()
-            return row["current_version"] if row else None
+            if row:
+                return row["current_version"], None
+            return None, None
     except Exception:
         logger.exception("Failed to look up skill version for %r", slug)
-        return None
+        return None, "database error"
 
 
 def _insert_rating_sync(slug: str, version: int, rating: int, outcome: str | None,
-                         agent_name: str, session_id: str) -> None:
+                         agent_name: str, session_id: str) -> str | None:
+    """Insert a rating row. Returns None on success, error message on failure."""
     import uuid as _uuid
     try:
         with Session(engine) as db:
@@ -516,8 +594,10 @@ def _insert_rating_sync(slug: str, version: int, rating: int, outcome: str | Non
                 }
             )
             db.commit()
+            return None
     except Exception:
         logger.exception("Failed to insert skill rating")
+        return "failed to save rating"
 
 
 def _resolve_session_meta() -> dict | None:
@@ -529,16 +609,40 @@ def _resolve_session_meta() -> dict | None:
 
 provider = SkillNoteToolProvider(db_engine=engine)
 
+_INSTRUCTIONS_WITH_COMPLETE = (
+    "This server provides AI skills from a SkillNote registry. "
+    "Each tool represents a skill — call it when the user's task matches its description. "
+    "The tool returns detailed instructions you should follow. "
+    "After using a skill, check if other available skills might also help with the task. "
+    "IMPORTANT: After applying a skill and seeing the results, always call `complete_skill` "
+    "with a rating (1-5) and a brief outcome describing what you did."
+)
+
+_INSTRUCTIONS_WITHOUT_COMPLETE = (
+    "This server provides AI skills from a SkillNote registry. "
+    "Each tool represents a skill — call it when the user's task matches its description. "
+    "The tool returns detailed instructions you should follow. "
+    "After using a skill, check if other available skills might also help with the task."
+)
+
+
+def _refresh_mcp_instructions() -> None:
+    """Update the MCP server instructions based on current settings.
+
+    Called on startup and whenever settings change (via pg_notify).
+    Only affects newly initializing sessions; already-connected clients
+    received instructions during their own initialization handshake.
+    """
+    settings = _read_settings_sync()
+    cs_enabled = settings.get("complete_skill_enabled", "true") == "true"
+    mcp.instructions = (
+        _INSTRUCTIONS_WITH_COMPLETE if cs_enabled else _INSTRUCTIONS_WITHOUT_COMPLETE
+    )
+
+
 mcp = FastMCP(
     name="SkillNote",
-    instructions=(
-        "This server provides AI skills from a SkillNote registry. "
-        "Each tool represents a skill — call it when the user's task matches its description. "
-        "The tool returns detailed instructions you should follow. "
-        "After using a skill, check if other available skills might also help with the task. "
-        "IMPORTANT: After applying a skill and seeing the results, always call `complete_skill` "
-        "with a rating (1-5) and a brief outcome describing what you did."
-    ),
+    instructions=_INSTRUCTIONS_WITH_COMPLETE,  # default; refreshed on startup
     providers=[provider],
 )
 
@@ -547,32 +651,37 @@ mcp = FastMCP(
 mcp.add_middleware(SessionCapturingMiddleware())
 
 
-@mcp.tool()
-async def complete_skill(skill_slug: str, rating: int, outcome: str = "") -> str:
-    """Complete a skill session after applying it. Rate 1-5 and describe what you did.
+class CompleteSkillTool(Tool):
+    """Tool that records a skill rating from an AI agent."""
 
-    Args:
-        skill_slug: The slug of the skill you used.
-        rating: Your rating from 1 (unhelpful) to 5 (excellent).
-        outcome: Brief description of what you accomplished with the skill.
-    """
-    if rating < 1 or rating > 5:
-        return "Error: rating must be between 1 and 5."
+    async def run(self, arguments: dict[str, Any]) -> ToolResult:
+        skill_slug = arguments.get("skill_slug", "")
+        rating = arguments.get("rating", 0)
+        outcome = arguments.get("outcome", "")
 
-    version = await asyncio.to_thread(_get_skill_version_sync, skill_slug)
-    if version is None:
-        return f"Error: skill '{skill_slug}' not found."
+        if not isinstance(rating, int) or rating < 1 or rating > 5:
+            return ToolResult(content="Error: rating must be an integer between 1 and 5.")
 
-    session_meta = _resolve_session_meta()
-    agent_name = session_meta.get("client_name", "") if session_meta else ""
-    session_id = session_meta.get("id", "") if session_meta else ""
+        outcome_trimmed = (outcome or "")[:2000] or None
 
-    await asyncio.to_thread(
-        _insert_rating_sync, skill_slug, version, rating,
-        outcome or None, agent_name, session_id,
-    )
+        version, db_err = await asyncio.to_thread(_get_skill_version_sync, skill_slug)
+        if db_err:
+            return ToolResult(content="Error: could not look up skill (database unavailable). Try again later.")
+        if version is None:
+            return ToolResult(content=f"Error: skill '{skill_slug}' not found.")
 
-    return f"Completed '{skill_slug}' (v{version}): {rating}/5. Thank you for the feedback!"
+        session_meta = _resolve_session_meta()
+        agent_name = session_meta.get("client_name", "") if session_meta else ""
+        session_id = session_meta.get("id", "") if session_meta else ""
+
+        insert_err = await asyncio.to_thread(
+            _insert_rating_sync, skill_slug, version, rating,
+            outcome_trimmed, agent_name, session_id,
+        )
+        if insert_err:
+            return ToolResult(content="Error: rating received but could not be saved. Try again later.")
+
+        return ToolResult(content=f"Completed '{skill_slug}' (v{version}): {rating}/5. Thank you for the feedback!")
 
 
 @mcp.custom_route("/status", methods=["GET"])
@@ -617,6 +726,8 @@ if __name__ == "__main__":
 
     @_acm
     async def _lifespan_with_pg(app):
+        # Refresh instructions from DB now that the server is starting up
+        await asyncio.to_thread(_refresh_mcp_instructions)
         pg_task = asyncio.create_task(_pg_listen_loop(), name="pg-listener")
         try:
             async with _original_lifespan(app):

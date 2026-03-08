@@ -81,7 +81,7 @@ export type Collection = {
 
 export type SkillRating = {
   slug: string
-  avg_rating: number
+  avg_rating: number | null
   rating_count: number
 }
 
