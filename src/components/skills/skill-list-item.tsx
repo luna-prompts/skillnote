@@ -1,10 +1,10 @@
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { FileText, MessageSquare, Paperclip, FolderOpen } from 'lucide-react'
+import { FileText, MessageSquare, Paperclip, FolderOpen, Star } from 'lucide-react'
 import { Skill } from '@/lib/mock-data'
 import { cn } from '@/lib/utils'
 
-export function SkillListItem({ skill }: { skill: Skill }) {
+export function SkillListItem({ skill, rating }: { skill: Skill; rating?: { avg_rating: number; rating_count: number } }) {
   const router = useRouter()
   const commentCount = skill.comments?.length ?? 0
   const attachCount = skill.attachments?.length ?? 0
@@ -72,6 +72,12 @@ export function SkillListItem({ skill }: { skill: Skill }) {
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
+          {rating && rating.rating_count > 0 && (
+            <span className="flex items-center gap-1 text-[10px] text-amber-600 dark:text-amber-400 hidden sm:flex">
+              <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
+              {rating.avg_rating}
+            </span>
+          )}
           {skill.current_version > 0 && (
             <span className="text-[10px] font-mono font-medium text-accent/70 bg-accent/10 px-1.5 py-0.5 rounded hidden sm:inline">
               v{skill.current_version}
