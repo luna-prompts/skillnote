@@ -161,6 +161,9 @@ class TestParseFilters:
 # _to_tool
 # ---------------------------------------------------------------------------
 
+DEFAULT_SETTINGS = {"complete_skill_enabled": "true", "complete_skill_outcome_enabled": "false"}
+
+
 class TestToTool:
     def setup_method(self):
         from mcp_server import SkillNoteToolProvider
@@ -169,7 +172,7 @@ class TestToTool:
     def test_basic_mapping(self):
         skill = {"slug": "my-skill", "name": "My Skill",
                  "description": "A skill", "content_md": "## Hello"}
-        tool = self.p._to_tool(skill)
+        tool = self.p._to_tool(skill, DEFAULT_SETTINGS)
         assert tool.name == "my-skill"
         assert tool.description == "A skill"
         assert tool.skill_name == "My Skill"
@@ -177,28 +180,28 @@ class TestToTool:
 
     def test_null_content_md_becomes_empty_string(self):
         skill = {"slug": "s", "name": "S", "description": "d", "content_md": None}
-        tool = self.p._to_tool(skill)
+        tool = self.p._to_tool(skill, DEFAULT_SETTINGS)
         assert tool.content_md == ""
 
     def test_null_description_becomes_empty_string(self):
         skill = {"slug": "s", "name": "S", "description": None, "content_md": "x"}
-        tool = self.p._to_tool(skill)
+        tool = self.p._to_tool(skill, DEFAULT_SETTINGS)
         assert tool.description == ""
 
     def test_empty_string_content_md_preserved(self):
         skill = {"slug": "s", "name": "S", "description": "d", "content_md": ""}
-        tool = self.p._to_tool(skill)
+        tool = self.p._to_tool(skill, DEFAULT_SETTINGS)
         assert tool.content_md == ""
 
     def test_parameters_schema_is_empty_object(self):
         skill = {"slug": "s", "name": "S", "description": "d", "content_md": "x"}
-        tool = self.p._to_tool(skill)
+        tool = self.p._to_tool(skill, DEFAULT_SETTINGS)
         assert tool.parameters == {"type": "object", "properties": {}}
 
     def test_slug_used_as_tool_name_not_human_name(self):
         skill = {"slug": "the-slug", "name": "Human Name",
                  "description": "d", "content_md": "x"}
-        tool = self.p._to_tool(skill)
+        tool = self.p._to_tool(skill, DEFAULT_SETTINGS)
         assert tool.name == "the-slug"
         assert tool.skill_name == "Human Name"
 
@@ -353,24 +356,31 @@ class TestAsyncProviderMethods:
     def _run(self, coro):
         return asyncio.get_event_loop().run_until_complete(coro)
 
-    def test_list_tools_empty_db(self):
+    @patch("mcp_server._read_settings_sync", return_value=DEFAULT_SETTINGS)
+    def test_list_tools_empty_db(self, _):
         self.provider._fetch_skills = MagicMock(return_value=[])
         tools = self._run(self.provider._list_tools())
-        assert tools == []
+        # Should have only complete_skill when DB has no skills
+        assert len(tools) == 1
+        assert tools[0].name == "complete_skill"
 
-    def test_list_tools_returns_all_skills(self):
+    @patch("mcp_server._read_settings_sync", return_value=DEFAULT_SETTINGS)
+    def test_list_tools_returns_all_skills(self, _):
         self.provider._fetch_skills = MagicMock(return_value=SAMPLE_SKILLS)
         tools = self._run(self.provider._list_tools())
         names = [t.name for t in tools]
         assert "alpha" in names
         assert "beta" in names
+        assert "complete_skill" in names
 
-    def test_list_tools_calls_fetch_with_no_slug(self):
+    @patch("mcp_server._read_settings_sync", return_value=DEFAULT_SETTINGS)
+    def test_list_tools_calls_fetch_with_no_slug(self, _):
         self.provider._fetch_skills = MagicMock(return_value=[])
         self._run(self.provider._list_tools())
         self.provider._fetch_skills.assert_called_once_with()
 
-    def test_get_tool_returns_correct_skill(self):
+    @patch("mcp_server._read_settings_sync", return_value=DEFAULT_SETTINGS)
+    def test_get_tool_returns_correct_skill(self, _):
         target = [{"slug": "target", "name": "Target Skill",
                    "description": "d", "content_md": "## hi"}]
         self.provider._fetch_skills = MagicMock(return_value=target)
@@ -380,12 +390,14 @@ class TestAsyncProviderMethods:
         assert tool.skill_name == "Target Skill"
         self.provider._fetch_skills.assert_called_once_with("target")
 
-    def test_get_tool_returns_none_for_missing_slug(self):
+    @patch("mcp_server._read_settings_sync", return_value=DEFAULT_SETTINGS)
+    def test_get_tool_returns_none_for_missing_slug(self, _):
         self.provider._fetch_skills = MagicMock(return_value=[])
         tool = self._run(self.provider._get_tool("missing"))
         assert tool is None
 
-    def test_get_tool_empty_string_fetch_called_with_empty_string(self):
+    @patch("mcp_server._read_settings_sync", return_value=DEFAULT_SETTINGS)
+    def test_get_tool_empty_string_fetch_called_with_empty_string(self, _):
         """Regression: _get_tool('') must call _fetch_skills('') (not _fetch_skills(None))
         so the empty-slug WHERE clause is triggered and no rows are returned."""
         self.provider._fetch_skills = MagicMock(return_value=[])
@@ -394,18 +406,54 @@ class TestAsyncProviderMethods:
         self.provider._fetch_skills.assert_called_once_with("")
         assert tool is None
 
-    def test_get_tool_none_returns_none(self):
+    @patch("mcp_server._read_settings_sync", return_value=DEFAULT_SETTINGS)
+    def test_get_tool_none_returns_none(self, _):
         self.provider._fetch_skills = MagicMock(return_value=[])
         tool = self._run(self.provider._get_tool(None))
         assert tool is None
 
-    def test_list_tools_converts_all_rows_to_skill_tools(self):
+    @patch("mcp_server._read_settings_sync", return_value=DEFAULT_SETTINGS)
+    def test_list_tools_converts_all_rows_to_skill_tools(self, _):
         self.provider._fetch_skills = MagicMock(return_value=SAMPLE_SKILLS)
         tools = self._run(self.provider._list_tools())
-        assert len(tools) == 2
+        # 2 skill tools + 1 complete_skill tool
+        assert len(tools) == 3
         from mcp_server import SkillTool
-        for t in tools:
-            assert isinstance(t, SkillTool)
+        skill_tools = [t for t in tools if isinstance(t, SkillTool)]
+        assert len(skill_tools) == 2
+
+    @patch("mcp_server._read_settings_sync", return_value={"complete_skill_enabled": "false", "complete_skill_outcome_enabled": "false"})
+    def test_list_tools_excludes_complete_skill_when_disabled(self, _):
+        self.provider._fetch_skills = MagicMock(return_value=SAMPLE_SKILLS)
+        tools = self._run(self.provider._list_tools())
+        names = [t.name for t in tools]
+        assert "complete_skill" not in names
+        assert len(tools) == 2
+
+    @patch("mcp_server._read_settings_sync", return_value={"complete_skill_enabled": "true", "complete_skill_outcome_enabled": "true"})
+    def test_complete_skill_tool_includes_outcome_when_enabled(self, _):
+        self.provider._fetch_skills = MagicMock(return_value=[])
+        tools = self._run(self.provider._list_tools())
+        cs_tool = [t for t in tools if t.name == "complete_skill"][0]
+        assert "outcome" in cs_tool.parameters["properties"]
+
+    @patch("mcp_server._read_settings_sync", return_value=DEFAULT_SETTINGS)
+    def test_complete_skill_tool_omits_outcome_when_disabled(self, _):
+        self.provider._fetch_skills = MagicMock(return_value=[])
+        tools = self._run(self.provider._list_tools())
+        cs_tool = [t for t in tools if t.name == "complete_skill"][0]
+        assert "outcome" not in cs_tool.parameters["properties"]
+
+    @patch("mcp_server._read_settings_sync", return_value={"complete_skill_enabled": "false"})
+    def test_get_tool_complete_skill_returns_none_when_disabled(self, _):
+        tool = self._run(self.provider._get_tool("complete_skill"))
+        assert tool is None
+
+    @patch("mcp_server._read_settings_sync", return_value=DEFAULT_SETTINGS)
+    def test_get_tool_complete_skill_returns_tool_when_enabled(self, _):
+        tool = self._run(self.provider._get_tool("complete_skill"))
+        assert tool is not None
+        assert tool.name == "complete_skill"
 
 
 # ---------------------------------------------------------------------------

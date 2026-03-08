@@ -10,9 +10,17 @@ import { useRouter } from 'next/navigation'
 export default function SkillPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params)
   const router = useRouter()
-  const [skill, setSkill] = useState<Skill | null>(() => getSkills().find(s => s.slug === slug) ?? null)
+  const [skill, setSkill] = useState<Skill | null>(null)
+  const [hydrated, setHydrated] = useState(false)
 
-  // Fetch full skill from API on mount + periodic sync every 30s
+  // Read localStorage only after hydration to avoid SSR mismatch
+  useEffect(() => {
+    const found = getSkills().find(s => s.slug === slug) ?? null
+    setSkill(found)
+    setHydrated(true)
+  }, [slug])
+
+  // Fetch full skill from API on mount
   useEffect(() => {
     fetchSkill(slug)
       .then(fullSkill => {
@@ -30,6 +38,10 @@ export default function SkillPage({ params }: { params: Promise<{ slug: string }
       router.replace(`/skills/${updated.slug}`)
     }
   }, [slug, router])
+
+  if (!hydrated) {
+    return null
+  }
 
   if (skill === null) {
     return (

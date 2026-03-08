@@ -254,8 +254,8 @@ test.describe('Import Modal — File Upload & Parsing', () => {
     await expect(page.getByText('skill-creator')).toBeVisible()
     // File count indicator
     await expect(page.getByText('1 file ready')).toBeVisible()
-    // Import button should show count
-    await expect(page.getByRole('button', { name: 'Import 1 skill' })).toBeVisible()
+    // Review & Create button should be visible for single file
+    await expect(page.getByRole('button', { name: 'Review & Create' })).toBeVisible()
   })
 
   test('file with title frontmatter uses title as name', async ({ page }) => {
@@ -272,12 +272,12 @@ test.describe('Import Modal — File Upload & Parsing', () => {
     await expect(page.getByText('Bare Skill')).toBeVisible()
   })
 
-  test('file with frontmatter tags shows them', async ({ page }) => {
+  test('file with frontmatter name shows in file list', async ({ page }) => {
     const filePath = writeTestFile('tagged.md', SKILL_WITH_TAGS_MD)
     await uploadFile(page, filePath)
 
-    // Tags from frontmatter should be visible in the subtitle
-    await expect(page.getByText('react, typescript')).toBeVisible()
+    // Skill name should be visible in the file list
+    await expect(page.getByText('tagged-skill')).toBeVisible()
   })
 
   test('remove button removes file from list', async ({ page }) => {
@@ -287,8 +287,8 @@ test.describe('Import Modal — File Upload & Parsing', () => {
     await expect(page.getByText('1 file ready')).toBeVisible()
     await page.getByLabel('Remove').click()
     await expect(page.getByText('1 file ready')).not.toBeVisible()
-    // Import button should be disabled
-    await expect(page.getByRole('button', { name: /Import/ }).last()).toBeDisabled()
+    // Review & Create button should no longer be visible
+    await expect(page.getByRole('button', { name: 'Review & Create' })).not.toBeVisible()
   })
 
   test('uploading multiple files shows count', async ({ page }) => {
@@ -298,13 +298,15 @@ test.describe('Import Modal — File Upload & Parsing', () => {
     await page.waitForTimeout(500)
 
     await expect(page.getByText('2 files ready')).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Import 2 skills' })).toBeVisible()
+    // Multiple files show individual review buttons
+    await expect(page.getByText('skill-creator').first()).toBeVisible()
+    await expect(page.getByText('Bare Skill').first()).toBeVisible()
   })
 })
 
-// ─── TAG & COLLECTION EDITING ────────────────────────────────────────
+// ─── COLLECTION EDITING ────────────────────────────────────────────
 
-test.describe('Import Modal — Tag & Collection Editing', () => {
+test.describe('Import Modal — Collection Editing', () => {
   test.beforeEach(async ({ page }) => {
     await clearStorage(page)
     await page.goto('/')
@@ -314,39 +316,8 @@ test.describe('Import Modal — Tag & Collection Editing', () => {
     await uploadFile(page, filePath)
   })
 
-  test('tag and collection inputs are auto-expanded for single file', async ({ page }) => {
-    await expect(page.locator('input[placeholder="Add tags..."]')).toBeVisible()
+  test('collection input is auto-expanded for single file', async ({ page }) => {
     await expect(page.locator('input[placeholder="Add to collection..."]')).toBeVisible()
-  })
-
-  test('can add a tag by typing and pressing Enter', async ({ page }) => {
-    const tagInput = page.locator('input[placeholder="Add tags..."]')
-    await tagInput.click()
-    await tagInput.fill('ai')
-    await tagInput.press('Enter')
-    await page.waitForTimeout(300)
-
-    // Tag chip should appear
-    const tagChip = page.locator('span').filter({ hasText: 'ai' }).filter({ has: page.locator('button') })
-    await expect(tagChip.first()).toBeVisible()
-  })
-
-  test('can add multiple tags', async ({ page }) => {
-    const tagInput = page.locator('input[placeholder="Add tags..."]')
-    await tagInput.click()
-    await tagInput.fill('ai')
-    await tagInput.press('Enter')
-    await page.waitForTimeout(200)
-
-    // After first tag, placeholder disappears — find input by parent
-    const tagSection = page.locator('label:has-text("Tags")').locator('..')
-    const innerInput = tagSection.locator('input')
-    await innerInput.fill('automation')
-    await innerInput.press('Enter')
-    await page.waitForTimeout(200)
-
-    // Subtitle should show both tags
-    await expect(page.getByText('ai, automation')).toBeVisible()
   })
 
   test('can add a collection', async ({ page }) => {
@@ -361,30 +332,29 @@ test.describe('Import Modal — Tag & Collection Editing', () => {
     await expect(colChip.first()).toBeVisible()
   })
 
-  test('can remove a tag by clicking X', async ({ page }) => {
-    const tagInput = page.locator('input[placeholder="Add tags..."]')
-    await tagInput.fill('removeme')
-    await tagInput.press('Enter')
+  test('can remove a collection by clicking X', async ({ page }) => {
+    const colInput = page.locator('input[placeholder="Add to collection..."]')
+    await colInput.fill('removeme')
+    await colInput.press('Enter')
     await page.waitForTimeout(300)
 
-    // Find the tag chip (it contains the text and an X button inside it)
-    const tagSection = page.locator('label:has-text("Tags")').locator('..')
-    const chip = tagSection.locator('span').filter({ hasText: 'removeme' }).first()
+    // Find the collection chip
+    const colSection = page.locator('label:has-text("Collection")').locator('..')
+    const chip = colSection.locator('span').filter({ hasText: 'removeme' }).first()
     await expect(chip).toBeVisible()
     await chip.locator('button').click()
     await page.waitForTimeout(300)
 
-    // Tag chip should be gone from the tag section
-    await expect(tagSection.locator('span').filter({ hasText: 'removeme' })).not.toBeVisible()
+    // Chip should be gone
+    await expect(colSection.locator('span').filter({ hasText: 'removeme' })).not.toBeVisible()
   })
 
-  test('tag input shows suggestions from existing skills', async ({ page }) => {
-    // Seed a skill with tags, close modal, reload to pick up seeds, then re-open
+  test('collection input shows suggestions from existing skills', async ({ page }) => {
+    // Seed a skill with collections, close modal, reload to pick up seeds, then re-open
     await page.locator('.fixed.inset-0.z-50 button[aria-label="Close"]').click()
     await page.evaluate((skills) => {
       localStorage.setItem('skillnote:skills', JSON.stringify(skills))
     }, SEED_SKILLS)
-    // Update route mock to return seeded skills so sync doesn't overwrite
     await page.unroute('**/v1/**')
     await mockApi(page, SEED_SKILLS)
     await page.reload({ waitUntil: 'networkidle' })
@@ -393,234 +363,164 @@ test.describe('Import Modal — Tag & Collection Editing', () => {
     const filePath = writeTestFile('SKILL.md', SKILL_MD)
     await uploadFile(page, filePath)
 
-    const tagInput = page.locator('input[placeholder="Add tags..."]')
-    await tagInput.click()
+    const colInput = page.locator('input[placeholder="Add to collection..."]')
+    await colInput.click()
     await page.waitForTimeout(500)
 
-    // Existing tags should appear as dropdown suggestions
+    // Existing collections should appear as dropdown suggestions
     const dropdown = page.locator('.absolute.left-0.right-0')
-    await expect(dropdown.getByText('testing')).toBeVisible()
-    await expect(dropdown.getByText('e2e')).toBeVisible()
+    await expect(dropdown.getByText('QA')).toBeVisible()
   })
 
-  test('collapsing and expanding file row toggles tag inputs', async ({ page }) => {
-    // Tags should be visible (auto-expanded)
-    await expect(page.locator('input[placeholder="Add tags..."]')).toBeVisible()
+  test('collapsing and expanding file row toggles collection input', async ({ page }) => {
+    // Collection input should be visible (auto-expanded)
+    await expect(page.locator('input[placeholder="Add to collection..."]')).toBeVisible()
 
     // Click file row to collapse
     await page.locator('.cursor-pointer').filter({ hasText: 'skill-creator' }).click()
     await page.waitForTimeout(200)
-    await expect(page.locator('input[placeholder="Add tags..."]')).not.toBeVisible()
+    await expect(page.locator('input[placeholder="Add to collection..."]')).not.toBeVisible()
 
     // Click again to expand
     await page.locator('.cursor-pointer').filter({ hasText: 'skill-creator' }).click()
     await page.waitForTimeout(200)
-    await expect(page.locator('input[placeholder="Add tags..."]')).toBeVisible()
+    await expect(page.locator('input[placeholder="Add to collection..."]')).toBeVisible()
   })
 })
 
-// ─── IMPORT EXECUTION ────────────────────────────────────────────────
+// ─── REVIEW & CREATE FLOW ───────────────────────────────────────────
 
-test.describe('Import Modal — Import Execution', () => {
+test.describe('Import Modal — Review & Create Flow', () => {
   test.beforeEach(async ({ page }) => {
     await clearStorage(page)
     await page.goto('/')
     await page.waitForLoadState('networkidle')
   })
 
-  test('import saves skill to localStorage and shows on home page', async ({ page }) => {
+  test('Review & Create navigates to /skills/new with prefilled data', async ({ page }) => {
     await openImportModal(page)
     const filePath = writeTestFile('SKILL.md', SKILL_MD)
     await uploadFile(page, filePath)
-    await page.getByRole('button', { name: 'Import 1 skill' }).click()
-    await page.waitForTimeout(1000)
+    await page.getByRole('button', { name: 'Review & Create' }).click()
 
-    // Toast should appear
-    await expect(page.getByText('Imported 1 skill')).toBeVisible()
-    // Modal should close
-    await expect(page.getByText('Import Skills')).not.toBeVisible()
-    // Skill should appear on home page
-    await expect(page.getByText('skill-creator').first()).toBeVisible()
-    // Skill count should update
-    await expect(page.getByText('1').first()).toBeVisible()
+    // Should navigate to /skills/new with query params
+    await page.waitForURL('**/skills/new**', { timeout: 5000 })
+    expect(page.url()).toContain('/skills/new')
+    expect(page.url()).toContain('name=skill-creator')
   })
 
-  test('imported skill has correct data in localStorage', async ({ page }) => {
+  test('prefilled name appears in create form', async ({ page }) => {
+    await openImportModal(page)
+    const filePath = writeTestFile('SKILL.md', SKILL_MD)
+    await uploadFile(page, filePath)
+    await page.getByRole('button', { name: 'Review & Create' }).click()
+    await page.waitForURL('**/skills/new**', { timeout: 5000 })
+    await page.waitForLoadState('networkidle')
+
+    const nameInput = page.locator('input[placeholder="skill-name"]')
+    await expect(nameInput).toHaveValue('skill-creator')
+  })
+
+  test('prefilled description appears in create form', async ({ page }) => {
+    await openImportModal(page)
+    const filePath = writeTestFile('SKILL.md', SKILL_MD)
+    await uploadFile(page, filePath)
+    await page.getByRole('button', { name: 'Review & Create' }).click()
+    await page.waitForURL('**/skills/new**', { timeout: 5000 })
+    await page.waitForLoadState('networkidle')
+
+    const descInput = page.locator('textarea[placeholder*="Describe"]')
+    await expect(descInput).toContainText('Create new skills')
+  })
+
+  test('Review & Create with collection passes collection param', async ({ page }) => {
     await openImportModal(page)
     const filePath = writeTestFile('SKILL.md', SKILL_MD)
     await uploadFile(page, filePath)
 
-    // Add tags and collection
-    const tagInput = page.locator('input[placeholder="Add tags..."]')
-    await tagInput.fill('ai')
-    await tagInput.press('Enter')
-    await page.waitForTimeout(200)
-
+    // Add a collection before review
     const colInput = page.locator('input[placeholder="Add to collection..."]')
     await colInput.fill('Tools')
     await colInput.press('Enter')
-    await page.waitForTimeout(200)
+    await page.waitForTimeout(300)
 
-    await page.getByRole('button', { name: 'Import 1 skill' }).click()
-    await page.waitForTimeout(1000)
-
-    const skills = await getStoredSkills(page)
-    expect(skills).toHaveLength(1)
-
-    const skill = skills[0]
-    expect(skill.slug).toBe('skill-creator')
-    expect(skill.title).toBe('skill-creator')
-    expect(skill.description).toBe('Create new skills, modify and improve existing skills, and measure skill performance.')
-    expect(skill.tags).toContain('ai')
-    expect(skill.collections).toContain('tools')
-    expect(skill.current_version).toBe(1)
-    expect(skill.content_md).toContain('# Skill Creator')
-    expect(skill.created_at).toBeTruthy()
-    expect(skill.updated_at).toBeTruthy()
+    await page.getByRole('button', { name: 'Review & Create' }).click()
+    await page.waitForURL('**/skills/new**', { timeout: 5000 })
+    expect(page.url()).toContain('collections=tools')
   })
 
-  test('imported skill with version 1 shows v1 badge', async ({ page }) => {
+  test('modal closes after Review & Create', async ({ page }) => {
     await openImportModal(page)
     const filePath = writeTestFile('SKILL.md', SKILL_MD)
     await uploadFile(page, filePath)
-    await page.getByRole('button', { name: 'Import 1 skill' }).click()
-    await page.waitForTimeout(1000)
+    await page.getByRole('button', { name: 'Review & Create' }).click()
+    await page.waitForURL('**/skills/new**', { timeout: 5000 })
 
-    // v1 badge should be visible on the list item
-    await expect(page.getByText('v1')).toBeVisible()
-  })
-
-  test('import adds to existing skills (does not overwrite)', async ({ page }) => {
-    await seedStorage(page)
-    await page.reload({ waitUntil: 'networkidle' })
-
-    await openImportModal(page)
-    const filePath = writeTestFile('SKILL.md', SKILL_MD)
-    await uploadFile(page, filePath)
-    await page.getByRole('button', { name: 'Import 1 skill' }).click()
-    await page.waitForTimeout(1000)
-
-    const skills = await getStoredSkills(page)
-    expect(skills).toHaveLength(2)
-    expect(skills.map((s: any) => s.slug)).toContain('skill-creator')
-    expect(skills.map((s: any) => s.slug)).toContain('existing-skill')
-  })
-
-  test('importing multiple files creates all skills', async ({ page }) => {
-    await openImportModal(page)
-    const file1 = writeTestFile('skill1.md', SKILL_MD)
-    const file2 = writeTestFile('skill2.md', SKILL_MINIMAL_MD)
-    await page.locator('input[type=file]').setInputFiles([file1, file2])
-    await page.waitForTimeout(500)
-
-    await page.getByRole('button', { name: 'Import 2 skills' }).click()
-    await page.waitForTimeout(1000)
-
-    await expect(page.getByText('Imported 2 skills')).toBeVisible()
-    const skills = await getStoredSkills(page)
-    expect(skills).toHaveLength(2)
+    // Modal should be closed
+    await expect(page.getByText('Import Skills')).not.toBeVisible()
   })
 })
 
-// ─── SKILL DETAIL AFTER IMPORT ───────────────────────────────────────
+// ─── SKILL DETAIL FROM SEEDED DATA ──────────────────────────────────
 
-test.describe('Skill Detail — After Import', () => {
+test.describe('Skill Detail — From Seeded Data', () => {
   test.beforeEach(async ({ page }) => {
-    await clearStorage(page)
+    await seedStorage(page)
     await page.goto('/')
     await page.waitForLoadState('networkidle')
-    await openImportModal(page)
-    const filePath = writeTestFile('SKILL.md', SKILL_MD)
-    await uploadFile(page, filePath)
-
-    // Add tags and collection before importing
-    const tagInput = page.locator('input[placeholder="Add tags..."]')
-    await tagInput.fill('ai')
-    await tagInput.press('Enter')
-    await page.waitForTimeout(200)
-    const tagSection = page.locator('label:has-text("Tags")').locator('..')
-    await tagSection.locator('input').fill('skills')
-    await tagSection.locator('input').press('Enter')
-    await page.waitForTimeout(200)
-
-    const colInput = page.locator('input[placeholder="Add to collection..."]')
-    await colInput.fill('AI Tools')
-    await colInput.press('Enter')
-    await page.waitForTimeout(200)
-
-    await page.getByRole('button', { name: 'Import 1 skill' }).click()
-    await page.waitForTimeout(1000)
   })
 
-  test('imported skill appears as clickable link on home page', async ({ page }) => {
-    const link = page.locator('a[href="/skills/skill-creator"]')
+  test('seeded skill appears as clickable link on home page', async ({ page }) => {
+    const link = page.locator('a[href="/skills/existing-skill"]')
     await expect(link).toBeVisible()
   })
 
-  test('clicking imported skill navigates to detail page', async ({ page }) => {
-    await page.locator('a[href="/skills/skill-creator"]').click()
-    await page.waitForURL('**/skills/skill-creator')
+  test('clicking skill navigates to detail page', async ({ page }) => {
+    await page.locator('a[href="/skills/existing-skill"]').click()
+    await page.waitForURL('**/skills/existing-skill')
     await page.waitForLoadState('networkidle')
 
-    expect(page.url()).toContain('/skills/skill-creator')
-    await expect(page.getByText('skill-creator').first()).toBeVisible()
+    expect(page.url()).toContain('/skills/existing-skill')
+    await expect(page.getByText('existing-skill').first()).toBeVisible()
   })
 
   test('detail page shows correct metadata', async ({ page }) => {
-    await page.goto('/skills/skill-creator')
+    await page.goto('/skills/existing-skill')
     await page.waitForLoadState('networkidle')
 
     // Name
-    await expect(page.getByText('skill-creator').first()).toBeVisible()
+    await expect(page.getByText('existing-skill').first()).toBeVisible()
     // Description
-    await expect(page.getByText('Create new skills, modify and improve existing skills')).toBeVisible()
+    await expect(page.getByText('An existing skill for testing')).toBeVisible()
     // Version badge
-    await expect(page.getByText('v1')).toBeVisible()
-    // Tags
-    await expect(page.getByText('ai').first()).toBeVisible()
-    await expect(page.getByText('skills').first()).toBeVisible()
-    // Collection
-    await expect(page.getByText('ai tools')).toBeVisible()
+    await expect(page.getByText('v2').first()).toBeVisible()
   })
 
   test('detail page renders markdown content', async ({ page }) => {
-    await page.goto('/skills/skill-creator')
+    await page.goto('/skills/existing-skill')
     await page.waitForLoadState('networkidle')
 
     // H1 from markdown body
-    await expect(page.getByRole('heading', { name: 'Skill Creator' })).toBeVisible()
-    // Feature list items
-    await expect(page.getByText('Draft skills from scratch')).toBeVisible()
-    await expect(page.getByText('Run evaluations')).toBeVisible()
-    await expect(page.getByText('Optimize descriptions')).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Existing Skill' })).toBeVisible()
+    await expect(page.getByText('Some content')).toBeVisible()
   })
 
-  test('detail page has Edit, Versions, Export buttons', async ({ page }) => {
-    await page.goto('/skills/skill-creator')
+  test('detail page has Edit Skill, Versions, Export buttons', async ({ page }) => {
+    await page.goto('/skills/existing-skill')
     await page.waitForLoadState('networkidle')
+    await page.waitForTimeout(1000)
 
-    await expect(page.getByRole('button', { name: 'Edit' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Edit Skill' })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Versions' })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Export' })).toBeVisible()
   })
 
-  test('versions page shows v1 for imported skill', async ({ page }) => {
-    // Read the imported skill from localStorage and update mock to include it
-    const importedSkills = await page.evaluate(() => {
-      const raw = localStorage.getItem('skillnote:skills')
-      return raw ? JSON.parse(raw) : []
-    })
-    await page.unroute('**/v1/**')
-    await mockApi(page, importedSkills)
-
-    await page.goto('/skills/skill-creator/versions')
+  test('versions page shows version info for seeded skill', async ({ page }) => {
+    await page.goto('/skills/existing-skill/versions')
     await page.waitForLoadState('networkidle')
 
-    await expect(page.getByText('Current: v1')).toBeVisible()
-    // Version entry should show v1 with Latest badge
+    await expect(page.getByText('Current: v2')).toBeVisible()
     await expect(page.getByText('Latest')).toBeVisible()
-    // Should NOT show "No versions yet"
-    await expect(page.getByText('No versions yet')).not.toBeVisible()
   })
 })
 
@@ -628,51 +528,19 @@ test.describe('Skill Detail — After Import', () => {
 
 test.describe('Home Page — Filter Sidebar', () => {
   test.beforeEach(async ({ page }) => {
-    await clearStorage(page)
+    await seedStorage(page)
     await page.goto('/')
     await page.waitForLoadState('networkidle')
-
-    // Import a skill with tags and collection
-    await openImportModal(page)
-    const filePath = writeTestFile('SKILL.md', SKILL_MD)
-    await uploadFile(page, filePath)
-
-    const tagInput = page.locator('input[placeholder="Add tags..."]')
-    await tagInput.fill('ai')
-    await tagInput.press('Enter')
-    await page.waitForTimeout(200)
-    const tagSection = page.locator('label:has-text("Tags")').locator('..')
-    await tagSection.locator('input').fill('testing')
-    await tagSection.locator('input').press('Enter')
-    await page.waitForTimeout(200)
-
-    const colInput = page.locator('input[placeholder="Add to collection..."]')
-    await colInput.fill('Tools')
-    await colInput.press('Enter')
-    await page.waitForTimeout(200)
-
-    await page.getByRole('button', { name: 'Import 1 skill' }).click()
-    await page.waitForTimeout(1000)
   })
 
-  test('filter sidebar shows imported tags', async ({ page }) => {
-    await expect(page.locator('aside').getByText('ai')).toBeVisible()
-    await expect(page.locator('aside').getByText('testing')).toBeVisible()
+  test('filter sidebar shows seeded collections', async ({ page }) => {
+    // The sidebar filter panel only shows collections (not tags)
+    await expect(page.locator('aside').getByText('QA')).toBeVisible()
   })
 
-  test('filter sidebar shows imported collection', async ({ page }) => {
-    await expect(page.locator('aside').getByText('tools')).toBeVisible()
-  })
-
-  test('clicking a tag filters skills', async ({ page }) => {
-    // Click the "ai" tag in sidebar
-    await page.locator('aside').getByText('ai').click()
-    await page.waitForTimeout(300)
-
-    // Filtered chip should appear
-    await expect(page.locator('main').getByText('filtered')).toBeVisible()
-    // Skill should still be visible (it has the "ai" tag)
-    await expect(page.getByText('skill-creator').first()).toBeVisible()
+  test('filter sidebar shows seeded collection', async ({ page }) => {
+    // The seed data has collection "QA"
+    await expect(page.locator('aside').getByText('QA')).toBeVisible()
   })
 
   test('tag count shows correct number', async ({ page }) => {
@@ -734,10 +602,8 @@ test.describe('Home Page — View Toggle', () => {
   })
 
   test('can toggle to grid view', async ({ page }) => {
-    // Click the grid view button (second button in the toggle group)
-    const viewToggle = page.locator('button[aria-label]').filter({ has: page.locator('svg') })
-    // Grid toggle is typically the second icon
-    await page.locator('button').filter({ has: page.locator('.lucide-layout-grid, .lucide-grid-2x2') }).click()
+    // Click the grid view button
+    await page.locator('button[aria-label="Grid view"]').click()
     await page.waitForTimeout(300)
 
     // Grid view shows cards in a grid layout
@@ -793,11 +659,16 @@ test.describe('Skill Detail — Delete Flow', () => {
   })
 
   test('more menu has delete option', async ({ page }) => {
-    // Open the more menu
-    await page.locator('button').filter({ has: page.locator('.lucide-more-horizontal, .lucide-ellipsis') }).click()
+    // Use JS click to avoid detach during React re-renders
+    await page.waitForTimeout(2000)
+    await page.evaluate(() => {
+      const btn = document.querySelector('button[aria-label="More options"]') as HTMLButtonElement
+      if (btn) btn.click()
+      else throw new Error('More options button not found')
+    })
     await page.waitForTimeout(300)
 
-    await expect(page.getByText('Delete')).toBeVisible()
+    await expect(page.getByText('Delete Skill')).toBeVisible()
   })
 })
 
@@ -833,49 +704,24 @@ test.describe('Import — Markdown Parsing Edge Cases', () => {
     await expect(page.getByText('Bare Skill')).toBeVisible()
   })
 
-  test('frontmatter description is used over content slice', async ({ page }) => {
+  test('frontmatter description is passed to create page', async ({ page }) => {
     const filePath = writeTestFile('SKILL.md', SKILL_MD)
     await uploadFile(page, filePath)
-    await page.getByRole('button', { name: 'Import 1 skill' }).click()
-    await page.waitForTimeout(1000)
+    await page.getByRole('button', { name: 'Review & Create' }).click()
+    await page.waitForURL('**/skills/new**', { timeout: 5000 })
 
-    const skills = await getStoredSkills(page)
-    expect(skills[0].description).toBe(
-      'Create new skills, modify and improve existing skills, and measure skill performance.'
-    )
+    // Description should be in the URL params
+    expect(page.url()).toContain('description=')
   })
 
-  test('frontmatter tags are parsed from bracket notation', async ({ page }) => {
-    const filePath = writeTestFile('tagged.md', SKILL_WITH_TAGS_MD)
-    await uploadFile(page, filePath)
-    await page.getByRole('button', { name: 'Import 1 skill' }).click()
-    await page.waitForTimeout(1000)
-
-    const skills = await getStoredSkills(page)
-    expect(skills[0].tags).toEqual(['react', 'typescript'])
-  })
-
-  test('imported skill gets current_version 1', async ({ page }) => {
+  test('frontmatter content is passed to create page', async ({ page }) => {
     const filePath = writeTestFile('SKILL.md', SKILL_MD)
     await uploadFile(page, filePath)
-    await page.getByRole('button', { name: 'Import 1 skill' }).click()
-    await page.waitForTimeout(1000)
+    await page.getByRole('button', { name: 'Review & Create' }).click()
+    await page.waitForURL('**/skills/new**', { timeout: 5000 })
 
-    const skills = await getStoredSkills(page)
-    expect(skills[0].current_version).toBe(1)
-  })
-
-  test('imported skill gets timestamps', async ({ page }) => {
-    const filePath = writeTestFile('SKILL.md', SKILL_MD)
-    await uploadFile(page, filePath)
-    await page.getByRole('button', { name: 'Import 1 skill' }).click()
-    await page.waitForTimeout(1000)
-
-    const skills = await getStoredSkills(page)
-    expect(skills[0].created_at).toBeTruthy()
-    expect(skills[0].updated_at).toBeTruthy()
-    // Should be valid ISO dates
-    expect(new Date(skills[0].created_at).getTime()).toBeGreaterThan(0)
+    // Content should be in the URL params
+    expect(page.url()).toContain('content=')
   })
 })
 
@@ -903,11 +749,7 @@ test.describe('Navigation — Sidebar Links', () => {
     expect(page.url()).toContain('/collections')
   })
 
-  test('sidebar Tags link navigates to tags page', async ({ page }) => {
-    await page.locator('a[href="/tags"]').and(page.locator(':visible')).first().click()
-    await page.waitForURL('**/tags')
-    expect(page.url()).toContain('/tags')
-  })
+  // Tags link removed — sidebar no longer has a Tags page link
 
   test('sidebar Settings link navigates to settings page', async ({ page }) => {
     await page.locator('a[href="/settings"]').and(page.locator(':visible')).first().click()

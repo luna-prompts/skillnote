@@ -450,10 +450,10 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
                       <Clock className="h-3 w-3" />
                       {formatRelative(skill.updated_at)}
                     </span>
-                    {ratingDetail && ratingDetail.rating_count > 0 && (
+                    {ratingDetail && ratingDetail.rating_count > 0 && ratingDetail.avg_rating != null && (
                       <span className="inline-flex items-center gap-1.5 text-[11px] text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2.5 py-1 rounded-full">
                         <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
-                        {ratingDetail.avg_rating}
+                        {ratingDetail.avg_rating.toFixed(1)}
                         <span className="text-muted-foreground/60">({ratingDetail.rating_count})</span>
                       </span>
                     )}
@@ -489,7 +489,7 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
                 {/* Right: install strip + version ratings — visible on lg+ */}
                 <div className="hidden lg:block w-64 shrink-0 pt-1 space-y-6">
                   <InstallStrip slug={skill.slug} />
-                  {ratingDetail && ratingDetail.versions.length > 0 && (
+                  {ratingDetail && ratingDetail.versions?.length > 0 && (
                     <div>
                       <p className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground/40 font-medium mb-2">Rating by Version</p>
                       <div className="space-y-1.5">
