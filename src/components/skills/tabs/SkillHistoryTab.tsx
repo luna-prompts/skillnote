@@ -1,24 +1,39 @@
 'use client'
 import { useState, useEffect } from 'react'
-import { ChevronDown, ChevronRight, GitBranch, Check, RotateCcw } from 'lucide-react'
+import { ChevronDown, ChevronRight, GitBranch, Check, RotateCcw, Star, MessageSquare } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { type ContentVersion, type Skill } from '@/lib/mock-data'
-import { fetchContentVersions, setLatestVersionApi, restoreVersionApi } from '@/lib/api/skills'
+import { type ContentVersion, type Skill, type SkillRatingDetail } from '@/lib/mock-data'
+import { fetchContentVersions, setLatestVersionApi, restoreVersionApi, fetchSkillRatingDetail } from '@/lib/api/skills'
+import { fetchSkillReviews, type SkillReview } from '@/lib/api/analytics'
 import { getSkills } from '@/lib/skills-store'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
+
+function StarRating({ rating }: { rating: number }) {
+  return (
+    <span className="inline-flex gap-px">
+      {[1, 2, 3, 4, 5].map(i => (
+        <Star key={i} className={cn('h-3 w-3', i <= rating ? 'fill-amber-400 text-amber-400' : 'text-muted-foreground/20')} />
+      ))}
+    </span>
+  )
+}
 
 function VersionEntry({
   v,
   isLast,
   onSetLatest,
   onRestore,
+  versionRating,
+  reviews,
 }: {
   v: ContentVersion
   isLast: boolean
   onSetLatest: (version: number) => void
   onRestore: (version: number) => void
+  versionRating?: { avg_rating: number; rating_count: number }
+  reviews: SkillReview[]
 }) {
   const [expanded, setExpanded] = useState(false)
   const [showRestore, setShowRestore] = useState(false)
@@ -55,6 +70,13 @@ function VersionEntry({
                   <Badge className="text-[10px] py-0 bg-accent/15 text-accent border-accent/30">
                     Latest
                   </Badge>
+                )}
+                {versionRating && versionRating.rating_count > 0 && (
+                  <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+                    <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
+                    {versionRating.avg_rating.toFixed(1)}
+                    <span className="text-muted-foreground/50">({versionRating.rating_count})</span>
+                  </span>
                 )}
               </div>
               <p className="text-[12px] text-muted-foreground truncate">{v.title}</p>
@@ -100,7 +122,7 @@ function VersionEntry({
           </div>
           {expanded && (
             <div className="border-t border-border/60 bg-muted/20 p-4">
-              <div className="space-y-2 text-[12px]">
+              <div className="space-y-3 text-[12px]">
                 <div>
                   <span className="font-semibold text-muted-foreground">Description:</span>{' '}
                   <span className="text-foreground/80">{v.description || '(none)'}</span>
@@ -112,6 +134,34 @@ function VersionEntry({
                     {v.content_md.length > 200 && '...'}
                   </pre>
                 </div>
+                {reviews.length > 0 && (
+                  <div>
+                    <div className="flex items-center gap-1.5 mb-2">
+                      <MessageSquare className="h-3.5 w-3.5 text-muted-foreground" />
+                      <span className="font-semibold text-muted-foreground">Reviews ({reviews.length})</span>
+                    </div>
+                    <div className="space-y-2">
+                      {reviews.map(r => (
+                        <div key={r.id} className="rounded-lg border border-border/40 bg-card/50 p-2.5">
+                          <div className="flex items-center gap-2 mb-1">
+                            <StarRating rating={r.rating} />
+                            {r.agent_name && (
+                              <span className="text-[10px] font-mono text-muted-foreground/60">{r.agent_name}</span>
+                            )}
+                            {r.created_at && (
+                              <span className="text-[10px] text-muted-foreground/40 ml-auto">
+                                {new Date(r.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                              </span>
+                            )}
+                          </div>
+                          {r.outcome && (
+                            <p className="text-[11px] text-foreground/70 mt-1">{r.outcome}</p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -168,6 +218,8 @@ type SkillVersionsTabProps = {
 export function SkillVersionsTab({ skillSlug, onRestored }: SkillVersionsTabProps) {
   const [versions, setVersions] = useState<ContentVersion[]>([])
   const [loading, setLoading] = useState(true)
+  const [ratingDetail, setRatingDetail] = useState<SkillRatingDetail | null>(null)
+  const [reviews, setReviews] = useState<SkillReview[]>([])
 
   const loadVersions = () => {
     setLoading(true)
@@ -191,9 +243,29 @@ export function SkillVersionsTab({ skillSlug, onRestored }: SkillVersionsTabProp
       .finally(() => setLoading(false))
   }
 
+  const loadRatings = () => {
+    fetchSkillRatingDetail(skillSlug).then(setRatingDetail).catch(() => {})
+    fetchSkillReviews(skillSlug, 100).then(setReviews).catch(() => {})
+  }
+
   useEffect(() => {
     loadVersions()
+    loadRatings()
   }, [skillSlug])
+
+  // Build lookup maps for ratings and reviews by version
+  const ratingByVersion = new Map<number, { avg_rating: number; rating_count: number }>()
+  if (ratingDetail?.versions) {
+    for (const vr of ratingDetail.versions) {
+      ratingByVersion.set(vr.version, { avg_rating: vr.avg_rating, rating_count: vr.rating_count })
+    }
+  }
+  const reviewsByVersion = new Map<number, SkillReview[]>()
+  for (const r of reviews) {
+    const existing = reviewsByVersion.get(r.skill_version) || []
+    existing.push(r)
+    reviewsByVersion.set(r.skill_version, existing)
+  }
 
   const handleSetLatest = async (version: number) => {
     try {
@@ -236,6 +308,8 @@ export function SkillVersionsTab({ skillSlug, onRestored }: SkillVersionsTabProp
               isLast={i === versions.length - 1}
               onSetLatest={handleSetLatest}
               onRestore={handleRestore}
+              versionRating={ratingByVersion.get(v.version)}
+              reviews={reviewsByVersion.get(v.version) || []}
             />
           ))
         ) : (
