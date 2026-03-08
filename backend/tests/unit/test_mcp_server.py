@@ -315,7 +315,7 @@ class TestSkillToolRun:
         )
         result = asyncio.get_event_loop().run_until_complete(tool.run({}))
         text = result.content[0].text if hasattr(result.content[0], "text") else str(result.content[0])
-        assert text == "# S\n\n"
+        assert text.startswith("# S\n\n")
 
     def test_run_ignores_extra_arguments(self):
         """SkillTool takes no params; extra arguments must be silently ignored."""

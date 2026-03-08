@@ -4,8 +4,9 @@ import { TopBar } from '@/components/layout/topbar'
 import { SkillListItem } from '@/components/skills/skill-list-item'
 import { SkillCard } from '@/components/skills/skill-card'
 import { FilterPanel } from '@/components/filters/filter-panel'
-import { Skill } from '@/lib/mock-data'
+import { Skill, SkillRating } from '@/lib/mock-data'
 import { getSkills, syncSkillsFromApi } from '@/lib/skills-store'
+import { fetchSkillRatings } from '@/lib/api/skills'
 import { cn } from '@/lib/utils'
 import { SearchX, SlidersHorizontal, X, Sparkles } from 'lucide-react'
 
@@ -15,6 +16,7 @@ function SkillsPageInner() {
   const [searchQuery, setSearchQuery] = useState('')
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false)
   const [skills, setSkills] = useState<Skill[]>([])
+  const [ratingsMap, setRatingsMap] = useState<Map<string, SkillRating>>(new Map())
 
   // Load skills on mount + re-sync on focus, periodic, and when skills-store changes
   useEffect(() => {
@@ -22,6 +24,10 @@ function SkillsPageInner() {
     const refresh = () => setSkills(getSkills())
     setSkills(getSkills())
     sync()
+    // Fetch ratings (fail silently — online-only)
+    fetchSkillRatings()
+      .then(ratings => setRatingsMap(new Map(ratings.map(r => [r.slug, r]))))
+      .catch(() => {})
     const interval = setInterval(sync, 30_000)
     window.addEventListener('focus', sync)
     window.addEventListener('skillnote:skills-changed', refresh)
@@ -155,11 +161,11 @@ function SkillsPageInner() {
             </div>
           ) : view === 'list' ? (
             <div className="pb-24 lg:pb-0">
-              {filtered.map(skill => <SkillListItem key={skill.slug} skill={skill} />)}
+              {filtered.map(skill => <SkillListItem key={skill.slug} skill={skill} rating={ratingsMap.get(skill.slug)} />)}
             </div>
           ) : (
             <div className="p-4 sm:p-5 pb-24 lg:pb-5 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-              {filtered.map(skill => <SkillCard key={skill.slug} skill={skill} />)}
+              {filtered.map(skill => <SkillCard key={skill.slug} skill={skill} rating={ratingsMap.get(skill.slug)} />)}
             </div>
           )}
         </main>

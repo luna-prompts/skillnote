@@ -361,7 +361,11 @@ class SkillTool(Tool):
     skill_name: str
 
     async def run(self, arguments: dict[str, Any]) -> ToolResult:
-        return ToolResult(content=f"# {self.skill_name}\n\n{self.content_md}")
+        return ToolResult(
+            content=f"# {self.skill_name}\n\n{self.content_md}"
+                    f"\n\n---\n_When you're done applying this skill, close the loop:_\n"
+                    f"`complete_skill(skill_slug=\"{self.skill_slug}\", rating=<1-5>, outcome=\"what you did\")`"
+        )
 
 
 class SkillNoteToolProvider(Provider):
@@ -478,6 +482,51 @@ async def _log_event(skill_slug: str, session_meta: dict | None, scope: str | No
     await asyncio.to_thread(_log_event_sync, skill_slug, agent_name, agent_version, session_id, scope, remote)
 
 
+def _get_skill_version_sync(slug: str) -> int | None:
+    """Look up current_version for a skill by slug. Returns None if not found."""
+    try:
+        with Session(engine) as db:
+            row = db.execute(
+                text("SELECT current_version FROM skills WHERE slug = :slug"),
+                {"slug": slug},
+            ).mappings().first()
+            return row["current_version"] if row else None
+    except Exception:
+        logger.exception("Failed to look up skill version for %r", slug)
+        return None
+
+
+def _insert_rating_sync(slug: str, version: int, rating: int, outcome: str | None,
+                         agent_name: str, session_id: str) -> None:
+    import uuid as _uuid
+    try:
+        with Session(engine) as db:
+            db.execute(
+                text("""INSERT INTO skill_ratings
+                    (id, skill_slug, skill_version, rating, outcome, agent_name, session_id)
+                    VALUES (:id, :slug, :version, :rating, :outcome, :agent, :session)"""),
+                {
+                    "id": str(_uuid.uuid4()),
+                    "slug": slug,
+                    "version": version,
+                    "rating": rating,
+                    "outcome": outcome,
+                    "agent": agent_name,
+                    "session": session_id,
+                }
+            )
+            db.commit()
+    except Exception:
+        logger.exception("Failed to insert skill rating")
+
+
+def _resolve_session_meta() -> dict | None:
+    """Pick the most recently seen active connection (same heuristic as analytics)."""
+    if not _active_connections:
+        return None
+    return max(_active_connections.values(), key=lambda s: s.get("last_seen", 0))
+
+
 provider = SkillNoteToolProvider(db_engine=engine)
 
 mcp = FastMCP(
@@ -486,7 +535,9 @@ mcp = FastMCP(
         "This server provides AI skills from a SkillNote registry. "
         "Each tool represents a skill — call it when the user's task matches its description. "
         "The tool returns detailed instructions you should follow. "
-        "After using a skill, check if other available skills might also help with the task."
+        "After using a skill, check if other available skills might also help with the task. "
+        "IMPORTANT: After applying a skill and seeing the results, always call `complete_skill` "
+        "with a rating (1-5) and a brief outcome describing what you did."
     ),
     providers=[provider],
 )
@@ -494,6 +545,34 @@ mcp = FastMCP(
 # Register the session-capturing middleware so every initialized session is
 # stored in _session_registry and can receive tool-change notifications.
 mcp.add_middleware(SessionCapturingMiddleware())
+
+
+@mcp.tool()
+async def complete_skill(skill_slug: str, rating: int, outcome: str = "") -> str:
+    """Complete a skill session after applying it. Rate 1-5 and describe what you did.
+
+    Args:
+        skill_slug: The slug of the skill you used.
+        rating: Your rating from 1 (unhelpful) to 5 (excellent).
+        outcome: Brief description of what you accomplished with the skill.
+    """
+    if rating < 1 or rating > 5:
+        return "Error: rating must be between 1 and 5."
+
+    version = await asyncio.to_thread(_get_skill_version_sync, skill_slug)
+    if version is None:
+        return f"Error: skill '{skill_slug}' not found."
+
+    session_meta = _resolve_session_meta()
+    agent_name = session_meta.get("client_name", "") if session_meta else ""
+    session_id = session_meta.get("id", "") if session_meta else ""
+
+    await asyncio.to_thread(
+        _insert_rating_sync, skill_slug, version, rating,
+        outcome or None, agent_name, session_id,
+    )
+
+    return f"Completed '{skill_slug}' (v{version}): {rating}/5. Thank you for the feedback!"
 
 
 @mcp.custom_route("/status", methods=["GET"])

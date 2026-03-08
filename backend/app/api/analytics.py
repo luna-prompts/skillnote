@@ -216,6 +216,76 @@ def get_timeline(
     return result
 
 
+@router.get("/ratings")
+def get_ratings(
+    db: Session = Depends(get_db),
+):
+    """Aggregate ratings for all skills."""
+    rows = db.execute(
+        text("""
+            SELECT skill_slug AS slug,
+                   ROUND(AVG(rating)::numeric, 1) AS avg_rating,
+                   COUNT(*) AS rating_count
+            FROM skill_ratings
+            GROUP BY skill_slug
+            ORDER BY avg_rating DESC
+        """),
+    ).mappings().all()
+
+    return [
+        {
+            "slug": row["slug"],
+            "avg_rating": float(row["avg_rating"]),
+            "rating_count": row["rating_count"],
+        }
+        for row in rows
+    ]
+
+
+@router.get("/ratings/{skill_slug}")
+def get_rating_detail(
+    skill_slug: str,
+    db: Session = Depends(get_db),
+):
+    """Per-version rating breakdown for a single skill."""
+    overall = db.execute(
+        text("""
+            SELECT ROUND(AVG(rating)::numeric, 1) AS avg_rating,
+                   COUNT(*) AS rating_count
+            FROM skill_ratings
+            WHERE skill_slug = :slug
+        """),
+        {"slug": skill_slug},
+    ).mappings().one()
+
+    versions = db.execute(
+        text("""
+            SELECT skill_version AS version,
+                   ROUND(AVG(rating)::numeric, 1) AS avg_rating,
+                   COUNT(*) AS rating_count
+            FROM skill_ratings
+            WHERE skill_slug = :slug
+            GROUP BY skill_version
+            ORDER BY skill_version DESC
+        """),
+        {"slug": skill_slug},
+    ).mappings().all()
+
+    return {
+        "slug": skill_slug,
+        "avg_rating": float(overall["avg_rating"]) if overall["avg_rating"] else None,
+        "rating_count": overall["rating_count"],
+        "versions": [
+            {
+                "version": v["version"],
+                "avg_rating": float(v["avg_rating"]),
+                "rating_count": v["rating_count"],
+            }
+            for v in versions
+        ],
+    }
+
+
 @router.get("/collections")
 def get_collections(
     days: int = Query(default=7, ge=0),
