@@ -1,17 +1,54 @@
+# Dependencies
 node_modules/
+
+# Next.js
 .next/
-test-results/
-tests/
-!backend/tests/
-!backend/tests/**
-qa-*.mjs
-audit*.mjs
-mobile-audit*.js
-r7-test.js
-PROMPT.md
-*PROMPT.md
-skillvault-backup-*.tar.gz
-*.log
+out/
+
+# Build
+dist/
+tsconfig.tsbuildinfo
+
+# Environment
 .env
 .env.local
-tsconfig.tsbuildinfo
+.env.*.local
+
+# Testing
+test-results/
+playwright-report/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+*.egg-info/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+.temp/
+
+# Docker volumes (local data)
+postgres-data/
+
+# Ralph
+.ralph/
+.ralphrc
+.ralph_backup_*
+
+# Rust (if using CLI builds)
+target/

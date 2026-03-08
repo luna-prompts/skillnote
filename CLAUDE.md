@@ -188,6 +188,21 @@ Every save creates a `SkillContentVersion` snapshot (auto-incremented integer). 
 | `backend/app/validators/bundle_validator.py` | ZIP upload validation (path traversal, size limits, frontmatter) |
 | `backend/app/core/config.py` | All env vars with defaults |
 
+## Versioning
+
+App version is the single source of truth in `package.json` (`"version": "x.y.z"`).
+
+- **`next.config.ts`** reads `package.json` and exposes `NEXT_PUBLIC_APP_VERSION` at build time
+- **Sidebar footer** displays the version next to the connection status indicator
+- **Settings page** shows the version in the About section and a collapsible Changelog
+- **`CHANGELOG.md`** in the project root documents all releases
+- **`CHANGELOG_ENTRIES`** array in `src/app/(app)/settings/page.tsx` mirrors the changelog for in-app display
+
+When bumping the version:
+1. Update `"version"` in `package.json`
+2. Add a new entry to `CHANGELOG.md`
+3. Add a new entry to `CHANGELOG_ENTRIES` in `src/app/(app)/settings/page.tsx`
+
 ## SKILL.md Format
 
 ```markdown
