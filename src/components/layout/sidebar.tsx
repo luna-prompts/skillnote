@@ -133,6 +133,7 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
           <p className="text-[10px] text-[var(--muted-foreground)]/40">
             {connStatus === 'online' ? 'Connected' : connStatus === 'offline' ? 'Offline' : 'Admin'}
           </p>
+          <span className="ml-auto text-[9px] font-mono text-[var(--muted-foreground)]/30">v{process.env.NEXT_PUBLIC_APP_VERSION || '0.1.0'}</span>
         </div>
       </div>
     </aside>
