@@ -1,4 +1,4 @@
-import { Skill, Comment, ContentVersion } from '@/lib/mock-data'
+import { Skill, Comment, ContentVersion, SkillRating, SkillRatingDetail } from '@/lib/mock-data'
 import { apiRequest } from './client'
 
 type ApiSkillListItem = {
@@ -169,4 +169,13 @@ export async function restoreVersionApi(slug: string, version: number): Promise<
     method: 'POST',
   })
   return detailToSkill(detail)
+}
+
+// Ratings
+export async function fetchSkillRatings(): Promise<SkillRating[]> {
+  return apiRequest<SkillRating[]>('/v1/analytics/ratings')
+}
+
+export async function fetchSkillRatingDetail(slug: string): Promise<SkillRatingDetail> {
+  return apiRequest<SkillRatingDetail>(`/v1/analytics/ratings/${slug}`)
 }

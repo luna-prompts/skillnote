@@ -138,6 +138,18 @@ async function seedAndNavigate(page: Page) {
   }, SEED_SKILLS)
 }
 
+/** Click a button that may be unstable due to React re-renders */
+async function clickUnstableButton(page: Page, name: string) {
+  // Wait for re-renders to settle, then force-click
+  await page.waitForTimeout(2000)
+  await page.evaluate((buttonName) => {
+    const buttons = Array.from(document.querySelectorAll('button'))
+    const btn = buttons.find(b => b.textContent?.trim() === buttonName)
+    if (btn) btn.click()
+    else throw new Error(`Button "${buttonName}" not found`)
+  }, name)
+}
+
 async function getStoredSkills(page: Page) {
   return page.evaluate(() => {
     const raw = localStorage.getItem('skillnote:skills')
@@ -155,9 +167,8 @@ test.describe('Slug auto-update — Rename via edit', () => {
   test('renaming a skill updates the URL to new slug', async ({ page }) => {
     await page.goto('/skills/api-reviewer')
     await page.waitForLoadState('networkidle')
-
-    // Enter edit mode
-    await page.getByRole('button', { name: 'Edit' }).click()
+    // Enter edit mode (use JS click to avoid detach during React re-renders)
+    await clickUnstableButton(page, 'Edit Skill')
     await expect(page.locator('.fixed.inset-0')).toBeVisible()
 
     // Clear and type new name
@@ -181,8 +192,9 @@ test.describe('Slug auto-update — Rename via edit', () => {
   test('localStorage updates slug after rename', async ({ page }) => {
     await page.goto('/skills/api-reviewer')
     await page.waitForLoadState('networkidle')
+    await page.waitForTimeout(1000)
 
-    await page.getByRole('button', { name: 'Edit' }).click()
+    await page.getByRole('button', { name: 'Edit Skill' }).click()
     await expect(page.locator('.fixed.inset-0')).toBeVisible()
 
     const nameInput = page.locator('input[placeholder="skill-name"]')
@@ -206,8 +218,9 @@ test.describe('Slug auto-update — Rename via edit', () => {
   test('old slug returns not found after rename', async ({ page }) => {
     await page.goto('/skills/api-reviewer')
     await page.waitForLoadState('networkidle')
+    await page.waitForTimeout(1000)
 
-    await page.getByRole('button', { name: 'Edit' }).click()
+    await page.getByRole('button', { name: 'Edit Skill' }).click()
     await expect(page.locator('.fixed.inset-0')).toBeVisible()
 
     const nameInput = page.locator('input[placeholder="skill-name"]')
@@ -285,7 +298,7 @@ test.describe('Slack-style name input — Edit mode', () => {
     await seedAndNavigate(page)
     await page.goto('/skills/api-reviewer')
     await page.waitForLoadState('networkidle')
-    await page.getByRole('button', { name: 'Edit' }).click()
+    await clickUnstableButton(page, 'Edit Skill')
     await expect(page.locator('.fixed.inset-0')).toBeVisible()
   })
 
@@ -382,18 +395,14 @@ test.describe('Import flow — Review before create', () => {
     const path = require('path')
     const dir = '/tmp/skillnote-e2e-slug'
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
-    // Invalid name with uppercase — parseMarkdown will keep it as-is
-    const content = `---\ntitle: Invalid Name!\ndescription: Bad name.\n---\n\n# Invalid\n\nContent.`
+    // Reserved name — will fail validation after normalization
+    const content = `---\nname: anthropic\ndescription: Bad name.\n---\n\n# Anthropic\n\nContent.`
     fs.writeFileSync(path.join(dir, 'invalid.md'), content)
 
     await page.locator('input[type=file]').setInputFiles(path.join(dir, 'invalid.md'))
     await page.waitForTimeout(500)
 
-    // Expand the file entry to see error details
-    await page.locator('.cursor-pointer').filter({ hasText: 'Invalid Name!' }).click()
-    await page.waitForTimeout(300)
-
-    // Should show validation error
+    // File auto-expands for single file — should show validation error
     const errorText = page.locator('.text-destructive')
     await expect(errorText.first()).toBeVisible()
   })
@@ -419,7 +428,7 @@ test.describe('Import flow — Review before create', () => {
     await page.waitForTimeout(500)
 
     // Should show duplicate warning
-    await expect(page.getByText('already exists', { exact: false })).toBeVisible()
+    await expect(page.getByText('already exists', { exact: false }).first()).toBeVisible()
   })
 })
 
@@ -428,6 +437,7 @@ test.describe('Import flow — Review before create', () => {
 test.describe('Delete skill — backend integration', () => {
   test('delete calls backend API before removing from localStorage', async ({ page }) => {
     let deleteCalledWith: string | null = null
+    const deletedSlugs = new Set<string>()
 
     await page.route('**/v1/**', (route, request) => {
       const url = new URL(request.url())
@@ -435,17 +445,22 @@ test.describe('Delete skill — backend integration', () => {
 
       if (request.method() === 'DELETE' && /^\/v1\/skills\/[^/]+$/.test(path)) {
         deleteCalledWith = path.split('/').pop()!
+        deletedSlugs.add(deleteCalledWith)
         return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' })
       }
 
       if (request.method() === 'GET' && path === '/v1/skills') {
+        const remaining = SEED_SKILLS.filter(s => !deletedSlugs.has(s.slug))
         return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(
-          SEED_SKILLS.map(s => ({ name: s.title, slug: s.slug, description: s.description, tags: s.tags, collections: s.collections, currentVersion: s.current_version }))
+          remaining.map(s => ({ name: s.title, slug: s.slug, description: s.description, tags: s.tags, collections: s.collections, currentVersion: s.current_version }))
         )})
       }
 
       if (request.method() === 'GET' && /^\/v1\/skills\/[^/]+$/.test(path)) {
         const slug = path.split('/').pop()!
+        if (deletedSlugs.has(slug)) {
+          return route.fulfill({ status: 404, contentType: 'application/json', body: '{"error":{"code":"SKILL_NOT_FOUND"}}' })
+        }
         const skill = SEED_SKILLS.find(s => s.slug === slug)
         if (skill) {
           return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
@@ -473,11 +488,15 @@ test.describe('Delete skill — backend integration', () => {
     }, SEED_SKILLS)
     await page.goto('/skills/api-reviewer')
     await page.waitForLoadState('networkidle')
-
-    // Open more menu and click Delete
-    await page.locator('button').filter({ has: page.locator('.lucide-more-horizontal, .lucide-ellipsis') }).click()
+    // Open more menu (use JS click to avoid detach during React re-renders)
+    await page.waitForTimeout(2000)
+    await page.evaluate(() => {
+      const btn = document.querySelector('button[aria-label="More options"]') as HTMLButtonElement
+      if (btn) btn.click()
+      else throw new Error('More options button not found')
+    })
     await page.waitForTimeout(300)
-    await page.getByText('Delete').click()
+    await page.getByText('Delete Skill').click()
     await page.waitForTimeout(300)
 
     // Confirm delete
@@ -485,9 +504,9 @@ test.describe('Delete skill — backend integration', () => {
     await page.waitForTimeout(2000)
 
     // Verify API was called
-    const calledSlug = await page.evaluate(() => (window as any).__deleteCalledWith)
-    // The route handler captured the slug — we just need to verify it was called
-    // by checking that the skill is gone from localStorage
+    expect(deleteCalledWith).toBe('api-reviewer')
+    // Wait for sync to settle, then verify skill is gone from localStorage
+    await page.waitForTimeout(1000)
     const skills = await getStoredSkills(page)
     const slugs = skills.map((s: any) => s.slug)
     expect(slugs).not.toContain('api-reviewer')
@@ -538,11 +557,15 @@ test.describe('Delete skill — backend integration', () => {
     }, SEED_SKILLS)
     await page.goto('/skills/api-reviewer')
     await page.waitForLoadState('networkidle')
-
-    // Open more menu and click Delete
-    await page.locator('button').filter({ has: page.locator('.lucide-more-horizontal, .lucide-ellipsis') }).click()
+    // Open more menu (use JS click to avoid detach during React re-renders)
+    await page.waitForTimeout(2000)
+    await page.evaluate(() => {
+      const btn = document.querySelector('button[aria-label="More options"]') as HTMLButtonElement
+      if (btn) btn.click()
+      else throw new Error('More options button not found')
+    })
     await page.waitForTimeout(300)
-    await page.getByText('Delete').click()
+    await page.getByText('Delete Skill').click()
     await page.waitForTimeout(300)
 
     // Confirm delete

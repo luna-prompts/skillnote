@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useState, useEffect, useCallback } from 'react'
+import React, { Suspense, useState, useEffect, useCallback } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { TopBar } from '@/components/layout/topbar'
 import { cn } from '@/lib/utils'
@@ -10,6 +10,7 @@ import { toast } from 'sonner'
 import {
   Zap, BookOpen, Users, Activity, TrendingUp, Radio, WifiOff,
   ChevronDown, ChevronRight, RefreshCw, BarChart2, PieChart as PieChartIcon,
+  Star, Info, Award,
 } from 'lucide-react'
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid,
@@ -21,11 +22,17 @@ import {
   fetchAgents,
   fetchTimeline,
   fetchCollections,
+  fetchTopSkills,
+  fetchRatingSummary,
+  fetchSkillReviews,
   type AnalyticsSummary,
   type SkillCallStat,
   type AgentStat,
   type TimelinePoint,
   type CollectionStat,
+  type TopSkillStat,
+  type RatingSummary,
+  type SkillReview,
 } from '@/lib/api/analytics'
 
 // ─── MCP types ────────────────────────────────────────────────────────────────
@@ -405,6 +412,11 @@ function AnalyticsContent() {
   const [agents, setAgents] = useState<AgentStat[]>([])
   const [timeline, setTimeline] = useState<TimelinePoint[]>([])
   const [collections, setCollections] = useState<CollectionStat[]>([])
+  const [topSkills, setTopSkills] = useState<TopSkillStat[]>([])
+  const [ratingSummary, setRatingSummary] = useState<RatingSummary | null>(null)
+  const [expandedSkill, setExpandedSkill] = useState<string | null>(null)
+  const [skillReviews, setSkillReviews] = useState<SkillReview[]>([])
+  const [reviewsLoading, setReviewsLoading] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [trendPct, setTrendPct] = useState<number | null>(null)
@@ -427,18 +439,22 @@ function AnalyticsContent() {
   const fetchAll = useCallback(async () => {
     try {
       setError(null)
-      const [s, sc, ag, tl, col] = await Promise.all([
+      const [s, sc, ag, tl, col, ts, rs] = await Promise.all([
         fetchAnalyticsSummary(params),
         fetchSkillCalls(params),
         fetchAgents(params),
         fetchTimeline(params),
         fetchCollections(params),
+        fetchTopSkills({ days: params.days, limit: 10 }).catch(() => [] as TopSkillStat[]),
+        fetchRatingSummary({ days: params.days }).catch(() => null),
       ])
       setSummary(s)
       setSkillCalls(sc)
       setAgents(ag)
       setTimeline(tl)
       setCollections(col)
+      setTopSkills(ts)
+      setRatingSummary(rs)
       setLastUpdatedAt(new Date().toISOString())
       setFetchedAt(Date.now())
 
@@ -971,6 +987,307 @@ function AnalyticsContent() {
               </div>
             )}
           </section>
+
+          {/* ── Top Skills + Rating Summary ─────────────────────────────── */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+
+            {/* Top Skills — 2/3 width */}
+            <section className="lg:col-span-2 group rounded-xl border border-border/50 border-l-2 border-l-transparent hover:border-l-accent/50 bg-card overflow-hidden transition-colors">
+              <div className="px-4 py-3 border-b border-border/40 flex items-center gap-2 bg-gradient-to-r from-card to-muted/10">
+                <Award className="h-4 w-4 text-muted-foreground" />
+                <h2 className="text-[13px] font-semibold tracking-tight text-foreground">Top Skills</h2>
+                <div className="relative group/tip ml-1">
+                  <Info className="h-3 w-3 text-muted-foreground/40 cursor-help" />
+                  <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-64 px-3 py-2 rounded-lg bg-popover border border-border shadow-lg text-[11px] text-muted-foreground leading-relaxed opacity-0 pointer-events-none group-hover/tip:opacity-100 group-hover/tip:pointer-events-auto transition-opacity z-50">
+                    Ratings are provided by AI agents (Claude Code, Cursor, Codex, etc.) after they use a skill via MCP. The completion rate shows how often agents rate a skill after calling it.
+                  </div>
+                </div>
+                {!loading && topSkills.length > 0 && (
+                  <span className="ml-auto text-[11px] text-muted-foreground/50">
+                    {topSkills.length} skills
+                  </span>
+                )}
+              </div>
+
+              {loading ? (
+                <div className="p-4 space-y-2.5">
+                  {[...Array(5)].map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
+                </div>
+              ) : topSkills.length === 0 ? (
+                <div className="flex flex-col items-center gap-2 py-10 text-center px-4">
+                  <Award className="h-7 w-7 text-muted-foreground/20" />
+                  <p className="text-[13px] text-muted-foreground/50">No skill data yet</p>
+                  <p className="text-[11px] text-muted-foreground/30">Skills appear here once agents start calling them via MCP</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-[12px]">
+                    <thead>
+                      <tr className="border-b border-border/30 text-muted-foreground/50 text-[10px] uppercase tracking-wider">
+                        <th className="text-left font-medium px-4 py-2">#</th>
+                        <th className="text-left font-medium px-2 py-2">Skill</th>
+                        <th className="text-right font-medium px-2 py-2">Calls</th>
+                        <th className="text-right font-medium px-2 py-2">
+                          <span className="inline-flex items-center gap-1">
+                            Rating
+                            <span className="relative group/rtip">
+                              <Info className="h-2.5 w-2.5 text-muted-foreground/30 cursor-help" />
+                              <span className="absolute right-0 bottom-full mb-1.5 w-48 px-2 py-1.5 rounded bg-popover border border-border shadow-lg text-[10px] text-muted-foreground leading-snug opacity-0 pointer-events-none group-hover/rtip:opacity-100 group-hover/rtip:pointer-events-auto transition-opacity z-50 normal-case tracking-normal font-normal">
+                                Average rating (1-5) given by MCP agents after using this skill
+                              </span>
+                            </span>
+                          </span>
+                        </th>
+                        <th className="text-right font-medium px-2 py-2">Reviews</th>
+                        <th className="text-right font-medium px-4 py-2">
+                          <span className="inline-flex items-center gap-1">
+                            Completion
+                            <span className="relative group/ctip">
+                              <Info className="h-2.5 w-2.5 text-muted-foreground/30 cursor-help" />
+                              <span className="absolute right-0 bottom-full mb-1.5 w-52 px-2 py-1.5 rounded bg-popover border border-border shadow-lg text-[10px] text-muted-foreground leading-snug opacity-0 pointer-events-none group-hover/ctip:opacity-100 group-hover/ctip:pointer-events-auto transition-opacity z-50 normal-case tracking-normal font-normal">
+                                % of tool calls where the agent rated the skill afterward via complete_skill
+                              </span>
+                            </span>
+                          </span>
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border/20">
+                      {topSkills.map((s, i) => {
+                        const isExpanded = expandedSkill === s.slug
+                        return (
+                          <React.Fragment key={s.slug}>
+                            <tr
+                              onClick={async () => {
+                                if (isExpanded) {
+                                  setExpandedSkill(null)
+                                  return
+                                }
+                                setExpandedSkill(s.slug)
+                                setReviewsLoading(true)
+                                try {
+                                  const reviews = await fetchSkillReviews(s.slug)
+                                  setSkillReviews(reviews)
+                                } catch {
+                                  setSkillReviews([])
+                                } finally {
+                                  setReviewsLoading(false)
+                                }
+                              }}
+                              className={cn(
+                                'hover:bg-accent/4 cursor-pointer transition-colors group/row',
+                                isExpanded && 'bg-accent/4'
+                              )}
+                            >
+                              <td className="px-4 py-2.5 text-muted-foreground/50 font-mono">{i + 1}</td>
+                              <td className="px-2 py-2.5">
+                                <span className="font-medium font-mono text-foreground group-hover/row:text-accent transition-colors">
+                                  {s.slug}
+                                </span>
+                              </td>
+                              <td className="px-2 py-2.5 text-right tabular-nums font-semibold text-foreground">
+                                {s.call_count.toLocaleString()}
+                              </td>
+                              <td className="px-2 py-2.5 text-right">
+                                {s.avg_rating != null && s.rating_count > 0 ? (
+                                  <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400">
+                                    <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
+                                    {s.avg_rating.toFixed(1)}
+                                  </span>
+                                ) : (
+                                  <span className="text-muted-foreground/30">—</span>
+                                )}
+                              </td>
+                              <td className="px-2 py-2.5 text-right tabular-nums text-muted-foreground">
+                                {s.rating_count > 0 ? s.rating_count : '—'}
+                              </td>
+                              <td className="px-4 py-2.5 text-right">
+                                <div className="flex items-center justify-end gap-2">
+                                  {s.rating_count > 0 ? (
+                                    <span className={cn(
+                                      'tabular-nums font-medium',
+                                      s.completion_rate >= 60 ? 'text-emerald-500' :
+                                      s.completion_rate >= 30 ? 'text-amber-500' :
+                                      'text-muted-foreground/50'
+                                    )}>
+                                      {s.completion_rate.toFixed(0)}%
+                                    </span>
+                                  ) : (
+                                    <span className="text-muted-foreground/30">—</span>
+                                  )}
+                                  <ChevronDown className={cn(
+                                    'h-3 w-3 text-muted-foreground/30 transition-transform',
+                                    isExpanded && 'rotate-180'
+                                  )} />
+                                </div>
+                              </td>
+                            </tr>
+                            {isExpanded && (
+                              <tr>
+                                <td colSpan={6} className="px-4 py-0">
+                                  <div className="py-3 border-t border-border/20">
+                                    <div className="flex items-center justify-between mb-2">
+                                      <p className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground/40 font-medium flex items-center gap-1.5">
+                                        Agent Reviews
+                                        <span className="relative group/rvtip">
+                                          <Info className="h-2.5 w-2.5 text-muted-foreground/30 cursor-help" />
+                                          <span className="absolute left-0 bottom-full mb-1.5 w-52 px-2 py-1.5 rounded bg-popover border border-border shadow-lg text-[10px] text-muted-foreground leading-snug opacity-0 pointer-events-none group-hover/rvtip:opacity-100 group-hover/rvtip:pointer-events-auto transition-opacity z-50 normal-case tracking-normal font-normal">
+                                            These reviews are submitted by AI agents (via MCP) after they apply the skill and see the results
+                                          </span>
+                                        </span>
+                                      </p>
+                                      <button
+                                        onClick={(e) => { e.stopPropagation(); router.push(`/skills/${s.slug}`) }}
+                                        className="text-[10px] text-accent hover:text-accent/80 font-medium transition-colors"
+                                      >
+                                        View skill →
+                                      </button>
+                                    </div>
+                                    {reviewsLoading ? (
+                                      <div className="space-y-2">
+                                        {[...Array(3)].map((_, j) => <Skeleton key={j} className="h-12 w-full" />)}
+                                      </div>
+                                    ) : skillReviews.length === 0 ? (
+                                      <p className="text-[12px] text-muted-foreground/40 py-3 text-center">
+                                        No reviews yet — agents haven&apos;t provided outcome descriptions
+                                      </p>
+                                    ) : (
+                                      <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                                        {skillReviews.map(review => {
+                                          const cat = categorize(review.agent_name)
+                                          const info = AGENT_CATALOG[cat] ?? AGENT_CATALOG.other
+                                          return (
+                                            <div key={review.id} className="flex gap-3 py-2 px-2 rounded-lg hover:bg-muted/20 transition-colors">
+                                              <div className="shrink-0 mt-0.5">
+                                                <span
+                                                  className="w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold text-white"
+                                                  style={{ backgroundColor: info.color }}
+                                                >
+                                                  {info.label.charAt(0)}
+                                                </span>
+                                              </div>
+                                              <div className="flex-1 min-w-0">
+                                                <div className="flex items-center gap-2 mb-0.5">
+                                                  <span className="text-[11px] font-medium text-foreground">{info.label}</span>
+                                                  <span className="flex items-center gap-0.5 text-[10px] text-amber-600 dark:text-amber-400">
+                                                    {[...Array(5)].map((_, si) => (
+                                                      <Star
+                                                        key={si}
+                                                        className={cn(
+                                                          'h-2.5 w-2.5',
+                                                          si < review.rating
+                                                            ? 'fill-amber-400 text-amber-400'
+                                                            : 'text-muted-foreground/20'
+                                                        )}
+                                                      />
+                                                    ))}
+                                                  </span>
+                                                  <span className="text-[10px] font-mono text-muted-foreground/30">v{review.skill_version}</span>
+                                                  {review.created_at && (
+                                                    <span className="text-[10px] text-muted-foreground/30">{fmtRelative(review.created_at)}</span>
+                                                  )}
+                                                </div>
+                                                {review.outcome ? (
+                                                  <p className="text-[12px] text-muted-foreground/70 leading-relaxed">
+                                                    {review.outcome}
+                                                  </p>
+                                                ) : (
+                                                  <p className="text-[11px] text-muted-foreground/25 italic">No description provided</p>
+                                                )}
+                                              </div>
+                                            </div>
+                                          )
+                                        })}
+                                      </div>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </React.Fragment>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+
+            {/* Rating Summary — 1/3 width */}
+            <section className="group rounded-xl border border-border/50 border-l-2 border-l-transparent hover:border-l-accent/50 bg-card overflow-hidden transition-colors">
+              <div className="px-4 py-3 border-b border-border/40 flex items-center gap-2 bg-gradient-to-r from-card to-muted/10">
+                <Star className="h-4 w-4 text-muted-foreground" />
+                <h2 className="text-[13px] font-semibold tracking-tight text-foreground">Rating Overview</h2>
+                <div className="relative group/tip ml-1">
+                  <Info className="h-3 w-3 text-muted-foreground/40 cursor-help" />
+                  <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-56 px-3 py-2 rounded-lg bg-popover border border-border shadow-lg text-[11px] text-muted-foreground leading-relaxed opacity-0 pointer-events-none group-hover/tip:opacity-100 group-hover/tip:pointer-events-auto transition-opacity z-50">
+                    Aggregated from ratings submitted by AI agents after they apply skills via the MCP complete_skill tool.
+                  </div>
+                </div>
+              </div>
+
+              {loading ? (
+                <div className="p-4 space-y-3">
+                  <Skeleton className="h-16 w-full" />
+                  <Skeleton className="h-24 w-full" />
+                </div>
+              ) : !ratingSummary || ratingSummary.total_ratings === 0 ? (
+                <div className="flex flex-col items-center gap-2 py-10 text-center px-4">
+                  <Star className="h-7 w-7 text-muted-foreground/20" />
+                  <p className="text-[13px] text-muted-foreground/50">No ratings yet</p>
+                  <p className="text-[11px] text-muted-foreground/30 max-w-[200px]">
+                    Agents rate skills after using them via the MCP complete_skill tool
+                  </p>
+                </div>
+              ) : (
+                <div className="p-4 space-y-5">
+                  {/* Overall avg + total */}
+                  <div className="text-center">
+                    <div className="flex items-center justify-center gap-2 mb-1">
+                      <Star className="h-5 w-5 fill-amber-400 text-amber-400" />
+                      <span className="text-[28px] font-bold tabular-nums text-foreground">
+                        {ratingSummary.overall_avg?.toFixed(1) ?? '—'}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground/50">
+                      {ratingSummary.total_ratings.toLocaleString()} rating{ratingSummary.total_ratings !== 1 ? 's' : ''} across {ratingSummary.rated_skills} skill{ratingSummary.rated_skills !== 1 ? 's' : ''}
+                    </p>
+                    {ratingSummary.rating_agents > 0 && (
+                      <p className="text-[10px] text-muted-foreground/35 mt-0.5">
+                        from {ratingSummary.rating_agents} agent{ratingSummary.rating_agents !== 1 ? 's' : ''}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Distribution bars */}
+                  <div className="space-y-1.5">
+                    <p className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground/40 font-medium mb-2">Distribution</p>
+                    {[5, 4, 3, 2, 1].map(star => {
+                      const count = ratingSummary.distribution[star] ?? 0
+                      const pct = ratingSummary.total_ratings > 0
+                        ? (count / ratingSummary.total_ratings) * 100
+                        : 0
+                      return (
+                        <div key={star} className="flex items-center gap-2">
+                          <span className="text-[11px] font-mono text-muted-foreground w-4 text-right shrink-0">{star}</span>
+                          <Star className="h-2.5 w-2.5 text-amber-400 fill-amber-400 shrink-0" />
+                          <div className="flex-1 h-2 rounded-full bg-muted/40 overflow-hidden">
+                            <div
+                              className="h-full rounded-full bg-amber-400/70 transition-all duration-500"
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                          <span className="text-[10px] tabular-nums text-muted-foreground/50 w-8 text-right shrink-0">
+                            {count}
+                          </span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+            </section>
+          </div>
 
           {/* ── Collections + Live Connections ──────────────────────────────── */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 pb-6">
