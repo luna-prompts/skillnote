@@ -4,11 +4,11 @@ import { TopBar } from '@/components/layout/topbar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Download, Pencil, GitBranch, Check, BookOpen, ArrowLeft, Link2, Star, Command, X, Keyboard, FileText, Search, FolderOpen, Share2, MoreHorizontal, Trash2, Clock, User, Terminal } from 'lucide-react'
-import { Skill, type Comment } from '@/lib/mock-data'
+import { Skill, type Comment, type SkillRatingDetail } from '@/lib/mock-data'
 import { getSkills, updateSkill, deleteSkillById, saveSkillEdit } from '@/lib/skills-store'
 import { validateSkillName, validateDescription } from '@/lib/skill-validation'
 import { generateMarkdown, triggerDownload } from '@/lib/markdown-utils'
-import { createCommentApi } from '@/lib/api/skills'
+import { createCommentApi, fetchSkillRatingDetail } from '@/lib/api/skills'
 import { toast } from 'sonner'
 import { formatRelative } from '@/lib/format'
 import { cn } from '@/lib/utils'
@@ -192,6 +192,13 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
       localStorage.setItem(`starred-${skill.slug}`, String(!prev))
       return !prev
     })
+  }, [skill.slug])
+
+  const [ratingDetail, setRatingDetail] = useState<SkillRatingDetail | null>(null)
+
+  // Fetch rating detail on mount
+  useEffect(() => {
+    fetchSkillRatingDetail(skill.slug).then(setRatingDetail).catch(() => {})
   }, [skill.slug])
 
   const [showHelp, setShowHelp] = useState(false)
@@ -443,6 +450,13 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
                       <Clock className="h-3 w-3" />
                       {formatRelative(skill.updated_at)}
                     </span>
+                    {ratingDetail && ratingDetail.rating_count > 0 && ratingDetail.avg_rating != null && (
+                      <span className="inline-flex items-center gap-1.5 text-[11px] text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2.5 py-1 rounded-full">
+                        <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
+                        {ratingDetail.avg_rating.toFixed(1)}
+                        <span className="text-muted-foreground/60">({ratingDetail.rating_count})</span>
+                      </span>
+                    )}
                     {skill.collections.map(c => (
                       <Link
                         key={c}
@@ -472,9 +486,26 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
                   </div>
                 </div>
 
-                {/* Right: install strip — visible on lg+ */}
-                <div className="hidden lg:block w-64 shrink-0 pt-1">
+                {/* Right: install strip + version ratings — visible on lg+ */}
+                <div className="hidden lg:block w-64 shrink-0 pt-1 space-y-6">
                   <InstallStrip slug={skill.slug} />
+                  {ratingDetail && ratingDetail.versions?.length > 0 && (
+                    <div>
+                      <p className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground/40 font-medium mb-2">Rating by Version</p>
+                      <div className="space-y-1.5">
+                        {ratingDetail.versions.map(v => (
+                          <div key={v.version} className="flex items-center justify-between text-[11px]">
+                            <span className="font-mono text-muted-foreground">v{v.version}</span>
+                            <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400">
+                              <Star className="h-2.5 w-2.5 fill-amber-400 text-amber-400" />
+                              {v.avg_rating}
+                              <span className="text-muted-foreground/40">({v.rating_count})</span>
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

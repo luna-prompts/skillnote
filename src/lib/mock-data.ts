@@ -79,6 +79,19 @@ export type Collection = {
   updated_at: string
 }
 
+export type SkillRating = {
+  slug: string
+  avg_rating: number | null
+  rating_count: number
+}
+
+export type SkillRatingDetail = {
+  slug: string
+  avg_rating: number | null
+  rating_count: number
+  versions: { version: number; avg_rating: number; rating_count: number }[]
+}
+
 export const mockTeamMembers: TeamMember[] = [
   { name: 'Alice', color: '#8b5cf6' },
   { name: 'Bob', color: '#ef4444' },

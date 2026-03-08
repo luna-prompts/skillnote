@@ -39,6 +39,12 @@ echo ""
 # ── 1. Stop any existing stack ────────────────────────────────────
 step "Stopping any existing containers"
 docker compose -f "$PROJECT_DIR/docker-compose.yml" down 2>/dev/null || true
+sleep 1
+# Kill any leftover processes holding the ports
+lsof -ti :3000 2>/dev/null | xargs -r kill -9 2>/dev/null || true
+lsof -ti :${API_PORT} 2>/dev/null | xargs -r kill -9 2>/dev/null || true
+lsof -ti :${MCP_PORT} 2>/dev/null | xargs -r kill -9 2>/dev/null || true
+sleep 1
 ok "Clean slate"
 
 # ── 2. Build and start full stack ─────────────────────────────────

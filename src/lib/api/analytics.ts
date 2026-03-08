@@ -30,6 +30,32 @@ export type CollectionStat = {
   call_count: number
 }
 
+export type TopSkillStat = {
+  slug: string
+  call_count: number
+  last_called_at: string | null
+  avg_rating: number | null
+  rating_count: number
+  completion_rate: number
+}
+
+export type SkillReview = {
+  id: string
+  rating: number
+  outcome: string | null
+  agent_name: string
+  skill_version: number
+  created_at: string | null
+}
+
+export type RatingSummary = {
+  total_ratings: number
+  overall_avg: number | null
+  rated_skills: number
+  rating_agents: number
+  distribution: Record<number, number>
+}
+
 type AnalyticsParams = {
   days?: number
   agent?: string
@@ -63,4 +89,23 @@ export function fetchTimeline(params: AnalyticsParams = {}) {
 
 export function fetchCollections(params: AnalyticsParams = {}) {
   return apiRequest<CollectionStat[]>(`/v1/analytics/collections${buildQuery(params)}`)
+}
+
+export function fetchTopSkills(params: AnalyticsParams & { limit?: number } = {}) {
+  const q = new URLSearchParams()
+  if (params.days !== undefined) q.set('days', String(params.days))
+  if (params.limit !== undefined) q.set('limit', String(params.limit))
+  const s = q.toString()
+  return apiRequest<TopSkillStat[]>(`/v1/analytics/top-skills${s ? `?${s}` : ''}`)
+}
+
+export function fetchSkillReviews(slug: string, limit = 20) {
+  return apiRequest<SkillReview[]>(`/v1/analytics/ratings/${slug}/reviews?limit=${limit}`)
+}
+
+export function fetchRatingSummary(params: AnalyticsParams = {}) {
+  const q = new URLSearchParams()
+  if (params.days !== undefined) q.set('days', String(params.days))
+  const s = q.toString()
+  return apiRequest<RatingSummary>(`/v1/analytics/rating-summary${s ? `?${s}` : ''}`)
 }
