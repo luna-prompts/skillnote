@@ -191,7 +191,7 @@ class TestSkillsCRUD:
 
     def test_delete_skill(self):
         slug = unique_slug("e2e-del")
-        api("POST", "/v1/skills", {"name": slug, "slug": slug, "description": "to delete", "content_md": "# Del"}, expected=201)
+        api("POST", "/v1/skills", {"name": slug, "slug": slug, "description": "to delete", "content_md": "# Del", "collections": ["testing"]}, expected=201)
         api("DELETE", f"/v1/skills/{slug}", expected=204)
         status, _ = api("GET", f"/v1/skills/{slug}")
         assert status == 404
@@ -202,7 +202,7 @@ class TestSkillsCRUD:
 
     def test_create_duplicate_slug_returns_409(self, skill):
         # Same name AND slug → conflict
-        status, data = api("POST", "/v1/skills", {"name": skill["name"], "slug": skill["slug"], "description": "dup", "content_md": "# dup"})
+        status, data = api("POST", "/v1/skills", {"name": skill["name"], "slug": skill["slug"], "description": "dup", "content_md": "# dup", "collections": ["testing"]})
         assert status == 409
 
     def test_create_skill_without_name_returns_422(self):
@@ -212,7 +212,7 @@ class TestSkillsCRUD:
     def test_skill_slug_matches_provided_slug(self):
         """API stores the slug exactly as provided."""
         name = unique_slug("slug-gen")
-        status, data = api("POST", "/v1/skills", {"name": name, "slug": name, "description": "slug test", "content_md": "# x"}, expected=201)
+        status, data = api("POST", "/v1/skills", {"name": name, "slug": name, "description": "slug test", "content_md": "# x", "collections": ["testing"]}, expected=201)
         assert data["slug"] == name
         api("DELETE", f"/v1/skills/{data['slug']}")
 
@@ -334,7 +334,7 @@ class TestMCPServer:
     def test_mcp_reflects_new_skill_without_restart(self):
         """MCP tools/list picks up a new skill immediately (live discovery)."""
         slug = unique_slug("mcp-live")
-        api("POST", "/v1/skills", {"name": slug, "slug": slug, "description": "live MCP test", "content_md": "# Live"}, expected=201)
+        api("POST", "/v1/skills", {"name": slug, "slug": slug, "description": "live MCP test", "content_md": "# Live", "collections": ["testing"]}, expected=201)
         try:
             session_id, _ = mcp_init()
             _, json = mcp_post("/mcp", {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}, session_id)
@@ -345,7 +345,7 @@ class TestMCPServer:
 
     def test_mcp_removed_skill_disappears_from_tools(self):
         slug = unique_slug("mcp-del")
-        api("POST", "/v1/skills", {"name": slug, "slug": slug, "description": "temp", "content_md": "# Temp"}, expected=201)
+        api("POST", "/v1/skills", {"name": slug, "slug": slug, "description": "temp", "content_md": "# Temp", "collections": ["testing"]}, expected=201)
         session_id, _ = mcp_init()
 
         _, before = mcp_post("/mcp", {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}, session_id)
