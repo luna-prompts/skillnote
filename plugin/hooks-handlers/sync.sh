@@ -30,62 +30,44 @@ else:
 else
     COLLECTIONS=""
     SKILLS_DIR="$HOME/.claude/skills"
-
-    # Detect project type
     PROJECT_NAME=$(basename "${PROJECT_DIR}")
-    STACK=""
-    RECOMMEND=""
-    if [ -f "${PROJECT_DIR}/package.json" ]; then
-        STACK="Node.js"
-        # Check for common frameworks
-        grep -q '"react"\|"next"\|"vue"\|"svelte"\|"angular"' "${PROJECT_DIR}/package.json" 2>/dev/null && STACK="$STACK frontend"
-        RECOMMEND="frontend"
-    elif [ -f "${PROJECT_DIR}/requirements.txt" ] || [ -f "${PROJECT_DIR}/pyproject.toml" ] || [ -f "${PROJECT_DIR}/setup.py" ]; then
-        STACK="Python"
-        grep -q "fastapi\|flask\|django" "${PROJECT_DIR}/requirements.txt" 2>/dev/null && STACK="$STACK API"
-        RECOMMEND="backend"
-    elif [ -f "${PROJECT_DIR}/go.mod" ]; then
-        STACK="Go"
-        RECOMMEND="backend"
-    elif [ -f "${PROJECT_DIR}/Cargo.toml" ]; then
-        STACK="Rust"
-        RECOMMEND="backend"
-    fi
-    if [ -f "${PROJECT_DIR}/docker-compose.yml" ] || [ -f "${PROJECT_DIR}/Dockerfile" ]; then
-        [ -z "$STACK" ] && STACK="Docker"
-        RECOMMEND="${RECOMMEND:-devops}"
-    fi
 
-    # Check total skill count for budget warning
+    # Check if folder name matches a collection (simple: folder name = collection name)
+    COLS_JSON=$(curl -sf --connect-timeout 3 --max-time 5 "${API_URL}/v1/collections" 2>/dev/null || echo "[]")
+    FOLDER_MATCH=$(echo "$COLS_JSON" | python3 -c "
+import json,sys
+try:
+    cols = json.load(sys.stdin)
+    folder = '${PROJECT_NAME}'.lower()
+    for c in cols:
+        if c['name'].lower() == folder:
+            print(c['name'])
+            break
+except: pass
+" 2>/dev/null)
+
+    # First time in this project?
+    MANIFEST_CHECK="${SKILLS_DIR}/.skillnote-manifest.json"
+    [ -n "$CLAUDE_PLUGIN_DATA" ] && MANIFEST_CHECK="$CLAUDE_PLUGIN_DATA/.skillnote-manifest.json"
+    IS_FIRST_TIME=false
+    [ ! -f "$MANIFEST_CHECK" ] && IS_FIRST_TIME=true
+
     TOTAL_SKILLS=$(curl -sf --connect-timeout 3 --max-time 5 "${API_URL}/v1/skills" 2>/dev/null | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
 
-    # First time in this project? (no manifest for this skills dir)
-    MANIFEST_CHECK="${SKILLS_DIR}/.skillnote-manifest.json"
-    if [ -n "$CLAUDE_PLUGIN_DATA" ]; then
-        MANIFEST_CHECK="$CLAUDE_PLUGIN_DATA/.skillnote-manifest.json"
-    fi
-
-    IS_FIRST_TIME=false
-    if [ ! -f "$MANIFEST_CHECK" ]; then
-        IS_FIRST_TIME=true
-    fi
-
-    # Show recommendation and trigger collection selection
-    if [ "$TOTAL_SKILLS" -gt 15 ] 2>/dev/null && [ -n "$RECOMMEND" ]; then
-        # Fetch actual collection names for the picker
-        COLS_JSON=$(curl -sf --connect-timeout 3 --max-time 5 "${API_URL}/v1/collections" 2>/dev/null || echo "[]")
-
-        if [ "$IS_FIRST_TIME" = true ]; then
-            echo "SkillNote: First session in '${PROJECT_NAME}'."
-            [ -n "$STACK" ] && echo "  Detected: ${STACK} project"
-            echo "  ${TOTAL_SKILLS} skills available — recommend '${RECOMMEND}' collection."
+    if [ "$IS_FIRST_TIME" = true ]; then
+        if [ -n "$FOLDER_MATCH" ]; then
+            # Folder name matches a collection — recommend it
+            echo "SkillNote: Collection '${FOLDER_MATCH}' matches this folder."
             echo "  ACTION: Use the skillnote:collection skill to ask the user which collection to use."
-            echo "  Recommend '${RECOMMEND}' as the first option. Available collections: ${COLS_JSON}"
-        else
-            echo "SkillNote: ${TOTAL_SKILLS} skills synced (>15 may degrade activation). Use /skillnote:collection to scope."
+            echo "  Recommend '${FOLDER_MATCH}' as the first option. Available collections: ${COLS_JSON}"
+        elif [ "$TOTAL_SKILLS" -gt 15 ] 2>/dev/null; then
+            # Many skills, no folder match — suggest scoping
+            echo "SkillNote: ${TOTAL_SKILLS} skills available (>15 may degrade activation)."
+            echo "  ACTION: Use the skillnote:collection skill to ask the user which collection to use."
+            echo "  Available collections: ${COLS_JSON}"
         fi
-    elif [ "$IS_FIRST_TIME" = true ] && [ "$TOTAL_SKILLS" -gt 0 ] 2>/dev/null; then
-        [ -n "$STACK" ] && echo "SkillNote: '${PROJECT_NAME}' — ${STACK} project, ${TOTAL_SKILLS} skills available."
+    elif [ "$TOTAL_SKILLS" -gt 15 ] 2>/dev/null; then
+        echo "SkillNote: ${TOTAL_SKILLS} skills synced. Use /skillnote:collection to scope."
     fi
 fi
 
