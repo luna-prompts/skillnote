@@ -28,6 +28,7 @@ function NewSkillContent() {
     const c = searchParams.get('collections')
     return c ? c.split(',').filter(Boolean) : []
   })
+  const [extraFrontmatter, setExtraFrontmatter] = useState('')
   const [saving, setSaving] = useState(false)
 
   // Cmd+S → save
@@ -68,6 +69,7 @@ function NewSkillContent() {
         description: description.trim(),
         content_md: bodyContent,
         collections,
+        extra_frontmatter: extraFrontmatter || undefined,
       })
       toast.success(`"${skill.title}" created`)
       router.push(`/skills/${skill.slug}`)
@@ -93,6 +95,8 @@ function NewSkillContent() {
       setSkillDescription={setDescription}
       skillCollections={collections}
       setSkillCollections={setCollections}
+      extraFrontmatter={extraFrontmatter}
+      setExtraFrontmatter={setExtraFrontmatter}
       saving={saving}
     />
   )

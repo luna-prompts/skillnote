@@ -1,0 +1,18 @@
+{
+  "name": "skillnote",
+  "version": "0.1.0",
+  "description": "SkillNote skill registry — auto-sync skills with full Claude Code features, usage analytics, and skill creation from conversations.",
+  "author": {
+    "name": "SkillNote",
+    "url": "https://github.com/luna-prompts/skillnote"
+  },
+  "homepage": "https://github.com/luna-prompts/skillnote",
+  "license": "MIT",
+  "keywords": ["skills", "registry", "mcp", "sync", "analytics"],
+  "userConfig": {
+    "host": {
+      "description": "SkillNote server address (e.g. <your-server-ip> or localhost)",
+      "sensitive": false
+    }
+  }
+}

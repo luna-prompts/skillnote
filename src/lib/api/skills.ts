@@ -6,8 +6,10 @@ type ApiSkillListItem = {
   slug: string
   description: string
   collections?: string[]
+  content_md?: string
   latestVersion?: string
   currentVersion?: number
+  extra_frontmatter?: string
 }
 
 type ApiSkillDetail = {
@@ -18,6 +20,7 @@ type ApiSkillDetail = {
   content_md: string
   collections: string[]
   current_version: number
+  extra_frontmatter?: string
   created_at: string
   updated_at: string
 }
@@ -36,9 +39,10 @@ function listItemToSkill(item: ApiSkillListItem): Skill {
     slug: item.slug,
     title: item.name,
     description: item.description,
-    content_md: '',
+    content_md: item.content_md || '',
     collections: item.collections || [],
     current_version: item.currentVersion || 0,
+    extra_frontmatter: item.extra_frontmatter ?? undefined,
     created_at: now,
     updated_at: now,
   }
@@ -52,6 +56,7 @@ function detailToSkill(item: ApiSkillDetail, existingComments?: Comment[]): Skil
     content_md: item.content_md || '',
     collections: item.collections || [],
     current_version: item.current_version || 0,
+    extra_frontmatter: item.extra_frontmatter ?? undefined,
     created_at: item.created_at,
     updated_at: item.updated_at,
     comments: existingComments,
@@ -77,6 +82,7 @@ export async function createSkillApi(data: {
   description: string
   content_md: string
   collections: string[]
+  extra_frontmatter?: string
 }): Promise<Skill> {
   const detail = await apiRequest<ApiSkillDetail>('/v1/skills', {
     method: 'POST',
@@ -90,6 +96,7 @@ export async function updateSkillApi(slug: string, data: {
   description?: string
   content_md?: string
   collections?: string[]
+  extra_frontmatter?: string
 }): Promise<Skill> {
   const detail = await apiRequest<ApiSkillDetail>(`/v1/skills/${slug}`, {
     method: 'PATCH',

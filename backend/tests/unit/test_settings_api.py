@@ -45,7 +45,8 @@ class TestSettingsValidation:
         valid = _import_valid_settings()
         assert "complete_skill_enabled" in valid
         assert "complete_skill_outcome_enabled" in valid
+        assert "skill_push_enabled" in valid
 
     def test_no_unexpected_keys(self):
         valid = _import_valid_settings()
-        assert len(valid) == 2
+        assert len(valid) == 3

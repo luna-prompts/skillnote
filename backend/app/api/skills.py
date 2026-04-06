@@ -2,7 +2,9 @@ import re
 import uuid as uuid_lib
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends
+from typing import Optional
+
+from fastapi import APIRouter, Depends, Query
 from app.core.errors import api_error
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -64,8 +66,16 @@ def _create_content_version(db: Session, skill: Skill) -> SkillContentVersion:
 
 
 @router.get("", response_model=list[SkillListItem])
-def list_skills(db: Session = Depends(get_db)):
-    rows = db.query(Skill).order_by(Skill.slug.asc()).all()
+def list_skills(
+    collections: Optional[str] = Query(None, description="Comma-separated collection names to filter by"),
+    db: Session = Depends(get_db),
+):
+    query = db.query(Skill)
+    if collections:
+        col_list = [c.strip() for c in collections.split(",") if c.strip()]
+        if col_list:
+            query = query.filter(Skill.collections.overlap(col_list))
+    rows = query.order_by(Skill.slug.asc()).all()
 
     out: list[SkillListItem] = []
     for skill in rows:
@@ -81,10 +91,12 @@ def list_skills(db: Session = Depends(get_db)):
                 slug=skill.slug,
                 description=skill.description,
                 collections=skill.collections or [],
+                content_md=skill.content_md or "",
                 latestVersion=latest.version if latest else None,
                 status=latest.status if latest else None,
                 channel=latest.channel if latest else None,
                 currentVersion=skill.current_version or 0,
+                extra_frontmatter=skill.extra_frontmatter,
             )
         )
 
@@ -190,6 +202,7 @@ def set_latest_version(
         collections=skill_row.collections or [],
         current_version=skill_row.current_version or 0,
         total_versions=_skill_total_versions(db, skill_row.id),
+        extra_frontmatter=skill_row.extra_frontmatter,
         created_at=skill_row.created_at,
         updated_at=skill_row.updated_at,
     )
@@ -240,6 +253,7 @@ def restore_version(
         collections=skill_row.collections or [],
         current_version=skill_row.current_version or 0,
         total_versions=_skill_total_versions(db, skill_row.id),
+        extra_frontmatter=skill_row.extra_frontmatter,
         created_at=skill_row.created_at,
         updated_at=skill_row.updated_at,
     )
@@ -260,6 +274,7 @@ def get_skill(
         collections=skill_row.collections or [],
         current_version=skill_row.current_version or 0,
         total_versions=_skill_total_versions(db, skill_row.id),
+        extra_frontmatter=skill_row.extra_frontmatter,
         created_at=skill_row.created_at,
         updated_at=skill_row.updated_at,
     )
@@ -281,6 +296,7 @@ def create_skill(
         description=payload.description,
         content_md=payload.content_md,
         collections=payload.collections,
+        extra_frontmatter=payload.extra_frontmatter,
         current_version=0,
     )
     db.add(skill)
@@ -302,6 +318,7 @@ def create_skill(
         collections=skill.collections or [],
         current_version=skill.current_version or 0,
         total_versions=_skill_total_versions(db, skill.id),
+        extra_frontmatter=skill.extra_frontmatter,
         created_at=skill.created_at,
         updated_at=skill.updated_at,
     )
@@ -330,6 +347,8 @@ def update_skill(
         skill_row.content_md = payload.content_md
     if payload.collections is not None:
         skill_row.collections = payload.collections
+    if payload.extra_frontmatter is not None:
+        skill_row.extra_frontmatter = payload.extra_frontmatter
     skill_row.updated_at = datetime.now(timezone.utc)
 
     # Auto-create a new content version on every save
@@ -348,6 +367,7 @@ def update_skill(
         collections=skill_row.collections or [],
         current_version=skill_row.current_version or 0,
         total_versions=_skill_total_versions(db, skill_row.id),
+        extra_frontmatter=skill_row.extra_frontmatter,
         created_at=skill_row.created_at,
         updated_at=skill_row.updated_at,
     )

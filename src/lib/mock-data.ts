@@ -63,6 +63,8 @@ export type Skill = {
   current_version: number
   /** Total number of content versions (used for next version counter) */
   total_versions?: number
+  /** Extra YAML frontmatter for Claude Code features (allowed-tools, context, effort, etc.) */
+  extra_frontmatter?: string
   created_by?: string
   created_at: string
   updated_at: string

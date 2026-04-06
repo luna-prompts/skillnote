@@ -110,17 +110,18 @@ export async function createSkill(data: {
   description: string
   content_md: string
   collections: string[]
+  extra_frontmatter?: string
 }): Promise<Skill> {
   const slug = slugFromName(data.title)
 
   try {
-    const skill = await createSkillApi({ name: data.title, slug, description: data.description, content_md: data.content_md, collections: data.collections })
+    const skill = await createSkillApi({ name: data.title, slug, description: data.description, content_md: data.content_md, collections: data.collections, extra_frontmatter: data.extra_frontmatter })
     addSkill(skill)
     notifyChanged()
     return skill
   } catch {
     const now = new Date().toISOString()
-    const skill: Skill = { slug, title: data.title, description: data.description, content_md: data.content_md, collections: data.collections, current_version: 1, total_versions: 1, created_by: getDisplayName(), created_at: now, updated_at: now }
+    const skill: Skill = { slug, title: data.title, description: data.description, content_md: data.content_md, collections: data.collections, extra_frontmatter: data.extra_frontmatter, current_version: 1, total_versions: 1, created_by: getDisplayName(), created_at: now, updated_at: now }
     addSkill(skill)
     notifyChanged()
     return skill
@@ -134,11 +135,11 @@ export async function deleteSkillById(slug: string): Promise<void> {
   notifyChanged()
 }
 
-export async function saveSkillEdit(slug: string, patch: { title?: string; description?: string; content_md?: string; collections?: string[] }): Promise<Skill> {
+export async function saveSkillEdit(slug: string, patch: { title?: string; description?: string; content_md?: string; collections?: string[]; extra_frontmatter?: string }): Promise<Skill> {
   let apiVersion: number | null = null
   let newSlug: string | null = null
   try {
-    const apiSkill = await updateSkillApi(slug, { name: patch.title, description: patch.description, content_md: patch.content_md, collections: patch.collections })
+    const apiSkill = await updateSkillApi(slug, { name: patch.title, description: patch.description, content_md: patch.content_md, collections: patch.collections, extra_frontmatter: patch.extra_frontmatter })
     apiVersion = apiSkill.current_version
     if (apiSkill.slug !== slug) {
       newSlug = apiSkill.slug

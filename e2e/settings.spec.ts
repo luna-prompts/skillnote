@@ -9,6 +9,7 @@ import { test, expect, type Page } from '@playwright/test'
 const DEFAULT_SETTINGS = {
   complete_skill_enabled: 'true',
   complete_skill_outcome_enabled: 'false',
+  skill_push_enabled: 'true',
 }
 
 async function setupMocks(page: Page, settings = DEFAULT_SETTINGS) {
@@ -61,7 +62,7 @@ test.describe('Settings Page — MCP Tools', () => {
   })
 
   test('outcome toggle is disabled when completion tracking is off', async ({ page }) => {
-    await setupMocks(page, { complete_skill_enabled: 'false', complete_skill_outcome_enabled: 'false' })
+    await setupMocks(page, { complete_skill_enabled: 'false', complete_skill_outcome_enabled: 'false', skill_push_enabled: 'true' })
     await page.goto('/settings')
 
     const outcomeToggle = page.locator('button[role="switch"]').nth(1)

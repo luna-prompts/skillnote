@@ -116,7 +116,21 @@ def main():
                 collections=["Official"],
             )
 
-        # 2. Secure Migrations (existing seed)
+        # 2. Skill Push (from seeds/ file)
+        skill_push_path = SEEDS_DIR / "skill-push.md"
+        if skill_push_path.exists():
+            raw = skill_push_path.read_text()
+            fm, body = parse_frontmatter(raw)
+            seed_skill(
+                db,
+                slug="skill-push",
+                name="skill-push",
+                description=fm.get("description", "Create and push skills to the SkillNote registry."),
+                content_md=body,
+                collections=[],
+            )
+
+        # 3. Secure Migrations (existing seed)
         seed_skill(
             db,
             slug="secure-migrations",

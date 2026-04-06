@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { RotateCcw, Save, Loader2, X, AlertCircle, ArrowRight } from 'lucide-react'
+import { RotateCcw, Save, Loader2, X, AlertCircle, ArrowRight, ChevronDown } from 'lucide-react'
 import { NAME_MAX, DESC_MAX, slugFromName, normalizeSkillName, validateSkillName, validateDescription } from '@/lib/skill-validation'
 import { Button } from '@/components/ui/button'
 import { WysiwygEditor, type EditorMode } from '@/components/skills/WysiwygEditor'
@@ -21,6 +21,8 @@ type SkillEditTabProps = {
   skillSlug?: string
   skillCollections?: string[]
   setSkillCollections?: (collections: string[]) => void
+  extraFrontmatter?: string
+  setExtraFrontmatter?: (v: string) => void
   openFullscreen?: boolean
   /** 'edit' shows Discard/Cancel/Save; 'create' shows Cancel/Create Skill */
   mode?: 'edit' | 'create'
@@ -35,11 +37,13 @@ export function SkillEditTab({
   editorContent, setEditorContent, editorDirty, onDiscard, onSave, onCancel,
   skillTitle, setSkillTitle, skillDescription, setSkillDescription,
   skillSlug, skillCollections = [], setSkillCollections,
+  extraFrontmatter, setExtraFrontmatter,
   openFullscreen, mode = 'edit', saving = false, currentVersion, latestVersion,
 }: SkillEditTabProps) {
   const [fullscreen, setFullscreen] = useState(false)
   const [touched, setTouched] = useState<Record<string, boolean>>({})
   const [showSaveConfirm, setShowSaveConfirm] = useState(false)
+  const [showAdvanced, setShowAdvanced] = useState(false)
   const [editorMode, setEditorMode] = useState<EditorMode>('wysiwyg')
   const nameRef = useRef<HTMLInputElement>(null)
   const descRef = useRef<HTMLTextAreaElement>(null)
@@ -278,6 +282,34 @@ export function SkillEditTab({
             onChange={setSkillCollections}
             compact
           />
+        </div>
+      )}
+
+      {/* Advanced Metadata (Claude Code frontmatter) */}
+      {setExtraFrontmatter && (
+        <div className="mb-6">
+          <button
+            type="button"
+            onClick={() => setShowAdvanced(prev => !prev)}
+            className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/70 hover:text-muted-foreground flex items-center gap-1 mb-2"
+          >
+            <ChevronDown className={`h-3 w-3 transition-transform ${showAdvanced ? '' : '-rotate-90'}`} />
+            Advanced Metadata
+          </button>
+          {showAdvanced && (
+            <div>
+              <textarea
+                value={extraFrontmatter ?? ''}
+                onChange={e => setExtraFrontmatter(e.target.value)}
+                placeholder={"allowed-tools: Read Write Grep\ncontext: fork\neffort: high"}
+                className="w-full font-mono text-[12px] bg-muted/30 border border-border rounded-md p-2.5 resize-y min-h-[80px] placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-accent"
+                rows={3}
+              />
+              <p className="text-[11px] text-muted-foreground/60 mt-1.5">
+                YAML lines added to the skill frontmatter when synced locally via the SkillNote plugin. Only applies to Claude Code.
+              </p>
+            </div>
+          )}
         </div>
       )}
 

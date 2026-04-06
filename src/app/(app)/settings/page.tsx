@@ -145,6 +145,16 @@ export default function SettingsPage() {
                   </div>
                   <Toggle checked={outcomeEnabled} onChange={v => update('complete_skill_outcome_enabled', v)} disabled={!csEnabled} />
                 </div>
+                <hr className="border-border/40 my-2" />
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-[14px] font-medium text-foreground">Allow Agents to Create Skills</p>
+                    <p className="text-[13px] text-muted-foreground mt-0.5">
+                      Include the <span className="font-mono text-[12px]">skill-push</span> tool so agents can add skills to the registry from conversations
+                    </p>
+                  </div>
+                  <Toggle checked={settings['skill_push_enabled'] === 'true'} onChange={v => update('skill_push_enabled', v)} />
+                </div>
               </div>
             </section>
           )}

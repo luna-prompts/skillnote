@@ -10,6 +10,7 @@ router = APIRouter(prefix="/v1/settings", tags=["settings"])
 _VALID_SETTINGS: dict[str, set[str]] = {
     "complete_skill_enabled": {"true", "false"},
     "complete_skill_outcome_enabled": {"true", "false"},
+    "skill_push_enabled": {"true", "false"},
 }
 
 

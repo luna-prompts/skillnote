@@ -9,6 +9,9 @@ from app.api.downloads import router as downloads_router
 from app.api.publish import router as publish_router
 from app.api.comments import router as comments_router
 from app.api.settings import router as settings_router
+from app.api.collections import router as collections_router
+from app.api.hooks import router as hooks_router
+from app.api.setup import router as setup_router
 
 app = FastAPI(title="SkillNote Backend", version="0.1.0")
 
@@ -50,6 +53,9 @@ app.include_router(publish_router)
 app.include_router(comments_router)
 app.include_router(analytics_router)
 app.include_router(settings_router)
+app.include_router(collections_router)
+app.include_router(hooks_router)
+app.include_router(setup_router)
 
 
 @app.get("/health")

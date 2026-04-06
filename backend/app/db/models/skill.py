@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from typing import List
+from typing import List, Optional
 
 from sqlalchemy import DateTime, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID, ARRAY
@@ -19,6 +19,7 @@ class Skill(Base):
     content_md: Mapped[str] = mapped_column(Text, nullable=True, default="")
     collections: Mapped[List[str]] = mapped_column(ARRAY(Text), nullable=True, default=list)
     current_version: Mapped[int] = mapped_column(Integer, nullable=True, default=0)
+    extra_frontmatter: Mapped[Optional[str]] = mapped_column(Text, nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 

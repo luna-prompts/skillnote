@@ -1,0 +1,34 @@
+#!/bin/bash
+# SkillNote Sync — CLI wrapper
+# Available as a bare command in Claude Code Bash tool.
+# Usage: skillnote-sync [--force]
+
+if [ "$1" = "--force" ]; then
+    # Force re-sync by removing manifest AND all managed skill dirs
+    SKILLS_DIR="$HOME/.claude/skills"
+    MANIFEST="$SKILLS_DIR/.skillnote-manifest.json"
+    if [ -n "$CLAUDE_PLUGIN_DATA" ]; then
+        MANIFEST="$CLAUDE_PLUGIN_DATA/.skillnote-manifest.json"
+    fi
+    if [ -f "$MANIFEST" ]; then
+        python3 -c "
+import json, os, shutil
+m = json.load(open('$MANIFEST'))
+sd = '$SKILLS_DIR'
+for slug in m.get('skills', []):
+    d = os.path.join(sd, slug)
+    if os.path.isdir(d):
+        shutil.rmtree(d)
+" 2>/dev/null
+    fi
+    rm -f "$MANIFEST"
+fi
+
+# Find and run the sync script
+if [ -n "$CLAUDE_PLUGIN_ROOT" ]; then
+    exec "$CLAUDE_PLUGIN_ROOT/hooks-handlers/sync.sh"
+else
+    # Fallback: find the plugin directory
+    SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+    exec "$SCRIPT_DIR/hooks-handlers/sync.sh"
+fi

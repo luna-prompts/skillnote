@@ -17,6 +17,8 @@ class SkillListItem(BaseModel):
     status: Optional[str] = None
     channel: Optional[str] = None
     currentVersion: int = 0
+    content_md: Optional[str] = ""
+    extra_frontmatter: Optional[str] = None
 
 
 class SkillDetail(BaseModel):
@@ -28,6 +30,7 @@ class SkillDetail(BaseModel):
     collections: List[str] = []
     current_version: int = 0
     total_versions: int = 0
+    extra_frontmatter: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
@@ -40,6 +43,7 @@ class SkillCreate(BaseModel):
     description: str
     content_md: str = ""
     collections: List[str] = []
+    extra_frontmatter: Optional[str] = None
 
     @field_validator("name")
     @classmethod
@@ -63,6 +67,7 @@ class SkillUpdate(BaseModel):
     description: Optional[str] = None
     content_md: Optional[str] = None
     collections: Optional[List[str]] = None
+    extra_frontmatter: Optional[str] = None
 
     @field_validator("name")
     @classmethod

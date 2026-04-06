@@ -48,7 +48,8 @@ def make_provider():
                 name TEXT NOT NULL,
                 description TEXT NOT NULL DEFAULT '',
                 content_md TEXT DEFAULT '',
-                collections TEXT DEFAULT '{}'
+                collections TEXT DEFAULT '{}',
+                extra_frontmatter TEXT DEFAULT NULL
             )
         """))
         conn.commit()

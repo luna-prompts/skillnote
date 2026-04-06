@@ -356,7 +356,7 @@ engine = create_engine(
 )
 
 
-_SETTINGS_DEFAULTS = {"complete_skill_enabled": "true", "complete_skill_outcome_enabled": "false"}
+_SETTINGS_DEFAULTS = {"complete_skill_enabled": "true", "complete_skill_outcome_enabled": "false", "skill_push_enabled": "true"}
 
 
 def _read_settings_sync(db_engine=None) -> dict[str, str]:
@@ -436,7 +436,7 @@ class SkillNoteToolProvider(Provider):
             where = "WHERE " + " AND ".join(conditions)
 
         query = text(
-            f"SELECT slug, name, description, content_md, collections "
+            f"SELECT slug, name, description, content_md, collections, extra_frontmatter "
             f"FROM skills {where} ORDER BY name"
         )
         return query, params
@@ -458,13 +458,17 @@ class SkillNoteToolProvider(Provider):
     def _to_tool(self, skill: dict, settings: dict[str, str]) -> SkillTool:
         cs_enabled = settings.get("complete_skill_enabled", "true") == "true"
         outcome_enabled = settings.get("complete_skill_outcome_enabled", "false") == "true"
+        api_url = os.environ.get("SKILLNOTE_API_URL", "http://localhost:8082")
+        web_url = os.environ.get("SKILLNOTE_WEB_URL", "http://localhost:3000")
+        raw_content = skill["content_md"] or ""
+        content_md = raw_content.replace("{{API_URL}}", api_url).replace("{{WEB_URL}}", web_url)
         return SkillTool(
             name=skill["slug"],
             description=skill["description"] or "",
             parameters={"type": "object", "properties": {}},
             skill_slug=skill["slug"],
             skill_name=skill["name"],
-            content_md=skill["content_md"] or "",
+            content_md=content_md,
             complete_skill_enabled=cs_enabled,
             complete_skill_outcome_enabled=outcome_enabled,
         )
@@ -504,6 +508,8 @@ class SkillNoteToolProvider(Provider):
             asyncio.to_thread(self._read_settings),
         )
         tools: list[Tool] = [self._to_tool(s, settings) for s in skills]
+        if settings.get("skill_push_enabled", "true") != "true":
+            tools = [t for t in tools if t.name != "skill-push"]
         if settings.get("complete_skill_enabled", "true") == "true":
             tools.append(self._make_complete_skill_tool(settings))
         return tools
@@ -513,6 +519,8 @@ class SkillNoteToolProvider(Provider):
         if name == "complete_skill":
             if settings.get("complete_skill_enabled", "true") == "true":
                 return self._make_complete_skill_tool(settings)
+            return None
+        if name == "skill-push" and settings.get("skill_push_enabled", "true") != "true":
             return None
         skills = await asyncio.to_thread(self._fetch_skills, name)
         return self._to_tool(skills[0], settings) if skills else None

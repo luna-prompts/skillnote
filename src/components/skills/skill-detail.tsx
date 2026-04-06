@@ -119,6 +119,7 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
   const [titleValue, setTitleValue] = useState(skill.title)
   const [descriptionValue, setDescriptionValue] = useState(skill.description)
   const [collectionsValue, setCollectionsValue] = useState<string[]>(skill.collections)
+  const [extraFrontmatterValue, setExtraFrontmatterValue] = useState(skill.extra_frontmatter ?? '')
   const [starred, setStarred] = useState(false)
 
   // Sync state ONLY when the skill slug changes (navigating to a different skill)
@@ -132,6 +133,7 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
       setTitleValue(skill.title)
       setDescriptionValue(skill.description)
       setCollectionsValue(skill.collections)
+      setExtraFrontmatterValue(skill.extra_frontmatter ?? '')
       setLastSyncedSlug(skill.slug)
       setInitialContentLoaded(!!skill.content_md)
     } else if (!initialContentLoaded && skill.content_md) {
@@ -140,6 +142,7 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
       setTitleValue(skill.title)
       setDescriptionValue(skill.description)
       setCollectionsValue(skill.collections)
+      setExtraFrontmatterValue(skill.extra_frontmatter ?? '')
       setInitialContentLoaded(true)
     }
   }, [skill, lastSyncedSlug, initialContentLoaded])
@@ -217,13 +220,14 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
     setTitleValue(skill.title)
     setDescriptionValue(skill.description)
     setCollectionsValue(skill.collections)
+    setExtraFrontmatterValue(skill.extra_frontmatter ?? '')
     setShowDiscardConfirm(false)
-  }, [skill.content_md, skill.title, skill.description, skill.collections])
+  }, [skill.content_md, skill.title, skill.description, skill.collections, skill.extra_frontmatter])
 
   const handleSave = useCallback(async () => {
     setSaveToast('saving')
     try {
-      const updated = await saveSkillEdit(skill.slug, { title: titleValue, description: descriptionValue, content_md: editorContent, collections: collectionsValue })
+      const updated = await saveSkillEdit(skill.slug, { title: titleValue, description: descriptionValue, content_md: editorContent, collections: collectionsValue, extra_frontmatter: extraFrontmatterValue || undefined })
       onSkillUpdated?.(updated)
       setSavedVersion(updated.current_version)
       setSaveToast('saved')
@@ -554,6 +558,8 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
                 skillSlug={skill.slug}
                 skillCollections={collectionsValue}
                 setSkillCollections={setCollectionsValue}
+                extraFrontmatter={extraFrontmatterValue}
+                setExtraFrontmatter={setExtraFrontmatterValue}
                 openFullscreen={true}
                 currentVersion={skill.current_version}
               />

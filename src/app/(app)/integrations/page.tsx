@@ -990,6 +990,66 @@ function SessionStatus({ mcpUrl, agentLabel, skillCount, scopeLabel }: {
   )
 }
 
+// ─── plugin setup card ────────────────────────────────────────────────────────
+
+function PluginSetupCard() {
+  const [copied, setCopied] = useState<string | null>(null)
+  const apiBase = getApiBaseUrl()
+  const setupCmd = `curl -sf ${apiBase}/setup | bash`
+  const pluginCmd = `claude plugin install https://github.com/luna-prompts/skillnote-plugin --scope user`
+  const scopeJson = '{"collections": ["frontend", "conventions"]}'
+
+  const copy = (text: string, id: string) => {
+    navigator.clipboard.writeText(text)
+    setCopied(id)
+    setTimeout(() => setCopied(null), 2000)
+  }
+
+  const CopyBtn = ({ text, id }: { text: string; id: string }) => (
+    <button onClick={() => copy(text, id)} className="shrink-0 p-1.5 rounded hover:bg-muted/60 transition-colors" title="Copy">
+      {copied === id ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5 text-muted-foreground/50" />}
+    </button>
+  )
+
+  return (
+    <div className="rounded-lg border border-border bg-background overflow-hidden">
+      <div className="px-5 py-3 border-b border-border/60 bg-muted/20">
+        <h3 className="text-[13px] font-semibold text-foreground">Claude Code Plugin</h3>
+        <p className="text-[11.5px] text-muted-foreground mt-0.5">Full features: auto-sync with allowed-tools, context: fork, effort, usage analytics</p>
+      </div>
+      <div className="p-5 space-y-4">
+        {/* Option 1: Plugin install */}
+        <div>
+          <label className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/70 mb-1.5 block">Install plugin</label>
+          <div className="flex items-center gap-2 bg-muted/30 border border-border rounded-md px-3 py-2">
+            <code className="flex-1 text-[12px] font-mono text-foreground/80 break-all">{pluginCmd}</code>
+            <CopyBtn text={pluginCmd} id="plugin" />
+          </div>
+        </div>
+
+        {/* Option 2: curl|bash fallback */}
+        <div>
+          <label className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/70 mb-1.5 block">Or quick setup</label>
+          <div className="flex items-center gap-2 bg-muted/30 border border-border rounded-md px-3 py-2">
+            <code className="flex-1 text-[12px] font-mono text-foreground/80 break-all">{setupCmd}</code>
+            <CopyBtn text={setupCmd} id="setup" />
+          </div>
+        </div>
+
+        {/* Per-project scoping */}
+        <div>
+          <label className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/70 mb-1.5 block">Per-project scoping (optional)</label>
+          <p className="text-[11.5px] text-muted-foreground mb-1.5">Add <code className="text-[11px] font-mono">.skillnote.json</code> to a project root to sync only specific collections:</p>
+          <div className="flex items-center gap-2 bg-muted/30 border border-border rounded-md px-3 py-2">
+            <code className="flex-1 text-[12px] font-mono text-foreground/80">{scopeJson}</code>
+            <CopyBtn text={scopeJson} id="scope" />
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── page ─────────────────────────────────────────────────────────────────────
 
 export default function IntegrationsPage() {
@@ -1083,6 +1143,11 @@ export default function IntegrationsPage() {
               scopeLabel={col}
             />
 
+          </div>
+
+          {/* ── plugin setup ──────────────────────────────────────── */}
+          <div className="i-3b mt-1 mb-5">
+            <PluginSetupCard />
           </div>
 
           {/* ── live connections — full width so 100+ connections have room ── */}

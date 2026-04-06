@@ -1,0 +1,30 @@
+{
+  "description": "SkillNote: skill sync + usage analytics",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks-handlers/sync.sh\"",
+            "timeout": 15,
+            "statusMessage": "SkillNote: syncing skills..."
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Skill",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks-handlers/track-usage.sh\"",
+            "async": true
+          }
+        ]
+      }
+    ]
+  }
+}
