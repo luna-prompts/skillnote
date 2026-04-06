@@ -30,6 +30,23 @@ else:
 else
     COLLECTIONS=""
     SKILLS_DIR="$HOME/.claude/skills"
+
+    # Auto-detect project type and recommend collections if too many skills
+    TOTAL_SKILLS=$(curl -sf --connect-timeout 3 --max-time 5 "${API_URL}/v1/skills" 2>/dev/null | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
+    if [ "$TOTAL_SKILLS" -gt 15 ] 2>/dev/null; then
+        # Too many skills for the budget — recommend scoping
+        RECOMMEND=""
+        if [ -f "${PROJECT_DIR}/package.json" ]; then
+            RECOMMEND="frontend"
+        elif [ -f "${PROJECT_DIR}/requirements.txt" ] || [ -f "${PROJECT_DIR}/pyproject.toml" ]; then
+            RECOMMEND="backend"
+        elif [ -f "${PROJECT_DIR}/docker-compose.yml" ] || [ -f "${PROJECT_DIR}/Dockerfile" ]; then
+            RECOMMEND="devops"
+        fi
+        if [ -n "$RECOMMEND" ]; then
+            echo "SkillNote: ${TOTAL_SKILLS} skills in registry (>15 may degrade activation). Tip: add .skillnote.json with collections: [\"${RECOMMEND}\"] to scope this project."
+        fi
+    fi
 fi
 
 # Use plugin data dir for manifest if available, else alongside skills
