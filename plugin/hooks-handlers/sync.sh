@@ -31,21 +31,57 @@ else
     COLLECTIONS=""
     SKILLS_DIR="$HOME/.claude/skills"
 
-    # Auto-detect project type and recommend collections if too many skills
+    # Detect project type
+    PROJECT_NAME=$(basename "${PROJECT_DIR}")
+    STACK=""
+    RECOMMEND=""
+    if [ -f "${PROJECT_DIR}/package.json" ]; then
+        STACK="Node.js"
+        # Check for common frameworks
+        grep -q '"react"\|"next"\|"vue"\|"svelte"\|"angular"' "${PROJECT_DIR}/package.json" 2>/dev/null && STACK="$STACK frontend"
+        RECOMMEND="frontend"
+    elif [ -f "${PROJECT_DIR}/requirements.txt" ] || [ -f "${PROJECT_DIR}/pyproject.toml" ] || [ -f "${PROJECT_DIR}/setup.py" ]; then
+        STACK="Python"
+        grep -q "fastapi\|flask\|django" "${PROJECT_DIR}/requirements.txt" 2>/dev/null && STACK="$STACK API"
+        RECOMMEND="backend"
+    elif [ -f "${PROJECT_DIR}/go.mod" ]; then
+        STACK="Go"
+        RECOMMEND="backend"
+    elif [ -f "${PROJECT_DIR}/Cargo.toml" ]; then
+        STACK="Rust"
+        RECOMMEND="backend"
+    fi
+    if [ -f "${PROJECT_DIR}/docker-compose.yml" ] || [ -f "${PROJECT_DIR}/Dockerfile" ]; then
+        [ -z "$STACK" ] && STACK="Docker"
+        RECOMMEND="${RECOMMEND:-devops}"
+    fi
+
+    # Check total skill count for budget warning
     TOTAL_SKILLS=$(curl -sf --connect-timeout 3 --max-time 5 "${API_URL}/v1/skills" 2>/dev/null | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
-    if [ "$TOTAL_SKILLS" -gt 15 ] 2>/dev/null; then
-        # Too many skills for the budget — recommend scoping
-        RECOMMEND=""
-        if [ -f "${PROJECT_DIR}/package.json" ]; then
-            RECOMMEND="frontend"
-        elif [ -f "${PROJECT_DIR}/requirements.txt" ] || [ -f "${PROJECT_DIR}/pyproject.toml" ]; then
-            RECOMMEND="backend"
-        elif [ -f "${PROJECT_DIR}/docker-compose.yml" ] || [ -f "${PROJECT_DIR}/Dockerfile" ]; then
-            RECOMMEND="devops"
+
+    # First time in this project? (no manifest for this skills dir)
+    MANIFEST_CHECK="${SKILLS_DIR}/.skillnote-manifest.json"
+    if [ -n "$CLAUDE_PLUGIN_DATA" ]; then
+        MANIFEST_CHECK="$CLAUDE_PLUGIN_DATA/.skillnote-manifest.json"
+    fi
+
+    IS_FIRST_TIME=false
+    if [ ! -f "$MANIFEST_CHECK" ]; then
+        IS_FIRST_TIME=true
+    fi
+
+    # Show recommendation
+    if [ "$TOTAL_SKILLS" -gt 15 ] 2>/dev/null && [ -n "$RECOMMEND" ]; then
+        if [ "$IS_FIRST_TIME" = true ]; then
+            echo "SkillNote: First session in '${PROJECT_NAME}'."
+            [ -n "$STACK" ] && echo "  Detected: ${STACK} project"
+            echo "  ${TOTAL_SKILLS} skills available — recommend scoping to '${RECOMMEND}' collection."
+            echo "  Use /skillnote:collection to set it, or ask me to do it."
+        else
+            echo "SkillNote: ${TOTAL_SKILLS} skills (>15 may degrade activation). Tip: /skillnote:collection to scope."
         fi
-        if [ -n "$RECOMMEND" ]; then
-            echo "SkillNote: ${TOTAL_SKILLS} skills in registry (>15 may degrade activation). Tip: add .skillnote.json with collections: [\"${RECOMMEND}\"] to scope this project."
-        fi
+    elif [ "$IS_FIRST_TIME" = true ] && [ "$TOTAL_SKILLS" -gt 0 ] 2>/dev/null; then
+        [ -n "$STACK" ] && echo "SkillNote: '${PROJECT_NAME}' — ${STACK} project, ${TOTAL_SKILLS} skills available."
     fi
 fi
 
