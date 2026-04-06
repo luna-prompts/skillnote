@@ -74,7 +74,10 @@ for skill in skills:
     if skill.get('collections'): fm_lines.append('collections: ['+', '.join(skill['collections'])+']')
     extra=skill.get('extra_frontmatter') or ''
     if extra.strip(): fm_lines.append(extra.strip())
-    content='---\n'+'\n'.join(fm_lines)+'\n---\n\n'+(skill.get('content_md') or '')
+    raw_body=skill.get('content_md') or ''
+    api_url='$API_URL'; web_url=api_url.replace(':8082',':3000')
+    raw_body=raw_body.replace('{{API_URL}}',api_url).replace('{{WEB_URL}}',web_url)
+    content='---\n'+'\n'.join(fm_lines)+'\n---\n\n'+raw_body
     filepath=os.path.join(skill_dir,'SKILL.md')
     if os.path.exists(filepath):
         with open(filepath) as f:
