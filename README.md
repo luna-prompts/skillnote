@@ -21,8 +21,7 @@
 
 <p align="center">
   <a href="#quick-start">Quick Start</a> &nbsp;&middot;&nbsp;
-  <a href="#mcp-server">MCP Server</a> &nbsp;&middot;&nbsp;
-  <a href="#claude-code-plugin">Plugin</a> &nbsp;&middot;&nbsp;
+  <a href="#connect-your-agent">Connect</a> &nbsp;&middot;&nbsp;
   <a href="#skill-push">Skill Push</a> &nbsp;&middot;&nbsp;
   <a href="#features">Features</a> &nbsp;&middot;&nbsp;
   <a href="#self-hosting">Self-Hosting</a> &nbsp;&middot;&nbsp;
@@ -168,30 +167,34 @@ Every skill is exposed as an MCP tool. The agent discovers and calls them live: 
 
 ---
 
-## MCP Server
+## Connect Your Agent
 
-SkillNote exposes every skill as an MCP tool your agent can discover and call directly: no local files needed, no restart when skills change.
+### Claude Code (recommended)
 
-> **Every skill = one MCP tool.** The tool name is the skill slug, the description is what the agent reads to decide when to invoke it, and calling the tool returns the full `SKILL.md` content. Filter by collection to control which skills (tools) each agent sees.
-
-**How it works:**
-- Each skill becomes a tool: `name = slug`, `description = skill description`
-- The agent uses the description to decide when to invoke the skill
-- Calling the tool returns the full `SKILL.md` content
-- Skills added, updated, or deleted in SkillNote trigger a `notifications/tools/list_changed` push to every connected agent — no reconnect needed
-
----
-
-<details>
-<summary><strong>Claude Code</strong></summary>
+One command — includes MCP, skill sync with full Claude Code features, usage analytics, and skill creation:
 
 ```bash
-claude mcp add --transport http skillnote http://localhost:8083/mcp --scope user
+curl -sf http://localhost:8082/setup | bash
 ```
 
-Restart Claude Code, then run `/mcp` to confirm `skillnote` is listed.
+That's it. Every session auto-syncs skills to `~/.claude/skills/` with full frontmatter (`allowed-tools`, `context: fork`, `effort`, `model`), tracks usage automatically, and connects MCP for ratings.
 
-</details>
+**What you get:**
+
+| Feature | How |
+|---------|-----|
+| **Skill sync** | SessionStart hook syncs all skills with full frontmatter on every session start |
+| **Full Claude Code features** | `allowed-tools`, `context: fork`, `effort`, `model` — all work via local SKILL.md |
+| **Usage analytics** | PostToolUse hook tracks every skill invocation automatically |
+| **Skill ratings** | MCP `complete_skill` tool lets agents rate skills (1-5) after use |
+| **Skill creation** | `/skillnote:skill-push` skill + `/skillnote:skill-creator` agent for creating skills from conversations |
+| **CLI sync** | `skillnote-sync` command available in Bash (with `--force` flag) |
+| **Offline-first** | Skills persist locally; sync fails gracefully if server is unreachable |
+| **Per-project scoping** | Add `.skillnote.json` to filter which collections sync per project |
+
+### Other Agents
+
+Any MCP-compatible agent can connect directly to SkillNote's MCP server. Each skill becomes a tool the agent can discover and call.
 
 <details>
 <summary><strong>OpenClaw</strong></summary>
@@ -200,87 +203,17 @@ Restart Claude Code, then run `/mcp` to confirm `skillnote` is listed.
 openclaw mcp add --transport http skillnote http://localhost:8083/mcp --scope user
 ```
 
-Or add to `~/.openclaw/settings.json`:
-
-```json
-{
-  "mcpServers": {
-    "skillnote": {
-      "type": "http",
-      "url": "http://localhost:8083/mcp"
-    }
-  }
-}
-```
-
-</details>
-
-<details>
-<summary><strong>OpenHands</strong></summary>
-
-In the OpenHands settings, add a new MCP server under **MCP Servers**:
-
-```json
-{
-  "mcpServers": {
-    "skillnote": {
-      "type": "http",
-      "url": "http://localhost:8083/mcp"
-    }
-  }
-}
-```
-
-</details>
-
-<details>
-<summary><strong>Codex (OpenAI)</strong></summary>
-
-Add to your `codex.json` config:
-
-```json
-{
-  "mcpServers": {
-    "skillnote": {
-      "type": "http",
-      "url": "http://localhost:8083/mcp"
-    }
-  }
-}
-```
-
-</details>
-
-<details>
-<summary><strong>Antigravity</strong></summary>
-
-Add to your Antigravity MCP config:
-
-```json
-{
-  "mcpServers": {
-    "skillnote": {
-      "type": "http",
-      "url": "http://localhost:8083/mcp"
-    }
-  }
-}
-```
-
 </details>
 
 <details>
 <summary><strong>Cursor</strong></summary>
 
-Add to `~/.cursor/mcp.json` or via Settings → MCP:
+Add to `~/.cursor/mcp.json`:
 
 ```json
 {
   "mcpServers": {
-    "skillnote": {
-      "type": "http",
-      "url": "http://localhost:8083/mcp"
-    }
+    "skillnote": { "url": "http://localhost:8083/mcp" }
   }
 }
 ```
@@ -288,9 +221,9 @@ Add to `~/.cursor/mcp.json` or via Settings → MCP:
 </details>
 
 <details>
-<summary><strong>Any other MCP-compatible agent</strong></summary>
+<summary><strong>Codex / OpenHands / Antigravity / Others</strong></summary>
 
-Any agent that supports the MCP HTTP transport can connect:
+Add the MCP HTTP endpoint to your agent's config:
 
 ```
 http://localhost:8083/mcp
@@ -298,70 +231,27 @@ http://localhost:8083/mcp
 
 </details>
 
-### Filter skills by collection
+### Filter Skills by Collection
 
-Use environment variables to serve only a subset of skills to a specific agent:
+Scope which skills each agent sees:
 
 ```bash
 SKILLNOTE_MCP_FILTER_COLLECTIONS=devops,security docker compose up -d mcp
 ```
 
-This is useful for scoping what different teams or agents can see.
-
-### MCP Integrations UI
-
-The **MCP Integrations** page (sidebar → Connect → MCP Integrations) gives you ready-to-copy config snippets for every supported agent, a scope selector to generate collection-filtered URLs, and a live connection monitor that shows every connected agent — its name, version, IP, call count, and session duration — updating every 5 seconds.
-
-<p align="center">
-  <img src="docs/screenshots/mcp-integrations.png" width="100%" alt="MCP Integrations" />
-</p>
-
----
-
-## Claude Code Plugin
-
-For full Claude Code feature support (`allowed-tools`, `context: fork`, `effort`, `model` overrides), install the SkillNote plugin. It auto-syncs skills to `~/.claude/skills/` on every session start with complete frontmatter, tracks usage analytics automatically, and includes a skill creation agent.
-
-### Quick Setup
-
-```bash
-curl -sf http://localhost:8082/setup | bash
-```
-
-Or install as a Claude Code plugin:
-
-```bash
-claude plugin install https://github.com/luna-prompts/skillnote-plugin --scope user
-```
-
-When prompted, enter your SkillNote server address (e.g., `<your-server-ip>`).
-
-### What the Plugin Does
-
-| Feature | How |
-|---------|-----|
-| **Skill sync** | SessionStart hook syncs all skills to `~/.claude/skills/` with full frontmatter |
-| **Full features** | `allowed-tools`, `context: fork`, `effort`, `model` all work via local SKILL.md |
-| **Usage analytics** | PostToolUse hook automatically tracks every skill invocation |
-| **MCP connection** | Connects to SkillNote MCP for ratings (`complete_skill`) and fallback delivery |
-| **Skill creation** | `/skillnote:skill-push` skill + `/skillnote:skill-creator` agent |
-| **CLI sync** | `skillnote-sync` command available in Bash (with `--force` flag) |
-| **Offline-first** | Skills persist locally; sync fails gracefully if server is unreachable |
-| **Per-project scoping** | Add `.skillnote.json` to filter which collections sync per project |
-
 ### Per-Project Scoping
 
-Add a `.skillnote.json` file to any project root to sync only specific collections:
+Add `.skillnote.json` to any project root:
 
 ```json
 {"collections": ["frontend", "conventions"]}
 ```
 
-Without this file, all skills sync globally to `~/.claude/skills/`. With it, skills sync to the project's `.claude/skills/` directory.
+Without this file, all skills sync globally. With it, only the specified collections sync for that project.
 
 ### Advanced Metadata
 
-Skills can include Claude Code frontmatter in the **Advanced Metadata** section of the editor:
+Skills can include Claude Code frontmatter via the **Advanced Metadata** section in the editor:
 
 ```yaml
 allowed-tools: Read Write Grep
@@ -369,7 +259,15 @@ context: fork
 effort: high
 ```
 
-These fields are stored in the `extra_frontmatter` column and written into the local `SKILL.md` frontmatter by the sync hook. They only take effect when skills are installed locally via the plugin.
+These fields are stored in `extra_frontmatter` and written into local `SKILL.md` files by the sync hook. They only take effect when skills are installed locally via the plugin.
+
+### MCP Integrations UI
+
+The **Integrations** page gives you ready-to-copy config snippets for every supported agent, a scope selector for collection-filtered URLs, plugin install commands, and a live connection monitor.
+
+<p align="center">
+  <img src="docs/screenshots/mcp-integrations.png" width="100%" alt="MCP Integrations" />
+</p>
 
 ---
 
