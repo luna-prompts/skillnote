@@ -7,7 +7,7 @@
 <p align="center">
   <strong>The open-source skill registry for AI coding agents.</strong>
   <br />
-  Create, manage, and distribute <code>SKILL.md</code> files, or connect any agent directly via MCP.
+  Create, manage, and distribute <code>SKILL.md</code> files — with a Claude Code plugin that makes it seamless.
 </p>
 
 <p align="center">
@@ -21,7 +21,7 @@
 
 <p align="center">
   <a href="#quick-start">Quick Start</a> &nbsp;&middot;&nbsp;
-  <a href="#connect-your-agent">Connect</a> &nbsp;&middot;&nbsp;
+  <a href="#how-it-works">How It Works</a> &nbsp;&middot;&nbsp;
   <a href="#skill-push">Skill Push</a> &nbsp;&middot;&nbsp;
   <a href="#features">Features</a> &nbsp;&middot;&nbsp;
   <a href="#self-hosting">Self-Hosting</a> &nbsp;&middot;&nbsp;
@@ -34,15 +34,15 @@
 
 ## Why SkillNote?
 
-AI coding agents like Claude Code, Cursor, and Codex use `SKILL.md` files to learn new capabilities. But managing these files is painful:
+AI coding agents like Claude Code use `SKILL.md` files to learn new capabilities. But managing these files is painful:
 
-- They live scattered across `~/.claude/skills/`, `.cursor/skills/`, `.codex/skills/`
-- No versioning, no search, no way to share across projects or teams
-- Writing them from scratch means guessing what works
+- They live scattered across `~/.claude/skills/` with no versioning or search
+- No way to share across projects, machines, or teams
+- Writing good skills from scratch means guessing what works — no feedback on what agents actually use
 
-**SkillNote fixes this.** It's a self-hosted registry with a clean web UI, a Claude Code plugin for full-feature auto-sync, an MCP server that lets any agent connect directly, and a built-in feedback loop where agents rate skills after use.
+**SkillNote fixes this.** It's a self-hosted registry with a web UI for managing skills, a Claude Code plugin that auto-syncs everything, and a built-in feedback loop where agents rate skills after use. One setup command, then skills just work — everywhere, every session.
 
-**Why self-hosted?** Enterprise workflows, proprietary codebases, and compliance-sensitive prompts contain institutional knowledge that shouldn't leave your infrastructure. SkillNote runs entirely on your machines. Your skills stay private, versioned, and accessible only to your team.
+**Why self-hosted?** Your skills encode institutional knowledge — coding conventions, deploy workflows, project-specific patterns. That shouldn't leave your infrastructure. SkillNote runs entirely on your machines.
 
 <p align="center">
   <img src="docs/screenshots/hero-dashboard.png" width="100%" alt="SkillNote Dashboard" />
@@ -50,27 +50,7 @@ AI coding agents like Claude Code, Cursor, and Codex use `SKILL.md` files to lea
 
 ---
 
-## Skill Reviews & Ratings
-
-SkillNote is the only skill registry with a **built-in feedback loop**. After an agent uses a skill, it rates it (1-5 stars) and optionally describes what it did — giving you real data on which skills actually work.
-
-```
-Agent uses skill  →  complete_skill(rating: 4, outcome: "built auth flow")  →  SkillNote
-```
-
-**What you get:**
-- **Per-version ratings** — see how each version of a skill performs, right in the version history
-- **Agent reviews** — read what agents actually did with the skill (outcome messages)
-- **Analytics dashboard** — top skills, rating distribution, completion rates, and trends over time
-- **Settings control** — toggle rating collection and outcome fields on/off from the Settings page
-
-This creates a data-driven workflow: write a skill → agents use it → review the ratings → improve → repeat. Skills get better over time because you have real feedback, not guesswork.
-
----
-
 ## Quick Start
-
-Make sure you have [Docker](https://docs.docker.com/get-docker/) and [Docker Compose](https://docs.docker.com/compose/install/) v2+ installed.
 
 ```bash
 git clone https://github.com/luna-prompts/skillnote.git
@@ -78,208 +58,126 @@ cd skillnote
 docker compose up --build -d
 ```
 
-Four containers spin up:
-
-| Service    | URL                        | What it does                            |
-| ---------- | -------------------------- | --------------------------------------- |
-| **Web**    | http://localhost:3000      | Next.js frontend                        |
-| **API**    | http://localhost:8082      | FastAPI backend (auto-migrates + seeds) |
-| **MCP**    | http://localhost:8083/mcp  | MCP server, skills as tools             |
-| **DB**     | localhost:5432             | PostgreSQL 16                           |
-
-Open **http://localhost:3000** and start creating skills.
-
-> The backend auto-runs migrations and seeds default skills (`skill-creator`, `skill-push`, `secure-migrations`) on first boot. No manual setup needed.
-
----
-
-## Skills vs MCP: What's the Difference?
-
-> Most people building AI agents hear about both and assume they're the same thing. They're not. Understanding the difference is what makes SkillNote click.
-
-### Skills: reusable intelligence
-
-A Skill is a reusable piece of knowledge injected into an agent's context: instructions, workflows, rules, examples. Think of it as a dynamic system prompt loaded on demand:
-
-```
-User message
-    ↓
-Agent picks the right Skill
-    ↓
-Injects SKILL.md content into the prompt
-    ↓
-LLM responds with that context
-```
-
-Skills improve **reasoning**. They teach the agent *how* to do something.
-
-### MCP: context transport
-
-[Model Context Protocol](https://modelcontextprotocol.io) is a standard for delivering context to agents: tools, APIs, documents, prompts. It improves **connectivity**. It doesn't care what the content is; it's the pipe.
-
-```
-Skills = HTML    (the content)
-MCP    = HTTP    (the transport)
-```
-
-HTTP delivers HTML. But HTML isn't part of HTTP. Same relationship.
-
-### How SkillNote combines both
-
-**Version 1: local files:**
-```
-Agent reads skills/making-tea/SKILL.md from disk
-```
-Simple. Works offline. But skills go stale, drift across machines, and require manual installs.
-
-**Version 2: MCP delivery (what SkillNote does):**
-```
-Agent  →  MCP  →  SkillNote  →  Skills DB
-```
-Every skill is exposed as an MCP tool. The agent discovers and calls them live: no files, no installs, always up to date. Update a skill in the Web UI and every connected agent gets the new version instantly.
-
-> **Real-time push notifications.** When a skill is created, updated, or deleted the MCP server immediately pushes a `notifications/tools/list_changed` event to every connected agent over their open SSE stream. Compliant clients (Claude Code, OpenClaw, Cursor, …) re-fetch `tools/list` automatically — no reconnect, no polling, no restart required.
-
-```
-┌──────────┐     tools/list      ┌───────────────┐
-│  Agent   │ ─────────────────▶  │  SkillNote    │
-│          │ ◀─────────────────  │  MCP Server   │
-│          │   [all your skills] │               │
-│          │                     │  PostgreSQL   │
-│          │  tools/call         │  LISTEN/      │
-│          │ ─────────────────▶  │  NOTIFY       │
-│          │ ◀─────────────────  │               │
-│          │   skill content     │               │
-│          │                     │               │
-│          │ ◀─────────────────  │  push:        │
-│          │  notifications/     │  tools/list   │
-│          │  tools/list_changed │  _changed     │
-└──────────┘  (SSE stream)       └───────────────┘
-```
-
-| | Local Skills | MCP Skills (SkillNote) |
-|---|---|---|
-| Updates | Manual (`git pull` / `npx install`) | Automatic: edit in UI, live instantly |
-| Fragmentation | Different versions per machine | One source of truth |
-| Discovery | Agent must know the file path | Agent discovers via `tools/list` |
-| Sharing | Send files or links | Connect to the same server |
-| Offline | Yes | Needs network |
-
----
-
-## Connect Your Agent
-
-### Claude Code (recommended)
+Then connect Claude Code:
 
 ```bash
 curl -sf http://localhost:8082/setup | bash
 ```
 
-One command. Here's what happens:
+That's it. Start `claude` in any project — your skills are there.
 
-1. **Creates a Claude Code plugin** in `~/.claude/plugins/` with MCP config, sync hooks, and analytics
-2. **Connects to SkillNote's MCP server** for skill ratings and fallback delivery
-3. **Syncs all skills** to `~/.claude/skills/` as local `SKILL.md` files with full frontmatter
-4. **Done** — start `claude` in any project, skills are there
+> **LAN/team setup:** Replace `localhost` with your server IP: `curl -sf http://<your-server-ip>:8082/setup | bash`
 
-**Every session after that:**
+---
+
+## How It Works
+
+SkillNote delivers skills to Claude Code through a **plugin** that combines three mechanisms — each handling what it does best:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  SkillNote Server (Docker)                                  │
+│                                                             │
+│  ┌───────────┐  ┌───────────┐  ┌───────────┐               │
+│  │  Web UI   │  │  REST API │  │ MCP Server│               │
+│  │  :3000    │  │  :8082    │  │  :8083    │               │
+│  └───────────┘  └─────┬─────┘  └─────┬─────┘               │
+│                       │              │                      │
+│                  PostgreSQL          │                      │
+│                  pg_notify ──────────┘                      │
+└─────────────────────────────────────────────────────────────┘
+                        │              │
+                   REST API        MCP protocol
+                        │              │
+┌─────────────────────────────────────────────────────────────┐
+│  Claude Code Plugin (on your machine)                       │
+│                                                             │
+│  SessionStart hook ─── curls REST API ──→ writes SKILL.md   │
+│  UserPromptSubmit ──── background re-sync every 60s         │
+│  PostToolUse[Skill] ── tracks usage via REST API            │
+│  MCP connection ────── ratings (complete_skill)             │
+│                                                             │
+│  Result: ~/.claude/skills/{slug}/SKILL.md                   │
+│          with full frontmatter (allowed-tools, fork, etc.)  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### The Plugin
+
+The `curl .../setup | bash` command creates a [Claude Code plugin](https://code.claude.com/docs/en/plugins-reference) in `~/.claude/plugins/`. The plugin bundles everything — no separate MCP setup, no manual config, no hook scripts to write. One install, works globally in every project.
+
+### Three Hooks, One Seamless Experience
+
+| Hook | When it fires | What it does | Blocking? |
+|------|---------------|-------------|-----------|
+| **SessionStart** | Session start + after compaction | Syncs all skills from SkillNote to `~/.claude/skills/` with full frontmatter | Yes (fast — ~1s) |
+| **UserPromptSubmit** | Every prompt | Background re-sync if >60s since last sync. If skills changed on the server, local files update and Claude hot-reloads them. | **No** (async) |
+| **PostToolUse[Skill]** | After any skill is used | Posts usage event to SkillNote analytics | **No** (async) |
+
+The `SessionStart` hook ensures skills are always current on session start. The `UserPromptSubmit` hook catches mid-session changes — edit a skill in the web UI, and Claude has the new version within 60 seconds. Neither the `UserPromptSubmit` nor `PostToolUse` hooks ever block the user.
+
+### MCP Connection
+
+The plugin also connects to SkillNote's MCP server. This handles:
+
+- **`complete_skill`** — agents rate skills (1-5) after applying them, with optional outcome text
+- **`skill-push`** — agents create new skills from conversations (the MCP server substitutes `{{API_URL}}` placeholders with real URLs at serve time)
+- **Real-time tool list** — `pg_notify` pushes `notifications/tools/list_changed` to connected agents when skills change
+
+### Why Both Local Skills AND MCP?
+
+| | Local Skills (via plugin sync) | MCP Tools |
+|---|---|---|
+| **`allowed-tools`** | Enforced | Not supported |
+| **`context: fork`** | Works | Not supported |
+| **`effort`, `model`** | Works | Not supported |
+| **Update speed** | ~60s (background sync) | Instant (real-time) |
+| **Offline** | Works (persisted on disk) | Needs network |
+
+Local skills get full Claude Code features. MCP gets real-time delivery and ratings. The plugin gives you both — local skills as the primary path (for features), MCP as the real-time supplement (for ratings and instant updates).
+
+### What Claude Sees
+
+Every session:
 
 ```
 $ claude
 
-SkillNote: 12 skills (all current)       ← automatic, on every session start
+SkillNote: 12 skills (all current)       ← SessionStart hook
 
-claude> help me refactor this error handling
-        ← Claude auto-triggers the right skill based on its description
-        ← allowed-tools, context: fork, effort — all enforced
-        ← usage tracked automatically in SkillNote analytics
+claude> help me validate this API payload
+        ← Claude reads skill descriptions from ~/.claude/skills/
+        ← Auto-triggers 'use-zod-validation' based on description match
+        ← allowed-tools: Read Write Grep — enforced by Claude Code
+        ← PostToolUse fires → usage tracked in SkillNote
+
+claude> [next prompt]
+        ← UserPromptSubmit fires (async) → checks for skill updates
+        ← If any changed on server → files updated → Claude hot-reloads
 ```
 
-**What the plugin installs:**
+---
 
-| Component | What it does |
-|-----------|-------------|
-| **SessionStart hook** | Syncs skills from the registry to `~/.claude/skills/` with full frontmatter on every session |
-| **PostToolUse hook** | Tracks every skill invocation in SkillNote analytics (async, non-blocking) |
-| **MCP connection** | Connects to SkillNote for `complete_skill` ratings and `skill-push` |
-| **`/skillnote:skill-push`** | Create new skills directly from conversations |
-| **`/skillnote:skill-creator`** | Dedicated agent for deep skill creation (effort: high, memory: project) |
-| **`skillnote-sync`** | CLI command available in Bash for manual sync (`--force` to re-sync all) |
+## Skill Reviews & Ratings
 
-**What works automatically (zero config):**
-- `allowed-tools`, `context: fork`, `effort`, `model` — full Claude Code skill features
-- **Real-time sync** — edit a skill in the web UI, local copies update within 60 seconds (background re-sync on every prompt, async, never blocks)
-- Usage analytics — every skill invocation tracked
-- Skill ratings — agents rate skills (1-5) after use
-- Offline mode — skills persist locally, sync fails gracefully if server is down
-- Context survival — skills re-sync after context compaction
-- Skill deletion — remove from registry, local copy cleaned up on next sync
+After an agent uses a skill, it rates it (1-5 stars) and optionally describes what it did:
 
-> **LAN setup:** Replace `localhost` with your server IP: `curl -sf http://<your-server-ip>:8082/setup | bash`
-
-### Per-Project Scoping
-
-By default, all skills sync globally to `~/.claude/skills/` (available in every project). To scope skills per project, add `.skillnote.json` to the project root:
-
-```json
-{"collections": ["frontend", "conventions"]}
+```
+Agent uses skill  →  complete_skill(rating: 4, outcome: "built auth flow")  →  SkillNote
 ```
 
-Only skills in those collections will sync for that project (written to `.claude/skills/` inside the project directory).
+- **Per-version ratings** — see how each version of a skill performs
+- **Agent reviews** — read what agents actually did with the skill
+- **Analytics dashboard** — top skills, rating distribution, trends over time
+- **Settings control** — toggle rating collection on/off
 
-### Advanced Metadata
-
-The skill editor has an **Advanced Metadata** section where you can add Claude Code frontmatter:
-
-```yaml
-allowed-tools: Read Write Grep
-context: fork
-effort: high
-```
-
-These fields are synced into the local `SKILL.md` frontmatter by the plugin. They only take effect for locally-installed skills (not MCP-delivered ones).
-
-### Other Agents (MCP only)
-
-Any MCP-compatible agent can connect directly. Each skill becomes a tool the agent discovers and calls.
-
-<details>
-<summary><strong>OpenClaw / Cursor / Codex / OpenHands / Others</strong></summary>
-
-```bash
-# OpenClaw
-openclaw mcp add --transport http skillnote http://localhost:8083/mcp --scope user
-
-# Cursor — add to ~/.cursor/mcp.json
-{"mcpServers": {"skillnote": {"url": "http://localhost:8083/mcp"}}}
-
-# Any MCP-compatible agent
-http://localhost:8083/mcp
-```
-
-</details>
-
-### Filter Skills by Collection
-
-Scope which skills each agent sees via MCP:
-
-```bash
-SKILLNOTE_MCP_FILTER_COLLECTIONS=devops,security docker compose up -d mcp
-```
-
-### MCP Integrations UI
-
-The **Integrations** page gives you ready-to-copy config snippets for every supported agent, plugin install commands, a scope selector for collection-filtered URLs, and a live connection monitor.
-
-<p align="center">
-  <img src="docs/screenshots/mcp-integrations.png" width="100%" alt="MCP Integrations" />
-</p>
+Skills get better over time because you have real feedback, not guesswork.
 
 ---
 
 ## Skill Push
 
-Agents can create new skills directly from conversations. When Claude notices you giving the same instruction repeatedly, it offers to save it as a reusable skill:
+Agents create new skills directly from conversations. When Claude notices you giving the same instruction repeatedly, it offers to save it:
 
 ```
 User: "use pnpm not npm"  (3rd time this session)
@@ -289,22 +187,51 @@ Claude: "I've noticed you keep correcting me about pnpm.
 
 User: "yes"
 
-Claude: → drafts the skill → shows you for review → pushes to SkillNote
-        → "Done! 'use-pnpm' is live. All agents will see it next session."
+Claude: → drafts the skill
+        → shows you for review
+        → you pick a collection
+        → pushes to SkillNote
+        → "Done! 'use-pnpm' is live. All agents get it within 60 seconds."
 ```
 
-The `skill-push` skill guides the agent through 6 steps:
+The MCP server instructions tell Claude to watch for repeated patterns:
+> *"When you notice the user giving the same instruction repeatedly, suggest creating a reusable skill using the skill-push tool."*
 
-1. **Confirm** the pattern with the user
-2. **Draft** the skill (name, description with trigger keywords, content)
-3. **Check** if the skill already exists (create new or update existing)
-4. **Collections** — fetch available collections and let the user choose
-5. **Review** the complete skill with the user
-6. **Push** to the SkillNote API
+**Two creation paths:**
 
-For deeper skill creation (with eval loops, description optimization, A/B testing), use the `/skillnote:skill-creator` agent — it runs with `effort: high` and `memory: project` for cross-session learning.
+| Path | When to use |
+|------|-------------|
+| **`/skillnote:skill-push`** | Quick capture — 6-step guided flow for conventions and patterns |
+| **`/skillnote:skill-creator`** | Deep creation — dedicated agent with `effort: high` and `memory: project` for complex workflow skills |
 
 Toggle skill creation on/off in **Settings > MCP Tools > Allow Agents to Create Skills**.
+
+---
+
+## Per-Project Scoping
+
+By default, all skills sync globally (`~/.claude/skills/`). For per-project control, add `.skillnote.json` to any project root:
+
+```json
+{"collections": ["frontend", "conventions"]}
+```
+
+Only skills in those collections sync for that project. The plugin checks this file on every sync — edit it and the next sync reflects the change.
+
+---
+
+## Advanced Metadata
+
+The skill editor has an **Advanced Metadata** section for Claude Code frontmatter:
+
+```yaml
+allowed-tools: Read Write Grep
+context: fork
+effort: high
+model: claude-sonnet-4-6
+```
+
+These fields are stored in `extra_frontmatter` and written into local `SKILL.md` frontmatter by the sync hook. They only take effect for locally-installed skills — this is why the plugin syncs to disk instead of relying solely on MCP.
 
 ---
 
@@ -318,40 +245,32 @@ A Notion-style WYSIWYG editor powered by Tiptap. Write in rich text or switch to
 </p>
 
 ### Version History
-Every save creates a snapshot. Browse the full history, compare versions, and restore any previous state with one click. Each version shows its average rating and agent reviews inline, so you can see exactly how a version performed before deciding to restore or build on it.
+Every save creates a snapshot. Browse the full history, compare versions, and restore any previous state with one click. Each version shows its average rating and agent reviews inline.
 
 <p align="center">
   <img src="docs/screenshots/version-history.png" width="100%" alt="Version History" />
 </p>
 
 ### Analytics
-Track how your skills are used across every connected agent. The Analytics dashboard shows total calls, unique skills invoked, active agents, a skill leaderboard with ratings, agent breakdown by client, rating distribution and trends, an activity timeline, collection usage, and a live connections panel — all filterable by 7d / 30d / 90d / all-time.
+Track how your skills are used across every connected agent. Total calls, unique skills invoked, active agents, skill leaderboard with ratings, agent breakdown, rating distribution, activity timeline — all filterable by time range.
 
 <p align="center">
   <img src="docs/screenshots/analytics-dashboard.png" width="100%" alt="Analytics Dashboard" />
 </p>
 
 ### Collections
-Organise skills into collections. Filter, search, and browse by category. Add or remove skills from any collection with inline confirmation.
+Organise skills into collections. Filter, search, and browse by category. Use collections with `.skillnote.json` for per-project scoping.
 
-### Multi-Agent Install
-Install skills as local files to any AI coding agent from the web UI or CLI. Supported agents:
+### MCP Integrations
+The **Integrations** page shows plugin install commands, per-agent MCP config snippets, collection-filtered URLs, and a live connection monitor showing every connected agent with call counts and session duration.
 
-| Agent       | Install Path                                |
-| ----------- | ------------------------------------------- |
-| Claude Code | `~/.claude/skills/<skill>/SKILL.md`         |
-| Cursor      | `.cursor/skills/<skill>/SKILL.md`           |
-| Codex       | `.codex/skills/<skill>/SKILL.md`            |
-| OpenClaw    | `~/.openclaw/skills/<skill>/SKILL.md`       |
-| OpenHands   | `~/.openhands/skills/<skill>/SKILL.md`      |
-| Windsurf    | `.windsurf/skills/<skill>/SKILL.md`         |
-| Universal   | `.skills/<skill>/SKILL.md`                  |
+<p align="center">
+  <img src="docs/screenshots/mcp-integrations.png" width="100%" alt="MCP Integrations" />
+</p>
 
 ---
 
 ## SKILL.md Format
-
-Every skill is a Markdown file with YAML frontmatter:
 
 ```markdown
 ---
@@ -369,23 +288,42 @@ When the user provides a PDF file:
 3. Preserve headings and document structure
 ```
 
-Skills synced locally via the plugin can include additional Claude Code frontmatter:
+With Advanced Metadata (synced locally via the plugin):
 
 ```yaml
+---
+name: pdf-extractor
+description: Extract text and tables from PDF files.
 allowed-tools: Read Write Bash(pdftotext *)
 context: fork
 effort: high
+---
 ```
 
-These fields are set in the editor's **Advanced Metadata** section and stored in the `extra_frontmatter` field.
+---
+
+## Other Agents
+
+Any MCP-compatible agent can connect directly to SkillNote. Skills appear as MCP tools.
+
+```bash
+# OpenClaw
+openclaw mcp add --transport http skillnote http://localhost:8083/mcp --scope user
+
+# Cursor — add to ~/.cursor/mcp.json
+{"mcpServers": {"skillnote": {"url": "http://localhost:8083/mcp"}}}
+
+# Any agent with MCP HTTP support
+http://localhost:8083/mcp
+```
+
+> Other agents get skills via MCP (real-time updates, ratings) but not the local sync features (`allowed-tools`, `context: fork`, etc.). Those require the Claude Code plugin.
 
 ---
 
 ## Self-Hosting
 
 ### System Requirements
-
-SkillNote is lightweight. Here's what it uses on a typical machine at idle:
 
 | Container    | Image size | RAM (idle) | RAM (under load) |
 | ------------ | ---------- | ---------- | ---------------- |
@@ -395,25 +333,7 @@ SkillNote is lightweight. Here's what it uses on a typical machine at idle:
 | **Postgres** | ~663 MB    | ~38 MB     | ~80 MB           |
 | **Total**    | ~1.9 GB    | **~250 MB**| **~420 MB**      |
 
-> The API and MCP images share base layers — the combined pull is ~600 MB, not 912 MB.
-
-**Minimum recommended specs:**
-- CPU: 1 core (2+ recommended for MCP-heavy workloads)
-- RAM: 512 MB free
-- Disk: 2 GB for images + space for skill bundles (5 MB each by default)
-
-**Disk usage over time:**
-- Each published skill version creates a ZIP bundle (≤ 5 MB by default)
-- PostgreSQL data grows slowly — a typical install with 100 skills is < 10 MB
-- Logs are written to stdout (captured by Docker); no files accumulate on disk
-
-To check live resource usage at any time:
-
-```bash
-docker stats
-```
-
-### Docker Compose (recommended)
+### Docker Compose
 
 ```bash
 git clone https://github.com/luna-prompts/skillnote.git
@@ -421,10 +341,10 @@ cd skillnote
 docker compose up --build -d
 ```
 
-#### Custom host or port
+#### Custom host
 
 ```bash
-SKILLNOTE_HOST=<your-server-ip> SKILLNOTE_API_PORT=9000 docker compose up --build -d
+SKILLNOTE_HOST=<your-server-ip> docker compose up --build -d
 ```
 
 #### Stop & reset
@@ -436,16 +356,9 @@ docker compose down -v       # Stop + wipe database
 
 ### Local Development
 
-Run the backend in Docker, frontend with hot-reload:
-
 ```bash
-# Terminal 1: Backend + MCP
-docker compose up --build -d postgres api mcp
-curl http://localhost:8082/health   # Wait for {"status":"ok"}
-
-# Terminal 2: Frontend
-npm install
-npm run dev                         # http://localhost:3000
+docker compose up --build -d postgres api mcp   # Backend in Docker
+npm install && npm run dev                       # Frontend on localhost:3000
 ```
 
 ### Environment Variables
@@ -461,9 +374,9 @@ npm run dev                         # http://localhost:3000
 | `SKILLNOTE_CORS_ORIGINS`          | *(auto from host)*      | Comma-separated CORS origins             |
 | `NEXT_PUBLIC_API_BASE_URL`        | `http://localhost:8082` | Frontend API endpoint                    |
 | `SKILLNOTE_MCP_FILTER_COLLECTIONS`| *(all)*                 | Comma-separated collections to expose via MCP |
-| `SKILLNOTE_API_URL`               | *(auto)*                | Override API URL for MCP skill content        |
-| `SKILLNOTE_WEB_URL`               | *(auto)*                | Override web URL for MCP skill content        |
-| `SKILLNOTE_MCP_URL`               | *(auto)*                | Override MCP URL for setup script             |
+| `SKILLNOTE_API_URL`               | *(auto)*                | Override API URL for MCP skill content   |
+| `SKILLNOTE_WEB_URL`               | *(auto)*                | Override web URL for MCP skill content   |
+| `SKILLNOTE_MCP_URL`               | *(auto)*                | Override MCP URL for setup script        |
 
 ---
 
@@ -483,19 +396,16 @@ npm run dev                         # http://localhost:3000
 
 ## References
 
-- [Claude Code Skills](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview) - Anthropic's official skills documentation
-- [Claude Code Plugins](https://code.claude.com/docs/en/plugins-reference) - Plugin system reference
-- [Model Context Protocol](https://modelcontextprotocol.io) - MCP specification
-- [AgentSkills.io](https://agentskills.io/home) - The skills ecosystem
-- [Codex Skills](https://developers.openai.com/codex/skills/) - OpenAI Codex skills reference
-- [Antigravity Skills](https://antigravity.google/docs/skills) - Google Antigravity skills documentation
-- [OpenHands Skills](https://docs.openhands.dev/overview/skills) - OpenHands skills overview
+- [Claude Code Skills](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview) — Anthropic's official skills documentation
+- [Claude Code Plugins](https://code.claude.com/docs/en/plugins-reference) — Plugin system reference
+- [Claude Code Hooks](https://code.claude.com/docs/en/hooks) — Hook events and configuration
+- [Model Context Protocol](https://modelcontextprotocol.io) — MCP specification
 
 ---
 
 ## Star Us
 
-If you find SkillNote useful, please consider giving it a star on GitHub. It helps others discover the project and motivates us to keep improving it.
+If you find SkillNote useful, please consider giving it a star on GitHub.
 
 <p align="center">
   <a href="https://github.com/luna-prompts/skillnote"><img src="https://img.shields.io/github/stars/luna-prompts/skillnote?style=for-the-badge&logo=github&label=Star%20on%20GitHub" alt="Star on GitHub" /></a>
@@ -526,5 +436,5 @@ MIT &copy; [Luna Prompts](https://github.com/luna-prompts)
 ---
 
 <p align="center">
-  Made with ❤️ by <a href="https://github.com/luna-prompts"><strong>Luna Prompts</strong></a>
+  Made with care by <a href="https://github.com/luna-prompts"><strong>Luna Prompts</strong></a>
 </p>
