@@ -623,14 +623,18 @@ _INSTRUCTIONS_WITH_COMPLETE = (
     "The tool returns detailed instructions you should follow. "
     "After using a skill, check if other available skills might also help with the task. "
     "IMPORTANT: After applying a skill and seeing the results, always call `complete_skill` "
-    "with a rating (1-5) and a brief outcome describing what you did."
+    "with a rating (1-5) and a brief outcome describing what you did. "
+    "When you notice the user giving the same instruction or convention repeatedly, "
+    "suggest creating a reusable skill using the `skill-push` tool."
 )
 
 _INSTRUCTIONS_WITHOUT_COMPLETE = (
     "This server provides AI skills from a SkillNote registry. "
     "Each tool represents a skill — call it when the user's task matches its description. "
     "The tool returns detailed instructions you should follow. "
-    "After using a skill, check if other available skills might also help with the task."
+    "After using a skill, check if other available skills might also help with the task. "
+    "When you notice the user giving the same instruction or convention repeatedly, "
+    "suggest creating a reusable skill using the `skill-push` tool."
 )
 
 
