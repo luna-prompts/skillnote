@@ -1,15 +1,26 @@
 {
-  "description": "SkillNote: skill sync + usage analytics",
+  "description": "SkillNote: skill sync + usage analytics + background re-sync",
   "hooks": {
     "SessionStart": [
       {
-        "matcher": "startup",
+        "matcher": "startup|compact",
         "hooks": [
           {
             "type": "command",
             "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks-handlers/sync.sh\"",
             "timeout": 15,
             "statusMessage": "SkillNote: syncing skills..."
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks-handlers/auto-sync.sh\"",
+            "async": true
           }
         ]
       }

@@ -43,7 +43,7 @@ MCPEOF
 
 # ── hooks ────────────────────────────────────────────────────────────────────
 cat > "$PLUGIN_DIR/hooks/hooks.json" << 'EOF'
-{"hooks":{"SessionStart":[{"matcher":"startup","hooks":[{"type":"command","command":"\"${CLAUDE_PLUGIN_ROOT}/hooks-handlers/sync.sh\"","timeout":15,"statusMessage":"SkillNote: syncing skills..."}]}],"PostToolUse":[{"matcher":"Skill","hooks":[{"type":"command","command":"\"${CLAUDE_PLUGIN_ROOT}/hooks-handlers/track-usage.sh\"","async":true}]}]}}
+{"hooks":{"SessionStart":[{"matcher":"startup|compact","hooks":[{"type":"command","command":"\"${CLAUDE_PLUGIN_ROOT}/hooks-handlers/sync.sh\"","timeout":15,"statusMessage":"SkillNote: syncing skills..."}]}],"UserPromptSubmit":[{"hooks":[{"type":"command","command":"\"${CLAUDE_PLUGIN_ROOT}/hooks-handlers/auto-sync.sh\"","async":true}]}],"PostToolUse":[{"matcher":"Skill","hooks":[{"type":"command","command":"\"${CLAUDE_PLUGIN_ROOT}/hooks-handlers/track-usage.sh\"","async":true}]}]}}
 EOF
 
 # ── sync script ──────────────────────────────────────────────────────────────
@@ -153,6 +153,23 @@ TRACKEOF
 
 sedi "s|__TRACK_HOST__|$SYNC_HOST|g" "$PLUGIN_DIR/hooks-handlers/track-usage.sh"
 chmod +x "$PLUGIN_DIR/hooks-handlers/track-usage.sh"
+
+# ── auto-sync (background re-sync every 60s) ────────────────────────────────
+cat > "$PLUGIN_DIR/hooks-handlers/auto-sync.sh" << 'AUTOSYNCEOF'
+#!/bin/bash
+SYNC_INTERVAL=60
+if [ -n "$CLAUDE_PLUGIN_DATA" ]; then LAST_SYNC_FILE="$CLAUDE_PLUGIN_DATA/.last-sync-time"
+else LAST_SYNC_FILE="$HOME/.claude/skills/.last-sync-time"; fi
+NOW=$(date +%s)
+if [ -f "$LAST_SYNC_FILE" ]; then
+    LAST=$(cat "$LAST_SYNC_FILE" 2>/dev/null || echo 0)
+    [ $((NOW - LAST)) -lt $SYNC_INTERVAL ] && exit 0
+fi
+"${CLAUDE_PLUGIN_ROOT}/hooks-handlers/sync.sh" > /dev/null 2>&1
+mkdir -p "$(dirname "$LAST_SYNC_FILE")"
+echo "$NOW" > "$LAST_SYNC_FILE"
+AUTOSYNCEOF
+chmod +x "$PLUGIN_DIR/hooks-handlers/auto-sync.sh"
 
 # ── add MCP server ───────────────────────────────────────────────────────────
 if command -v claude &>/dev/null; then

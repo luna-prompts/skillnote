@@ -208,10 +208,11 @@ claude> help me refactor this error handling
 
 **What works automatically (zero config):**
 - `allowed-tools`, `context: fork`, `effort`, `model` — full Claude Code skill features
+- **Real-time sync** — edit a skill in the web UI, local copies update within 60 seconds (background re-sync on every prompt, async, never blocks)
 - Usage analytics — every skill invocation tracked
 - Skill ratings — agents rate skills (1-5) after use
 - Offline mode — skills persist locally, sync fails gracefully if server is down
-- Skill updates — edit in the web UI, agents get the new version next session
+- Context survival — skills re-sync after context compaction
 - Skill deletion — remove from registry, local copy cleaned up on next sync
 
 > **LAN setup:** Replace `localhost` with your server IP: `curl -sf http://<your-server-ip>:8082/setup | bash`
