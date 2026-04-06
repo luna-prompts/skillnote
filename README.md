@@ -88,7 +88,7 @@ Four containers spin up:
 
 Open **http://localhost:3000** and start creating skills.
 
-> The backend auto-runs migrations and seeds a default skill (`skill-creator`) on first boot. No manual setup needed.
+> The backend auto-runs migrations and seeds default skills (`skill-creator`, `skill-push`, `secure-migrations`) on first boot. No manual setup needed.
 
 ---
 
@@ -316,6 +316,78 @@ The **MCP Integrations** page (sidebar → Connect → MCP Integrations) gives y
 
 ---
 
+## Claude Code Plugin
+
+For full Claude Code feature support (`allowed-tools`, `context: fork`, `effort`, `model` overrides), install the SkillNote plugin. It auto-syncs skills to `~/.claude/skills/` on every session start with complete frontmatter, tracks usage analytics automatically, and includes a skill creation agent.
+
+### Quick Setup
+
+```bash
+curl -sf http://localhost:8082/setup | bash
+```
+
+Or install as a Claude Code plugin:
+
+```bash
+claude plugin install https://github.com/luna-prompts/skillnote-plugin --scope user
+```
+
+When prompted, enter your SkillNote server address (e.g., `<your-server-ip>`).
+
+### What the Plugin Does
+
+| Feature | How |
+|---------|-----|
+| **Skill sync** | SessionStart hook syncs all skills to `~/.claude/skills/` with full frontmatter |
+| **Full features** | `allowed-tools`, `context: fork`, `effort`, `model` all work via local SKILL.md |
+| **Usage analytics** | PostToolUse hook automatically tracks every skill invocation |
+| **MCP connection** | Connects to SkillNote MCP for ratings (`complete_skill`) and fallback delivery |
+| **Skill creation** | `/skillnote:skill-push` skill + `/skillnote:skill-creator` agent |
+| **CLI sync** | `skillnote-sync` command available in Bash (with `--force` flag) |
+| **Offline-first** | Skills persist locally; sync fails gracefully if server is unreachable |
+| **Per-project scoping** | Add `.skillnote.json` to filter which collections sync per project |
+
+### Per-Project Scoping
+
+Add a `.skillnote.json` file to any project root to sync only specific collections:
+
+```json
+{"collections": ["frontend", "conventions"]}
+```
+
+Without this file, all skills sync globally to `~/.claude/skills/`. With it, skills sync to the project's `.claude/skills/` directory.
+
+### Advanced Metadata
+
+Skills can include Claude Code frontmatter in the **Advanced Metadata** section of the editor:
+
+```yaml
+allowed-tools: Read Write Grep
+context: fork
+effort: high
+```
+
+These fields are stored in the `extra_frontmatter` column and written into the local `SKILL.md` frontmatter by the sync hook. They only take effect when skills are installed locally via the plugin.
+
+---
+
+## Skill Push
+
+Agents can create new skills directly from conversations. The `skill-push` skill (seeded by default) guides the agent through:
+
+1. **Confirm** the pattern with the user
+2. **Draft** the skill (name, description with trigger keywords, content)
+3. **Check** if the skill already exists (create vs update)
+4. **Collections** — fetch available collections and let the user choose
+5. **Review** the final skill with the user
+6. **Push** via the SkillNote API (uses Python `urllib.request` for safe JSON encoding)
+
+The skill is available via MCP (as `skill-push`) and via the plugin (as `/skillnote:skill-push`). The plugin also ships a `/skillnote:skill-creator` agent with `effort: high` and `memory: project` for deeper skill creation workflows.
+
+Toggle skill creation on/off in **Settings > MCP Tools > Allow Agents to Create Skills**.
+
+---
+
 ## Features
 
 ### Skill Editor
@@ -365,6 +437,7 @@ Every skill is a Markdown file with YAML frontmatter:
 ---
 name: pdf-extractor
 description: Extract text and tables from PDF files. Use when the user mentions PDFs, scanned documents, or form extraction.
+collections: [data, documents]
 ---
 
 # PDF Extractor
@@ -375,6 +448,16 @@ When the user provides a PDF file:
 2. Identify tables and format them as markdown
 3. Preserve headings and document structure
 ```
+
+Skills synced locally via the plugin can include additional Claude Code frontmatter:
+
+```yaml
+allowed-tools: Read Write Bash(pdftotext *)
+context: fork
+effort: high
+```
+
+These fields are set in the editor's **Advanced Metadata** section and stored in the `extra_frontmatter` field.
 
 ---
 
@@ -458,6 +541,9 @@ npm run dev                         # http://localhost:3000
 | `SKILLNOTE_CORS_ORIGINS`          | *(auto from host)*      | Comma-separated CORS origins             |
 | `NEXT_PUBLIC_API_BASE_URL`        | `http://localhost:8082` | Frontend API endpoint                    |
 | `SKILLNOTE_MCP_FILTER_COLLECTIONS`| *(all)*                 | Comma-separated collections to expose via MCP |
+| `SKILLNOTE_API_URL`               | *(auto)*                | Override API URL for MCP skill content        |
+| `SKILLNOTE_WEB_URL`               | *(auto)*                | Override web URL for MCP skill content        |
+| `SKILLNOTE_MCP_URL`               | *(auto)*                | Override MCP URL for setup script             |
 
 ---
 
