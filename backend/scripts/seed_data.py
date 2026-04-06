@@ -127,7 +127,7 @@ def main():
                 name="skill-push",
                 description=fm.get("description", "Create and push skills to the SkillNote registry."),
                 content_md=body,
-                collections=[],
+                collections=["Official"],
             )
 
         # 3. Secure Migrations (existing seed)

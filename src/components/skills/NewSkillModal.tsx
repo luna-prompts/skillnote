@@ -3,7 +3,7 @@ import { useState, useCallback, useEffect } from 'react'
 import { Plus, X, BookOpen, Loader2, AlertCircle, Info } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { createSkill } from '@/lib/skills-store'
-import { validateSkillName, validateDescription, normalizeSkillName, NAME_MAX, DESC_MAX, type ValidationError } from '@/lib/skill-validation'
+import { validateSkillName, validateDescription, validateCollections, normalizeSkillName, NAME_MAX, DESC_MAX, type ValidationError } from '@/lib/skill-validation'
 import { CollectionPicker } from '@/components/collections/CollectionPicker'
 import { toast } from 'sonner'
 import { useRouter } from 'next/navigation'
@@ -52,10 +52,11 @@ export function NewSkillModal({ onClose, collections }: NewSkillModalProps) {
 
   const nameErrors = touched.name ? validateSkillName(name) : []
   const descErrors = touched.description ? validateDescription(description) : []
-  const isValid = validateSkillName(name).length === 0 && validateDescription(description).length === 0
+  const collectionErrors = touched.collections ? validateCollections(selectedCollections) : []
+  const isValid = validateSkillName(name).length === 0 && validateDescription(description).length === 0 && validateCollections(selectedCollections).length === 0
 
   const handleSubmit = useCallback(async () => {
-    setTouched({ name: true, description: true })
+    setTouched({ name: true, description: true, collections: true })
     if (!isValid) return
     setSaving(true)
     try {
@@ -149,12 +150,20 @@ export function NewSkillModal({ onClose, collections }: NewSkillModalProps) {
 
           {/* Collections */}
           <div>
-            <label className="block text-[12px] font-medium text-foreground mb-1.5">Collection</label>
+            <label className="block text-[12px] font-medium text-foreground mb-1.5">
+              Collection <span className="text-destructive">*</span>
+              <span className="ml-1 text-[11px] font-normal text-muted-foreground" title="Collections organize skills and control which sync per project. Every skill needs at least one.">
+                (required)
+              </span>
+            </label>
             <CollectionPicker
               selected={selectedCollections}
-              onChange={setSelectedCollections}
+              onChange={(v) => { setSelectedCollections(v); setTouched(prev => ({ ...prev, collections: true })) }}
               placeholder="Add to a collection..."
             />
+            {collectionErrors.length > 0 && (
+              <p className="text-[12px] text-destructive mt-1">{collectionErrors[0].message}</p>
+            )}
           </div>
         </div>
 

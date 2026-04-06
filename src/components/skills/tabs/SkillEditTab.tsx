@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { RotateCcw, Save, Loader2, X, AlertCircle, ArrowRight, ChevronDown } from 'lucide-react'
-import { NAME_MAX, DESC_MAX, slugFromName, normalizeSkillName, validateSkillName, validateDescription } from '@/lib/skill-validation'
+import { NAME_MAX, DESC_MAX, slugFromName, normalizeSkillName, validateSkillName, validateDescription, validateCollections } from '@/lib/skill-validation'
 import { Button } from '@/components/ui/button'
 import { WysiwygEditor, type EditorMode } from '@/components/skills/WysiwygEditor'
 import { FieldError } from '@/components/skills/FieldError'
@@ -85,7 +85,8 @@ export function SkillEditTab({
 
   const nameErrors = touched.name ? validateSkillName(skillTitle) : []
   const descErrors = touched.description ? validateDescription(skillDescription) : []
-  const isValid = validateSkillName(skillTitle).length === 0 && validateDescription(skillDescription).length === 0
+  const collectionErrors = touched.collections ? validateCollections(skillCollections) : []
+  const isValid = validateSkillName(skillTitle).length === 0 && validateDescription(skillDescription).length === 0 && validateCollections(skillCollections).length === 0
 
   const nextVersion = currentVersion ? currentVersion + 1 : 1
   const previewSlug = skillSlug || (skillTitle.trim() ? slugFromName(skillTitle.trim()) : '')
@@ -97,9 +98,10 @@ export function SkillEditTab({
 
   /** Validate fields, then either save directly (create) or show confirmation (edit) */
   const handleSaveClick = useCallback(() => {
-    setTouched({ name: true, description: true })
+    setTouched({ name: true, description: true, collections: true })
     const nErrs = validateSkillName(skillTitle)
     const dErrs = validateDescription(skillDescription)
+    const cErrs = validateCollections(skillCollections)
     if (nErrs.length > 0) {
       if (nameRef.current) {
         nameRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
@@ -112,6 +114,9 @@ export function SkillEditTab({
         descRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
         descRef.current.focus()
       }
+      return
+    }
+    if (cErrs.length > 0) {
       return
     }
     if (mode === 'edit' && currentVersion) {
@@ -276,12 +281,18 @@ export function SkillEditTab({
       {/* Collections — inline editor */}
       {setSkillCollections && (
         <div className="mb-6">
-          <label className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/70 mb-2 block">Collections</label>
+          <label className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/70 mb-2 block">
+            Collections <span className="text-destructive normal-case">*</span>
+          </label>
           <CollectionPicker
             selected={skillCollections}
-            onChange={setSkillCollections}
+            onChange={(v) => { setSkillCollections(v); setTouched(prev => ({ ...prev, collections: true })) }}
             compact
           />
+          {collectionErrors.length > 0 && (
+            <p className="text-[12px] text-destructive mt-1.5">{collectionErrors[0].message}</p>
+          )}
+          <p className="text-[11px] text-muted-foreground/50 mt-1">Collections organize skills and control which sync per project. Keep 12-15 per collection.</p>
         </div>
       )}
 

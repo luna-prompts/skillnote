@@ -57,7 +57,11 @@ try:
 except Exception as e: print(f"Could not fetch: {e}")
 ```
 
-Suggest the best fit. Offer creating a new one or no collection (global).
+Every skill must belong to at least one collection. Use **AskUserQuestion** to let the user pick:
+- Show existing collections from the list above as options
+- Include an option to type a new collection name
+- Recommend the collection that best fits the skill's domain
+- A skill cannot be pushed without a collection
 
 ## Step 5: Final Review
 

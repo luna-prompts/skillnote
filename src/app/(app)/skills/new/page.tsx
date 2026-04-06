@@ -3,7 +3,7 @@
 import { Suspense, useState, useCallback, useEffect } from 'react'
 import { SkillEditTab } from '@/components/skills/tabs/SkillEditTab'
 import { createSkill } from '@/lib/skills-store'
-import { validateSkillName, validateDescription, normalizeSkillName } from '@/lib/skill-validation'
+import { validateSkillName, validateDescription, validateCollections, normalizeSkillName } from '@/lib/skill-validation'
 import { parseFrontmatter, stripFrontmatter } from '@/lib/frontmatter'
 import { toast } from 'sonner'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -58,7 +58,7 @@ function NewSkillContent() {
   }, [name, description])
 
   const handleSave = useCallback(async () => {
-    if (validateSkillName(name).length > 0 || validateDescription(description).length > 0) return
+    if (validateSkillName(name).length > 0 || validateDescription(description).length > 0 || validateCollections(collections).length > 0) return
     setSaving(true)
     try {
       // Strip any existing frontmatter from pasted content to avoid duplication

@@ -82,12 +82,12 @@ except Exception as e:
     print(f"Could not fetch collections: {e}")
 ```
 
-Present options to the user:
-- Existing collections (list them with counts)
-- Create a new collection (just type a name)
-- No collection (global) — but warn: if agents connect with a collection filter, global skills may not be visible to them
+Every skill must belong to at least one collection. Present options to the user:
+- Existing collections from the list above (show as dropdown-style options)
+- Option to type a new collection name
+- Recommend the collection that best fits the skill's domain
 
-Suggest the best fit based on the skill's domain.
+A skill cannot be pushed without a collection. Keep 12-15 skills per collection for best Claude Code performance.
 
 ## Step 5: Final Review
 

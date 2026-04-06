@@ -307,7 +307,7 @@ rm -rf "$SKILLS_DIR/my-custom-skill"
 # 7.12 extra_frontmatter in synced SKILL.md
 curl -sf -X POST "$API_URL/v1/skills" \
   -H "Content-Type: application/json" \
-  -d '{"name":"e2e-plugin-ef","slug":"e2e-plugin-ef","description":"EF test","content_md":"# EF","extra_frontmatter":"allowed-tools: Read Write\neffort: high"}' > /dev/null
+  -d '{"name":"e2e-plugin-ef","slug":"e2e-plugin-ef","description":"EF test","content_md":"# EF","collections":["testing"],"extra_frontmatter":"allowed-tools: Read Write\neffort: high"}' > /dev/null
 rm -f "$SKILLS_DIR/.skillnote-manifest.json"
 bash "$SYNC" 2>/dev/null
 grep -q "allowed-tools: Read Write" "$SKILLS_DIR/e2e-plugin-ef/SKILL.md" && pass "extra_frontmatter in local SKILL.md" || fail "extra_frontmatter" "not in SKILL.md"
@@ -317,7 +317,7 @@ curl -sf -X DELETE "$API_URL/v1/skills/e2e-plugin-ef" > /dev/null
 # 7.13 Empty content_md skill
 curl -sf -X POST "$API_URL/v1/skills" \
   -H "Content-Type: application/json" \
-  -d '{"name":"e2e-plugin-empty","slug":"e2e-plugin-empty","description":"Empty test","content_md":""}' > /dev/null
+  -d '{"name":"e2e-plugin-empty","slug":"e2e-plugin-empty","description":"Empty test","content_md":"","collections":["testing"]}' > /dev/null
 rm -f "$SKILLS_DIR/.skillnote-manifest.json"
 bash "$SYNC" 2>/dev/null
 [ -f "$SKILLS_DIR/e2e-plugin-empty/SKILL.md" ] && pass "empty content skill synced" || fail "empty content" "not synced"
@@ -493,7 +493,7 @@ TS_NEW=$(cat "$AS_DATA/.last-sync-time")
 # 12.7 Mid-session skill create picked up
 curl -sf -X POST "$API_URL/v1/skills" \
   -H "Content-Type: application/json" \
-  -d '{"name":"autosync-test","slug":"autosync-test","description":"Auto-sync test","content_md":"# Auto"}' > /dev/null
+  -d '{"name":"autosync-test","slug":"autosync-test","description":"Auto-sync test","content_md":"# Auto","collections":["testing"]}' > /dev/null
 export HOME="$TEST_SKILLS_DIR/fakehome3"
 mkdir -p "$HOME/.claude/skills"
 SKILLS_DIR="$HOME/.claude/skills"

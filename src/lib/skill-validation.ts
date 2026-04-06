@@ -47,6 +47,14 @@ export function validateDescription(description: string): ValidationError[] {
   return errors
 }
 
+export function validateCollections(collections: string[]): ValidationError[] {
+  const errors: ValidationError[] = []
+  if (!collections || collections.length === 0) {
+    errors.push({ field: 'collections', message: 'At least one collection is required' })
+  }
+  return errors
+}
+
 /**
  * Slack-style name normalizer: lowercase, spaces→hyphens, strip invalid chars.
  * Use on every keystroke in name inputs so the user sees the result live.

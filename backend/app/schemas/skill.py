@@ -3,7 +3,7 @@ from typing import List, Optional
 from pydantic import BaseModel, field_validator
 import uuid
 
-from app.validators.skill_validator import validate_skill_name, validate_skill_description
+from app.validators.skill_validator import validate_skill_name, validate_skill_description, validate_collections
 
 
 class SkillListItem(BaseModel):
@@ -42,7 +42,7 @@ class SkillCreate(BaseModel):
     slug: str
     description: str
     content_md: str = ""
-    collections: List[str] = []
+    collections: List[str]
     extra_frontmatter: Optional[str] = None
 
     @field_validator("name")
@@ -60,6 +60,14 @@ class SkillCreate(BaseModel):
         if errors:
             raise ValueError("; ".join(errors))
         return v.strip()
+
+    @field_validator("collections")
+    @classmethod
+    def check_collections(cls, v: List[str]) -> List[str]:
+        errors = validate_collections(v)
+        if errors:
+            raise ValueError("; ".join(errors))
+        return v
 
 
 class SkillUpdate(BaseModel):
@@ -88,3 +96,13 @@ class SkillUpdate(BaseModel):
         if errors:
             raise ValueError("; ".join(errors))
         return v.strip()
+
+    @field_validator("collections")
+    @classmethod
+    def check_collections(cls, v: Optional[List[str]]) -> Optional[List[str]]:
+        if v is None:
+            return v
+        errors = validate_collections(v)
+        if errors:
+            raise ValueError("; ".join(errors))
+        return v

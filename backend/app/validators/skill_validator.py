@@ -36,3 +36,10 @@ def validate_skill_description(description: str) -> list[str]:
     if XML_TAG_RE.search(description):
         errors.append("Description cannot contain XML tags")
     return errors
+
+
+def validate_collections(collections: list[str]) -> list[str]:
+    errors: list[str] = []
+    if not collections:
+        errors.append("At least one collection is required")
+    return errors
