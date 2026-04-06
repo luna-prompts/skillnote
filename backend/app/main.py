@@ -12,6 +12,7 @@ from app.api.settings import router as settings_router
 from app.api.collections import router as collections_router
 from app.api.hooks import router as hooks_router
 from app.api.setup import router as setup_router
+from app.api.sessions import router as sessions_router
 
 app = FastAPI(title="SkillNote Backend", version="0.1.0")
 
@@ -56,6 +57,7 @@ app.include_router(settings_router)
 app.include_router(collections_router)
 app.include_router(hooks_router)
 app.include_router(setup_router)
+app.include_router(sessions_router)
 
 
 @app.get("/health")
