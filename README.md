@@ -22,6 +22,8 @@
 <p align="center">
   <a href="#quick-start">Quick Start</a> &nbsp;&middot;&nbsp;
   <a href="#mcp-server">MCP Server</a> &nbsp;&middot;&nbsp;
+  <a href="#claude-code-plugin">Plugin</a> &nbsp;&middot;&nbsp;
+  <a href="#skill-push">Skill Push</a> &nbsp;&middot;&nbsp;
   <a href="#features">Features</a> &nbsp;&middot;&nbsp;
   <a href="#self-hosting">Self-Hosting</a> &nbsp;&middot;&nbsp;
   <a href="#contributing">Contributing</a>
@@ -39,7 +41,7 @@ AI coding agents like Claude Code, Cursor, and Codex use `SKILL.md` files to lea
 - No versioning, no search, no way to share across projects or teams
 - Writing them from scratch means guessing what works
 
-**SkillNote fixes this.** It's a self-hosted registry with a clean web UI, a CLI for one-command installs, and an MCP server that lets any agent connect directly with no file installation needed.
+**SkillNote fixes this.** It's a self-hosted registry with a clean web UI, a Claude Code plugin for full-feature auto-sync, an MCP server that lets any agent connect directly, and a built-in feedback loop where agents rate skills after use.
 
 **Why self-hosted?** Enterprise workflows, proprietary codebases, and compliance-sensitive prompts contain institutional knowledge that shouldn't leave your infrastructure. SkillNote runs entirely on your machines. Your skills stay private, versioned, and accessible only to your team.
 
@@ -318,21 +320,73 @@ The **MCP Integrations** page (sidebar → Connect → MCP Integrations) gives y
 
 ## Claude Code Plugin
 
-The SkillNote plugin auto-syncs skills to `~/.claude/skills/` with full Claude Code features (`allowed-tools`, `context: fork`, `effort`, `model`), tracks usage analytics, and lets agents create skills from conversations.
+For full Claude Code feature support (`allowed-tools`, `context: fork`, `effort`, `model` overrides), install the SkillNote plugin. It auto-syncs skills to `~/.claude/skills/` on every session start with complete frontmatter, tracks usage analytics automatically, and includes a skill creation agent.
+
+### Quick Setup
 
 ```bash
 curl -sf http://localhost:8082/setup | bash
 ```
 
-Skills sync on every session start. Works offline (graceful fallback). For per-project scoping, add `.skillnote.json` to filter by collection:
+Or install as a Claude Code plugin:
+
+```bash
+claude plugin install https://github.com/luna-prompts/skillnote-plugin --scope user
+```
+
+When prompted, enter your SkillNote server address (e.g., `<your-server-ip>`).
+
+### What the Plugin Does
+
+| Feature | How |
+|---------|-----|
+| **Skill sync** | SessionStart hook syncs all skills to `~/.claude/skills/` with full frontmatter |
+| **Full features** | `allowed-tools`, `context: fork`, `effort`, `model` all work via local SKILL.md |
+| **Usage analytics** | PostToolUse hook automatically tracks every skill invocation |
+| **MCP connection** | Connects to SkillNote MCP for ratings (`complete_skill`) and fallback delivery |
+| **Skill creation** | `/skillnote:skill-push` skill + `/skillnote:skill-creator` agent |
+| **CLI sync** | `skillnote-sync` command available in Bash (with `--force` flag) |
+| **Offline-first** | Skills persist locally; sync fails gracefully if server is unreachable |
+| **Per-project scoping** | Add `.skillnote.json` to filter which collections sync per project |
+
+### Per-Project Scoping
+
+Add a `.skillnote.json` file to any project root to sync only specific collections:
 
 ```json
 {"collections": ["frontend", "conventions"]}
 ```
 
-### Skill Push
+Without this file, all skills sync globally to `~/.claude/skills/`. With it, skills sync to the project's `.claude/skills/` directory.
 
-Agents can create skills directly from conversations. When Claude notices you repeating the same instruction, the `skill-push` tool guides through drafting, reviewing, and pushing the skill to the registry. Toggle in **Settings > Allow Agents to Create Skills**.
+### Advanced Metadata
+
+Skills can include Claude Code frontmatter in the **Advanced Metadata** section of the editor:
+
+```yaml
+allowed-tools: Read Write Grep
+context: fork
+effort: high
+```
+
+These fields are stored in the `extra_frontmatter` column and written into the local `SKILL.md` frontmatter by the sync hook. They only take effect when skills are installed locally via the plugin.
+
+---
+
+## Skill Push
+
+Agents can create new skills directly from conversations. The `skill-push` skill (seeded by default) guides the agent through:
+
+1. **Confirm** the pattern with the user
+2. **Draft** the skill (name, description with trigger keywords, content)
+3. **Check** if the skill already exists (create vs update)
+4. **Collections** — fetch available collections and let the user choose
+5. **Review** the final skill with the user
+6. **Push** via the SkillNote API (uses Python `urllib.request` for safe JSON encoding)
+
+The skill is available via MCP (as `skill-push`) and via the plugin (as `/skillnote:skill-push`). The plugin also ships a `/skillnote:skill-creator` agent with `effort: high` and `memory: project` for deeper skill creation workflows.
+
+Toggle skill creation on/off in **Settings > MCP Tools > Allow Agents to Create Skills**.
 
 ---
 
@@ -397,7 +451,15 @@ When the user provides a PDF file:
 3. Preserve headings and document structure
 ```
 
-Skills synced via the plugin can include Claude Code frontmatter (`allowed-tools`, `context: fork`, `effort`) in the editor's **Advanced Metadata** section.
+Skills synced locally via the plugin can include additional Claude Code frontmatter:
+
+```yaml
+allowed-tools: Read Write Bash(pdftotext *)
+context: fork
+effort: high
+```
+
+These fields are set in the editor's **Advanced Metadata** section and stored in the `extra_frontmatter` field.
 
 ---
 
@@ -494,6 +556,7 @@ npm run dev                         # http://localhost:3000
 | Frontend   | Next.js 16, React 19, TypeScript, Tailwind CSS 4, Tiptap |
 | Backend    | Python 3.12, FastAPI, SQLAlchemy 2, Alembic, Pydantic 2 |
 | MCP Server | Python 3.12, FastMCP                                    |
+| Plugin     | Bash, Python, Claude Code Plugin API                    |
 | Database   | PostgreSQL 16                                           |
 | CLI        | Node.js, TypeScript, Commander.js                       |
 | Infra      | Docker, Docker Compose                                  |
@@ -503,6 +566,7 @@ npm run dev                         # http://localhost:3000
 ## References
 
 - [Claude Code Skills](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview) - Anthropic's official skills documentation
+- [Claude Code Plugins](https://code.claude.com/docs/en/plugins-reference) - Plugin system reference
 - [Model Context Protocol](https://modelcontextprotocol.io) - MCP specification
 - [AgentSkills.io](https://agentskills.io/home) - The skills ecosystem
 - [Codex Skills](https://developers.openai.com/codex/skills/) - OpenAI Codex skills reference
