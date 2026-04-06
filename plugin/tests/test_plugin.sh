@@ -442,6 +442,95 @@ echo "$OUTPUT" | grep -q "new\|updated" && pass "bin --force triggers re-sync" |
 export HOME="$ORIG_HOME"
 
 ###############################################################################
+section "12. AUTO-SYNC (BACKGROUND RE-SYNC)"
+###############################################################################
+
+export CLAUDE_PLUGIN_OPTION_HOST="$HOST"
+export CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR"
+AUTOSYNC="$PLUGIN_DIR/hooks-handlers/auto-sync.sh"
+AS_DATA=$(mktemp -d)
+export CLAUDE_PLUGIN_DATA="$AS_DATA"
+
+# 12.1 auto-sync.sh exists and is executable
+[ -f "$AUTOSYNC" ] && pass "auto-sync.sh exists" || fail "auto-sync.sh" "missing"
+[ -x "$AUTOSYNC" ] && pass "auto-sync.sh is executable" || fail "auto-sync.sh" "not executable"
+
+# 12.2 hooks.json has UserPromptSubmit hook
+python3 -c "
+import json, sys
+d = json.load(open('$PLUGIN_DIR/hooks/hooks.json'))
+if 'UserPromptSubmit' not in d.get('hooks', {}): sys.exit(1)
+h = d['hooks']['UserPromptSubmit'][0]['hooks'][0]
+if h.get('async') is not True: sys.exit(1)
+if 'auto-sync' not in h.get('command', ''): sys.exit(1)
+" 2>/dev/null && pass "UserPromptSubmit hook (async, auto-sync)" || fail "UPS hook" "missing or wrong"
+
+# 12.3 SessionStart matcher includes compact
+python3 -c "
+import json, sys
+d = json.load(open('$PLUGIN_DIR/hooks/hooks.json'))
+m = d['hooks']['SessionStart'][0].get('matcher', '')
+if 'compact' not in m: sys.exit(1)
+" 2>/dev/null && pass "SessionStart matcher includes compact" || fail "matcher" "missing compact"
+
+# 12.4 First run creates timestamp
+rm -f "$AS_DATA/.last-sync-time"
+bash "$AUTOSYNC" 2>/dev/null
+[ -f "$AS_DATA/.last-sync-time" ] && pass "auto-sync creates timestamp" || fail "timestamp" "not created"
+
+# 12.5 Throttled — second run within interval is a no-op
+TS_BEFORE=$(cat "$AS_DATA/.last-sync-time")
+bash "$AUTOSYNC" 2>/dev/null
+TS_AFTER=$(cat "$AS_DATA/.last-sync-time")
+[ "$TS_BEFORE" = "$TS_AFTER" ] && pass "throttled (same timestamp)" || fail "throttle" "timestamp changed"
+
+# 12.6 Expired timestamp triggers sync
+echo "0" > "$AS_DATA/.last-sync-time"
+bash "$AUTOSYNC" 2>/dev/null
+TS_NEW=$(cat "$AS_DATA/.last-sync-time")
+[ "$TS_NEW" != "0" ] && pass "expired timestamp triggers sync" || fail "expired" "timestamp still 0"
+
+# 12.7 Mid-session skill create picked up
+curl -sf -X POST "$API_URL/v1/skills" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"autosync-test","slug":"autosync-test","description":"Auto-sync test","content_md":"# Auto"}' > /dev/null
+export HOME="$TEST_SKILLS_DIR/fakehome3"
+mkdir -p "$HOME/.claude/skills"
+SKILLS_DIR="$HOME/.claude/skills"
+rm -f "$SKILLS_DIR/.skillnote-manifest.json"
+bash "$PLUGIN_DIR/hooks-handlers/sync.sh" 2>/dev/null  # baseline
+echo "0" > "$AS_DATA/.last-sync-time"
+curl -sf -X PATCH "$API_URL/v1/skills/autosync-test" \
+  -H "Content-Type: application/json" \
+  -d '{"content_md":"# Auto Updated"}' > /dev/null
+bash "$AUTOSYNC" 2>/dev/null
+grep -q "Auto Updated" "$SKILLS_DIR/autosync-test/SKILL.md" 2>/dev/null && pass "mid-session update detected" || fail "mid-session update" "content not updated"
+
+# 12.8 Mid-session delete picked up
+curl -sf -X DELETE "$API_URL/v1/skills/autosync-test" > /dev/null
+echo "0" > "$AS_DATA/.last-sync-time"
+bash "$AUTOSYNC" 2>/dev/null
+[ ! -d "$SKILLS_DIR/autosync-test" ] && pass "mid-session delete detected" || fail "mid-session delete" "still exists"
+
+# 12.9 Offline — graceful
+echo "0" > "$AS_DATA/.last-sync-time"
+CLAUDE_PLUGIN_OPTION_HOST=192.168.99.99 bash "$AUTOSYNC" 2>/dev/null
+RC=$?
+[ "$RC" -eq 0 ] && pass "auto-sync offline exits 0" || fail "offline" "exit $RC"
+
+# 12.10 Fallback when CLAUDE_PLUGIN_DATA is unset
+SAVED_PD="$CLAUDE_PLUGIN_DATA"
+unset CLAUDE_PLUGIN_DATA
+rm -f "$SKILLS_DIR/.last-sync-time"
+bash "$AUTOSYNC" 2>/dev/null
+[ -f "$SKILLS_DIR/.last-sync-time" ] && pass "fallback path (no PLUGIN_DATA)" || fail "fallback" "no timestamp"
+rm -f "$SKILLS_DIR/.last-sync-time"
+export CLAUDE_PLUGIN_DATA="$SAVED_PD"
+
+export HOME="$ORIG_HOME"
+rm -rf "$AS_DATA"
+
+###############################################################################
 # RESULTS
 ###############################################################################
 
