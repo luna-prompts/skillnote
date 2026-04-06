@@ -22,6 +22,7 @@
 <p align="center">
   <a href="#quick-start">Quick Start</a> &nbsp;&middot;&nbsp;
   <a href="#how-it-works">How It Works</a> &nbsp;&middot;&nbsp;
+  <a href="#collections--per-project-scoping">Collections</a> &nbsp;&middot;&nbsp;
   <a href="#skill-push">Skill Push</a> &nbsp;&middot;&nbsp;
   <a href="#features">Features</a> &nbsp;&middot;&nbsp;
   <a href="#self-hosting">Self-Hosting</a> &nbsp;&middot;&nbsp;
@@ -110,7 +111,7 @@ The `curl .../setup | bash` command creates a [Claude Code plugin](https://code.
 
 | Hook | When it fires | What it does | Blocking? |
 |------|---------------|-------------|-----------|
-| **SessionStart** | Session start + after compaction | Syncs all skills from SkillNote to `~/.claude/skills/` with full frontmatter | Yes (fast — ~1s) |
+| **SessionStart** | Session start + after compaction | Syncs skills to `~/.claude/skills/` with full frontmatter. On first visit, detects if folder name matches a collection and prompts to scope. | Yes (fast — ~1s) |
 | **UserPromptSubmit** | Every prompt | Background re-sync if >60s since last sync. If skills changed on the server, local files update and Claude hot-reloads them. | **No** (async) |
 | **PostToolUse[Skill]** | After any skill is used | Posts usage event to SkillNote analytics | **No** (async) |
 
@@ -138,12 +139,24 @@ Local skills get full Claude Code features. MCP gets real-time delivery and rati
 
 ### What Claude Sees
 
-Every session:
+**First time in a project folder:**
+
+```
+$ cd ~/projects/frontend
+$ claude
+
+SkillNote: Collection 'frontend' matches this folder.     ← folder name = collection
+Claude: "Want to scope to frontend skills?"                ← AskUserQuestion picker
+User: [picks frontend] → Enter
+SkillNote: 12 skills synced.                               ← .skillnote.json created
+```
+
+**Every session after:**
 
 ```
 $ claude
 
-SkillNote: 12 skills (all current)       ← SessionStart hook
+SkillNote: 12 skills (all current)       ← SessionStart hook (fast, ~1s)
 
 claude> help me validate this API payload
         ← Claude reads skill descriptions from ~/.claude/skills/
@@ -151,9 +164,9 @@ claude> help me validate this API payload
         ← allowed-tools: Read Write Grep — enforced by Claude Code
         ← PostToolUse fires → usage tracked in SkillNote
 
-claude> [next prompt]
+claude> [next prompt, 60s later]
         ← UserPromptSubmit fires (async) → checks for skill updates
-        ← If any changed on server → files updated → Claude hot-reloads
+        ← If skills changed on server → files updated → Claude hot-reloads
 ```
 
 ---
@@ -197,26 +210,69 @@ Claude: → drafts the skill
 The MCP server instructions tell Claude to watch for repeated patterns:
 > *"When you notice the user giving the same instruction repeatedly, suggest creating a reusable skill using the skill-push tool."*
 
-**Two creation paths:**
+**Plugin skills & agents:**
 
-| Path | When to use |
-|------|-------------|
-| **`/skillnote:skill-push`** | Quick capture — 6-step guided flow for conventions and patterns |
-| **`/skillnote:skill-creator`** | Deep creation — dedicated agent with `effort: high` and `memory: project` for complex workflow skills |
+| Command | What it does |
+|---------|-------------|
+| **`/skillnote:collection`** | Pick which collections are active — native arrow-key picker with multi-select |
+| **`/skillnote:skill-push`** | Quick capture — 6-step guided flow for creating skills from conversations |
+| **`/skillnote:skill-creator`** | Deep creation — dedicated agent with `effort: high` and `memory: project` |
 
 Toggle skill creation on/off in **Settings > MCP Tools > Allow Agents to Create Skills**.
 
 ---
 
-## Per-Project Scoping
+## Collections & Per-Project Scoping
 
-By default, all skills sync globally (`~/.claude/skills/`). For per-project control, add `.skillnote.json` to any project root:
+Claude Code has a ~8,000 character budget for skill descriptions. With more than ~15 skills, descriptions get silently truncated and skills stop triggering. Collections keep things focused.
+
+### Automatic Collection Selection
+
+On the first session in a new project folder, the plugin checks if the **folder name matches a collection name** in the registry. If it does, Claude offers to scope the project:
+
+```
+$ cd ~/projects/frontend
+$ claude
+
+SkillNote: Collection 'frontend' matches this folder.
+
+Claude: "SkillNote found a 'frontend' collection matching this folder.
+         Want me to scope this project to frontend skills?"
+
+  ┌──────────────────────────────────────────┐
+  │  Which collections for this project?      │
+  │                                          │
+  │  ▸ frontend (Recommended)                │
+  │    conventions                            │
+  │    All skills                            │
+  │                                          │
+  │  ↑↓ to move, Space to select, Enter     │
+  └──────────────────────────────────────────┘
+
+User: [selects frontend + conventions] → Enter
+
+Claude: → writes .skillnote.json → skills sync → "Done! 17 → 12 skills."
+```
+
+If the folder name doesn't match but you have >15 skills, Claude shows the picker anyway to help you scope.
+
+### Change Collection Mid-Session
+
+```
+claude> change collection
+```
+
+Claude calls `/skillnote:collection` which shows the same picker. Selection updates `.skillnote.json` and skills refresh within 60 seconds.
+
+### Manual `.skillnote.json`
+
+You can also create it directly:
 
 ```json
 {"collections": ["frontend", "conventions"]}
 ```
 
-Only skills in those collections sync for that project. The plugin checks this file on every sync — edit it and the next sync reflects the change.
+The plugin checks this file on every sync. Edit it and the next sync reflects the change. Remove it to go back to global (all skills).
 
 ---
 
