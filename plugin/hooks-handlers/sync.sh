@@ -70,15 +70,19 @@ else
         IS_FIRST_TIME=true
     fi
 
-    # Show recommendation
+    # Show recommendation and trigger collection selection
     if [ "$TOTAL_SKILLS" -gt 15 ] 2>/dev/null && [ -n "$RECOMMEND" ]; then
+        # Fetch actual collection names for the picker
+        COLS_JSON=$(curl -sf --connect-timeout 3 --max-time 5 "${API_URL}/v1/collections" 2>/dev/null || echo "[]")
+
         if [ "$IS_FIRST_TIME" = true ]; then
             echo "SkillNote: First session in '${PROJECT_NAME}'."
             [ -n "$STACK" ] && echo "  Detected: ${STACK} project"
-            echo "  ${TOTAL_SKILLS} skills available — recommend scoping to '${RECOMMEND}' collection."
-            echo "  Use /skillnote:collection to set it, or ask me to do it."
+            echo "  ${TOTAL_SKILLS} skills available — recommend '${RECOMMEND}' collection."
+            echo "  ACTION: Use the skillnote:collection skill to ask the user which collection to use."
+            echo "  Recommend '${RECOMMEND}' as the first option. Available collections: ${COLS_JSON}"
         else
-            echo "SkillNote: ${TOTAL_SKILLS} skills (>15 may degrade activation). Tip: /skillnote:collection to scope."
+            echo "SkillNote: ${TOTAL_SKILLS} skills synced (>15 may degrade activation). Use /skillnote:collection to scope."
         fi
     elif [ "$IS_FIRST_TIME" = true ] && [ "$TOTAL_SKILLS" -gt 0 ] 2>/dev/null; then
         [ -n "$STACK" ] && echo "SkillNote: '${PROJECT_NAME}' — ${STACK} project, ${TOTAL_SKILLS} skills available."

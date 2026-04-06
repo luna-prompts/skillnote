@@ -1,80 +1,84 @@
 ---
 name: collection
-description: Change which SkillNote skill collection is active for this project. Use when user says "change collection", "switch skills", "use frontend skills", or "show collections".
+description: Choose which SkillNote skill collection is active for this project. Use when user says "change collection", "switch skills", "use frontend skills", "show collections", or at first session in a new project when recommended.
 ---
 
 # SkillNote Collection Manager
 
-Change which skill collection syncs for the current project.
+Help the user choose which skill collection to sync for the current project.
 
-## Show Available Collections
+## Step 1: Fetch Collections
 
 ```python
 import urllib.request, json, os
 api = f"http://{os.environ.get('CLAUDE_PLUGIN_OPTION_HOST', 'localhost')}:8082"
 try:
     cols = json.loads(urllib.request.urlopen(f"{api}/v1/collections").read())
-    if cols:
-        for c in cols:
-            print(f"  {c['name']} ({c['count']} skills)")
-    else:
-        print("  No collections yet. Create skills with collections in the web UI.")
+    for c in cols:
+        print(f"{c['name']} ({c['count']} skills)")
 except Exception as e:
-    print(f"  Could not fetch collections: {e}")
+    print(f"Error: {e}")
 ```
 
-Show the list to the user and ask which collection(s) they want for this project.
+## Step 2: Ask the User
 
-## Check Current Collection
+Use **AskUserQuestion** to present the collections as a picker. The user selects with arrow keys.
 
-Read the current `.skillnote.json` if it exists:
+Rules for building the question:
+- Use `multiSelect: true` so the user can pick multiple collections
+- Show up to 4 collections (the tool limit) — pick the ones with the most skills
+- If a collection was recommended by SkillNote (from the session start message), mark it as "(Recommended)" and put it first
+- Always include an option for "All skills (no filter)"
+- Keep labels to 1-5 words, put skill count in the description
 
-```bash
-if [ -f .skillnote.json ]; then
-    echo "Current config:"
-    cat .skillnote.json
-else
-    echo "No .skillnote.json — all skills sync globally."
-fi
+Example:
+```
+Use AskUserQuestion with:
+  header: "Skills"
+  question: "Which collections should be active for this project?"
+  multiSelect: true
+  options:
+    - label: "frontend (Recommended)"
+      description: "12 skills for React, Next.js, TypeScript patterns"
+    - label: "conventions"  
+      description: "5 skills for coding standards and style rules"
+    - label: "backend"
+      description: "8 skills for Python, FastAPI, database patterns"
+    - label: "All skills"
+      description: "No filter — sync everything from the registry"
 ```
 
-## Set Collection
+## Step 3: Apply the Selection
 
-After the user chooses, write `.skillnote.json` to the project root:
+Based on the user's answer:
 
+**If they picked specific collections:**
 ```python
 import json
-collections = $ARGUMENTS  # e.g., ["frontend", "conventions"]
-# If user said a single name, wrap it
-if isinstance(collections, str):
-    collections = [c.strip() for c in collections.split(",")]
+collections = ["frontend", "conventions"]  # from their selection
 with open(".skillnote.json", "w") as f:
     json.dump({"collections": collections}, f, indent=2)
     f.write("\n")
-print(f"Set collections: {collections}")
-print("Skills will sync to this project's .claude/skills/ on next prompt.")
+print(f"Set: {collections}")
 ```
 
-## Reset to Global (All Skills)
-
-If the user wants all skills:
-
+**If they picked "All skills":**
 ```bash
 rm -f .skillnote.json
-echo "Removed .skillnote.json — all skills will sync globally."
 ```
 
-## What Happens Next
+Tell the user: "Collection set. Skills will update within 60 seconds, or run `skillnote-sync` to sync now."
 
-The auto-sync hook (runs every ~60 seconds) will detect the change and:
-- If `.skillnote.json` exists: sync only the specified collections to `.claude/skills/` in this project
-- If removed: sync all skills globally to `~/.claude/skills/`
+## Step 4: Trigger Immediate Sync (optional)
 
-Claude Code hot-reloads the changed SKILL.md files automatically.
+If `skillnote-sync` is available in PATH:
+```bash
+skillnote-sync --force
+```
 
-## Recommendations
+## Guidelines
 
-- Keep **12-15 skills per collection** for optimal Claude Code performance
-- The skill description budget is ~8,000 chars shared across ALL skills
-- Too many skills = descriptions get truncated = skills stop triggering
-- Use collections to keep only relevant skills active per project
+- Keep **12-15 skills per collection** for best Claude Code performance
+- The skill description budget is ~8,000 chars shared across ALL skills and plugins
+- Too many skills = descriptions get silently truncated = skills stop triggering
+- The user can change collections anytime by saying "change collection" or running this skill
