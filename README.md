@@ -171,87 +171,64 @@ Every skill is exposed as an MCP tool. The agent discovers and calls them live: 
 
 ### Claude Code (recommended)
 
-One command — includes MCP, skill sync with full Claude Code features, usage analytics, and skill creation:
-
 ```bash
 curl -sf http://localhost:8082/setup | bash
 ```
 
-That's it. Every session auto-syncs skills to `~/.claude/skills/` with full frontmatter (`allowed-tools`, `context: fork`, `effort`, `model`), tracks usage automatically, and connects MCP for ratings.
+One command. Here's what happens:
 
-**What you get:**
+1. **Creates a Claude Code plugin** in `~/.claude/plugins/` with MCP config, sync hooks, and analytics
+2. **Connects to SkillNote's MCP server** for skill ratings and fallback delivery
+3. **Syncs all skills** to `~/.claude/skills/` as local `SKILL.md` files with full frontmatter
+4. **Done** — start `claude` in any project, skills are there
 
-| Feature | How |
-|---------|-----|
-| **Skill sync** | SessionStart hook syncs all skills with full frontmatter on every session start |
-| **Full Claude Code features** | `allowed-tools`, `context: fork`, `effort`, `model` — all work via local SKILL.md |
-| **Usage analytics** | PostToolUse hook tracks every skill invocation automatically |
-| **Skill ratings** | MCP `complete_skill` tool lets agents rate skills (1-5) after use |
-| **Skill creation** | `/skillnote:skill-push` skill + `/skillnote:skill-creator` agent for creating skills from conversations |
-| **CLI sync** | `skillnote-sync` command available in Bash (with `--force` flag) |
-| **Offline-first** | Skills persist locally; sync fails gracefully if server is unreachable |
-| **Per-project scoping** | Add `.skillnote.json` to filter which collections sync per project |
-
-### Other Agents
-
-Any MCP-compatible agent can connect directly to SkillNote's MCP server. Each skill becomes a tool the agent can discover and call.
-
-<details>
-<summary><strong>OpenClaw</strong></summary>
-
-```bash
-openclaw mcp add --transport http skillnote http://localhost:8083/mcp --scope user
-```
-
-</details>
-
-<details>
-<summary><strong>Cursor</strong></summary>
-
-Add to `~/.cursor/mcp.json`:
-
-```json
-{
-  "mcpServers": {
-    "skillnote": { "url": "http://localhost:8083/mcp" }
-  }
-}
-```
-
-</details>
-
-<details>
-<summary><strong>Codex / OpenHands / Antigravity / Others</strong></summary>
-
-Add the MCP HTTP endpoint to your agent's config:
+**Every session after that:**
 
 ```
-http://localhost:8083/mcp
+$ claude
+
+SkillNote: 12 skills (all current)       ← automatic, on every session start
+
+claude> help me refactor this error handling
+        ← Claude auto-triggers the right skill based on its description
+        ← allowed-tools, context: fork, effort — all enforced
+        ← usage tracked automatically in SkillNote analytics
 ```
 
-</details>
+**What the plugin installs:**
 
-### Filter Skills by Collection
+| Component | What it does |
+|-----------|-------------|
+| **SessionStart hook** | Syncs skills from the registry to `~/.claude/skills/` with full frontmatter on every session |
+| **PostToolUse hook** | Tracks every skill invocation in SkillNote analytics (async, non-blocking) |
+| **MCP connection** | Connects to SkillNote for `complete_skill` ratings and `skill-push` |
+| **`/skillnote:skill-push`** | Create new skills directly from conversations |
+| **`/skillnote:skill-creator`** | Dedicated agent for deep skill creation (effort: high, memory: project) |
+| **`skillnote-sync`** | CLI command available in Bash for manual sync (`--force` to re-sync all) |
 
-Scope which skills each agent sees:
+**What works automatically (zero config):**
+- `allowed-tools`, `context: fork`, `effort`, `model` — full Claude Code skill features
+- Usage analytics — every skill invocation tracked
+- Skill ratings — agents rate skills (1-5) after use
+- Offline mode — skills persist locally, sync fails gracefully if server is down
+- Skill updates — edit in the web UI, agents get the new version next session
+- Skill deletion — remove from registry, local copy cleaned up on next sync
 
-```bash
-SKILLNOTE_MCP_FILTER_COLLECTIONS=devops,security docker compose up -d mcp
-```
+> **LAN setup:** Replace `localhost` with your server IP: `curl -sf http://<your-server-ip>:8082/setup | bash`
 
 ### Per-Project Scoping
 
-Add `.skillnote.json` to any project root:
+By default, all skills sync globally to `~/.claude/skills/` (available in every project). To scope skills per project, add `.skillnote.json` to the project root:
 
 ```json
 {"collections": ["frontend", "conventions"]}
 ```
 
-Without this file, all skills sync globally. With it, only the specified collections sync for that project.
+Only skills in those collections will sync for that project (written to `.claude/skills/` inside the project directory).
 
 ### Advanced Metadata
 
-Skills can include Claude Code frontmatter via the **Advanced Metadata** section in the editor:
+The skill editor has an **Advanced Metadata** section where you can add Claude Code frontmatter:
 
 ```yaml
 allowed-tools: Read Write Grep
@@ -259,11 +236,39 @@ context: fork
 effort: high
 ```
 
-These fields are stored in `extra_frontmatter` and written into local `SKILL.md` files by the sync hook. They only take effect when skills are installed locally via the plugin.
+These fields are synced into the local `SKILL.md` frontmatter by the plugin. They only take effect for locally-installed skills (not MCP-delivered ones).
+
+### Other Agents (MCP only)
+
+Any MCP-compatible agent can connect directly. Each skill becomes a tool the agent discovers and calls.
+
+<details>
+<summary><strong>OpenClaw / Cursor / Codex / OpenHands / Others</strong></summary>
+
+```bash
+# OpenClaw
+openclaw mcp add --transport http skillnote http://localhost:8083/mcp --scope user
+
+# Cursor — add to ~/.cursor/mcp.json
+{"mcpServers": {"skillnote": {"url": "http://localhost:8083/mcp"}}}
+
+# Any MCP-compatible agent
+http://localhost:8083/mcp
+```
+
+</details>
+
+### Filter Skills by Collection
+
+Scope which skills each agent sees via MCP:
+
+```bash
+SKILLNOTE_MCP_FILTER_COLLECTIONS=devops,security docker compose up -d mcp
+```
 
 ### MCP Integrations UI
 
-The **Integrations** page gives you ready-to-copy config snippets for every supported agent, a scope selector for collection-filtered URLs, plugin install commands, and a live connection monitor.
+The **Integrations** page gives you ready-to-copy config snippets for every supported agent, plugin install commands, a scope selector for collection-filtered URLs, and a live connection monitor.
 
 <p align="center">
   <img src="docs/screenshots/mcp-integrations.png" width="100%" alt="MCP Integrations" />
@@ -273,16 +278,30 @@ The **Integrations** page gives you ready-to-copy config snippets for every supp
 
 ## Skill Push
 
-Agents can create new skills directly from conversations. The `skill-push` skill (seeded by default) guides the agent through:
+Agents can create new skills directly from conversations. When Claude notices you giving the same instruction repeatedly, it offers to save it as a reusable skill:
+
+```
+User: "use pnpm not npm"  (3rd time this session)
+
+Claude: "I've noticed you keep correcting me about pnpm.
+         Want me to create a skill for this?"
+
+User: "yes"
+
+Claude: → drafts the skill → shows you for review → pushes to SkillNote
+        → "Done! 'use-pnpm' is live. All agents will see it next session."
+```
+
+The `skill-push` skill guides the agent through 6 steps:
 
 1. **Confirm** the pattern with the user
 2. **Draft** the skill (name, description with trigger keywords, content)
-3. **Check** if the skill already exists (create vs update)
+3. **Check** if the skill already exists (create new or update existing)
 4. **Collections** — fetch available collections and let the user choose
-5. **Review** the final skill with the user
-6. **Push** via the SkillNote API (uses Python `urllib.request` for safe JSON encoding)
+5. **Review** the complete skill with the user
+6. **Push** to the SkillNote API
 
-The skill is available via MCP (as `skill-push`) and via the plugin (as `/skillnote:skill-push`). The plugin also ships a `/skillnote:skill-creator` agent with `effort: high` and `memory: project` for deeper skill creation workflows.
+For deeper skill creation (with eval loops, description optimization, A/B testing), use the `/skillnote:skill-creator` agent — it runs with `effort: high` and `memory: project` for cross-session learning.
 
 Toggle skill creation on/off in **Settings > MCP Tools > Allow Agents to Create Skills**.
 
