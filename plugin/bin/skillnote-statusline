@@ -3,6 +3,8 @@
 import json
 import os
 import sys
+import time
+import urllib.request
 
 data = json.load(sys.stdin)
 
@@ -18,6 +20,7 @@ if not host:
             pass
 host = host or "localhost"
 web_url = f"http://{host}:3000"
+api_url = f"http://{host}:8082"
 
 # Read active collection
 project_dir = data.get("workspace", {}).get("current_dir", ".")
@@ -36,32 +39,80 @@ if os.path.isfile(config_path):
 # Count synced skills
 skills_dir = os.path.join(project_dir, ".claude", "skills")
 skill_count = 0
-skill_names = []
 if os.path.isdir(skills_dir):
-    skill_names = sorted([d for d in os.listdir(skills_dir)
-                          if os.path.isdir(os.path.join(skills_dir, d))])
-    skill_count = len(skill_names)
+    skill_count = len([d for d in os.listdir(skills_dir)
+                       if os.path.isdir(os.path.join(skills_dir, d))])
+
+# Check API connectivity (cached — only check every 30s)
+cache_file = "/tmp/skillnote-status-cache"
+connected = False
+now = time.time()
+try:
+    if os.path.exists(cache_file):
+        with open(cache_file) as f:
+            cached = json.load(f)
+        if now - cached.get("ts", 0) < 30:
+            connected = cached.get("ok", False)
+        else:
+            raise ValueError("stale")
+    else:
+        raise ValueError("missing")
+except Exception:
+    try:
+        urllib.request.urlopen(f"{api_url}/v1/collections", timeout=2)
+        connected = True
+    except Exception:
+        connected = False
+    try:
+        with open(cache_file, "w") as f:
+            json.dump({"ts": now, "ok": connected}, f)
+    except Exception:
+        pass
+
+# Sync freshness
+sync_age = ""
+manifest = os.path.join(skills_dir, ".skillnote-manifest.json")
+if os.path.isfile(manifest):
+    age_s = int(now - os.path.getmtime(manifest))
+    if age_s < 60:
+        sync_age = "just now"
+    elif age_s < 3600:
+        sync_age = f"{age_s // 60}m ago"
+    elif age_s < 86400:
+        sync_age = f"{age_s // 3600}h ago"
+    else:
+        sync_age = f"{age_s // 86400}d ago"
 
 # Colors
-CYAN = "\033[36m"
 GREEN = "\033[32m"
+RED = "\033[31m"
+CYAN = "\033[36m"
 DIM = "\033[2m"
 BOLD = "\033[1m"
 RESET = "\033[0m"
 
-# Build status
+# Build
 parts = []
 
-# Branding
-parts.append(f"{CYAN}{BOLD}SkillNote{RESET}")
+# Connected indicator + brand
+dot = f"{GREEN}●{RESET}" if connected else f"{RED}○{RESET}"
+parts.append(f"{dot} {CYAN}{BOLD}SkillNote{RESET}")
 
-# Collection + skills
+# Collection
 if collection:
-    parts.append(f"{collection} {DIM}({skill_count} skills){RESET}")
+    parts.append(f"{collection} {DIM}({skill_count}){RESET}")
 else:
     parts.append(f"{DIM}no collection{RESET}")
 
-# Web URL as clickable link
-parts.append(f"\033]8;;{web_url}\a{DIM}{web_url}{RESET}\033]8;;\a")
+# Sync freshness or offline
+if not connected:
+    parts.append(f"{RED}offline{RESET}")
+elif sync_age:
+    parts.append(f"{DIM}↻ {sync_age}{RESET}")
 
-print(" │ ".join(parts))
+# Web URL (clickable)
+if connected:
+    short_url = f"{host}:3000"
+    parts.append(f"\033]8;;{web_url}\a{DIM}{short_url}{RESET}\033]8;;\a")
+
+print(" · ".join(parts))
