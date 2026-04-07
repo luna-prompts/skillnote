@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""SkillNote collection picker — native terminal UI."""
+"""SkillNote collection picker — minimal terminal UI."""
 import json
 import os
 import sys
@@ -23,15 +23,14 @@ def fetch_collections():
 
 
 def pick(stdscr, items):
-    selected = set()
     cur = 0
     curses.curs_set(0)
     curses.start_color()
     curses.use_default_colors()
-    curses.init_pair(1, curses.COLOR_CYAN, -1)     # accent/teal
-    curses.init_pair(2, curses.COLOR_GREEN, -1)     # selected
-    curses.init_pair(3, curses.COLOR_WHITE, -1)     # bright
-    curses.init_pair(4, curses.COLOR_YELLOW, -1)    # highlight
+    curses.init_pair(1, curses.COLOR_CYAN, -1)
+    curses.init_pair(2, curses.COLOR_GREEN, -1)
+    curses.init_pair(3, curses.COLOR_WHITE, -1)
+    curses.init_pair(4, curses.COLOR_YELLOW, -1)
 
     # Flush stale input (the Enter from typing 'claude')
     curses.flushinp()
@@ -40,219 +39,91 @@ def pick(stdscr, items):
         pass
     stdscr.nodelay(False)
     import time
-    time.sleep(0.1)
+    time.sleep(0.15)
 
     total_skills = sum(c for _, c in items)
+    host = os.environ.get("SKILLNOTE_HOST", os.environ.get("CLAUDE_PLUGIN_OPTION_HOST", "localhost"))
+    web_url = f"http://{host}:3000"
+
+    brand = [
+        "███████╗██╗  ██╗██╗██╗     ██╗     ███╗   ██╗ ██████╗ ████████╗███████╗",
+        "██╔════╝██║ ██╔╝██║██║     ██║     ████╗  ██║██╔═══██╗╚══██╔══╝██╔════╝",
+        "███████╗█████╔╝ ██║██║     ██║     ██╔██╗ ██║██║   ██║   ██║   █████╗  ",
+        "╚════██║██╔═██╗ ██║██║     ██║     ██║╚██╗██║██║   ██║   ██║   ██╔══╝  ",
+        "███████║██║  ██╗██║███████╗███████╗██║ ╚████║╚██████╔╝   ██║   ███████╗",
+        "╚══════╝╚═╝  ╚═╝╚═╝╚══════╝╚══════╝╚═╝  ╚═══╝ ╚═════╝    ╚═╝   ╚══════╝",
+    ]
 
     while True:
-        stdscr.clear()
+        stdscr.erase()
         h, w = stdscr.getmaxyx()
-        row = 0
+        row = 1
 
-        # ── Get info ──
-        host = os.environ.get("SKILLNOTE_HOST", os.environ.get("CLAUDE_PLUGIN_OPTION_HOST", "localhost"))
-        web_url = f"http://{host}:3000"
-        n_sel = len(selected)
-        sel_skills = sum(items[i][1] for i in selected)
-        sel_names = ", ".join(items[i][0] for i in sorted(selected))
+        cw = min(w - 4, 76)   # content width
+        mx = (w - cw) // 2    # left margin
 
-        # ── Layout ──
-        bw = min(w - 4, 80)  # box width
-        bx = (w - bw) // 2   # center horizontally
-        iw = bw - 4          # inner width
-
-        def ctr(text, width=iw):
-            pad = max(0, width - len(text))
-            return " " * (pad // 2) + text + " " * (pad - pad // 2)
-
-        def box_line(left, fill, right, attr=curses.color_pair(1)):
-            try:
-                stdscr.addstr(row, bx, left + fill * iw + right, attr)
-            except curses.error:
-                pass
+        def ctr_x(text):
+            return mx + max(0, cw - len(text)) // 2
 
         try:
-            # ── Top border ──
-            box_line("╭─", "─", "─╮")
-            row += 1
-
             # ── Brand ──
-            stdscr.addstr(row, bx, "│ ", curses.color_pair(1))
-            stdscr.addstr(ctr(""), curses.color_pair(1))
-            stdscr.addstr("│", curses.color_pair(1))
-            row += 1
-
-            # ── Helpers ──
-            def box_empty():
-                nonlocal row
-                try:
-                    stdscr.addstr(row, bx, "│", curses.color_pair(1))
-                    stdscr.addstr(" " * (bw - 2))
-                    stdscr.addstr("│", curses.color_pair(1))
-                except curses.error: pass
-                row += 1
-
-            def box_center(text, attr=0):
-                nonlocal row
-                try:
-                    stdscr.addstr(row, bx, "│", curses.color_pair(1))
-                    ct = ctr(text, bw - 2)
-                    idx = ct.find(text) if text in ct else 0
-                    stdscr.addstr(ct[:idx])
-                    stdscr.addstr(text, attr)
-                    remaining = bw - 2 - idx - len(text)
-                    if remaining > 0:
-                        stdscr.addstr(" " * remaining)
-                    stdscr.addstr("│", curses.color_pair(1))
-                except curses.error: pass
-                row += 1
-
-            def box_left(text, attr=0):
-                nonlocal row
-                try:
-                    stdscr.addstr(row, bx, "│", curses.color_pair(1))
-                    stdscr.addstr(f"  {text}", attr)
-                    cx = stdscr.getyx()[1]
-                    rem = bx + bw - 1 - cx
-                    if rem > 0: stdscr.addstr(" " * rem)
-                    stdscr.addstr("│", curses.color_pair(1))
-                except curses.error: pass
-                row += 1
-
-            def box_kv(key, key_attr, val, val_attr):
-                nonlocal row
-                try:
-                    stdscr.addstr(row, bx, "│", curses.color_pair(1))
-                    stdscr.addstr(f"  {key}", key_attr)
-                    stdscr.addstr(f"  {val}", val_attr)
-                    cx = stdscr.getyx()[1]
-                    rem = bx + bw - 1 - cx
-                    if rem > 0: stdscr.addstr(" " * rem)
-                    stdscr.addstr("│", curses.color_pair(1))
-                except curses.error: pass
-                row += 1
-
-            # ── ASCII Art Brand ──
-            brand = [
-                "███████╗██╗  ██╗██╗██╗     ██╗     ███╗   ██╗ ██████╗ ████████╗███████╗",
-                "██╔════╝██║ ██╔╝██║██║     ██║     ████╗  ██║██╔═══██╗╚══██╔══╝██╔════╝",
-                "███████╗█████╔╝ ██║██║     ██║     ██╔██╗ ██║██║   ██║   ██║   █████╗  ",
-                "╚════██║██╔═██╗ ██║██║     ██║     ██║╚██╗██║██║   ██║   ██║   ██╔══╝  ",
-                "███████║██║  ██╗██║███████╗███████╗██║ ╚████║╚██████╔╝   ██║   ███████╗",
-                "╚══════╝╚═╝  ╚═╝╚═╝╚══════╝╚══════╝╚═╝  ╚═══╝ ╚═════╝    ╚═╝   ╚══════╝",
-            ]
-            box_empty()
-            for bl in brand:
-                if bw - 2 >= len(bl):
-                    box_center(bl, curses.A_BOLD | curses.color_pair(1))
-                else:
-                    # Terminal too narrow for the big art — use simple text
-                    box_center("S K I L L N O T E", curses.A_BOLD | curses.color_pair(1))
-                    break
-            box_empty()
-
-            # ── Info lines ──
-            box_center("Reusable skills for AI coding agents", curses.A_DIM)
-            box_center(f"{total_skills} skills  ·  {len(items)} collections  ·  {web_url}", curses.A_DIM)
-            box_empty()
-
-            # ── Separator ──
-            stdscr.addstr(row, bx, "├─", curses.color_pair(1))
-            stdscr.addstr("─" * iw, curses.color_pair(1))
-            stdscr.addstr("─┤", curses.color_pair(1))
-            row += 1
-
-            # ── Section header ──
-            stdscr.addstr(row, bx, "│ ", curses.color_pair(1))
-            sh = "  Pick collections for this project (Space to toggle)"
-            stdscr.addstr(sh[:iw], curses.A_DIM)
-            stdscr.addstr(" " * max(0, iw - len(sh)), curses.A_DIM)
-            stdscr.addstr("│", curses.color_pair(1))
-            row += 1
-
-            stdscr.addstr(row, bx, "│ ", curses.color_pair(1))
-            stdscr.addstr(" " * iw)
-            stdscr.addstr("│", curses.color_pair(1))
-            row += 1
-
-            # ── Collection items ──
-            for i, (name, count) in enumerate(items):
-                if row >= h - 4:
-                    break
-                mark = "◉" if i in selected else "○"
-                pointer = "❯" if i == cur else " "
-
-                stdscr.addstr(row, bx, "│ ", curses.color_pair(1))
-
-                item_str = f"  {pointer} {mark} {name}  ({count} skills)"
-                pad_r = max(0, iw - len(item_str))
-
-                stdscr.addstr(f"  {pointer} ", curses.A_BOLD if i == cur else curses.A_DIM)
-                if i in selected:
-                    stdscr.addstr(f"{mark} ", curses.color_pair(2) | curses.A_BOLD)
-                    stdscr.addstr(name, curses.color_pair(2) | curses.A_BOLD)
-                elif i == cur:
-                    stdscr.addstr(f"{mark} ", curses.color_pair(4))
-                    stdscr.addstr(name, curses.A_BOLD)
-                else:
-                    stdscr.addstr(f"{mark} ", curses.A_DIM)
-                    stdscr.addstr(name)
-                stdscr.addstr(f"  ({count} skills)", curses.A_DIM)
-                # Fill rest of line
-                cx = stdscr.getyx()[1]
-                remaining = bx + bw - 1 - cx
-                if remaining > 0:
-                    stdscr.addstr(" " * remaining)
-                stdscr.addstr("│", curses.color_pair(1))
-                row += 1
-
-            # ── Empty line ──
-            box_empty()
-
-            # ── Status ──
-            stdscr.addstr(row, bx, "│ ", curses.color_pair(1))
-            if n_sel > 0:
-                status = f"  {n_sel} selected: {sel_names} ({sel_skills} skills)"
+            brand_w = len(brand[0])
+            if cw >= brand_w:
+                for bl in brand:
+                    stdscr.addstr(row, ctr_x(bl), bl, curses.A_BOLD | curses.color_pair(1))
+                    row += 1
             else:
-                status = "  Select at least one collection"
-            stdscr.addstr(status[:iw], curses.color_pair(2) if n_sel > 0 else curses.A_DIM)
-            sx = stdscr.getyx()[1]
-            rem = bx + bw - 1 - sx
-            if rem > 0:
-                stdscr.addstr(" " * rem)
-            stdscr.addstr("│", curses.color_pair(1))
-            row += 1
-
-            # ── Actions (if terminal has space) ──
-            if row < h - 10:
-                stdscr.addstr(row, bx, "├─", curses.color_pair(1))
-                stdscr.addstr("─" * iw, curses.color_pair(1))
-                stdscr.addstr("─┤", curses.color_pair(1))
+                t = "S K I L L N O T E"
+                stdscr.addstr(row, ctr_x(t), t, curses.A_BOLD | curses.color_pair(1))
                 row += 1
-
-                box_empty()
-                box_kv("Browse all skills →", curses.A_BOLD,
-                       f"{web_url}/collections", curses.color_pair(1) | curses.A_BOLD)
-                box_empty()
-                box_kv("/skillnote:skill-push", curses.color_pair(4),
-                       "Create & push skills from Claude Code", curses.A_DIM)
-                box_kv("/skillnote:collection", curses.color_pair(4),
-                       "Change active collections anytime", curses.A_DIM)
-                box_empty()
-                box_center("github.com/luna-prompts/skillnote", curses.A_DIM)
-                box_empty()
-
-            # ── Bottom border ──
-            box_line("╰─", "─", "─╯")
             row += 1
 
-        except curses.error:
-            pass
+            # ── Tagline + info ──
+            tag = "Reusable skills for AI coding agents"
+            stdscr.addstr(row, ctr_x(tag), tag, curses.A_DIM)
+            row += 1
+            info = f"{total_skills} skills · {len(items)} collections · {web_url}"
+            stdscr.addstr(row, ctr_x(info), info, curses.A_DIM)
+            row += 2
 
-        # ── Hints (outside box) ──
-        try:
-            hints = " ↑/↓ navigate · Space toggle · Enter confirm · q skip"
-            stdscr.addstr(min(row, h - 1), bx + 2, hints[:bw-4], curses.A_DIM)
+            # ── Rule ──
+            stdscr.addstr(row, mx, "─" * cw, curses.color_pair(1) | curses.A_DIM)
+            row += 2
+
+            # ── Prompt ──
+            stdscr.addstr(row, mx + 2, "Pick a collection for this project:", curses.A_BOLD)
+            row += 2
+
+            # ── Items ──
+            for i, (name, count) in enumerate(items):
+                if row >= h - 6:
+                    break
+                if i == cur:
+                    stdscr.addstr(row, mx + 4, "❯ ", curses.color_pair(1) | curses.A_BOLD)
+                    stdscr.addstr(name, curses.A_BOLD)
+                    stdscr.addstr(f"  {count} skills", curses.A_DIM)
+                else:
+                    stdscr.addstr(row, mx + 4, "  ")
+                    stdscr.addstr(name, curses.A_DIM)
+                    stdscr.addstr(f"  {count} skills", curses.A_DIM)
+                row += 1
+            row += 2
+
+            # ── Rule ──
+            if row < h - 4:
+                stdscr.addstr(row, mx, "─" * cw, curses.color_pair(1) | curses.A_DIM)
+                row += 2
+
+            # ── Browse link ──
+            if row < h - 2:
+                stdscr.addstr(row, mx + 2, "Browse all → ", curses.A_DIM)
+                stdscr.addstr(f"{web_url}/collections", curses.color_pair(1))
+                row += 2
+
+            # ── Hints ──
+            hints = "↑/↓ move · Enter select · q skip"
+            stdscr.addstr(min(row, h - 1), mx + 2, hints, curses.A_DIM)
+
         except curses.error:
             pass
 
@@ -263,33 +134,30 @@ def pick(stdscr, items):
             cur -= 1
         elif key == curses.KEY_DOWN and cur < len(items) - 1:
             cur += 1
-        elif key == ord(" "):
-            selected ^= {cur}
         elif key in (ord("\n"), curses.KEY_ENTER, 10, 13):
-            if selected:
-                return [items[i][0] for i in sorted(selected)]
+            return [items[cur][0]]
         elif key in (ord("q"), 27):
             return None
 
 
 def pick_fallback(items):
-    print("\n SkillNote — Pick collections for this project")
-    print(" Enter numbers separated by commas, or 'q' to skip:\n")
+    print("\n  SkillNote — Pick a collection for this project\n")
     for i, (name, count) in enumerate(items, 1):
         print(f"  {i}. {name} ({count} skills)")
     print()
     try:
-        reply = input(" > ").strip()
+        reply = input("  > ").strip()
     except (EOFError, KeyboardInterrupt):
         return None
     if reply.lower() == "q" or not reply:
         return None
     try:
-        nums = [int(x.strip()) for x in reply.split(",")]
-        result = [items[n - 1][0] for n in nums if 1 <= n <= len(items)]
-        return result if result else None
+        n = int(reply)
+        if 1 <= n <= len(items):
+            return [items[n - 1][0]]
     except (ValueError, IndexError):
-        return None
+        pass
+    return None
 
 
 def main():
@@ -307,9 +175,6 @@ def main():
     else:
         chosen = pick_fallback(collections)
 
-    if chosen is None:
-        return
-
     if not chosen:
         return
 
@@ -318,7 +183,7 @@ def main():
         f.write("\n")
     names = ", ".join(chosen)
     total = sum(c for n, c in collections if n in chosen)
-    print(f"SkillNote: {names} ({total} skills)")
+    print(f"\n  SkillNote: {names} ({total} skills)\n")
 
     plugin_root = os.environ.get("CLAUDE_PLUGIN_ROOT", "")
     if plugin_root:
