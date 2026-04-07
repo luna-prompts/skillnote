@@ -66,6 +66,30 @@ def _get_recommended(items):
     return 0
 
 
+def _get_current_collections():
+    """Read current collections from .skillnote.json, or None if missing/invalid."""
+    if os.path.exists(".skillnote.json"):
+        try:
+            with open(".skillnote.json") as f:
+                return json.load(f).get("collections", [])
+        except Exception:
+            pass
+    return None
+
+
+def _clean_skills_dir():
+    """Remove all managed skills and manifests so sync starts fresh."""
+    import shutil
+    skills_dir = os.path.join(".claude", "skills")
+    if os.path.isdir(skills_dir):
+        for entry in os.listdir(skills_dir):
+            path = os.path.join(skills_dir, entry)
+            if os.path.isdir(path):
+                shutil.rmtree(path)
+            elif entry.endswith(".json"):
+                os.remove(path)
+
+
 def _run_sync():
     """Run sync using the best available path."""
     host = _get_host()
@@ -268,15 +292,14 @@ def main():
 
     if not chosen:
         # q pressed — keep current config if exists
-        if os.path.exists(".skillnote.json"):
-            try:
-                with open(".skillnote.json") as f:
-                    cfg = json.load(f)
-                names = ", ".join(cfg.get("collections", []))
-                print(f"  SkillNote: {names} (active)")
-            except Exception:
-                pass
+        current = _get_current_collections()
+        if current:
+            print(f"  SkillNote: {', '.join(current)} (active)")
         return
+
+    # Check if collection actually changed
+    current = _get_current_collections()
+    changed = current != chosen
 
     try:
         with open(".skillnote.json", "w") as f:
@@ -285,6 +308,10 @@ def main():
     except PermissionError:
         print("  SkillNote: cannot write .skillnote.json (permission denied)", file=sys.stderr)
         return
+
+    # Clean old skills when collection changes so sync starts fresh
+    if changed and current is not None:
+        _clean_skills_dir()
 
     names = ", ".join(chosen)
     total = sum(c for n, c in collections if n in chosen)
