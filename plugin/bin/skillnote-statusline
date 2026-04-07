@@ -1,13 +1,10 @@
 #!/usr/bin/env python3
-"""SkillNote status line for Claude Code — shows active collection + branding."""
+"""SkillNote status line for Claude Code."""
 import json
 import os
 import sys
 
 data = json.load(sys.stdin)
-
-model = data.get("model", {}).get("display_name", "")
-pct = int(data.get("context_window", {}).get("used_percentage", 0) or 0)
 
 # Resolve host
 host = os.environ.get("CLAUDE_PLUGIN_OPTION_HOST", "")
@@ -22,7 +19,7 @@ if not host:
 host = host or "localhost"
 web_url = f"http://{host}:3000"
 
-# Read active collection from project config
+# Read active collection
 project_dir = data.get("workspace", {}).get("current_dir", ".")
 config_path = os.path.join(project_dir, ".skillnote.json")
 collection = ""
@@ -39,31 +36,32 @@ if os.path.isfile(config_path):
 # Count synced skills
 skills_dir = os.path.join(project_dir, ".claude", "skills")
 skill_count = 0
+skill_names = []
 if os.path.isdir(skills_dir):
-    skill_count = len([d for d in os.listdir(skills_dir)
-                       if os.path.isdir(os.path.join(skills_dir, d))])
+    skill_names = sorted([d for d in os.listdir(skills_dir)
+                          if os.path.isdir(os.path.join(skills_dir, d))])
+    skill_count = len(skill_names)
 
 # Colors
 CYAN = "\033[36m"
 GREEN = "\033[32m"
-YELLOW = "\033[33m"
 DIM = "\033[2m"
+BOLD = "\033[1m"
 RESET = "\033[0m"
 
 # Build status
 parts = []
+
+# Branding
+parts.append(f"{CYAN}{BOLD}SkillNote{RESET}")
+
+# Collection + skills
 if collection:
-    parts.append(f"{GREEN}SN:{RESET} {collection} ({skill_count})")
+    parts.append(f"{collection} {DIM}({skill_count} skills){RESET}")
 else:
-    parts.append(f"{DIM}SN: no collection{RESET}")
+    parts.append(f"{DIM}no collection{RESET}")
 
-# Context bar
-bar_color = "\033[31m" if pct >= 90 else YELLOW if pct >= 70 else GREEN
-filled = pct * 10 // 100
-bar = "█" * filled + "░" * (10 - filled)
-parts.append(f"{bar_color}{bar}{RESET} {pct}%")
-
-# Web URL as clickable link (OSC 8)
+# Web URL as clickable link
 parts.append(f"\033]8;;{web_url}\a{DIM}{web_url}{RESET}\033]8;;\a")
 
-print(f"[{model}] " + " │ ".join(parts))
+print(" │ ".join(parts))
