@@ -34,6 +34,7 @@ services:
       - "${SKILLNOTE_API_PORT:-8082}:8080"
     volumes:
       - bundles:/app/data/bundles
+      - ./plugin:/plugin:ro
     depends_on:
       postgres:
         condition: service_healthy
