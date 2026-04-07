@@ -34,6 +34,10 @@
             "type": "http",
             "url": "http://${CLAUDE_PLUGIN_OPTION_HOST:-localhost}:8082/v1/hooks/skill-used",
             "async": true
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks-handlers/skill-used-context.sh"
           }
         ]
       }

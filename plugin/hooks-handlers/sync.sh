@@ -182,13 +182,28 @@ if deleted: parts.append(str(deleted) + ' removed')
 
 detail = ', '.join(parts) if parts else 'all current'
 print('SkillNote: ' + str(total) + ' skills (' + detail + ')')
+
+# Inject skill catalog so Claude knows what's available and when to trigger
+if skills:
+    print('')
+    print('SkillNote active skills (use these automatically when the task matches):')
+    for s in skills:
+        slug = s['slug']
+        if slug in plugin_provided:
+            continue
+        desc = s.get('description', '')
+        # Truncate to keep context lean
+        if len(desc) > 120:
+            desc = desc[:117] + '...'
+        print(f'  /skillnote-{slug}: {desc}')
 " 2>/dev/null) || exit 0
 
 # Output as additionalContext for Claude's session
 if [ -n "$RESULT" ]; then
     echo "$RESULT"
-    # Welcome message on first sync in a project (manifest was just created)
+    # Welcome hint on first sync
     if echo "$RESULT" | grep -q "new" && [ -n "$COLLECTIONS" ]; then
+        echo ""
         echo "Type /skillnote for dashboard, /skillnote:collection to change."
     fi
 fi
