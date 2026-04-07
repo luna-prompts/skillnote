@@ -1,5 +1,5 @@
 {
-  "description": "SkillNote: skill sync + usage analytics + background re-sync",
+  "description": "SkillNote: skill sync, analytics, and skill creation suggestions",
   "hooks": {
     "SessionStart": [
       {
@@ -14,13 +14,14 @@
         ]
       }
     ],
-    "UserPromptSubmit": [
+    "FileChanged": [
       {
+        "matcher": ".skillnote.json",
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks-handlers/auto-sync.sh",
-            "async": true
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks-handlers/sync.sh",
+            "timeout": 15
           }
         ]
       }
@@ -30,9 +31,20 @@
         "matcher": "Skill",
         "hooks": [
           {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks-handlers/track-usage.sh",
+            "type": "http",
+            "url": "http://${CLAUDE_PLUGIN_OPTION_HOST:-localhost}:8082/v1/hooks/skill-used",
             "async": true
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "Review the conversation summary in $ARGUMENTS. Did the user establish a reusable pattern, workflow, or coding convention that could benefit other projects? Only respond with {\"ok\": false, \"reason\": \"suggestion text\"} if there is a CLEAR, specific, reusable pattern. The suggestion should say: 'This looks like a reusable pattern. Run /skillnote:skill-push to save it.' Otherwise respond {\"ok\": true}. Be very selective — most conversations do NOT contain reusable patterns.",
+            "timeout": 10
           }
         ]
       }

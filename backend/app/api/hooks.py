@@ -1,6 +1,7 @@
 import uuid
+from typing import Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -11,9 +12,15 @@ router = APIRouter(prefix="/v1/hooks", tags=["hooks"])
 
 
 class SkillUsedPayload(BaseModel):
-    skill_slug: str = Field(..., max_length=128)
+    """Accepts both direct POST and Claude Code HTTP hook format."""
+    # Direct format
+    skill_slug: Optional[str] = Field(default=None, max_length=128)
     agent_name: str = Field(default="claude-code", max_length=128)
-    session_id: str = Field(default="", max_length=256)
+    session_id: Optional[str] = Field(default="", max_length=256)
+    # HTTP hook format (PostToolUse event)
+    tool_name: Optional[str] = None
+    tool_input: Optional[dict] = None
+    hook_event_name: Optional[str] = None
 
 
 class SessionEvalPayload(BaseModel):
@@ -24,9 +31,25 @@ class SessionEvalPayload(BaseModel):
 
 @router.post("/skill-used", status_code=202)
 def skill_used(payload: SkillUsedPayload, db: Session = Depends(get_db)):
-    """Receive PostToolUse[Skill] analytics from the Claude Code plugin hook."""
-    if not payload.skill_slug:
-        return {"status": "ignored", "reason": "missing skill_slug"}
+    """Receive PostToolUse[Skill] analytics — supports both direct and HTTP hook format."""
+    # Extract skill slug from either format
+    slug = payload.skill_slug
+    session = payload.session_id or ""
+
+    if not slug and payload.tool_input:
+        # HTTP hook format: tool_input has the skill name
+        slug = payload.tool_input.get("name", "") or payload.tool_input.get("skill", "")
+
+    if not slug and payload.hook_event_name:
+        # Fallback: try tool_name
+        slug = payload.tool_name or ""
+
+    if not slug:
+        return {"status": "ignored", "reason": "no skill identified"}
+
+    # Extract session_id from HTTP hook format
+    if not session and payload.hook_event_name:
+        session = str(payload.session_id or "")
 
     db.execute(
         text(
@@ -36,9 +59,9 @@ def skill_used(payload: SkillUsedPayload, db: Session = Depends(get_db)):
         ),
         {
             "id": str(uuid.uuid4()),
-            "slug": payload.skill_slug,
-            "agent": payload.agent_name,
-            "session": payload.session_id,
+            "slug": slug[:128],
+            "agent": payload.agent_name[:128],
+            "session": session[:256],
         },
     )
     db.commit()
