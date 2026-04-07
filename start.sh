@@ -3,6 +3,51 @@ set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
+# ── Detect container runtime ──────────────────────────────────────
+# Supports: docker compose, podman compose
+_detect_compose() {
+  if command -v docker &>/dev/null && docker compose version &>/dev/null; then
+    echo "docker compose"
+    return
+  fi
+  if command -v podman &>/dev/null && command -v podman-compose &>/dev/null; then
+    echo "podman-compose"
+    return
+  fi
+  if command -v podman &>/dev/null && podman compose version &>/dev/null; then
+    echo "podman compose"
+    return
+  fi
+  echo ""
+}
+
+COMPOSE=$(_detect_compose)
+if [ -z "$COMPOSE" ]; then
+  echo "Error: Neither 'docker compose' nor 'podman compose' found."
+  echo "Install Docker: https://docs.docker.com/get-docker/"
+  echo "Or Podman: https://podman.io/getting-started/installation"
+  exit 1
+fi
+
+# ── Podman: ensure machine is running (macOS/Windows) ─────────────
+if [[ "$COMPOSE" == *podman* ]]; then
+  if ! podman info &>/dev/null; then
+    echo "Podman machine is not running. Starting it..."
+    podman machine start 2>/dev/null || {
+      echo "Error: Could not start Podman machine."
+      echo "Try: podman machine init && podman machine start"
+      exit 1
+    }
+    # Wait for Podman to be ready
+    for i in $(seq 1 15); do
+      podman info &>/dev/null && break
+      sleep 1
+    done
+    podman info &>/dev/null || { echo "Error: Podman machine failed to start."; exit 1; }
+    echo "Podman machine started."
+  fi
+fi
+
 # ── Config ────────────────────────────────────────────────────────
 # Detect LAN IP: Linux hostname -I, macOS ipconfig getifaddr
 _detect_ip() {
@@ -47,18 +92,24 @@ progress() {
   printf "\r                                                    \r"
 }
 
+# Helper: run compose command
+compose() {
+  $COMPOSE -f "$PROJECT_DIR/docker-compose.yml" "$@"
+}
+
 # ── Banner ────────────────────────────────────────────────────────
 echo ""
 echo -e "${BOLD}  SkillNote${NC}  ${DIM}— self-hosted skill registry for AI agents${NC}"
 echo ""
-echo -e "  ${DIM}Web:${NC}  ${WEB_URL}"
-echo -e "  ${DIM}API:${NC}  ${API_URL}"
-echo -e "  ${DIM}MCP:${NC}  ${MCP_URL}"
+echo -e "  ${DIM}Web:${NC}      ${WEB_URL}"
+echo -e "  ${DIM}API:${NC}      ${API_URL}"
+echo -e "  ${DIM}MCP:${NC}      ${MCP_URL}"
+echo -e "  ${DIM}Runtime:${NC}  ${COMPOSE}"
 echo ""
 
 # ── 1. Stop any existing stack ────────────────────────────────────
 step "Stopping any existing containers"
-docker compose -f "$PROJECT_DIR/docker-compose.yml" down 2>/dev/null || true
+compose down 2>/dev/null || true
 sleep 1
 # Free up ports if something else is using them
 for p in $WEB_PORT $API_PORT $MCP_PORT; do
@@ -69,18 +120,18 @@ sleep 1
 ok "Clean slate"
 
 # ── 2. Build ──────────────────────────────────────────────────────
-step "Building Docker images"
+step "Building images"
 info "First build takes 2-3 minutes. Subsequent builds are cached."
 SKILLNOTE_HOST="$SKILLNOTE_HOST" \
 SKILLNOTE_API_PORT="$API_PORT" \
 SKILLNOTE_MCP_PORT="$MCP_PORT" \
 SKILLNOTE_WEB_PORT="$WEB_PORT" \
-  docker compose -f "$PROJECT_DIR/docker-compose.yml" build --quiet > /dev/null 2>&1 &
+  compose build --quiet > /dev/null 2>&1 &
 BUILD_PID=$!
 progress $BUILD_PID "Building api, mcp, web..."
 if ! wait $BUILD_PID; then
   echo ""
-  err "Build failed. Run: docker compose build"
+  err "Build failed. Run: $COMPOSE build"
 fi
 ok "Images built"
 
@@ -90,7 +141,7 @@ SKILLNOTE_HOST="$SKILLNOTE_HOST" \
 SKILLNOTE_API_PORT="$API_PORT" \
 SKILLNOTE_MCP_PORT="$MCP_PORT" \
 SKILLNOTE_WEB_PORT="$WEB_PORT" \
-  docker compose -f "$PROJECT_DIR/docker-compose.yml" up -d 2>/dev/null
+  compose up -d 2>/dev/null
 ok "Containers started"
 
 # ── 4. Wait for API ───────────────────────────────────────────────
@@ -101,7 +152,7 @@ for i in $(seq 1 60); do
     ok "API ready at ${API_URL}"
     break
   fi
-  [ "$i" -eq 60 ] && err "API failed to start. Run: docker compose logs api"
+  [ "$i" -eq 60 ] && err "API failed to start. Run: $COMPOSE logs api"
   sleep 2
 done
 
@@ -116,7 +167,7 @@ for i in $(seq 1 30); do
     ok "MCP ready at ${MCP_URL}"
     break
   fi
-  [ "$i" -eq 30 ] && { warn "MCP slow to start — check: docker compose logs mcp"; break; }
+  [ "$i" -eq 30 ] && { warn "MCP slow to start — check: $COMPOSE logs mcp"; break; }
   sleep 1
 done
 
@@ -127,7 +178,7 @@ for i in $(seq 1 30); do
     ok "Web UI ready at ${WEB_URL}"
     break
   fi
-  [ "$i" -eq 30 ] && { warn "Web UI slow to start — check: docker compose logs web"; break; }
+  [ "$i" -eq 30 ] && { warn "Web UI slow to start — check: $COMPOSE logs web"; break; }
   sleep 1
 done
 
@@ -158,7 +209,7 @@ echo -e "${CYAN}${BOLD}━━━━━━━━━━━━━━━━━━━
 echo -e "${BOLD}  Commands${NC}"
 echo -e "${CYAN}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
-echo -e "  docker compose logs -f          ${DIM}# stream all logs${NC}"
-echo -e "  docker compose down             ${DIM}# stop (keeps data)${NC}"
-echo -e "  docker compose down -v          ${DIM}# stop + wipe database${NC}"
+echo -e "  $COMPOSE logs -f          ${DIM}# stream all logs${NC}"
+echo -e "  $COMPOSE down             ${DIM}# stop (keeps data)${NC}"
+echo -e "  $COMPOSE down -v          ${DIM}# stop + wipe database${NC}"
 echo ""
