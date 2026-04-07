@@ -11,7 +11,9 @@
   "keywords": ["skills", "registry", "mcp", "sync", "analytics"],
   "userConfig": {
     "host": {
-      "description": "SkillNote server address (e.g. <your-server-ip> or localhost)",
+      "title": "SkillNote Server",
+      "description": "Server address (e.g. <your-server-ip> or localhost)",
+      "type": "string",
       "sensitive": false
     }
   }

@@ -9,7 +9,6 @@ from fastapi.responses import PlainTextResponse, Response
 
 router = APIRouter(tags=["setup"])
 
-# Plugin source directory: Docker mount at /plugin, or relative in dev
 _PLUGIN_DIR = Path("/plugin") if Path("/plugin/.claude-plugin").is_dir() else Path(__file__).resolve().parent.parent.parent.parent / "plugin"
 
 
@@ -25,7 +24,6 @@ def _derive_urls(request: Request):
 
 @router.get("/v1/config")
 def get_config(request: Request):
-    """Return service URLs for plugin/hook discovery."""
     urls = _derive_urls(request)
     return {"api_url": urls["api"], "mcp_url": urls["mcp"], "web_url": urls["web"]}
 
@@ -43,10 +41,9 @@ def get_plugin_zip(request: Request):
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         if _PLUGIN_DIR.is_dir():
             for fpath in _PLUGIN_DIR.rglob("*"):
-                if fpath.is_file() and "__pycache__" not in str(fpath) and "tests/" not in str(fpath):
+                if fpath.is_file() and "__pycache__" not in str(fpath) and "/tests/" not in str(fpath):
                     rel = fpath.relative_to(_PLUGIN_DIR)
                     content = fpath.read_text(errors="replace")
-                    # Substitute ALL host placeholders
                     content = (content
                                .replace("${CLAUDE_PLUGIN_OPTION_HOST:-localhost}", f"${{CLAUDE_PLUGIN_OPTION_HOST:-{host}}}")
                                .replace("'CLAUDE_PLUGIN_OPTION_HOST', 'localhost'", f"'CLAUDE_PLUGIN_OPTION_HOST', '{host}'")
@@ -55,10 +52,8 @@ def get_plugin_zip(request: Request):
                                .replace("http://localhost:8083/mcp", mcp_url)
                                .replace("http://localhost:3000", web_url))
                     zf.writestr(str(rel), content)
-
     buf.seek(0)
-    return Response(content=buf.read(), media_type="application/zip",
-                    headers={"Content-Disposition": "attachment; filename=skillnote-plugin.zip"})
+    return Response(content=buf.read(), media_type="application/zip")
 
 
 _SETUP_SCRIPT = r'''#!/bin/bash
@@ -68,7 +63,8 @@ API_URL="__API_URL__"
 MCP_URL="__MCP_URL__"
 WEB_URL="__WEB_URL__"
 CLAUDE_HOME="$HOME/.claude"
-PLUGIN_DIR="$CLAUDE_HOME/plugins/cache/skillnote-local/skillnote/1.0.0"
+MKT_DIR="$CLAUDE_HOME/plugins/marketplaces/skillnote-local"
+PLUGIN_SRC="$MKT_DIR/plugins/skillnote"
 
 echo "SkillNote: setting up..."
 
@@ -77,77 +73,25 @@ command -v python3 &>/dev/null || { echo "Error: python3 required."; exit 1; }
 command -v curl &>/dev/null || { echo "Error: curl required."; exit 1; }
 command -v unzip &>/dev/null || { echo "Error: unzip required."; exit 1; }
 
-# ── download plugin ──────────────────────────────────────────────────────────
-rm -rf "$PLUGIN_DIR"
-mkdir -p "$PLUGIN_DIR"
+# ── download plugin into marketplace dir ─────────────────────────────────────
+rm -rf "$MKT_DIR"
+mkdir -p "$MKT_DIR/.claude-plugin" "$PLUGIN_SRC"
+
+# Download and extract plugin files
 curl -sf --connect-timeout 10 --max-time 30 "$API_URL/v1/plugin.zip" -o /tmp/skillnote-plugin.zip || {
     echo "Error: Could not download plugin from $API_URL/v1/plugin.zip"
     exit 1
 }
-unzip -qo /tmp/skillnote-plugin.zip -d "$PLUGIN_DIR"
+unzip -qo /tmp/skillnote-plugin.zip -d "$PLUGIN_SRC"
 rm -f /tmp/skillnote-plugin.zip
-chmod +x "$PLUGIN_DIR/hooks-handlers/"*.sh "$PLUGIN_DIR/bin/"* 2>/dev/null || true
+chmod +x "$PLUGIN_SRC/hooks-handlers/"*.sh "$PLUGIN_SRC/bin/"* 2>/dev/null || true
 
-# ── register marketplace ──────────────────────────────────────────────────────
-MARKETPLACE_DIR="$CLAUDE_HOME/plugins/marketplaces/skillnote-local"
-mkdir -p "$MARKETPLACE_DIR/.claude-plugin"
-cat > "$MARKETPLACE_DIR/.claude-plugin/marketplace.json" << 'MKTEOF'
-{"name":"skillnote-local","version":"1.0.0","description":"SkillNote skill registry plugin","owner":{"name":"SkillNote"},"plugins":[{"name":"skillnote","description":"SkillNote skill registry — auto-sync, analytics, and skill creation","source":"./plugins/skillnote","version":"1.0.0"}]}
+# ── write marketplace manifest ───────────────────────────────────────────────
+cat > "$MKT_DIR/.claude-plugin/marketplace.json" << MKTEOF
+{"name":"skillnote-local","version":"1.0.0","description":"SkillNote skill registry","owner":{"name":"SkillNote"},"plugins":[{"name":"skillnote","description":"SkillNote — auto-sync, analytics, and skill creation","source":"./plugins/skillnote","version":"1.0.0"}]}
 MKTEOF
 
-KNOWN_MKT="$CLAUDE_HOME/plugins/known_marketplaces.json"
-python3 -c "
-import json, os
-from datetime import datetime, timezone
-
-path = '$KNOWN_MKT'
-data = {}
-if os.path.exists(path):
-    try:
-        with open(path) as f: data = json.load(f)
-    except: data = {}
-
-now = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.000Z')
-data['skillnote-local'] = {
-    'source': {'source': 'directory', 'path': os.path.expanduser('~/.claude/plugins/marketplaces/skillnote-local')},
-    'installLocation': os.path.expanduser('~/.claude/plugins/marketplaces/skillnote-local'),
-    'lastUpdated': now,
-}
-with open(path, 'w') as f:
-    json.dump(data, f, indent=2)
-" 2>/dev/null
-
-# ── register plugin ──────────────────────────────────────────────────────────
-INSTALLED="$CLAUDE_HOME/plugins/installed_plugins.json"
-mkdir -p "$(dirname "$INSTALLED")"
-python3 -c "
-import json, os
-from datetime import datetime, timezone
-
-path = '$INSTALLED'
-data = {}
-if os.path.exists(path):
-    try:
-        with open(path) as f: data = json.load(f)
-    except: data = {}
-
-if 'version' not in data: data['version'] = 2
-if 'plugins' not in data: data['plugins'] = {}
-
-now = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.000Z')
-data['plugins']['skillnote@skillnote-local'] = [{
-    'scope': 'user',
-    'installPath': '$PLUGIN_DIR',
-    'version': '1.0.0',
-    'installedAt': now,
-    'lastUpdated': now,
-}]
-
-with open(path, 'w') as f:
-    json.dump(data, f, indent=2)
-"
-
-# ── enable plugin ─────────────────────────────────────────────────────────────
+# ── register marketplace in settings ─────────────────────────────────────────
 USER_SETTINGS="$CLAUDE_HOME/settings.json"
 python3 -c "
 import json, os
@@ -157,18 +101,48 @@ if os.path.exists(path):
     try:
         with open(path) as f: data = json.load(f)
     except: data = {}
-data.setdefault('enabledPlugins', {})['skillnote@skillnote-local'] = True
+# Add marketplace
+data.setdefault('extraKnownMarketplaces', {})
+data['extraKnownMarketplaces']['skillnote-local'] = {
+    'source': {'source': 'directory', 'path': os.path.expanduser('$MKT_DIR')}
+}
 with open(path, 'w') as f:
     json.dump(data, f, indent=2)
-"
+" 2>/dev/null
 
-# ── add MCP server ────────────────────────────────────────────────────────────
+# ── install plugin via claude CLI ────────────────────────────────────────────
 if command -v claude &>/dev/null; then
+    # Register marketplace, then install plugin
+    claude plugin marketplace add "$MKT_DIR" 2>/dev/null || true
+    claude plugin uninstall skillnote@skillnote-local --scope user 2>/dev/null || true
+    claude plugin install skillnote@skillnote-local --scope user 2>/dev/null || {
+        echo "Warning: plugin install failed. Try manually:"
+        echo "  claude plugin install skillnote@skillnote-local --scope user"
+    }
+    # Add MCP server
     claude mcp add --transport http --scope user skillnote "$MCP_URL" 2>/dev/null || true
+else
+    echo "Warning: claude CLI not found. After installing claude, run:"
+    echo "  claude plugin marketplace add $MKT_DIR"
+    echo "  claude plugin install skillnote@skillnote-local --scope user"
 fi
 
 # ── first sync ────────────────────────────────────────────────────────────────
-"$PLUGIN_DIR/hooks-handlers/sync.sh" 2>/dev/null || true
+# Find the installed plugin path (claude plugin install copies it to cache)
+INSTALLED_PATH=$(python3 -c "
+import json, os
+try:
+    d = json.load(open(os.path.expanduser('~/.claude/plugins/installed_plugins.json')))
+    entry = d.get('plugins', {}).get('skillnote@skillnote-local', [{}])[0]
+    print(entry.get('installPath', ''))
+except: print('')
+" 2>/dev/null)
+
+if [ -n "$INSTALLED_PATH" ] && [ -f "$INSTALLED_PATH/hooks-handlers/sync.sh" ]; then
+    export CLAUDE_PLUGIN_ROOT="$INSTALLED_PATH"
+    export CLAUDE_PLUGIN_OPTION_HOST="$(echo "$API_URL" | sed -E 's|https?://||;s|:.*||')"
+    "$INSTALLED_PATH/hooks-handlers/sync.sh" 2>/dev/null || true
+fi
 
 SKILL_COUNT=$(curl -sf --connect-timeout 5 --max-time 10 "$API_URL/v1/skills" 2>/dev/null \
   | python3 -c "import json,sys;print(len(json.load(sys.stdin)))" 2>/dev/null || echo "?")
@@ -199,7 +173,6 @@ echo ""
 
 @router.get("/setup")
 def get_setup_script(request: Request):
-    """Serve the curl|bash install script."""
     urls = _derive_urls(request)
     script = (_SETUP_SCRIPT
               .replace("__API_URL__", urls["api"])
