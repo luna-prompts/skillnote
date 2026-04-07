@@ -7,11 +7,16 @@ writes .skillnote.json to the current directory.
 
 No external dependencies — uses Python 3 stdlib curses.
 """
-import curses
 import json
 import os
 import sys
 import urllib.request
+
+try:
+    import curses
+    HAS_CURSES = True
+except ImportError:
+    HAS_CURSES = False  # Windows — fallback to numbered menu
 
 
 def fetch_collections():
@@ -86,6 +91,29 @@ def pick(stdscr, items):
             return None  # cancelled
 
 
+def pick_fallback(items):
+    """Simple numbered menu for systems without curses (Windows)."""
+    print("\n SkillNote — Pick collections for this project")
+    print(" Enter numbers separated by commas, or 'q' to skip:\n")
+    for i, (name, count) in enumerate(items, 1):
+        print(f"  {i}. {name} ({count} skills)")
+    print(f"  {len(items) + 1}. All collections (no filter)")
+    print()
+    try:
+        reply = input(" > ").strip()
+    except (EOFError, KeyboardInterrupt):
+        return None
+    if reply.lower() == "q" or not reply:
+        return None
+    try:
+        nums = [int(x.strip()) for x in reply.split(",")]
+        if len(items) + 1 in nums:
+            return []  # all collections
+        return [items[n - 1][0] for n in nums if 1 <= n <= len(items)]
+    except (ValueError, IndexError):
+        return None
+
+
 def main():
     # Skip if .skillnote.json exists
     if os.path.exists(".skillnote.json"):
@@ -99,7 +127,10 @@ def main():
     if len(collections) <= 1:
         return  # nothing to pick
 
-    chosen = curses.wrapper(pick, collections)
+    if HAS_CURSES:
+        chosen = curses.wrapper(pick, collections)
+    else:
+        chosen = pick_fallback(collections)
 
     if chosen is None:
         # User cancelled — skip, launch claude anyway
