@@ -18,10 +18,10 @@ router = APIRouter(prefix="/v1/skills", tags=["skills"])
 
 
 def _slugify(name: str) -> str:
-    """Convert a skill name to a URL-safe slug (mirrors frontend slugFromName)."""
+    """Convert a skill name to a URL-safe slug (consistent with bundle_validator)."""
     s = name.lower()
-    s = re.sub(r'[^a-z0-9\s-]', '', s)
-    s = re.sub(r'\s+', '-', s)
+    s = re.sub(r'[^a-z0-9\s_-]', '', s)  # keep underscores
+    s = re.sub(r'[\s_]+', '-', s)          # underscores → hyphens
     s = re.sub(r'-+', '-', s)
     s = s.strip('-')
     return s

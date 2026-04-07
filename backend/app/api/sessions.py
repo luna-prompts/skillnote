@@ -1,12 +1,18 @@
 import secrets
 from datetime import datetime, timedelta, timezone
+from typing import List
 
 from fastapi import APIRouter, Depends, Request
+from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.core.errors import api_error
 from app.db.session import get_db
+
+
+class ResolveSessionPayload(BaseModel):
+    collections: List[str] = Field(..., min_length=1, max_length=50)
 
 router = APIRouter(prefix="/v1/sessions", tags=["sessions"])
 
@@ -62,11 +68,9 @@ def get_pick_session(token: str, db: Session = Depends(get_db)):
 
 
 @router.post("/{token}/resolve")
-def resolve_pick_session(token: str, payload: dict, db: Session = Depends(get_db)):
+def resolve_pick_session(token: str, payload: ResolveSessionPayload, db: Session = Depends(get_db)):
     """Resolve a pick session with the user's collection selection."""
-    collections = payload.get("collections")
-    if not collections or not isinstance(collections, list):
-        raise api_error(422, "INVALID_SELECTION", "collections must be a non-empty list")
+    collections = payload.collections
 
     result = db.execute(
         text(

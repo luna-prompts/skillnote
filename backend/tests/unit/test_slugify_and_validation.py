@@ -1,16 +1,21 @@
-"""Unit tests for _slugify() helper and name validation in the skills API."""
+"""Unit tests for _slugify() helper and validation in the skills API."""
 import re
 
 import pytest
 
-from app.validators.skill_validator import validate_skill_name
+from app.validators.skill_validator import (
+    validate_skill_name,
+    validate_skill_description,
+    validate_collections,
+)
 
 # ── Replicate _slugify from skills.py so we can unit-test it without importing the router ──
+# IMPORTANT: keep in sync with app/api/skills.py _slugify
 
 def _slugify(name: str) -> str:
     s = name.lower()
-    s = re.sub(r'[^a-z0-9\s-]', '', s)
-    s = re.sub(r'\s+', '-', s)
+    s = re.sub(r'[^a-z0-9\s_-]', '', s)  # keep underscores
+    s = re.sub(r'[\s_]+', '-', s)          # underscores → hyphens
     s = re.sub(r'-+', '-', s)
     s = s.strip('-')
     return s
@@ -30,6 +35,9 @@ class TestSlugify:
 
     def test_special_chars_stripped(self):
         assert _slugify("hello@world!") == "helloworld"
+
+    def test_underscores_to_hyphens(self):
+        assert _slugify("my_skill_name") == "my-skill-name"
 
     def test_consecutive_spaces(self):
         assert _slugify("a   b   c") == "a-b-c"
@@ -119,4 +127,55 @@ class TestValidateSkillName:
 
     def test_underscores_rejected(self):
         errors = validate_skill_name("my_skill")
+        assert any("lowercase" in e.lower() or "hyphens" in e.lower() for e in errors)
+
+    def test_special_chars_specific_error(self):
+        errors = validate_skill_name("my@skill!")
+        assert any("lowercase" in e.lower() or "hyphens" in e.lower() for e in errors)
+
+
+# ── validate_skill_description tests ─────────────────────────────────
+
+class TestValidateSkillDescription:
+    def test_valid_description(self):
+        assert validate_skill_description("A useful skill for code review.") == []
+
+    def test_empty_description(self):
+        errors = validate_skill_description("")
+        assert any("required" in e.lower() for e in errors)
+
+    def test_whitespace_only(self):
+        errors = validate_skill_description("   ")
+        assert any("required" in e.lower() for e in errors)
+
+    def test_too_long_description(self):
+        errors = validate_skill_description("a" * 1025)
+        assert any("1024" in e or "fewer" in e.lower() for e in errors)
+
+    def test_max_length_boundary(self):
+        assert validate_skill_description("a" * 1024) == []
+
+    def test_xml_tags_rejected(self):
+        errors = validate_skill_description("<script>alert(1)</script>")
+        assert any("xml" in e.lower() or "tag" in e.lower() for e in errors)
+
+    def test_html_tags_rejected(self):
+        errors = validate_skill_description("<b>bold</b>")
+        assert any("xml" in e.lower() or "tag" in e.lower() for e in errors)
+
+    def test_markdown_allowed(self):
+        assert validate_skill_description("Use `code` and **bold** in markdown.") == []
+
+
+# ── validate_collections tests ───────────────────────────────────────
+
+class TestValidateCollections:
+    def test_valid_collections(self):
+        assert validate_collections(["Conventions", "DevOps"]) == []
+
+    def test_empty_list(self):
+        errors = validate_collections([])
         assert len(errors) > 0
+
+    def test_single_collection(self):
+        assert validate_collections(["Official"]) == []

@@ -18,7 +18,7 @@ app = FastAPI(title="SkillNote Backend", version="0.1.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.cors_origins.split(",") if settings.cors_origins != "*" else ["*"],
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
