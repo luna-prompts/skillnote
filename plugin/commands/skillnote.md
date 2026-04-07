@@ -38,7 +38,7 @@ echo "  Commands:"
 echo "    /skillnote:collection    Change active collection"
 echo "    /skillnote:skill-push    Create & push a new skill"
 echo ""
-echo "  GitHub:  github.com/luna-prompts/skillnote"
+echo "  GitHub:  github.com/luna-prompts/skillnote  ★ Star us!"
 echo ""
 ```
 
