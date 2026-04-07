@@ -122,17 +122,22 @@ ok "Clean slate"
 # ── 2. Build ──────────────────────────────────────────────────────
 step "Building images"
 info "First build takes 2-3 minutes. Subsequent builds are cached."
+BUILD_LOG=$(mktemp)
 SKILLNOTE_HOST="$SKILLNOTE_HOST" \
 SKILLNOTE_API_PORT="$API_PORT" \
 SKILLNOTE_MCP_PORT="$MCP_PORT" \
 SKILLNOTE_WEB_PORT="$WEB_PORT" \
-  compose build --quiet > /dev/null 2>&1 &
+  compose build > "$BUILD_LOG" 2>&1 &
 BUILD_PID=$!
 progress $BUILD_PID "Building api, mcp, web..."
 if ! wait $BUILD_PID; then
   echo ""
-  err "Build failed. Run: $COMPOSE build"
+  echo -e "${RED}Build failed. Last 10 lines:${NC}"
+  tail -10 "$BUILD_LOG"
+  rm -f "$BUILD_LOG"
+  err "Build failed. Run: $COMPOSE -f docker-compose.yml build"
 fi
+rm -f "$BUILD_LOG"
 ok "Images built"
 
 # ── 3. Start ──────────────────────────────────────────────────────
@@ -141,7 +146,7 @@ SKILLNOTE_HOST="$SKILLNOTE_HOST" \
 SKILLNOTE_API_PORT="$API_PORT" \
 SKILLNOTE_MCP_PORT="$MCP_PORT" \
 SKILLNOTE_WEB_PORT="$WEB_PORT" \
-  compose up -d 2>/dev/null
+  compose up -d 2>&1 | tail -5
 ok "Containers started"
 
 # ── 4. Wait for API ───────────────────────────────────────────────
