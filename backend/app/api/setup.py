@@ -213,7 +213,20 @@ content = content.replace('\"SKILLNOTE_HOST\", \"localhost\"', '\"SKILLNOTE_HOST
 open(path, 'w').write(content)
 " 2>/dev/null
 PICKER_PATH="$SKILLNOTE_HOME/bin/skillnote-pick"
-if [ -n "$SHELL_RC" ] && ! grep -q "skillnote-pick" "$SHELL_RC" 2>/dev/null; then
+# Remove any old wrapper first (handles updates cleanly)
+if [ -n "$SHELL_RC" ]; then
+    # macOS sed needs '' after -i, Linux doesn't — use Python for portability
+    python3 -c "
+import re
+path = '$SHELL_RC'
+content = open(path).read()
+# Remove old SkillNote wrapper block
+content = re.sub(r'\n# SkillNote:.*?command claude.*?\n\}', '', content, flags=re.DOTALL)
+open(path, 'w').write(content)
+" 2>/dev/null
+fi
+
+if [ -n "$SHELL_RC" ]; then
     cat >> "$SHELL_RC" << WRAPEOF
 
 # SkillNote: collection picker before launching claude
