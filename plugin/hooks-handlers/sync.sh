@@ -54,15 +54,14 @@ except: pass
 
     TOTAL_SKILLS=$(curl -sf --connect-timeout 3 --max-time 5 "${API_URL}/v1/skills" 2>/dev/null | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
 
-    # Always prompt for collection selection when >15 skills and no .skillnote.json
+    # Prompt for collection selection when no .skillnote.json
+    NUM_COLS=$(echo "$COLS_JSON" | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
     if [ -n "$FOLDER_MATCH" ]; then
-        echo "SkillNote: Collection '${FOLDER_MATCH}' matches this folder."
-        echo "  ACTION: Use the skillnote:collection skill to ask the user which collection to use."
-        echo "  Recommend '${FOLDER_MATCH}' as the first option. Available collections: ${COLS_JSON}"
-    elif [ "$TOTAL_SKILLS" -gt 15 ] 2>/dev/null; then
-        echo "SkillNote: ${TOTAL_SKILLS} skills available (>15 may degrade activation)."
-        echo "  ACTION: Use the skillnote:collection skill to ask the user which collection to use."
-        echo "  Available collections: ${COLS_JSON}"
+        echo "SkillNote: Collection '${FOLDER_MATCH}' matches this folder (${TOTAL_SKILLS} skills available)."
+        echo "  ACTION: Ask the user if they want to scope to '${FOLDER_MATCH}' using AskUserQuestion. Available collections: ${COLS_JSON}"
+    elif [ "$NUM_COLS" -gt 1 ] 2>/dev/null; then
+        echo "SkillNote: ${TOTAL_SKILLS} skills across ${NUM_COLS} collections. Use /skillnote:collection to scope this project."
+        echo "  ACTION: Ask the user which collection they want using AskUserQuestion. Available collections: ${COLS_JSON}"
     fi
 fi
 
@@ -97,6 +96,9 @@ manifest_path = '$MANIFEST'
 skills = json.load(sys.stdin)
 api_slugs = set()
 
+# Skip skills that the plugin already provides as commands (prevent duplicates in / autocomplete)
+plugin_provided = {'skill-push', 'collection'}
+
 # Load existing manifest
 old_managed = set()
 if os.path.exists(manifest_path):
@@ -108,6 +110,8 @@ created, updated, deleted = 0, 0, 0
 for skill in skills:
     slug = skill['slug']
     api_slugs.add(slug)
+    if slug in plugin_provided:
+        continue  # Plugin handles these as commands — don't create duplicate local skills
     skill_dir = os.path.join(skills_dir, slug)
     os.makedirs(skill_dir, exist_ok=True)
 
