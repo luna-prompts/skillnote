@@ -199,7 +199,20 @@ SHELL_RC=""
 if [ -f "$HOME/.zshrc" ]; then SHELL_RC="$HOME/.zshrc"
 elif [ -f "$HOME/.bashrc" ]; then SHELL_RC="$HOME/.bashrc"; fi
 
-PICKER_PATH="$PLUGIN_SRC/bin/skillnote-pick"
+# ── install skillnote-pick to stable location ─────────────────────────────────
+SKILLNOTE_HOME="$HOME/.skillnote"
+mkdir -p "$SKILLNOTE_HOME/bin"
+cp "$PLUGIN_SRC/bin/skillnote-pick" "$SKILLNOTE_HOME/bin/skillnote-pick"
+chmod +x "$SKILLNOTE_HOME/bin/skillnote-pick"
+# Bake the host into the picker
+python3 -c "
+path = '$SKILLNOTE_HOME/bin/skillnote-pick'
+content = open(path).read()
+content = content.replace(\"'CLAUDE_PLUGIN_OPTION_HOST', 'localhost'\", \"'CLAUDE_PLUGIN_OPTION_HOST', '$(echo $API_URL | sed -E 's|https?://||;s|:.*||')'\")
+content = content.replace('\"SKILLNOTE_HOST\", \"localhost\"', '\"SKILLNOTE_HOST\", \"$(echo $API_URL | sed -E 's|https?://||;s|:.*||')\"')
+open(path, 'w').write(content)
+" 2>/dev/null
+PICKER_PATH="$SKILLNOTE_HOME/bin/skillnote-pick"
 if [ -n "$SHELL_RC" ] && ! grep -q "skillnote-pick" "$SHELL_RC" 2>/dev/null; then
     cat >> "$SHELL_RC" << WRAPEOF
 
