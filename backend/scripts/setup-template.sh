@@ -299,6 +299,39 @@ else SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"; exec "$SCRIPT_DIR/hooks-han
 BINEOF
 chmod +x "$PLUGIN_DIR/bin/skillnote-sync"
 
+# ── register plugin ───────────────────────────────────────────────────────────
+INSTALLED="$HOME/.claude/plugins/installed_plugins.json"
+mkdir -p "$(dirname "$INSTALLED")"
+python3 -c "
+import json, os
+path = '$INSTALLED'
+data = {}
+if os.path.exists(path):
+    try:
+        with open(path) as f: data = json.load(f)
+    except: data = {}
+key = 'skillnote@skillnote-local'
+data[key] = [{'scope': 'user', 'installPath': '$PLUGIN_DIR'}]
+with open(path, 'w') as f:
+    json.dump(data, f, indent=2)
+" 2>/dev/null
+
+# ── enable plugin in user settings ────────────────────────────────────────────
+USER_SETTINGS="$HOME/.claude/settings.json"
+python3 -c "
+import json, os
+path = '$USER_SETTINGS'
+data = {}
+if os.path.exists(path):
+    try:
+        with open(path) as f: data = json.load(f)
+    except: data = {}
+ep = data.setdefault('enabledPlugins', {})
+ep['skillnote@skillnote-local'] = True
+with open(path, 'w') as f:
+    json.dump(data, f, indent=2)
+" 2>/dev/null
+
 # ── add MCP server ───────────────────────────────────────────────────────────
 if command -v claude &>/dev/null; then
     claude mcp add --transport http --scope user skillnote "$MCP_URL" 2>/dev/null || true
