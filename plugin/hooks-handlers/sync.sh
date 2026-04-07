@@ -72,9 +72,10 @@ else
 fi
 MANIFEST="${MANIFEST_DIR}/.skillnote-manifest.json"
 
-# Build fetch URL with optional collection filter
+# Build fetch URL with optional collection filter (URL-encode for safety)
 if [ -n "$COLLECTIONS" ]; then
-    FETCH_URL="${API_URL}/v1/skills?collections=${COLLECTIONS}"
+    ENCODED=$(python3 -c "import urllib.parse; print(urllib.parse.quote('${COLLECTIONS}'))" 2>/dev/null || echo "$COLLECTIONS")
+    FETCH_URL="${API_URL}/v1/skills?collections=${ENCODED}"
 else
     FETCH_URL="${API_URL}/v1/skills"
 fi

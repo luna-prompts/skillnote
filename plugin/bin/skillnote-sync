@@ -5,21 +5,27 @@
 
 if [ "$1" = "--force" ]; then
     # Force re-sync by removing manifest AND all managed skill dirs
-    SKILLS_DIR="$HOME/.claude/skills"
+    # Check project-scoped first, then global
+    PROJECT_DIR="${CLAUDE_PROJECT_DIR:-.}"
+    if [ -f "$PROJECT_DIR/.skillnote.json" ]; then
+        SKILLS_DIR="$PROJECT_DIR/.claude/skills"
+    else
+        SKILLS_DIR="$HOME/.claude/skills"
+    fi
     MANIFEST="$SKILLS_DIR/.skillnote-manifest.json"
     if [ -n "$CLAUDE_PLUGIN_DATA" ]; then
         MANIFEST="$CLAUDE_PLUGIN_DATA/.skillnote-manifest.json"
     fi
     if [ -f "$MANIFEST" ]; then
         python3 -c "
-import json, os, shutil
-m = json.load(open('$MANIFEST'))
-sd = '$SKILLS_DIR'
+import json, os, shutil, sys
+m = json.load(open(sys.argv[1]))
+sd = sys.argv[2]
 for slug in m.get('skills', []):
     d = os.path.join(sd, slug)
     if os.path.isdir(d):
         shutil.rmtree(d)
-" 2>/dev/null
+" "$MANIFEST" "$SKILLS_DIR" 2>/dev/null
     fi
     rm -f "$MANIFEST"
 fi

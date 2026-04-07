@@ -3,6 +3,7 @@
 import json
 import os
 import sys
+import time
 import urllib.request
 
 try:
@@ -20,7 +21,8 @@ def _get_host():
     host_file = os.path.expanduser("~/.skillnote/host")
     if os.path.exists(host_file):
         try:
-            val = open(host_file).read().strip()
+            with open(host_file) as f:
+                val = f.read().strip()
             if val:
                 return val
         except Exception:
@@ -45,7 +47,8 @@ def _get_recommended(items):
     # 1. Current .skillnote.json
     if os.path.exists(".skillnote.json"):
         try:
-            cfg = json.load(open(".skillnote.json"))
+            with open(".skillnote.json") as f:
+                cfg = json.load(f)
             current = cfg.get("collections", [])
             if current:
                 for i, (n, _) in enumerate(items):
@@ -54,10 +57,10 @@ def _get_recommended(items):
         except Exception:
             pass
 
-    # 2. Folder name match
+    # 2. Folder name match (exact only — consistent with sync.sh)
     folder = os.path.basename(os.getcwd()).lower()
     for i, name in enumerate(names):
-        if name == folder or folder.startswith(name) or name.startswith(folder):
+        if name == folder:
             return i
 
     return 0
@@ -104,7 +107,6 @@ def pick(stdscr, items, recommended=0):
     while stdscr.getch() != -1:
         pass
     stdscr.nodelay(False)
-    import time
     time.sleep(0.15)
 
     total_skills = sum(c for _, c in items)
@@ -246,11 +248,12 @@ def main():
     # Single collection: auto-select, no picker needed
     if len(collections) == 1:
         name, count = collections[0]
-        with open(".skillnote.json", "w") as f:
-            json.dump({"collections": [name]}, f, indent=2)
-            f.write("\n")
+        if not os.path.exists(".skillnote.json"):
+            with open(".skillnote.json", "w") as f:
+                json.dump({"collections": [name]}, f, indent=2)
+                f.write("\n")
+            _run_sync()
         print(f"  SkillNote: {name} ({count} skills)")
-        _run_sync()
         return
 
     recommended = _get_recommended(collections)
@@ -264,7 +267,8 @@ def main():
         # q pressed — keep current config if exists
         if os.path.exists(".skillnote.json"):
             try:
-                cfg = json.load(open(".skillnote.json"))
+                with open(".skillnote.json") as f:
+                    cfg = json.load(f)
                 names = ", ".join(cfg.get("collections", []))
                 print(f"  SkillNote: {names} (active)")
             except Exception:
