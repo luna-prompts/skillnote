@@ -199,15 +199,16 @@ SHELL_RC=""
 if [ -f "$HOME/.zshrc" ]; then SHELL_RC="$HOME/.zshrc"
 elif [ -f "$HOME/.bashrc" ]; then SHELL_RC="$HOME/.bashrc"; fi
 
+PICKER_PATH="$PLUGIN_SRC/bin/skillnote-pick"
 if [ -n "$SHELL_RC" ] && ! grep -q "skillnote-pick" "$SHELL_RC" 2>/dev/null; then
-    cat >> "$SHELL_RC" << 'WRAPEOF'
+    cat >> "$SHELL_RC" << WRAPEOF
 
 # SkillNote: collection picker before launching claude
 claude() {
   if [ ! -f ".skillnote.json" ] && [ -t 0 ] && [ -t 1 ]; then
-    skillnote-pick 2>/dev/null || true
+    "$PICKER_PATH" || true
   fi
-  command claude "$@"
+  command claude "\$@"
 }
 WRAPEOF
     echo "  Shell wrapper added to $SHELL_RC"
