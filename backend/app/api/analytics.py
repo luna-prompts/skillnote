@@ -12,7 +12,7 @@ router = APIRouter(prefix="/v1/analytics", tags=["analytics"])
 
 def _date_filter_clause(days: int, alias: str = "created_at") -> str:
     if days > 0:
-        return f"AND {alias} >= now() - interval '{days} days'"
+        return f"AND {alias} >= now() - make_interval(days => :days)"
     return ""
 
 
@@ -194,7 +194,7 @@ def get_timeline(
             SELECT DATE(created_at AT TIME ZONE 'UTC') AS day,
                    COUNT(*) AS call_count
             FROM skill_call_events
-            WHERE created_at >= now() - interval '{days} days'
+            WHERE created_at >= now() - make_interval(days => :days)
             {agent_clause}
             {coll_clause}
             GROUP BY day
