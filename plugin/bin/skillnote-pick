@@ -1,12 +1,5 @@
 #!/usr/bin/env python3
-"""SkillNote collection picker — native terminal UI with arrow keys and checkboxes.
-
-Called by the claude wrapper function before launching Claude Code.
-Fetches collections from the SkillNote API, shows a multi-select picker,
-writes .skillnote.json to the current directory.
-
-No external dependencies — uses Python 3 stdlib curses.
-"""
+"""SkillNote collection picker — native terminal UI."""
 import json
 import os
 import sys
@@ -16,7 +9,7 @@ try:
     import curses
     HAS_CURSES = True
 except ImportError:
-    HAS_CURSES = False  # Windows — fallback to numbered menu
+    HAS_CURSES = False
 
 
 def fetch_collections():
@@ -30,55 +23,94 @@ def fetch_collections():
 
 
 def pick(stdscr, items):
-    """Multi-select picker with arrow keys, space to toggle, enter to confirm."""
     selected = set()
     cur = 0
     curses.curs_set(0)
     curses.start_color()
     curses.use_default_colors()
-    curses.init_pair(1, curses.COLOR_CYAN, -1)
-    curses.init_pair(2, curses.COLOR_GREEN, -1)
+    curses.init_pair(1, curses.COLOR_CYAN, -1)     # accent/teal
+    curses.init_pair(2, curses.COLOR_GREEN, -1)     # selected
+    curses.init_pair(3, curses.COLOR_WHITE, -1)     # bright
+    curses.init_pair(4, curses.COLOR_YELLOW, -1)    # highlight
 
-    # Flush any leftover input (the Enter from typing 'claude' in the shell)
+    # Flush stale input (the Enter from typing 'claude')
     curses.flushinp()
     stdscr.nodelay(True)
     while stdscr.getch() != -1:
-        pass  # drain all buffered input
+        pass
     stdscr.nodelay(False)
     import time
-    time.sleep(0.1)  # brief pause to let terminal settle
+    time.sleep(0.1)
+
+    total_skills = sum(c for _, c in items)
 
     while True:
         stdscr.clear()
         h, w = stdscr.getmaxyx()
+        row = 0
 
-        # Header
-        stdscr.addstr(0, 0, " SkillNote — Pick collections for this project", curses.A_BOLD)
-        stdscr.addstr(1, 0, " ↑↓ move  Space toggle  Enter confirm  q skip", curses.color_pair(1))
-        stdscr.addstr(2, 0, "")
+        # ── Brand header ──
+        try:
+            stdscr.addstr(row, 0, "  ╭" + "─" * (w - 6) + "╮", curses.color_pair(1))
+            row += 1
+            title = "SkillNote"
+            subtitle = "Select collections for this project"
+            pad = (w - 6 - len(title)) // 2
+            stdscr.addstr(row, 0, "  │" + " " * pad, curses.color_pair(1))
+            stdscr.addstr(title, curses.A_BOLD | curses.color_pair(3))
+            stdscr.addstr(" " * (w - 6 - pad - len(title)) + "│", curses.color_pair(1))
+            row += 1
+            pad2 = (w - 6 - len(subtitle)) // 2
+            stdscr.addstr(row, 0, "  │" + " " * pad2, curses.color_pair(1))
+            stdscr.addstr(subtitle, curses.A_DIM)
+            stdscr.addstr(" " * (w - 6 - pad2 - len(subtitle)) + "│", curses.color_pair(1))
+            row += 1
+            stdscr.addstr(row, 0, "  ╰" + "─" * (w - 6) + "╯", curses.color_pair(1))
+            row += 2
+        except curses.error:
+            pass
 
-        # Items
+        # ── Collections ──
         for i, (name, count) in enumerate(items):
-            if i + 3 >= h - 1:
+            if row >= h - 3:
                 break
-            mark = "[x]" if i in selected else "[ ]"
-            prefix = " > " if i == cur else "   "
-            line = f"{prefix}{mark} {name} ({count} skills)"
-
-            attr = curses.A_REVERSE if i == cur else 0
-            if i in selected:
-                attr |= curses.color_pair(2)
+            mark = "◉" if i in selected else "○"
+            pointer = "❯" if i == cur else " "
 
             try:
-                stdscr.addstr(i + 3, 0, line[:w-1], attr)
+                stdscr.addstr(row, 2, f" {pointer} ", curses.A_BOLD if i == cur else curses.A_DIM)
+                if i in selected:
+                    stdscr.addstr(f"{mark} ", curses.color_pair(2) | curses.A_BOLD)
+                    stdscr.addstr(f"{name}", curses.color_pair(2) | curses.A_BOLD)
+                elif i == cur:
+                    stdscr.addstr(f"{mark} ", curses.color_pair(4))
+                    stdscr.addstr(f"{name}", curses.A_BOLD)
+                else:
+                    stdscr.addstr(f"{mark} ", curses.A_DIM)
+                    stdscr.addstr(f"{name}")
+                stdscr.addstr(f"  ({count} skills)", curses.A_DIM)
             except curses.error:
                 pass
+            row += 1
 
-        # Footer
-        n = len(selected)
-        footer = f" {n} selected" if n > 0 else " None selected (Enter = all collections)"
+        # ── Footer ──
+        row = max(row + 1, h - 3)
         try:
-            stdscr.addstr(h - 1, 0, footer[:w-1], curses.A_DIM)
+            n = len(selected)
+            sel_names = ", ".join(items[i][0] for i in sorted(selected))
+            sel_skills = sum(items[i][1] for i in selected)
+            if n > 0:
+                stdscr.addstr(min(row, h - 3), 2, f"  {n} selected: ", curses.A_DIM)
+                stdscr.addstr(sel_names[:w-20], curses.color_pair(2))
+                stdscr.addstr(f" ({sel_skills} skills)", curses.A_DIM)
+            else:
+                stdscr.addstr(min(row, h - 3), 2, "  Press Enter with none selected = all collections", curses.A_DIM)
+        except curses.error:
+            pass
+
+        try:
+            hints = " ↑↓ move   Space select   Enter confirm   q skip "
+            stdscr.addstr(h - 1, 2, hints[:w-4], curses.A_DIM)
         except curses.error:
             pass
 
@@ -95,13 +127,12 @@ def pick(stdscr, items):
             if selected:
                 return [items[i][0] for i in sorted(selected)]
             else:
-                return []  # empty = all collections
-        elif key in (ord("q"), 27):  # q or Escape
-            return None  # cancelled
+                return []
+        elif key in (ord("q"), 27):
+            return None
 
 
 def pick_fallback(items):
-    """Simple numbered menu for systems without curses (Windows)."""
     print("\n SkillNote — Pick collections for this project")
     print(" Enter numbers separated by commas, or 'q' to skip:\n")
     for i, (name, count) in enumerate(items, 1):
@@ -117,24 +148,21 @@ def pick_fallback(items):
     try:
         nums = [int(x.strip()) for x in reply.split(",")]
         if len(items) + 1 in nums:
-            return []  # all collections
+            return []
         return [items[n - 1][0] for n in nums if 1 <= n <= len(items)]
     except (ValueError, IndexError):
         return None
 
 
 def main():
-    # Skip if .skillnote.json exists
     if os.path.exists(".skillnote.json"):
         return
-
-    # Skip if not a terminal
     if not os.isatty(0) or not os.isatty(1):
         return
 
     collections = fetch_collections()
     if len(collections) <= 1:
-        return  # nothing to pick
+        return
 
     if HAS_CURSES:
         chosen = curses.wrapper(pick, collections)
@@ -142,25 +170,23 @@ def main():
         chosen = pick_fallback(collections)
 
     if chosen is None:
-        # User cancelled — skip, launch claude anyway
         return
 
     if chosen:
-        # User picked specific collections
         with open(".skillnote.json", "w") as f:
             json.dump({"collections": chosen}, f, indent=2)
             f.write("\n")
-        print(f"SkillNote: set collections {chosen}")
+        names = ", ".join(chosen)
+        total = sum(c for n, c in collections if n in chosen)
+        print(f"SkillNote: {names} ({total} skills)")
 
-        # Trigger sync
         plugin_root = os.environ.get("CLAUDE_PLUGIN_ROOT", "")
         if plugin_root:
             os.system(f'"{plugin_root}/hooks-handlers/sync.sh" 2>/dev/null')
         else:
             os.system("skillnote-sync --force 2>/dev/null")
     else:
-        # Empty selection = all collections, no .skillnote.json needed
-        print("SkillNote: using all collections")
+        print("SkillNote: all collections")
 
 
 if __name__ == "__main__":
