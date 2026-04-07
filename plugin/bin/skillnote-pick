@@ -12,14 +12,29 @@ except ImportError:
     HAS_CURSES = False
 
 
+def _get_host():
+    """Resolve SkillNote API host. Check env, then ~/.skillnote/host file."""
+    host = os.environ.get("SKILLNOTE_HOST", os.environ.get("CLAUDE_PLUGIN_OPTION_HOST", ""))
+    if host:
+        return host
+    # Try saved host file (written by setup script)
+    host_file = os.path.expanduser("~/.skillnote/host")
+    if os.path.exists(host_file):
+        try:
+            return open(host_file).read().strip()
+        except Exception:
+            pass
+    return "localhost"
+
+
 def fetch_collections():
-    host = os.environ.get("SKILLNOTE_HOST", os.environ.get("CLAUDE_PLUGIN_OPTION_HOST", "localhost"))
+    host = _get_host()
     api = f"http://{host}:8082"
     try:
         data = json.loads(urllib.request.urlopen(f"{api}/v1/collections", timeout=3).read())
-        return [(c["name"], c["count"]) for c in data]
+        return host, [(c["name"], c["count"]) for c in data]
     except Exception:
-        return []
+        return host, []
 
 
 def pick(stdscr, items):
@@ -42,7 +57,7 @@ def pick(stdscr, items):
     time.sleep(0.15)
 
     total_skills = sum(c for _, c in items)
-    host = os.environ.get("SKILLNOTE_HOST", os.environ.get("CLAUDE_PLUGIN_OPTION_HOST", "localhost"))
+    host = _get_host()
     web_url = f"http://{host}:3000"
 
     brand = [
@@ -166,7 +181,12 @@ def main():
     if not os.isatty(0) or not os.isatty(1):
         return
 
-    collections = fetch_collections()
+    host, collections = fetch_collections()
+
+    if not collections:
+        print(f"  SkillNote: could not reach API at http://{host}:8082", file=sys.stderr)
+        return
+
     if len(collections) <= 1:
         return
 

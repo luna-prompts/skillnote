@@ -201,17 +201,12 @@ elif [ -f "$HOME/.bashrc" ]; then SHELL_RC="$HOME/.bashrc"; fi
 
 # ── install skillnote-pick to stable location ─────────────────────────────────
 SKILLNOTE_HOME="$HOME/.skillnote"
+SKILL_HOST=$(echo "$API_URL" | sed -E 's|https?://||;s|:.*||')
 mkdir -p "$SKILLNOTE_HOME/bin"
 cp "$PLUGIN_SRC/bin/skillnote-pick" "$SKILLNOTE_HOME/bin/skillnote-pick"
 chmod +x "$SKILLNOTE_HOME/bin/skillnote-pick"
-# Bake the host into the picker
-python3 -c "
-path = '$SKILLNOTE_HOME/bin/skillnote-pick'
-content = open(path).read()
-content = content.replace(\"'CLAUDE_PLUGIN_OPTION_HOST', 'localhost'\", \"'CLAUDE_PLUGIN_OPTION_HOST', '$(echo $API_URL | sed -E 's|https?://||;s|:.*||')'\")
-content = content.replace('\"SKILLNOTE_HOST\", \"localhost\"', '\"SKILLNOTE_HOST\", \"$(echo $API_URL | sed -E 's|https?://||;s|:.*||')\"')
-open(path, 'w').write(content)
-" 2>/dev/null
+# Save host for the picker to read at runtime
+echo "$SKILL_HOST" > "$SKILLNOTE_HOME/host"
 PICKER_PATH="$SKILLNOTE_HOME/bin/skillnote-pick"
 # Remove any old wrapper first (handles updates cleanly)
 if [ -n "$SHELL_RC" ]; then
