@@ -1,5 +1,5 @@
 {
-  "description": "SkillNote: skill sync, analytics, and skill creation suggestions",
+  "description": "SkillNote: skill sync, analytics, context persistence, and skill creation suggestions",
   "hooks": {
     "SessionStart": [
       {
@@ -38,12 +38,33 @@
         ]
       }
     ],
+    "PostCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks-handlers/compact-context.sh"
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks-handlers/subagent-context.sh",
+            "async": true
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "hooks": [
           {
             "type": "prompt",
-            "prompt": "Review the conversation summary in $ARGUMENTS. Did the user establish a reusable pattern, workflow, or coding convention that could benefit other projects? Only respond with {\"ok\": false, \"reason\": \"suggestion text\"} if there is a CLEAR, specific, reusable pattern. The suggestion should say: 'This looks like a reusable pattern. Run /skillnote:skill-push to save it.' Otherwise respond {\"ok\": true}. Be very selective — most conversations do NOT contain reusable patterns.",
+            "prompt": "Review the conversation in $ARGUMENTS. Did the user establish a reusable coding pattern, workflow, or convention that could benefit other projects? Only respond {\"ok\": false, \"reason\": \"This looks like a reusable pattern. Run /skillnote:skill-push to save it as a skill.\"} if there is a CLEAR, specific, reusable pattern (not just a bug fix or one-off task). Otherwise respond {\"ok\": true}. Be very selective — most conversations do NOT contain reusable patterns.",
             "timeout": 10
           }
         ]
