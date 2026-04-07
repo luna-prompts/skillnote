@@ -67,7 +67,7 @@ services:
       args:
         NEXT_PUBLIC_API_BASE_URL: "http://${SKILLNOTE_HOST:-localhost}:${SKILLNOTE_API_PORT:-8082}"
     ports:
-      - "3000:3000"
+      - "${SKILLNOTE_WEB_PORT:-3000}:3000"
     environment:
       NODE_ENV: production
     depends_on:

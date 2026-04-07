@@ -3,7 +3,7 @@ FROM python:3.12-slim
 WORKDIR /app
 
 COPY . /app
-RUN pip install --no-cache-dir -U pip && pip install --no-cache-dir .
+RUN pip install --no-cache-dir -q -U pip && pip install --no-cache-dir -q .
 
 EXPOSE 8083
 CMD ["python", "mcp_server.py"]
