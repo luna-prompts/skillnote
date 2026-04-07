@@ -38,6 +38,8 @@ echo "  Commands:"
 echo "    /skillnote:collection    Change active collection"
 echo "    /skillnote:skill-push    Create & push a new skill"
 echo ""
+echo "  GitHub:  github.com/luna-prompts/skillnote"
+echo ""
 ```
 
 Display the output as-is. Do not add commentary.
