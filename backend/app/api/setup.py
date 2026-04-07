@@ -128,6 +128,34 @@ else
     echo "  claude plugin install skillnote@skillnote-local --scope user"
 fi
 
+# ── global rules file (collection prompt on every new project) ────────────────
+mkdir -p "$CLAUDE_HOME/rules"
+cat > "$CLAUDE_HOME/rules/skillnote-collection.md" << 'RULEEOF'
+# SkillNote Collection Setup
+
+At the START of every conversation, BEFORE responding to the user's first message, check if `.skillnote.json` exists in the current project root (the working directory).
+
+If `.skillnote.json` does NOT exist:
+1. Fetch collections: run `curl -sf http://SKILLNOTE_HOST:8082/v1/collections` (replace SKILLNOTE_HOST with the SkillNote server)
+2. Use AskUserQuestion to ask:
+   - header: "SkillNote"
+   - question: "Which skill collections should be active for this project?"
+   - multiSelect: true
+   - Build options from the fetched collections (up to 3) + "All collections" as the last option
+3. After the user picks, write `.skillnote.json` in the project root: `{"collections": ["name1"]}`
+4. Run: `skillnote-sync --force`
+
+If `.skillnote.json` ALREADY exists, skip this entirely — do NOT ask.
+RULEEOF
+
+# Substitute the actual host
+SKILL_HOST=$(echo "$API_URL" | sed -E 's|https?://||;s|:.*||')
+python3 -c "
+path = '$CLAUDE_HOME/rules/skillnote-collection.md'
+content = open(path).read().replace('SKILLNOTE_HOST', '$SKILL_HOST')
+open(path, 'w').write(content)
+" 2>/dev/null
+
 # ── first sync ────────────────────────────────────────────────────────────────
 # Find the installed plugin path (claude plugin install copies it to cache)
 INSTALLED_PATH=$(python3 -c "

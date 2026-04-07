@@ -9,10 +9,6 @@ PROJECT_DIR="${CLAUDE_PROJECT_DIR:-.}"
 PROJECT_CONFIG="${PROJECT_DIR}/.skillnote.json"
 
 # Determine scope: project-level or global
-# Clean up the collection rules file if .skillnote.json exists
-if [ -f "$PROJECT_CONFIG" ] && [ -f "${PROJECT_DIR}/.claude/rules/skillnote-collection.md" ]; then
-    rm -f "${PROJECT_DIR}/.claude/rules/skillnote-collection.md"
-fi
 
 if [ -f "$PROJECT_CONFIG" ]; then
     COLLECTIONS=$(python3 -c "
@@ -59,32 +55,8 @@ except: pass
 
     TOTAL_SKILLS=$(curl -sf --connect-timeout 3 --max-time 5 "${API_URL}/v1/skills" 2>/dev/null | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
 
-    # Write a .claude/rules/ file to prompt for collection selection at session start
-    NUM_COLS=$(echo "$COLS_JSON" | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
-    if [ "$NUM_COLS" -gt 1 ] 2>/dev/null; then
-        RULES_DIR="${PROJECT_DIR}/.claude/rules"
-        mkdir -p "$RULES_DIR"
-        RECOMMEND_LINE=""
-        [ -n "$FOLDER_MATCH" ] && RECOMMEND_LINE="Recommend '${FOLDER_MATCH}' as the first option (matches folder name)."
-        cat > "$RULES_DIR/skillnote-collection.md" << RULEEOF
-# SkillNote Collection Setup
-
-At the START of every conversation, BEFORE responding to the user's first message, check if \`.skillnote.json\` exists in the project root.
-
-If \`.skillnote.json\` does NOT exist, use AskUserQuestion to ask the user which SkillNote collection to activate:
-- header: "SkillNote"
-- question: "Which skill collections should be active for this project?"
-- multiSelect: true
-- Available collections: ${COLS_JSON}
-${RECOMMEND_LINE}
-
-After the user picks, write \`.skillnote.json\`: \`{"collections": ["name1", "name2"]}\`
-Then run: \`skillnote-sync --force\`
-
-If the user picks "All collections", do not write .skillnote.json.
-If \`.skillnote.json\` already exists, skip this step silently and remove this rules file.
-RULEEOF
-    fi
+    # Collection prompt is handled by the global rules file (~/.claude/rules/skillnote-collection.md)
+    # which was written during setup. It checks for .skillnote.json at runtime.
 fi
 
 # Use plugin data dir for manifest if available, else alongside skills
