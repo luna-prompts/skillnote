@@ -191,8 +191,8 @@ echo "  Change collection: /skillnote:collection"
 echo "  Create skills:     /skillnote:skill-push"
 echo "  Browse all:        $WEB_URL/collections"
 echo ""
-echo "  IMPORTANT: Restart Claude Code for skills to take effect."
-echo "  (quit and reopen — /reload-plugins alone is not sufficient)"
+echo "  Start claude in any project — skills are ready."
+echo "  (if Claude Code is already open, restart it to load the plugin)"
 echo ""
 '''
 
