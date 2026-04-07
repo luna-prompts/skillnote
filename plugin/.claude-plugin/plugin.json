@@ -1,14 +1,16 @@
 {
   "name": "skillnote",
-  "version": "0.1.0",
-  "description": "SkillNote skill registry — auto-sync skills with full Claude Code features, usage analytics, and skill creation from conversations.",
+  "version": "1.0.0",
+  "description": "Self-hosted skill registry for AI coding agents. Create, version, and distribute reusable SKILL.md files across Claude Code, Cursor, Codex, and more.",
   "author": {
-    "name": "SkillNote",
-    "url": "https://github.com/luna-prompts/skillnote"
+    "name": "Luna Prompts",
+    "email": "contact@lunaprompts.com",
+    "url": "https://lunaprompts.com"
   },
   "homepage": "https://github.com/luna-prompts/skillnote",
+  "repository": "https://github.com/luna-prompts/skillnote",
   "license": "MIT",
-  "keywords": ["skills", "registry", "mcp", "sync", "analytics"],
+  "keywords": ["skills", "registry", "sync", "analytics", "collections", "mcp", "hooks", "offline-first"],
   "userConfig": {
     "host": {
       "title": "SkillNote Server",

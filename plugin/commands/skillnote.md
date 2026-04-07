@@ -1,6 +1,7 @@
 ---
 description: SkillNote dashboard — see active collection, skills, and available commands
 allowed-tools: Bash
+disable-model-invocation: true
 ---
 
 Show the SkillNote dashboard. Run this single command and display its output:

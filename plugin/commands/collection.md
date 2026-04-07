@@ -1,6 +1,7 @@
 ---
 description: Choose which SkillNote skill collections are active for this project
 allowed-tools: Bash AskUserQuestion
+disable-model-invocation: true
 ---
 
 ## Available collections
