@@ -234,11 +234,14 @@ claude() {
 WRAPEOF
     echo "  Shell wrapper added to $SHELL_RC"
     echo "  Run: source $SHELL_RC (or open a new terminal)"
+else
+    echo "  Warning: No .zshrc or .bashrc found."
+    echo "  Collection picker won't auto-run. Run skillnote-pick manually."
 fi
 
 echo ""
 echo "  Ready! Type 'claude' in any project folder."
-echo "  You'll pick collections on first launch (arrow keys + space)."
+echo "  You'll pick a collection each time (↑/↓ + Enter)."
 echo ""
 '''
 

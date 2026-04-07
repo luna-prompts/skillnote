@@ -3,7 +3,12 @@
 # Syncs skills from the SkillNote registry to ~/.claude/skills/ with full frontmatter.
 # Manages create/update/delete via a manifest. Offline-first (silent fail).
 
-HOST="${CLAUDE_PLUGIN_OPTION_HOST:-localhost}"
+# Resolve host: env var > ~/.skillnote/host file > localhost
+HOST="${CLAUDE_PLUGIN_OPTION_HOST:-}"
+if [ -z "$HOST" ] && [ -f "$HOME/.skillnote/host" ]; then
+    HOST=$(cat "$HOME/.skillnote/host" 2>/dev/null)
+fi
+HOST="${HOST:-localhost}"
 API_URL="http://${HOST}:8082"
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-.}"
 PROJECT_CONFIG="${PROJECT_DIR}/.skillnote.json"
@@ -33,7 +38,7 @@ else
     SKILLS_DIR="$HOME/.claude/skills"
     PROJECT_NAME=$(basename "${PROJECT_DIR}")
 
-    # Check if folder name matches a collection (simple: folder name = collection name)
+    # Check if folder name matches a collection — auto-filter if so
     COLS_JSON=$(curl -sf --connect-timeout 3 --max-time 5 "${API_URL}/v1/collections" 2>/dev/null || echo "[]")
     FOLDER_MATCH=$(echo "$COLS_JSON" | python3 -c "
 import json,sys
@@ -47,16 +52,9 @@ try:
 except: pass
 " 2>/dev/null)
 
-    # First time in this project?
-    MANIFEST_CHECK="${SKILLS_DIR}/.skillnote-manifest.json"
-    [ -n "$CLAUDE_PLUGIN_DATA" ] && MANIFEST_CHECK="$CLAUDE_PLUGIN_DATA/.skillnote-manifest.json"
-    IS_FIRST_TIME=false
-    [ ! -f "$MANIFEST_CHECK" ] && IS_FIRST_TIME=true
-
-    TOTAL_SKILLS=$(curl -sf --connect-timeout 3 --max-time 5 "${API_URL}/v1/skills" 2>/dev/null | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
-
-    # Collection prompt is handled by the global rules file (~/.claude/rules/skillnote-collection.md)
-    # which was written during setup. It checks for .skillnote.json at runtime.
+    if [ -n "$FOLDER_MATCH" ]; then
+        COLLECTIONS="$FOLDER_MATCH"
+    fi
 fi
 
 # Use plugin data dir for manifest if available, else alongside skills
@@ -74,8 +72,11 @@ else
     FETCH_URL="${API_URL}/v1/skills"
 fi
 
-# Fetch skills from API (silent fail if offline)
-SKILLS=$(curl -sf --connect-timeout 5 --max-time 10 "$FETCH_URL" 2>/dev/null) || exit 0
+# Fetch skills from API
+SKILLS=$(curl -sf --connect-timeout 5 --max-time 10 "$FETCH_URL" 2>/dev/null) || {
+    echo "SkillNote: offline (using cached skills)"
+    exit 0
+}
 
 mkdir -p "$SKILLS_DIR"
 mkdir -p "$MANIFEST_DIR"

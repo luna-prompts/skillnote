@@ -20,7 +20,9 @@ def _get_host():
     host_file = os.path.expanduser("~/.skillnote/host")
     if os.path.exists(host_file):
         try:
-            return open(host_file).read().strip()
+            val = open(host_file).read().strip()
+            if val:
+                return val
         except Exception:
             pass
     return "localhost"
@@ -59,6 +61,31 @@ def _get_recommended(items):
             return i
 
     return 0
+
+
+def _run_sync():
+    """Run sync using the best available path."""
+    host = _get_host()
+    # Try plugin root first (set during Claude sessions)
+    plugin_root = os.environ.get("CLAUDE_PLUGIN_ROOT", "")
+    if plugin_root:
+        sync_path = os.path.join(plugin_root, "hooks-handlers", "sync.sh")
+        if os.path.exists(sync_path):
+            os.environ.setdefault("CLAUDE_PLUGIN_OPTION_HOST", host)
+            os.system(f'"{sync_path}" 2>/dev/null')
+            return
+
+    # Try installed plugin in marketplace
+    mkt_sync = os.path.expanduser(
+        "~/.claude/plugins/marketplaces/skillnote-local/plugins/skillnote/hooks-handlers/sync.sh"
+    )
+    if os.path.exists(mkt_sync):
+        os.environ.setdefault("CLAUDE_PLUGIN_OPTION_HOST", host)
+        os.system(f'"{mkt_sync}" 2>/dev/null')
+        return
+
+    # Try skillnote-sync in PATH as last resort
+    os.system("skillnote-sync --force 2>/dev/null")
 
 
 def pick(stdscr, items, recommended=0):
@@ -185,7 +212,8 @@ def pick(stdscr, items, recommended=0):
 
 
 def pick_fallback(items, recommended=0):
-    print("\n  SkillNote — Pick a collection for this project\n")
+    print("\n  SkillNote — Pick a collection for this project")
+    print("  Enter number to select, q to keep current\n")
     for i, (name, count) in enumerate(items, 1):
         rec = " ★ recommended" if i - 1 == recommended else ""
         print(f"  {i}. {name} ({count} skills){rec}")
@@ -215,7 +243,14 @@ def main():
         print(f"  SkillNote: could not reach API at http://{host}:8082", file=sys.stderr)
         return
 
-    if len(collections) <= 1:
+    # Single collection: auto-select, no picker needed
+    if len(collections) == 1:
+        name, count = collections[0]
+        with open(".skillnote.json", "w") as f:
+            json.dump({"collections": [name]}, f, indent=2)
+            f.write("\n")
+        print(f"  SkillNote: {name} ({count} skills)")
+        _run_sync()
         return
 
     recommended = _get_recommended(collections)
@@ -243,11 +278,7 @@ def main():
     total = sum(c for n, c in collections if n in chosen)
     print(f"\n  SkillNote: {names} ({total} skills)\n")
 
-    plugin_root = os.environ.get("CLAUDE_PLUGIN_ROOT", "")
-    if plugin_root:
-        os.system(f'"{plugin_root}/hooks-handlers/sync.sh" 2>/dev/null')
-    else:
-        os.system("skillnote-sync --force 2>/dev/null")
+    _run_sync()
 
 
 if __name__ == "__main__":
