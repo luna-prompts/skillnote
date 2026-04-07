@@ -90,9 +90,9 @@ chmod +x "$PLUGIN_DIR/hooks-handlers/"*.sh "$PLUGIN_DIR/bin/"* 2>/dev/null || tr
 
 # ── register marketplace ──────────────────────────────────────────────────────
 MARKETPLACE_DIR="$CLAUDE_HOME/plugins/marketplaces/skillnote-local"
-mkdir -p "$MARKETPLACE_DIR"
-cat > "$MARKETPLACE_DIR/marketplace.json" << 'MKTEOF'
-{"name":"skillnote-local","owner":{"name":"SkillNote"},"plugins":[{"name":"skillnote","source":"./","version":"1.0.0"}]}
+mkdir -p "$MARKETPLACE_DIR/.claude-plugin"
+cat > "$MARKETPLACE_DIR/.claude-plugin/marketplace.json" << 'MKTEOF'
+{"name":"skillnote-local","version":"1.0.0","description":"SkillNote skill registry plugin","owner":{"name":"SkillNote"},"plugins":[{"name":"skillnote","description":"SkillNote skill registry — auto-sync, analytics, and skill creation","source":"./plugins/skillnote","version":"1.0.0"}]}
 MKTEOF
 
 KNOWN_MKT="$CLAUDE_HOME/plugins/known_marketplaces.json"
@@ -109,8 +109,8 @@ if os.path.exists(path):
 
 now = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.000Z')
 data['skillnote-local'] = {
-    'source': {'source': 'directory', 'path': '$MARKETPLACE_DIR'},
-    'installLocation': '$MARKETPLACE_DIR',
+    'source': {'source': 'directory', 'path': os.path.expanduser('~/.claude/plugins/marketplaces/skillnote-local')},
+    'installLocation': os.path.expanduser('~/.claude/plugins/marketplaces/skillnote-local'),
     'lastUpdated': now,
 }
 with open(path, 'w') as f:
