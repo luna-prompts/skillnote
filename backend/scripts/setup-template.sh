@@ -304,14 +304,30 @@ INSTALLED="$HOME/.claude/plugins/installed_plugins.json"
 mkdir -p "$(dirname "$INSTALLED")"
 python3 -c "
 import json, os
+from datetime import datetime, timezone
+
 path = '$INSTALLED'
 data = {}
 if os.path.exists(path):
     try:
         with open(path) as f: data = json.load(f)
     except: data = {}
-key = 'skillnote@skillnote-local'
-data[key] = [{'scope': 'user', 'installPath': '$PLUGIN_DIR'}]
+
+# Ensure correct top-level structure (version 2 format)
+if 'version' not in data:
+    data['version'] = 2
+if 'plugins' not in data:
+    data['plugins'] = {}
+
+now = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.000Z')
+data['plugins']['skillnote@skillnote-local'] = [{
+    'scope': 'user',
+    'installPath': '$PLUGIN_DIR',
+    'version': '1.0.0',
+    'installedAt': now,
+    'lastUpdated': now,
+}]
+
 with open(path, 'w') as f:
     json.dump(data, f, indent=2)
 " 2>/dev/null
