@@ -17,8 +17,12 @@ PROJECT_CONFIG="${PROJECT_DIR}/.skillnote.json"
 
 if [ -f "$PROJECT_CONFIG" ]; then
     COLLECTIONS=$(python3 -c "
-import json
-cfg = json.load(open('${PROJECT_CONFIG}'))
+import json, sys
+try:
+    cfg = json.load(open('${PROJECT_CONFIG}'))
+except Exception:
+    print('__ERROR__')
+    sys.exit(0)
 cols = cfg.get('collections', [])
 if cols == '*' or cols == ['*']:
     print('')
@@ -28,7 +32,10 @@ else:
     print(','.join(cols))
 " 2>/dev/null)
 
-    if [ "$COLLECTIONS" = "__NONE__" ]; then
+    if [ "$COLLECTIONS" = "__NONE__" ] || [ "$COLLECTIONS" = "__ERROR__" ]; then
+        if [ "$COLLECTIONS" = "__ERROR__" ]; then
+            echo "SkillNote: invalid .skillnote.json"
+        fi
         exit 0
     fi
 
@@ -90,6 +97,7 @@ manifest_path = '$MANIFEST'
 
 skills = json.load(sys.stdin)
 api_slugs = set()
+has_filter = bool('$COLLECTIONS')
 
 # Skip skills that the plugin already provides as commands (prevent duplicates in / autocomplete)
 plugin_provided = {'skill-push', 'collection'}
@@ -99,6 +107,12 @@ old_managed = set()
 if os.path.exists(manifest_path):
     with open(manifest_path) as f:
         old_managed = set(json.load(f).get('skills', []))
+
+# Safety: if filtered query returned 0 results but we have cached skills, keep them
+# (the collection may have been deleted or renamed on the server)
+if not skills and has_filter and old_managed:
+    print('SkillNote: collection not found on server (keeping cached skills)')
+    sys.exit(0)
 
 created, updated, deleted = 0, 0, 0
 
@@ -121,7 +135,8 @@ for skill in skills:
     raw_body = skill.get('content_md') or ''
     # Substitute URL placeholders (same as MCP server does at serve time)
     api_url = '$API_URL'
-    web_url = api_url.replace(':8082', ':3000')
+    host = api_url.split('://')[1].split(':')[0] if '://' in api_url else 'localhost'
+    web_url = f'http://{host}:3000'
     raw_body = raw_body.replace('{{API_URL}}', api_url).replace('{{WEB_URL}}', web_url)
     content = '---\n' + '\n'.join(fm_lines) + '\n---\n\n' + raw_body
     filepath = os.path.join(skill_dir, 'SKILL.md')

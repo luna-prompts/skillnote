@@ -3,7 +3,12 @@
 # Posts skill invocation data to SkillNote for analytics.
 # Async, non-blocking. Always exits 0.
 
-HOST="${CLAUDE_PLUGIN_OPTION_HOST:-localhost}"
+# Resolve host: env var > ~/.skillnote/host file > localhost
+HOST="${CLAUDE_PLUGIN_OPTION_HOST:-}"
+if [ -z "$HOST" ] && [ -f "$HOME/.skillnote/host" ]; then
+    HOST=$(cat "$HOME/.skillnote/host" 2>/dev/null)
+fi
+HOST="${HOST:-localhost}"
 export API_URL="http://${HOST}:8082"
 
 # Read hook input from stdin, pass to Python via env var (safe for any JSON)
