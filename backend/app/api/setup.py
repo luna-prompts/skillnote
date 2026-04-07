@@ -194,9 +194,29 @@ echo "  Change collection: /skillnote:collection"
 echo "  Create skills:     /skillnote:skill-push"
 echo "  Browse all:        $WEB_URL/collections"
 echo ""
+# ── shell wrapper (collection picker before claude) ───────────────────────────
+SHELL_RC=""
+if [ -f "$HOME/.zshrc" ]; then SHELL_RC="$HOME/.zshrc"
+elif [ -f "$HOME/.bashrc" ]; then SHELL_RC="$HOME/.bashrc"; fi
+
+if [ -n "$SHELL_RC" ] && ! grep -q "skillnote-pick" "$SHELL_RC" 2>/dev/null; then
+    cat >> "$SHELL_RC" << 'WRAPEOF'
+
+# SkillNote: collection picker before launching claude
+claude() {
+  if [ ! -f ".skillnote.json" ] && [ -t 0 ] && [ -t 1 ]; then
+    skillnote-pick 2>/dev/null || true
+  fi
+  command claude "$@"
+}
+WRAPEOF
+    echo "  Shell wrapper added to $SHELL_RC"
+    echo "  Run: source $SHELL_RC (or open a new terminal)"
+fi
+
 echo ""
-echo "  Next: start claude in any project folder."
-echo "  You'll be asked to pick a collection on first session."
+echo "  Ready! Type 'claude' in any project folder."
+echo "  You'll pick collections on first launch (arrow keys + space)."
 echo ""
 '''
 

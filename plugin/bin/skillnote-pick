@@ -1,0 +1,127 @@
+#!/usr/bin/env python3
+"""SkillNote collection picker — native terminal UI with arrow keys and checkboxes.
+
+Called by the claude wrapper function before launching Claude Code.
+Fetches collections from the SkillNote API, shows a multi-select picker,
+writes .skillnote.json to the current directory.
+
+No external dependencies — uses Python 3 stdlib curses.
+"""
+import curses
+import json
+import os
+import sys
+import urllib.request
+
+
+def fetch_collections():
+    host = os.environ.get("SKILLNOTE_HOST", os.environ.get("CLAUDE_PLUGIN_OPTION_HOST", "localhost"))
+    api = f"http://{host}:8082"
+    try:
+        data = json.loads(urllib.request.urlopen(f"{api}/v1/collections", timeout=3).read())
+        return [(c["name"], c["count"]) for c in data]
+    except Exception:
+        return []
+
+
+def pick(stdscr, items):
+    """Multi-select picker with arrow keys, space to toggle, enter to confirm."""
+    selected = set()
+    cur = 0
+    curses.curs_set(0)
+    curses.start_color()
+    curses.use_default_colors()
+    curses.init_pair(1, curses.COLOR_CYAN, -1)
+    curses.init_pair(2, curses.COLOR_GREEN, -1)
+
+    while True:
+        stdscr.clear()
+        h, w = stdscr.getmaxyx()
+
+        # Header
+        stdscr.addstr(0, 0, " SkillNote — Pick collections for this project", curses.A_BOLD)
+        stdscr.addstr(1, 0, " ↑↓ move  Space toggle  Enter confirm  q skip", curses.color_pair(1))
+        stdscr.addstr(2, 0, "")
+
+        # Items
+        for i, (name, count) in enumerate(items):
+            if i + 3 >= h - 1:
+                break
+            mark = "[x]" if i in selected else "[ ]"
+            prefix = " > " if i == cur else "   "
+            line = f"{prefix}{mark} {name} ({count} skills)"
+
+            attr = curses.A_REVERSE if i == cur else 0
+            if i in selected:
+                attr |= curses.color_pair(2)
+
+            try:
+                stdscr.addstr(i + 3, 0, line[:w-1], attr)
+            except curses.error:
+                pass
+
+        # Footer
+        n = len(selected)
+        footer = f" {n} selected" if n > 0 else " None selected (Enter = all collections)"
+        try:
+            stdscr.addstr(h - 1, 0, footer[:w-1], curses.A_DIM)
+        except curses.error:
+            pass
+
+        stdscr.refresh()
+
+        key = stdscr.getch()
+        if key == curses.KEY_UP and cur > 0:
+            cur -= 1
+        elif key == curses.KEY_DOWN and cur < len(items) - 1:
+            cur += 1
+        elif key == ord(" "):
+            selected ^= {cur}
+        elif key in (ord("\n"), curses.KEY_ENTER, 10, 13):
+            if selected:
+                return [items[i][0] for i in sorted(selected)]
+            else:
+                return []  # empty = all collections
+        elif key in (ord("q"), 27):  # q or Escape
+            return None  # cancelled
+
+
+def main():
+    # Skip if .skillnote.json exists
+    if os.path.exists(".skillnote.json"):
+        return
+
+    # Skip if not a terminal
+    if not os.isatty(0) or not os.isatty(1):
+        return
+
+    collections = fetch_collections()
+    if len(collections) <= 1:
+        return  # nothing to pick
+
+    chosen = curses.wrapper(pick, collections)
+
+    if chosen is None:
+        # User cancelled — skip, launch claude anyway
+        return
+
+    if chosen:
+        # User picked specific collections
+        with open(".skillnote.json", "w") as f:
+            json.dump({"collections": chosen}, f, indent=2)
+            f.write("\n")
+        print(f"SkillNote: set collections {chosen}")
+
+        # Trigger sync
+        plugin_root = os.environ.get("CLAUDE_PLUGIN_ROOT", "")
+        if plugin_root:
+            os.system(f'"{plugin_root}/hooks-handlers/sync.sh" 2>/dev/null')
+        else:
+            os.system("skillnote-sync --force 2>/dev/null")
+    else:
+        # Empty selection = all collections, no .skillnote.json needed
+        print("SkillNote: using all collections")
+
+
+if __name__ == "__main__":
+    main()
