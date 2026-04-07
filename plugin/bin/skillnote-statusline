@@ -43,7 +43,7 @@ if os.path.isdir(skills_dir):
     skill_count = len([d for d in os.listdir(skills_dir)
                        if os.path.isdir(os.path.join(skills_dir, d))])
 
-# Check API connectivity (cached — only check every 30s)
+# Check API connectivity (cached 30s)
 cache_file = "/tmp/skillnote-status-cache"
 connected = False
 now = time.time()
@@ -69,20 +69,6 @@ except Exception:
     except Exception:
         pass
 
-# Sync freshness
-sync_age = ""
-manifest = os.path.join(skills_dir, ".skillnote-manifest.json")
-if os.path.isfile(manifest):
-    age_s = int(now - os.path.getmtime(manifest))
-    if age_s < 60:
-        sync_age = "just now"
-    elif age_s < 3600:
-        sync_age = f"{age_s // 60}m ago"
-    elif age_s < 86400:
-        sync_age = f"{age_s // 3600}h ago"
-    else:
-        sync_age = f"{age_s // 86400}d ago"
-
 # Colors
 GREEN = "\033[32m"
 RED = "\033[31m"
@@ -92,27 +78,12 @@ BOLD = "\033[1m"
 RESET = "\033[0m"
 
 # Build
-parts = []
+dot = f"{GREEN}●{RESET}" if connected else f"{RED}●{RESET}"
+brand = f"{CYAN}{BOLD}SkillNote{RESET}"
+short_url = f"{host}:3000"
+link = f"\033]8;;{web_url}\a{short_url}{RESET}\033]8;;\a"
 
-# Connected indicator + brand
-dot = f"{GREEN}●{RESET}" if connected else f"{RED}○{RESET}"
-parts.append(f"{dot} {CYAN}{BOLD}SkillNote{RESET}")
-
-# Collection
 if collection:
-    parts.append(f"{collection} {DIM}({skill_count}){RESET}")
+    print(f" {dot} {brand}  │  {collection}  │  {skill_count} skills  │  {link}")
 else:
-    parts.append(f"{DIM}no collection{RESET}")
-
-# Sync freshness or offline
-if not connected:
-    parts.append(f"{RED}offline{RESET}")
-elif sync_age:
-    parts.append(f"{DIM}↻ {sync_age}{RESET}")
-
-# Web URL (clickable)
-if connected:
-    short_url = f"{host}:3000"
-    parts.append(f"\033]8;;{web_url}\a{DIM}{short_url}{RESET}\033]8;;\a")
-
-print(" · ".join(parts))
+    print(f" {dot} {brand}  │  {DIM}no collection{RESET}  │  {link}")
