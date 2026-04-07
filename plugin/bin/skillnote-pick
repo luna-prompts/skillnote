@@ -82,43 +82,31 @@ def pick(stdscr, items):
             stdscr.addstr("│", curses.color_pair(1))
             row += 1
 
-            # Brand name in block letters
-            brand_lines = [
-                "███ █ █ █ █   █   █  █ ██▀ ▀█▀ ███",
-                "▀█▄ █▀▄ █ █   █   █▀▄█ █ █  █  █▄ ",
-                "██▀ █ █ █ ███ ███ █  █ ▀▀█  █  ███",
-            ]
-            for bl in brand_lines:
-                stdscr.addstr(row, bx, "│ ", curses.color_pair(1))
-                stdscr.addstr(ctr(bl), curses.A_BOLD | curses.color_pair(1))
+            # ── Brand: clean centered layout ──
+            def box_empty():
+                nonlocal row
+                stdscr.addstr(row, bx, "│", curses.color_pair(1))
+                stdscr.addstr(" " * (bw - 2))
                 stdscr.addstr("│", curses.color_pair(1))
                 row += 1
 
-            stdscr.addstr(row, bx, "│ ", curses.color_pair(1))
-            stdscr.addstr(ctr(""), curses.color_pair(1))
-            stdscr.addstr("│", curses.color_pair(1))
-            row += 1
+            def box_center(text, attr=0):
+                nonlocal row
+                stdscr.addstr(row, bx, "│", curses.color_pair(1))
+                ct = ctr(text, bw - 2)
+                idx = ct.find(text)
+                stdscr.addstr(ct[:idx])
+                stdscr.addstr(text, attr)
+                stdscr.addstr(ct[idx+len(text):])
+                stdscr.addstr("│", curses.color_pair(1))
+                row += 1
 
-            title = "SkillNote"
-            stdscr.addstr(row, bx, "│ ", curses.color_pair(1))
-            ct = ctr(title)
-            idx = ct.find(title)
-            stdscr.addstr(ct[:idx])
-            stdscr.addstr(title, curses.A_BOLD | curses.color_pair(3))
-            stdscr.addstr(ct[idx+len(title):])
-            stdscr.addstr("│", curses.color_pair(1))
-            row += 1
-
-            sub = f"{total_skills} skills · {len(items)} collections · {web_url}"
-            stdscr.addstr(row, bx, "│ ", curses.color_pair(1))
-            stdscr.addstr(ctr(sub), curses.A_DIM)
-            stdscr.addstr("│", curses.color_pair(1))
-            row += 1
-
-            stdscr.addstr(row, bx, "│ ", curses.color_pair(1))
-            stdscr.addstr(ctr(""), curses.color_pair(1))
-            stdscr.addstr("│", curses.color_pair(1))
-            row += 1
+            box_empty()
+            box_center("S K I L L N O T E", curses.A_BOLD | curses.color_pair(1))
+            box_empty()
+            box_center(f"{total_skills} skills  ·  {len(items)} collections", curses.A_DIM)
+            box_center(web_url, curses.A_DIM)
+            box_empty()
 
             # ── Separator ──
             stdscr.addstr(row, bx, "├─", curses.color_pair(1))
