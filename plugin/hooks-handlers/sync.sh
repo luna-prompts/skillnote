@@ -126,9 +126,14 @@ for skill in skills:
     os.makedirs(skill_dir, exist_ok=True)
 
     # Build SKILL.md with full frontmatter
-    fm_lines = [f'name: {slug}', f'description: {skill[\"description\"]}']
-    if skill.get('collections'):
-        fm_lines.append(f'collections: [{\", \".join(skill[\"collections\"])}]')
+    # Prepend collection name to description for autocomplete visibility
+    desc = skill['description']
+    colls = skill.get('collections', [])
+    if colls:
+        desc = colls[0] + ' · ' + desc
+    fm_lines = [f'name: {slug}', f'description: {desc}']
+    if colls:
+        fm_lines.append(f'collections: [{\", \".join(colls)}]')
     extra = skill.get('extra_frontmatter') or ''
     if extra.strip():
         fm_lines.append(extra.strip())
