@@ -9,6 +9,11 @@ PROJECT_DIR="${CLAUDE_PROJECT_DIR:-.}"
 PROJECT_CONFIG="${PROJECT_DIR}/.skillnote.json"
 
 # Determine scope: project-level or global
+# Clean up the collection rules file if .skillnote.json exists
+if [ -f "$PROJECT_CONFIG" ] && [ -f "${PROJECT_DIR}/.claude/rules/skillnote-collection.md" ]; then
+    rm -f "${PROJECT_DIR}/.claude/rules/skillnote-collection.md"
+fi
+
 if [ -f "$PROJECT_CONFIG" ]; then
     COLLECTIONS=$(python3 -c "
 import json
@@ -54,26 +59,31 @@ except: pass
 
     TOTAL_SKILLS=$(curl -sf --connect-timeout 3 --max-time 5 "${API_URL}/v1/skills" 2>/dev/null | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
 
-    # Prompt for collection selection when no .skillnote.json
+    # Write a .claude/rules/ file to prompt for collection selection at session start
     NUM_COLS=$(echo "$COLS_JSON" | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
     if [ "$NUM_COLS" -gt 1 ] 2>/dev/null; then
-        RECOMMEND=""
-        [ -n "$FOLDER_MATCH" ] && RECOMMEND="$FOLDER_MATCH"
-        echo "<EXTREMELY_IMPORTANT>"
-        echo "SkillNote has ${NUM_COLS} collections available: ${COLS_JSON}"
-        if [ -n "$RECOMMEND" ]; then
-            echo "Collection '${RECOMMEND}' matches this project folder."
-        fi
-        echo ""
-        echo "BEFORE doing anything else, you MUST ask the user which collection to activate using AskUserQuestion:"
-        echo "  header: 'SkillNote'"
-        echo "  question: 'Which skill collections should be active for this project?'"
-        echo "  multiSelect: true"
-        echo "  options: (build from the collections above, put recommended first if any, max 4 including 'All collections')"
-        echo ""
-        echo "After the user picks, write .skillnote.json with their selection and run: skillnote-sync --force"
-        echo "If they pick 'All collections', do not write .skillnote.json (all skills stay synced)."
-        echo "</EXTREMELY_IMPORTANT>"
+        RULES_DIR="${PROJECT_DIR}/.claude/rules"
+        mkdir -p "$RULES_DIR"
+        RECOMMEND_LINE=""
+        [ -n "$FOLDER_MATCH" ] && RECOMMEND_LINE="Recommend '${FOLDER_MATCH}' as the first option (matches folder name)."
+        cat > "$RULES_DIR/skillnote-collection.md" << RULEEOF
+# SkillNote Collection Setup
+
+At the START of every conversation, BEFORE responding to the user's first message, check if \`.skillnote.json\` exists in the project root.
+
+If \`.skillnote.json\` does NOT exist, use AskUserQuestion to ask the user which SkillNote collection to activate:
+- header: "SkillNote"
+- question: "Which skill collections should be active for this project?"
+- multiSelect: true
+- Available collections: ${COLS_JSON}
+${RECOMMEND_LINE}
+
+After the user picks, write \`.skillnote.json\`: \`{"collections": ["name1", "name2"]}\`
+Then run: \`skillnote-sync --force\`
+
+If the user picks "All collections", do not write .skillnote.json.
+If \`.skillnote.json\` already exists, skip this step silently and remove this rules file.
+RULEEOF
     fi
 fi
 
