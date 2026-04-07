@@ -56,12 +56,24 @@ except: pass
 
     # Prompt for collection selection when no .skillnote.json
     NUM_COLS=$(echo "$COLS_JSON" | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
-    if [ -n "$FOLDER_MATCH" ]; then
-        echo "SkillNote: Collection '${FOLDER_MATCH}' matches this folder (${TOTAL_SKILLS} skills available)."
-        echo "  ACTION: Ask the user if they want to scope to '${FOLDER_MATCH}' using AskUserQuestion. Available collections: ${COLS_JSON}"
-    elif [ "$NUM_COLS" -gt 1 ] 2>/dev/null; then
-        echo "SkillNote: ${TOTAL_SKILLS} skills across ${NUM_COLS} collections. Use /skillnote:collection to scope this project."
-        echo "  ACTION: Ask the user which collection they want using AskUserQuestion. Available collections: ${COLS_JSON}"
+    if [ "$NUM_COLS" -gt 1 ] 2>/dev/null; then
+        RECOMMEND=""
+        [ -n "$FOLDER_MATCH" ] && RECOMMEND="$FOLDER_MATCH"
+        echo "<EXTREMELY_IMPORTANT>"
+        echo "SkillNote has ${NUM_COLS} collections available: ${COLS_JSON}"
+        if [ -n "$RECOMMEND" ]; then
+            echo "Collection '${RECOMMEND}' matches this project folder."
+        fi
+        echo ""
+        echo "BEFORE doing anything else, you MUST ask the user which collection to activate using AskUserQuestion:"
+        echo "  header: 'SkillNote'"
+        echo "  question: 'Which skill collections should be active for this project?'"
+        echo "  multiSelect: true"
+        echo "  options: (build from the collections above, put recommended first if any, max 4 including 'All collections')"
+        echo ""
+        echo "After the user picks, write .skillnote.json with their selection and run: skillnote-sync --force"
+        echo "If they pick 'All collections', do not write .skillnote.json (all skills stay synced)."
+        echo "</EXTREMELY_IMPORTANT>"
     fi
 fi
 
