@@ -12,8 +12,12 @@ router = APIRouter(tags=["setup"])
 _PLUGIN_DIR = Path("/plugin") if Path("/plugin/.claude-plugin").is_dir() else Path(__file__).resolve().parent.parent.parent.parent / "plugin"
 
 
+import re as _re
+
 def _derive_urls(request: Request):
-    host = request.headers.get("host", "localhost:8082").split(":")[0]
+    raw_host = request.headers.get("host", "localhost:8082").split(":")[0]
+    # Sanitize host to prevent shell injection when embedded in setup script
+    host = raw_host if _re.match(r'^[a-zA-Z0-9._-]+$', raw_host) else "localhost"
     return {
         "api": os.environ.get("SKILLNOTE_API_URL", f"http://{host}:8082"),
         "mcp": os.environ.get("SKILLNOTE_MCP_URL", f"http://{host}:8083/mcp"),
@@ -94,13 +98,18 @@ MKTEOF
 # ── register marketplace in settings ─────────────────────────────────────────
 USER_SETTINGS="$CLAUDE_HOME/settings.json"
 python3 -c "
-import json, os
+import json, os, sys
 path = '$USER_SETTINGS'
 data = {}
 if os.path.exists(path):
     try:
         with open(path) as f: data = json.load(f)
-    except: data = {}
+    except (json.JSONDecodeError, ValueError):
+        # Backup corrupted file instead of silently overwriting
+        import shutil
+        shutil.copy2(path, path + '.bak')
+        print(f'Warning: {path} was invalid JSON. Backed up to {path}.bak', file=sys.stderr)
+        data = {}
 # Add marketplace
 data.setdefault('extraKnownMarketplaces', {})
 data['extraKnownMarketplaces']['skillnote-local'] = {

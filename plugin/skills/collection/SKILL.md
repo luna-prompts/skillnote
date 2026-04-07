@@ -108,13 +108,13 @@ for i in range(200):
                 json.dump({"collections": result["collections"]}, f, indent=2)
                 f.write("\n")
             print("Collection set!")
-            sys.exit(0)
+            break
     except:
         pass
     if i % 10 == 0 and i > 0:
         print(f"  Still waiting... ({i * 3}s)")
-
-print("Session expired. Try again with /skillnote:collection")
+else:
+    print("Session expired. Try again with /skillnote:collection")
 ```
 
 After the selection is applied, trigger sync:

@@ -48,6 +48,17 @@ async def http_exception_handler(_: Request, exc: HTTPException):
     return JSONResponse(status_code=exc.status_code, content={"error": payload})
 
 
+@app.exception_handler(Exception)
+async def generic_exception_handler(_: Request, exc: Exception):
+    """Catch unhandled exceptions — never leak stack traces to clients."""
+    import logging
+    logging.getLogger("skillnote").exception("Unhandled exception")
+    return JSONResponse(
+        status_code=500,
+        content={"error": {"code": "INTERNAL_ERROR", "message": "Internal server error"}},
+    )
+
+
 app.include_router(skills_router)
 app.include_router(downloads_router)
 app.include_router(publish_router)

@@ -111,12 +111,12 @@ echo ""
 step "Stopping any existing containers"
 compose down 2>/dev/null || true
 sleep 1
-# Free up ports if something else is using them
+# Check if ports are still in use (warn, don't force-kill)
 for p in $WEB_PORT $API_PORT $MCP_PORT; do
-  PIDS=$(lsof -ti :"$p" 2>/dev/null || true)
-  [ -n "$PIDS" ] && kill -9 $PIDS 2>/dev/null || true
+  if lsof -ti :"$p" >/dev/null 2>&1; then
+    warn "Port $p is in use by another process. Docker may fail to bind."
+  fi
 done
-sleep 1
 ok "Clean slate"
 
 # ── 2. Build ──────────────────────────────────────────────────────
