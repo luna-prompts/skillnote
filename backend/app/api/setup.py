@@ -226,7 +226,7 @@ if [ -n "$SHELL_RC" ]; then
 
 # SkillNote: collection picker before launching claude
 claude() {
-  if [ ! -f ".skillnote.json" ] && [ -t 0 ] && [ -t 1 ]; then
+  if [ -t 0 ] && [ -t 1 ]; then
     "$PICKER_PATH" || true
   fi
   command claude "\$@"
