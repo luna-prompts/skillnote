@@ -49,68 +49,158 @@ def pick(stdscr, items):
         h, w = stdscr.getmaxyx()
         row = 0
 
-        # ── Brand header ──
-        try:
-            stdscr.addstr(row, 0, "  ╭" + "─" * (w - 6) + "╮", curses.color_pair(1))
-            row += 1
-            title = "SkillNote"
-            subtitle = "Select collections for this project"
-            pad = (w - 6 - len(title)) // 2
-            stdscr.addstr(row, 0, "  │" + " " * pad, curses.color_pair(1))
-            stdscr.addstr(title, curses.A_BOLD | curses.color_pair(3))
-            stdscr.addstr(" " * (w - 6 - pad - len(title)) + "│", curses.color_pair(1))
-            row += 1
-            pad2 = (w - 6 - len(subtitle)) // 2
-            stdscr.addstr(row, 0, "  │" + " " * pad2, curses.color_pair(1))
-            stdscr.addstr(subtitle, curses.A_DIM)
-            stdscr.addstr(" " * (w - 6 - pad2 - len(subtitle)) + "│", curses.color_pair(1))
-            row += 1
-            stdscr.addstr(row, 0, "  ╰" + "─" * (w - 6) + "╯", curses.color_pair(1))
-            row += 2
-        except curses.error:
-            pass
+        # ── Get info ──
+        host = os.environ.get("SKILLNOTE_HOST", os.environ.get("CLAUDE_PLUGIN_OPTION_HOST", "localhost"))
+        web_url = f"http://{host}:3000"
+        n_sel = len(selected)
+        sel_skills = sum(items[i][1] for i in selected)
+        sel_names = ", ".join(items[i][0] for i in sorted(selected))
 
-        # ── Collections ──
-        for i, (name, count) in enumerate(items):
-            if row >= h - 3:
-                break
-            mark = "◉" if i in selected else "○"
-            pointer = "❯" if i == cur else " "
+        # ── Layout ──
+        bw = min(w - 4, 80)  # box width
+        bx = (w - bw) // 2   # center horizontally
+        iw = bw - 4          # inner width
 
+        def ctr(text, width=iw):
+            pad = max(0, width - len(text))
+            return " " * (pad // 2) + text + " " * (pad - pad // 2)
+
+        def box_line(left, fill, right, attr=curses.color_pair(1)):
             try:
-                stdscr.addstr(row, 2, f" {pointer} ", curses.A_BOLD if i == cur else curses.A_DIM)
-                if i in selected:
-                    stdscr.addstr(f"{mark} ", curses.color_pair(2) | curses.A_BOLD)
-                    stdscr.addstr(f"{name}", curses.color_pair(2) | curses.A_BOLD)
-                elif i == cur:
-                    stdscr.addstr(f"{mark} ", curses.color_pair(4))
-                    stdscr.addstr(f"{name}", curses.A_BOLD)
-                else:
-                    stdscr.addstr(f"{mark} ", curses.A_DIM)
-                    stdscr.addstr(f"{name}")
-                stdscr.addstr(f"  ({count} skills)", curses.A_DIM)
+                stdscr.addstr(row, bx, left + fill * iw + right, attr)
             except curses.error:
                 pass
+
+        try:
+            # ── Top border ──
+            box_line("╭─", "─", "─╮")
             row += 1
 
-        # ── Footer ──
-        row = max(row + 1, h - 3)
-        try:
-            n = len(selected)
-            sel_names = ", ".join(items[i][0] for i in sorted(selected))
-            sel_skills = sum(items[i][1] for i in selected)
-            if n > 0:
-                stdscr.addstr(min(row, h - 3), 2, f"  {n} selected: ", curses.A_DIM)
-                stdscr.addstr(sel_names[:w-20], curses.color_pair(2))
-                stdscr.addstr(f" ({sel_skills} skills)", curses.A_DIM)
+            # ── Brand ──
+            stdscr.addstr(row, bx, "│ ", curses.color_pair(1))
+            stdscr.addstr(ctr(""), curses.color_pair(1))
+            stdscr.addstr("│", curses.color_pair(1))
+            row += 1
+
+            # Brand name in block letters
+            brand_lines = [
+                "███ █ █ █ █   █   █  █ ██▀ ▀█▀ ███",
+                "▀█▄ █▀▄ █ █   █   █▀▄█ █ █  █  █▄ ",
+                "██▀ █ █ █ ███ ███ █  █ ▀▀█  █  ███",
+            ]
+            for bl in brand_lines:
+                stdscr.addstr(row, bx, "│ ", curses.color_pair(1))
+                stdscr.addstr(ctr(bl), curses.A_BOLD | curses.color_pair(1))
+                stdscr.addstr("│", curses.color_pair(1))
+                row += 1
+
+            stdscr.addstr(row, bx, "│ ", curses.color_pair(1))
+            stdscr.addstr(ctr(""), curses.color_pair(1))
+            stdscr.addstr("│", curses.color_pair(1))
+            row += 1
+
+            title = "SkillNote"
+            stdscr.addstr(row, bx, "│ ", curses.color_pair(1))
+            ct = ctr(title)
+            idx = ct.find(title)
+            stdscr.addstr(ct[:idx])
+            stdscr.addstr(title, curses.A_BOLD | curses.color_pair(3))
+            stdscr.addstr(ct[idx+len(title):])
+            stdscr.addstr("│", curses.color_pair(1))
+            row += 1
+
+            sub = f"{total_skills} skills · {len(items)} collections · {web_url}"
+            stdscr.addstr(row, bx, "│ ", curses.color_pair(1))
+            stdscr.addstr(ctr(sub), curses.A_DIM)
+            stdscr.addstr("│", curses.color_pair(1))
+            row += 1
+
+            stdscr.addstr(row, bx, "│ ", curses.color_pair(1))
+            stdscr.addstr(ctr(""), curses.color_pair(1))
+            stdscr.addstr("│", curses.color_pair(1))
+            row += 1
+
+            # ── Separator ──
+            stdscr.addstr(row, bx, "├─", curses.color_pair(1))
+            stdscr.addstr("─" * iw, curses.color_pair(1))
+            stdscr.addstr("─┤", curses.color_pair(1))
+            row += 1
+
+            # ── Section header ──
+            stdscr.addstr(row, bx, "│ ", curses.color_pair(1))
+            sh = "  Select collections for this project"
+            stdscr.addstr(sh[:iw], curses.A_DIM)
+            stdscr.addstr(" " * max(0, iw - len(sh)), curses.A_DIM)
+            stdscr.addstr("│", curses.color_pair(1))
+            row += 1
+
+            stdscr.addstr(row, bx, "│ ", curses.color_pair(1))
+            stdscr.addstr(" " * iw)
+            stdscr.addstr("│", curses.color_pair(1))
+            row += 1
+
+            # ── Collection items ──
+            for i, (name, count) in enumerate(items):
+                if row >= h - 4:
+                    break
+                mark = "◉" if i in selected else "○"
+                pointer = "❯" if i == cur else " "
+
+                stdscr.addstr(row, bx, "│ ", curses.color_pair(1))
+
+                item_str = f"  {pointer} {mark} {name}  ({count} skills)"
+                pad_r = max(0, iw - len(item_str))
+
+                stdscr.addstr(f"  {pointer} ", curses.A_BOLD if i == cur else curses.A_DIM)
+                if i in selected:
+                    stdscr.addstr(f"{mark} ", curses.color_pair(2) | curses.A_BOLD)
+                    stdscr.addstr(name, curses.color_pair(2) | curses.A_BOLD)
+                elif i == cur:
+                    stdscr.addstr(f"{mark} ", curses.color_pair(4))
+                    stdscr.addstr(name, curses.A_BOLD)
+                else:
+                    stdscr.addstr(f"{mark} ", curses.A_DIM)
+                    stdscr.addstr(name)
+                stdscr.addstr(f"  ({count} skills)", curses.A_DIM)
+                # Fill rest of line
+                cx = stdscr.getyx()[1]
+                remaining = bx + bw - 1 - cx
+                if remaining > 0:
+                    stdscr.addstr(" " * remaining)
+                stdscr.addstr("│", curses.color_pair(1))
+                row += 1
+
+            # ── Empty line ──
+            stdscr.addstr(row, bx, "│ ", curses.color_pair(1))
+            stdscr.addstr(" " * iw)
+            stdscr.addstr("│", curses.color_pair(1))
+            row += 1
+
+            # ── Status ──
+            stdscr.addstr(row, bx, "│ ", curses.color_pair(1))
+            if n_sel > 0:
+                status = f"  {n_sel} selected: {sel_names} ({sel_skills} skills)"
             else:
-                stdscr.addstr(min(row, h - 3), 2, "  Press Enter with none selected = all collections", curses.A_DIM)
+                status = "  Enter = all collections"
+            stdscr.addstr(status[:iw], curses.color_pair(2) if n_sel > 0 else curses.A_DIM)
+            sx = stdscr.getyx()[1]
+            rem = bx + bw - 1 - sx
+            if rem > 0:
+                stdscr.addstr(" " * rem)
+            stdscr.addstr("│", curses.color_pair(1))
+            row += 1
+
+            # ── Bottom border ──
+            box_line("╰─", "─", "─╯")
+            row += 1
+
         except curses.error:
             pass
 
+        # ── Hints (outside box) ──
         try:
-            hints = " ↑↓ move   Space select   Enter confirm   q skip "
-            stdscr.addstr(h - 1, 2, hints[:w-4], curses.A_DIM)
+            hints = " ↑↓ move · Space select · Enter confirm · q skip"
+            stdscr.addstr(min(row, h - 1), bx + 2, hints[:bw-4], curses.A_DIM)
         except curses.error:
             pass
 
