@@ -45,7 +45,7 @@ def _get_recommended(items):
     names = [n.lower() for n, _ in items]
 
     # 1. Current .skillnote.json
-    if os.path.exists(".skillnote.json"):
+    if os.path.isfile(".skillnote.json"):
         try:
             with open(".skillnote.json") as f:
                 cfg = json.load(f)
@@ -68,7 +68,7 @@ def _get_recommended(items):
 
 def _get_current_collections():
     """Read current collections from .skillnote.json, or None if missing/invalid."""
-    if os.path.exists(".skillnote.json"):
+    if os.path.isfile(".skillnote.json"):
         try:
             with open(".skillnote.json") as f:
                 return json.load(f).get("collections", [])
@@ -272,7 +272,7 @@ def main():
     # Single collection: auto-select, no picker needed
     if len(collections) == 1:
         name, count = collections[0]
-        if not os.path.exists(".skillnote.json"):
+        if not os.path.isfile(".skillnote.json"):
             try:
                 with open(".skillnote.json", "w") as f:
                     json.dump({"collections": [name]}, f, indent=2)
