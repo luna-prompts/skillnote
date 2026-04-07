@@ -97,7 +97,8 @@ skills_dir = '$SKILLS_DIR'
 manifest_path = '$MANIFEST'
 
 skills = json.load(sys.stdin)
-api_slugs = set()
+api_slugs = set()      # raw slugs from API
+local_names = set()    # prefixed directory names on disk
 has_filter = bool('$COLLECTIONS')
 
 # Skip skills that the plugin already provides as commands (prevent duplicates in / autocomplete)
@@ -110,7 +111,6 @@ if os.path.exists(manifest_path):
         old_managed = set(json.load(f).get('skills', []))
 
 # Safety: if filtered query returned 0 results but we have cached skills, keep them
-# (the collection may have been deleted or renamed on the server)
 if not skills and has_filter and old_managed:
     print('SkillNote: collection not found on server (keeping cached skills)')
     sys.exit(0)
@@ -122,16 +122,19 @@ for skill in skills:
     api_slugs.add(slug)
     if slug in plugin_provided:
         continue  # Plugin handles these as commands — don't create duplicate local skills
-    skill_dir = os.path.join(skills_dir, slug)
+
+    # Prefix with skillnote- so all skills group under /skillnote in autocomplete
+    local_name = f'skillnote-{slug}'
+    local_names.add(local_name)
+    skill_dir = os.path.join(skills_dir, local_name)
     os.makedirs(skill_dir, exist_ok=True)
 
     # Build SKILL.md with full frontmatter
-    # Prepend collection name to description for autocomplete visibility
     desc = skill['description']
     colls = skill.get('collections', [])
     if colls:
         desc = colls[0] + ' · ' + desc
-    fm_lines = [f'name: {slug}', f'description: {desc}']
+    fm_lines = [f'name: {local_name}', f'description: {desc}']
     if colls:
         fm_lines.append(f'collections: [{\", \".join(colls)}]')
     extra = skill.get('extra_frontmatter') or ''
@@ -160,15 +163,15 @@ for skill in skills:
         f.write(content)
 
 # Delete skills removed from registry (only managed ones)
-for slug in old_managed - api_slugs:
-    skill_dir = os.path.join(skills_dir, slug)
+for name in old_managed - local_names:
+    skill_dir = os.path.join(skills_dir, name)
     if os.path.isdir(skill_dir):
         shutil.rmtree(skill_dir)
         deleted += 1
 
-# Write updated manifest
+# Write updated manifest (uses local_names for directory tracking)
 with open(manifest_path, 'w') as f:
-    json.dump({'skills': sorted(api_slugs)}, f, indent=2)
+    json.dump({'skills': sorted(local_names)}, f, indent=2)
 
 # Build output
 total = len(skills)
