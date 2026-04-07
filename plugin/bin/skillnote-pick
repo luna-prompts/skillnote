@@ -249,10 +249,13 @@ def main():
     if len(collections) == 1:
         name, count = collections[0]
         if not os.path.exists(".skillnote.json"):
-            with open(".skillnote.json", "w") as f:
-                json.dump({"collections": [name]}, f, indent=2)
-                f.write("\n")
-            _run_sync()
+            try:
+                with open(".skillnote.json", "w") as f:
+                    json.dump({"collections": [name]}, f, indent=2)
+                    f.write("\n")
+                _run_sync()
+            except PermissionError:
+                pass
         print(f"  SkillNote: {name} ({count} skills)")
         return
 
@@ -275,9 +278,14 @@ def main():
                 pass
         return
 
-    with open(".skillnote.json", "w") as f:
-        json.dump({"collections": chosen}, f, indent=2)
-        f.write("\n")
+    try:
+        with open(".skillnote.json", "w") as f:
+            json.dump({"collections": chosen}, f, indent=2)
+            f.write("\n")
+    except PermissionError:
+        print("  SkillNote: cannot write .skillnote.json (permission denied)", file=sys.stderr)
+        return
+
     names = ", ".join(chosen)
     total = sum(c for n, c in collections if n in chosen)
     print(f"\n  SkillNote: {names} ({total} skills)\n")
