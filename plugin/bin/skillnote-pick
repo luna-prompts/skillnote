@@ -17,7 +17,6 @@ def _get_host():
     host = os.environ.get("SKILLNOTE_HOST", os.environ.get("CLAUDE_PLUGIN_OPTION_HOST", ""))
     if host:
         return host
-    # Try saved host file (written by setup script)
     host_file = os.path.expanduser("~/.skillnote/host")
     if os.path.exists(host_file):
         try:
@@ -37,8 +36,33 @@ def fetch_collections():
         return host, []
 
 
-def pick(stdscr, items):
-    cur = 0
+def _get_recommended(items):
+    """Return index of recommended collection: from .skillnote.json or folder name match."""
+    names = [n.lower() for n, _ in items]
+
+    # 1. Current .skillnote.json
+    if os.path.exists(".skillnote.json"):
+        try:
+            cfg = json.load(open(".skillnote.json"))
+            current = cfg.get("collections", [])
+            if current:
+                for i, (n, _) in enumerate(items):
+                    if n.lower() == current[0].lower():
+                        return i
+        except Exception:
+            pass
+
+    # 2. Folder name match
+    folder = os.path.basename(os.getcwd()).lower()
+    for i, name in enumerate(names):
+        if name == folder or folder.startswith(name) or name.startswith(folder):
+            return i
+
+    return 0
+
+
+def pick(stdscr, items, recommended=0):
+    cur = recommended
     curses.curs_set(0)
     curses.start_color()
     curses.use_default_colors()
@@ -74,8 +98,8 @@ def pick(stdscr, items):
         h, w = stdscr.getmaxyx()
         row = 1
 
-        cw = min(w - 4, 76)   # content width
-        mx = (w - cw) // 2    # left margin
+        cw = min(w - 4, 76)
+        mx = (w - cw) // 2
 
         def ctr_x(text):
             return mx + max(0, cw - len(text)) // 2
@@ -113,14 +137,19 @@ def pick(stdscr, items):
             for i, (name, count) in enumerate(items):
                 if row >= h - 6:
                     break
+                is_rec = (i == recommended)
                 if i == cur:
                     stdscr.addstr(row, mx + 4, "❯ ", curses.color_pair(1) | curses.A_BOLD)
                     stdscr.addstr(name, curses.A_BOLD)
                     stdscr.addstr(f"  {count} skills", curses.A_DIM)
+                    if is_rec:
+                        stdscr.addstr("  ★ recommended", curses.color_pair(4))
                 else:
                     stdscr.addstr(row, mx + 4, "  ")
                     stdscr.addstr(name, curses.A_DIM)
                     stdscr.addstr(f"  {count} skills", curses.A_DIM)
+                    if is_rec:
+                        stdscr.addstr("  ★", curses.color_pair(4) | curses.A_DIM)
                 row += 1
             row += 2
 
@@ -136,7 +165,7 @@ def pick(stdscr, items):
                 row += 2
 
             # ── Hints ──
-            hints = "↑/↓ move · Enter select · q skip"
+            hints = "↑/↓ move · Enter select · q keep current"
             stdscr.addstr(min(row, h - 1), mx + 2, hints, curses.A_DIM)
 
         except curses.error:
@@ -155,10 +184,11 @@ def pick(stdscr, items):
             return None
 
 
-def pick_fallback(items):
+def pick_fallback(items, recommended=0):
     print("\n  SkillNote — Pick a collection for this project\n")
     for i, (name, count) in enumerate(items, 1):
-        print(f"  {i}. {name} ({count} skills)")
+        rec = " ★ recommended" if i - 1 == recommended else ""
+        print(f"  {i}. {name} ({count} skills){rec}")
     print()
     try:
         reply = input("  > ").strip()
@@ -176,15 +206,6 @@ def pick_fallback(items):
 
 
 def main():
-    if os.path.exists(".skillnote.json"):
-        try:
-            cfg = json.load(open(".skillnote.json"))
-            names = ", ".join(cfg.get("collections", []))
-            if names:
-                print(f"  SkillNote: {names} (active)")
-        except Exception:
-            pass
-        return
     if not os.isatty(0) or not os.isatty(1):
         return
 
@@ -197,12 +218,22 @@ def main():
     if len(collections) <= 1:
         return
 
+    recommended = _get_recommended(collections)
+
     if HAS_CURSES:
-        chosen = curses.wrapper(pick, collections)
+        chosen = curses.wrapper(pick, collections, recommended)
     else:
-        chosen = pick_fallback(collections)
+        chosen = pick_fallback(collections, recommended)
 
     if not chosen:
+        # q pressed — keep current config if exists
+        if os.path.exists(".skillnote.json"):
+            try:
+                cfg = json.load(open(".skillnote.json"))
+                names = ", ".join(cfg.get("collections", []))
+                print(f"  SkillNote: {names} (active)")
+            except Exception:
+                pass
         return
 
     with open(".skillnote.json", "w") as f:
