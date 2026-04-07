@@ -310,6 +310,10 @@ fi
 SKILL_COUNT=$(curl -sf --connect-timeout 5 --max-time 10 "$API_URL/v1/skills" 2>/dev/null \
   | python3 -c "import json,sys;print(len(json.load(sys.stdin)))" 2>/dev/null || echo "?")
 
+# Fetch collections for display
+COLLECTIONS_LIST=$(curl -sf --connect-timeout 5 --max-time 10 "$API_URL/v1/collections" 2>/dev/null \
+  | python3 -c "import json,sys; [print(f'    {c[\"name\"]} ({c[\"count\"]} skills)') for c in json.load(sys.stdin)]" 2>/dev/null || echo "    (none)")
+
 echo ""
 echo "  SkillNote connected!"
 echo ""
@@ -317,6 +321,13 @@ echo "  API:  $API_URL"
 echo "  MCP:  $MCP_URL"
 echo "  Web:  $WEB_URL"
 echo "  Skills: $SKILL_COUNT synced"
+echo ""
+echo "  Collections:"
+echo "$COLLECTIONS_LIST"
+echo ""
+echo "  Change collection: /skillnote:collection"
+echo "  Create skills:     /skillnote:skill-push"
+echo "  Browse all:        $WEB_URL/collections"
 echo ""
 echo "  Start claude in any project."
 echo ""
