@@ -2,7 +2,7 @@
 # SkillNote Auto-Sync — UserPromptSubmit hook (async)
 # Throttled background re-sync: only runs if >60s since last sync.
 # If skills changed on the server, local SKILL.md files update and
-# Claude Code hot-reloads them mid-session. User never waits.
+# Claude Code picks them up. User never waits (async hook).
 
 SYNC_INTERVAL=60  # seconds between syncs
 
@@ -21,14 +21,23 @@ if [ -f "$LAST_SYNC_FILE" ]; then
     [ "$DIFF" -lt "$SYNC_INTERVAL" ] && exit 0
 fi
 
-# Run the full sync (reuses the same script as SessionStart)
+# Run the full sync — don't swallow output so Claude sees changes
 if [ -n "$CLAUDE_PLUGIN_ROOT" ]; then
-    "$CLAUDE_PLUGIN_ROOT/hooks-handlers/sync.sh" > /dev/null 2>&1
+    SYNC_OUTPUT=$("$CLAUDE_PLUGIN_ROOT/hooks-handlers/sync.sh" 2>/dev/null)
+    SYNC_EXIT=$?
 else
     SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-    "$SCRIPT_DIR/sync.sh" > /dev/null 2>&1
+    SYNC_OUTPUT=$("$SCRIPT_DIR/sync.sh" 2>/dev/null)
+    SYNC_EXIT=$?
 fi
 
-# Update timestamp
-mkdir -p "$(dirname "$LAST_SYNC_FILE")"
-echo "$NOW" > "$LAST_SYNC_FILE"
+# Only update timestamp if sync succeeded
+if [ $SYNC_EXIT -eq 0 ]; then
+    mkdir -p "$(dirname "$LAST_SYNC_FILE")"
+    echo "$NOW" > "$LAST_SYNC_FILE"
+fi
+
+# Show output if there were actual changes (not just "all current")
+if [ -n "$SYNC_OUTPUT" ] && ! echo "$SYNC_OUTPUT" | grep -q "all current"; then
+    echo "$SYNC_OUTPUT"
+fi
