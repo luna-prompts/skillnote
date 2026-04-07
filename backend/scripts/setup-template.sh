@@ -171,6 +171,134 @@ echo "$NOW" > "$LAST_SYNC_FILE"
 AUTOSYNCEOF
 chmod +x "$PLUGIN_DIR/hooks-handlers/auto-sync.sh"
 
+# ── skills ───────────────────────────────────────────────────────────────────
+mkdir -p "$PLUGIN_DIR/skills/skill-push" "$PLUGIN_DIR/skills/collection"
+
+cat > "$PLUGIN_DIR/skills/skill-push/SKILL.md" << 'SKILLPUSHEOF'
+---
+name: skill-push
+description: Create and push reusable skills to SkillNote when repeated instructions are detected or user says "create a skill", "save this pattern", "push a skill". Guides drafting, review, collection selection, and publishing.
+---
+
+# Skill Push
+
+Create and push reusable skills to the SkillNote registry.
+
+The SkillNote API is at: http://__SKILL_HOST__:8082
+
+## Steps
+
+1. **Confirm** the pattern with the user
+2. **Draft** name (lowercase-hyphens, max 64), description (with trigger keywords), content
+3. **Check** if exists: `curl -sf http://__SKILL_HOST__:8082/v1/skills/<SLUG>`
+4. **Collection** (required): fetch `http://__SKILL_HOST__:8082/v1/collections` and let user pick. Every skill needs at least one collection.
+5. **Review** with user
+6. **Push** via Python urllib:
+
+```python
+import json, urllib.request, os
+api = "http://__SKILL_HOST__:8082"
+payload = json.dumps({"name": "<NAME>", "slug": "<NAME>", "description": "<DESC>", "content_md": "<CONTENT>", "collections": ["<COL>"]}).encode()
+req = urllib.request.Request(f"{api}/v1/skills", data=payload, headers={"Content-Type": "application/json"}, method="POST")
+try:
+    result = json.loads(urllib.request.urlopen(req).read())
+    print(f"Created: {result['slug']} v{result['current_version']}")
+except urllib.error.HTTPError as e:
+    print(f"Error: {json.loads(e.read())}")
+```
+
+For updates use PATCH: `urllib.request.Request(f"{api}/v1/skills/<SLUG>", ..., method="PATCH")`
+SKILLPUSHEOF
+sedi "s|__SKILL_HOST__|$SYNC_HOST|g" "$PLUGIN_DIR/skills/skill-push/SKILL.md"
+
+cat > "$PLUGIN_DIR/skills/collection/SKILL.md" << 'COLLEOF'
+---
+name: collection
+description: Choose which SkillNote skill collection is active for this project. Use when user says "change collection", "switch skills", "use frontend skills", "show collections", or at first session in a new project when recommended.
+---
+
+# SkillNote Collection Manager
+
+Help the user choose which skill collection to sync for the current project.
+
+## Step 1: Fetch Collections
+
+```python
+import urllib.request, json
+api = "http://__COL_HOST__:8082"
+cols = json.loads(urllib.request.urlopen(f"{api}/v1/collections").read())
+for c in cols: print(f"{c['name']} ({c['count']} skills)")
+```
+
+## Step 2: Ask the User
+
+Use **AskUserQuestion** with multiSelect: true. Show up to 3 collections sorted by skill count + a 4th option "Browse all in browser" that opens the web UI picker.
+
+If user picks "Browse all in browser":
+1. Create a session: POST http://__COL_HOST__:8082/v1/sessions
+2. Open the pick_url in the browser
+3. Poll GET /v1/sessions/{token} every 3s until completed
+4. Apply the returned collections
+
+## Step 3: Apply
+
+Write .skillnote.json: `{"collections": ["name1", "name2"]}`
+Then run: `skillnote-sync --force`
+
+## Guidelines
+
+- Every skill must belong to at least one collection
+- Keep 12-15 skills per collection for best performance
+- The user can change collections anytime with this command
+COLLEOF
+sedi "s|__COL_HOST__|$SYNC_HOST|g" "$PLUGIN_DIR/skills/collection/SKILL.md"
+
+# ── agents ───────────────────────────────────────────────────────────────────
+mkdir -p "$PLUGIN_DIR/agents"
+cat > "$PLUGIN_DIR/agents/skill-creator.md" << 'AGENTEOF'
+---
+name: skill-creator
+description: Create, refine, and push reusable skills to the SkillNote registry. Use when patterns are detected or user requests a new skill.
+model: inherit
+effort: high
+tools:
+  - Read
+  - Write
+  - Bash
+  - Grep
+  - Glob
+---
+
+# SkillNote Skill Creator
+
+Dedicated agent for creating high-quality skills. Use the skill-push skill for the push mechanics.
+AGENTEOF
+
+# ── bin ──────────────────────────────────────────────────────────────────────
+mkdir -p "$PLUGIN_DIR/bin"
+cat > "$PLUGIN_DIR/bin/skillnote-sync" << 'BINEOF'
+#!/bin/bash
+if [ "$1" = "--force" ]; then
+    SKILLS_DIR="$HOME/.claude/skills"
+    MANIFEST="$SKILLS_DIR/.skillnote-manifest.json"
+    [ -n "$CLAUDE_PLUGIN_DATA" ] && MANIFEST="$CLAUDE_PLUGIN_DATA/.skillnote-manifest.json"
+    if [ -f "$MANIFEST" ]; then
+        python3 -c "
+import json, os, shutil
+m = json.load(open('$MANIFEST'))
+sd = '$SKILLS_DIR'
+for slug in m.get('skills', []):
+    d = os.path.join(sd, slug)
+    if os.path.isdir(d): shutil.rmtree(d)
+" 2>/dev/null
+    fi
+    rm -f "$MANIFEST"
+fi
+if [ -n "$CLAUDE_PLUGIN_ROOT" ]; then exec "$CLAUDE_PLUGIN_ROOT/hooks-handlers/sync.sh"
+else SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"; exec "$SCRIPT_DIR/hooks-handlers/sync.sh"; fi
+BINEOF
+chmod +x "$PLUGIN_DIR/bin/skillnote-sync"
+
 # ── add MCP server ───────────────────────────────────────────────────────────
 if command -v claude &>/dev/null; then
     claude mcp add --transport http --scope user skillnote "$MCP_URL" 2>/dev/null || true
