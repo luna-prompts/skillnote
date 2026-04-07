@@ -4,7 +4,14 @@ set -euo pipefail
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # ── Config ────────────────────────────────────────────────────────
-SKILLNOTE_HOST="${SKILLNOTE_HOST:-$(hostname -I 2>/dev/null | awk '{print $1}')}"
+# Detect LAN IP: Linux hostname -I, macOS ipconfig getifaddr
+_detect_ip() {
+  local ip=""
+  ip=$(hostname -I 2>/dev/null | awk '{print $1}') && [ -n "$ip" ] && echo "$ip" && return
+  ip=$(ipconfig getifaddr en0 2>/dev/null) && [ -n "$ip" ] && echo "$ip" && return
+  echo ""
+}
+SKILLNOTE_HOST="${SKILLNOTE_HOST:-$(_detect_ip)}"
 SKILLNOTE_HOST="${SKILLNOTE_HOST:-localhost}"
 API_PORT="${SKILLNOTE_API_PORT:-8082}"
 MCP_PORT="${SKILLNOTE_MCP_PORT:-8083}"
@@ -28,15 +35,16 @@ info()     { echo -e "  ${DIM}$1${NC}"; }
 warn()     { echo -e "  ${YELLOW}!${NC}  $1"; }
 err()      { echo -e "\n${RED}✗ $1${NC}"; exit 1; }
 progress() {
-  local pid=$1 msg=$2
+  local pid="$1" msg="$2"
   local spin='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
   local i=0
   while kill -0 "$pid" 2>/dev/null; do
-    printf "\r  ${CYAN}${spin:i++%10:1}${NC}  ${DIM}%s${NC}" "$msg"
-    sleep 0.15
+    local c="${spin:$((i % 10)):1}"
+    printf "\r  ${CYAN}%s${NC}  ${DIM}%s${NC}" "$c" "$msg"
+    i=$((i + 1))
+    sleep 0.2
   done
-  wait "$pid" 2>/dev/null
-  printf "\r"
+  printf "\r                                                    \r"
 }
 
 # ── Banner ────────────────────────────────────────────────────────
@@ -54,7 +62,8 @@ docker compose -f "$PROJECT_DIR/docker-compose.yml" down 2>/dev/null || true
 sleep 1
 # Free up ports if something else is using them
 for p in $WEB_PORT $API_PORT $MCP_PORT; do
-  lsof -ti :"$p" 2>/dev/null | xargs -r kill -9 2>/dev/null || true
+  PIDS=$(lsof -ti :"$p" 2>/dev/null || true)
+  [ -n "$PIDS" ] && kill -9 $PIDS 2>/dev/null || true
 done
 sleep 1
 ok "Clean slate"
@@ -66,9 +75,13 @@ SKILLNOTE_HOST="$SKILLNOTE_HOST" \
 SKILLNOTE_API_PORT="$API_PORT" \
 SKILLNOTE_MCP_PORT="$MCP_PORT" \
 SKILLNOTE_WEB_PORT="$WEB_PORT" \
-  docker compose -f "$PROJECT_DIR/docker-compose.yml" build --quiet 2>/dev/null &
+  docker compose -f "$PROJECT_DIR/docker-compose.yml" build --quiet > /dev/null 2>&1 &
 BUILD_PID=$!
 progress $BUILD_PID "Building api, mcp, web..."
+if ! wait $BUILD_PID; then
+  echo ""
+  err "Build failed. Run: docker compose build"
+fi
 ok "Images built"
 
 # ── 3. Start ──────────────────────────────────────────────────────
