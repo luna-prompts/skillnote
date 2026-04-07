@@ -187,4 +187,8 @@ print('SkillNote: ' + str(total) + ' skills (' + detail + ')')
 # Output as additionalContext for Claude's session
 if [ -n "$RESULT" ]; then
     echo "$RESULT"
+    # Welcome message on first sync in a project (manifest was just created)
+    if echo "$RESULT" | grep -q "new" && [ -n "$COLLECTIONS" ]; then
+        echo "Type /skillnote for dashboard, /skillnote:collection to change."
+    fi
 fi

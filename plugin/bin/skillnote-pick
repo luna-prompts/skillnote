@@ -35,14 +35,26 @@ def fetch_collections():
     api = f"http://{host}:8082"
     try:
         data = json.loads(urllib.request.urlopen(f"{api}/v1/collections", timeout=3).read())
-        return host, [(c["name"], c["count"]) for c in data]
+        collections = []
+        for c in data:
+            # Fetch skill names for preview
+            skills = []
+            try:
+                skill_data = json.loads(urllib.request.urlopen(
+                    f"{api}/v1/skills?collections={c['name']}", timeout=3
+                ).read())
+                skills = [s["slug"] for s in skill_data]
+            except Exception:
+                pass
+            collections.append((c["name"], c["count"], skills))
+        return host, collections
     except Exception:
         return host, []
 
 
 def _get_recommended(items):
     """Return index of recommended collection: from .skillnote.json or folder name match."""
-    names = [n.lower() for n, _ in items]
+    names = [n.lower() for n, _, _ in items]
 
     # 1. Current .skillnote.json
     if os.path.isfile(".skillnote.json"):
@@ -51,7 +63,7 @@ def _get_recommended(items):
                 cfg = json.load(f)
             current = cfg.get("collections", [])
             if current:
-                for i, (n, _) in enumerate(items):
+                for i, (n, _, _) in enumerate(items):
                     if n.lower() == current[0].lower():
                         return i
         except Exception:
@@ -133,7 +145,7 @@ def pick(stdscr, items, recommended=0):
     stdscr.nodelay(False)
     time.sleep(0.15)
 
-    total_skills = sum(c for _, c in items)
+    total_skills = sum(c for _, c, _ in items)
     host = _get_host()
     web_url = f"http://{host}:3000"
 
@@ -187,7 +199,7 @@ def pick(stdscr, items, recommended=0):
             row += 2
 
             # ── Items ──
-            for i, (name, count) in enumerate(items):
+            for i, (name, count, skills) in enumerate(items):
                 if row >= h - 6:
                     break
                 is_rec = (i == recommended)
@@ -196,7 +208,7 @@ def pick(stdscr, items, recommended=0):
                     stdscr.addstr(name, curses.A_BOLD)
                     stdscr.addstr(f"  {count} skills", curses.A_DIM)
                     if is_rec:
-                        stdscr.addstr("  ★ recommended", curses.color_pair(4))
+                        stdscr.addstr("  ★", curses.color_pair(4))
                 else:
                     stdscr.addstr(row, mx + 4, "  ")
                     stdscr.addstr(name, curses.A_DIM)
@@ -204,6 +216,13 @@ def pick(stdscr, items, recommended=0):
                     if is_rec:
                         stdscr.addstr("  ★", curses.color_pair(4) | curses.A_DIM)
                 row += 1
+                # Show skill names preview under the selected item
+                if skills and i == cur and row < h - 6:
+                    preview = ", ".join(skills[:6])
+                    if len(skills) > 6:
+                        preview += f" +{len(skills)-6} more"
+                    stdscr.addstr(row, mx + 8, preview[:cw-10], curses.A_DIM)
+                    row += 1
             row += 2
 
             # ── Rule ──
@@ -240,9 +259,11 @@ def pick(stdscr, items, recommended=0):
 def pick_fallback(items, recommended=0):
     print("\n  SkillNote — Pick a collection for this project")
     print("  Enter number to select, q to keep current\n")
-    for i, (name, count) in enumerate(items, 1):
-        rec = " ★ recommended" if i - 1 == recommended else ""
+    for i, (name, count, skills) in enumerate(items, 1):
+        rec = " ★" if i - 1 == recommended else ""
         print(f"  {i}. {name} ({count} skills){rec}")
+        if skills:
+            print(f"     {', '.join(skills[:5])}")
     print()
     try:
         reply = input("  > ").strip()
@@ -271,7 +292,7 @@ def main():
 
     # Single collection: auto-select, no picker needed
     if len(collections) == 1:
-        name, count = collections[0]
+        name, count, _ = collections[0]
         if not os.path.isfile(".skillnote.json"):
             try:
                 with open(".skillnote.json", "w") as f:
@@ -314,7 +335,7 @@ def main():
         _clean_skills_dir()
 
     names = ", ".join(chosen)
-    total = sum(c for n, c in collections if n in chosen)
+    total = sum(c for n, c, _ in collections if n in chosen)
     print(f"\n  SkillNote: {names} ({total} skills)\n")
 
     _run_sync()
