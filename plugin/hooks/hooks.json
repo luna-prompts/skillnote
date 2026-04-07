@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks-handlers/sync.sh\"",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks-handlers/sync.sh",
             "timeout": 15,
             "statusMessage": "SkillNote: syncing skills..."
           }
@@ -19,7 +19,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks-handlers/auto-sync.sh\"",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks-handlers/auto-sync.sh",
             "async": true
           }
         ]
@@ -31,7 +31,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks-handlers/track-usage.sh\"",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks-handlers/track-usage.sh",
             "async": true
           }
         ]

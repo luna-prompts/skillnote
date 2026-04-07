@@ -88,6 +88,35 @@ unzip -qo /tmp/skillnote-plugin.zip -d "$PLUGIN_DIR"
 rm -f /tmp/skillnote-plugin.zip
 chmod +x "$PLUGIN_DIR/hooks-handlers/"*.sh "$PLUGIN_DIR/bin/"* 2>/dev/null || true
 
+# ── register marketplace ──────────────────────────────────────────────────────
+MARKETPLACE_DIR="$CLAUDE_HOME/plugins/marketplaces/skillnote-local"
+mkdir -p "$MARKETPLACE_DIR"
+cat > "$MARKETPLACE_DIR/marketplace.json" << 'MKTEOF'
+{"name":"skillnote-local","owner":{"name":"SkillNote"},"plugins":[{"name":"skillnote","source":"./","version":"1.0.0"}]}
+MKTEOF
+
+KNOWN_MKT="$CLAUDE_HOME/plugins/known_marketplaces.json"
+python3 -c "
+import json, os
+from datetime import datetime, timezone
+
+path = '$KNOWN_MKT'
+data = {}
+if os.path.exists(path):
+    try:
+        with open(path) as f: data = json.load(f)
+    except: data = {}
+
+now = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.000Z')
+data['skillnote-local'] = {
+    'source': {'source': 'directory', 'path': '$MARKETPLACE_DIR'},
+    'installLocation': '$MARKETPLACE_DIR',
+    'lastUpdated': now,
+}
+with open(path, 'w') as f:
+    json.dump(data, f, indent=2)
+" 2>/dev/null
+
 # ── register plugin ──────────────────────────────────────────────────────────
 INSTALLED="$CLAUDE_HOME/plugins/installed_plugins.json"
 mkdir -p "$(dirname "$INSTALLED")"
@@ -162,7 +191,8 @@ echo "  Change collection: /skillnote:collection"
 echo "  Create skills:     /skillnote:skill-push"
 echo "  Browse all:        $WEB_URL/collections"
 echo ""
-echo "  Start claude in any project."
+echo "  IMPORTANT: Restart Claude Code for skills to take effect."
+echo "  (quit and reopen — /reload-plugins alone is not sufficient)"
 echo ""
 '''
 
