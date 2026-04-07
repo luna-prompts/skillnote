@@ -1,0 +1,69 @@
+#!/usr/bin/env python3
+"""SkillNote status line for Claude Code — shows active collection + branding."""
+import json
+import os
+import sys
+
+data = json.load(sys.stdin)
+
+model = data.get("model", {}).get("display_name", "")
+pct = int(data.get("context_window", {}).get("used_percentage", 0) or 0)
+
+# Resolve host
+host = os.environ.get("CLAUDE_PLUGIN_OPTION_HOST", "")
+if not host:
+    host_file = os.path.expanduser("~/.skillnote/host")
+    if os.path.exists(host_file):
+        try:
+            with open(host_file) as f:
+                host = f.read().strip()
+        except Exception:
+            pass
+host = host or "localhost"
+web_url = f"http://{host}:3000"
+
+# Read active collection from project config
+project_dir = data.get("workspace", {}).get("current_dir", ".")
+config_path = os.path.join(project_dir, ".skillnote.json")
+collection = ""
+if os.path.isfile(config_path):
+    try:
+        with open(config_path) as f:
+            cfg = json.load(f)
+        cols = cfg.get("collections", [])
+        if cols:
+            collection = cols[0]
+    except Exception:
+        pass
+
+# Count synced skills
+skills_dir = os.path.join(project_dir, ".claude", "skills")
+skill_count = 0
+if os.path.isdir(skills_dir):
+    skill_count = len([d for d in os.listdir(skills_dir)
+                       if os.path.isdir(os.path.join(skills_dir, d))])
+
+# Colors
+CYAN = "\033[36m"
+GREEN = "\033[32m"
+YELLOW = "\033[33m"
+DIM = "\033[2m"
+RESET = "\033[0m"
+
+# Build status
+parts = []
+if collection:
+    parts.append(f"{GREEN}SN:{RESET} {collection} ({skill_count})")
+else:
+    parts.append(f"{DIM}SN: no collection{RESET}")
+
+# Context bar
+bar_color = "\033[31m" if pct >= 90 else YELLOW if pct >= 70 else GREEN
+filled = pct * 10 // 100
+bar = "█" * filled + "░" * (10 - filled)
+parts.append(f"{bar_color}{bar}{RESET} {pct}%")
+
+# Web URL as clickable link (OSC 8)
+parts.append(f"\033]8;;{web_url}\a{DIM}{web_url}{RESET}\033]8;;\a")
+
+print(f"[{model}] " + " │ ".join(parts))

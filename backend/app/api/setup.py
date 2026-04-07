@@ -95,6 +95,9 @@ cat > "$MKT_DIR/.claude-plugin/marketplace.json" << MKTEOF
 {"name":"skillnote-local","version":"1.0.0","description":"SkillNote skill registry","owner":{"name":"SkillNote"},"plugins":[{"name":"skillnote","description":"SkillNote — auto-sync, analytics, and skill creation","source":"./plugins/skillnote","version":"1.0.0"}]}
 MKTEOF
 
+# ── define paths early (used by settings registration and later steps) ───────
+SKILLNOTE_HOME="$HOME/.skillnote"
+
 # ── register marketplace in settings ─────────────────────────────────────────
 USER_SETTINGS="$CLAUDE_HOME/settings.json"
 python3 -c "
@@ -115,6 +118,12 @@ data.setdefault('extraKnownMarketplaces', {})
 data['extraKnownMarketplaces']['skillnote-local'] = {
     'source': {'source': 'directory', 'path': os.path.expanduser('$MKT_DIR')}
 }
+# Add SkillNote status line (only if not already set)
+if 'statusLine' not in data:
+    data['statusLine'] = {
+        'type': 'command',
+        'command': os.path.expanduser('$SKILLNOTE_HOME/bin/skillnote-statusline')
+    }
 with open(path, 'w') as f:
     json.dump(data, f, indent=2)
 " 2>/dev/null
@@ -184,11 +193,11 @@ if [ -f "$HOME/.zshrc" ]; then SHELL_RC="$HOME/.zshrc"
 elif [ -f "$HOME/.bashrc" ]; then SHELL_RC="$HOME/.bashrc"; fi
 
 # ── install skillnote-pick to stable location ─────────────────────────────────
-SKILLNOTE_HOME="$HOME/.skillnote"
 SKILL_HOST=$(echo "$API_URL" | sed -E 's|https?://||;s|:.*||')
 mkdir -p "$SKILLNOTE_HOME/bin"
 cp "$PLUGIN_SRC/bin/skillnote-pick" "$SKILLNOTE_HOME/bin/skillnote-pick"
-chmod +x "$SKILLNOTE_HOME/bin/skillnote-pick"
+cp "$PLUGIN_SRC/bin/skillnote-statusline" "$SKILLNOTE_HOME/bin/skillnote-statusline"
+chmod +x "$SKILLNOTE_HOME/bin/skillnote-pick" "$SKILLNOTE_HOME/bin/skillnote-statusline"
 # Save host for the picker to read at runtime
 echo "$SKILL_HOST" > "$SKILLNOTE_HOME/host"
 PICKER_PATH="$SKILLNOTE_HOME/bin/skillnote-pick"
