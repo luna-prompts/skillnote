@@ -54,20 +54,15 @@ except: pass
 
     TOTAL_SKILLS=$(curl -sf --connect-timeout 3 --max-time 5 "${API_URL}/v1/skills" 2>/dev/null | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
 
-    if [ "$IS_FIRST_TIME" = true ]; then
-        if [ -n "$FOLDER_MATCH" ]; then
-            # Folder name matches a collection — recommend it
-            echo "SkillNote: Collection '${FOLDER_MATCH}' matches this folder."
-            echo "  ACTION: Use the skillnote:collection skill to ask the user which collection to use."
-            echo "  Recommend '${FOLDER_MATCH}' as the first option. Available collections: ${COLS_JSON}"
-        elif [ "$TOTAL_SKILLS" -gt 15 ] 2>/dev/null; then
-            # Many skills, no folder match — suggest scoping
-            echo "SkillNote: ${TOTAL_SKILLS} skills available (>15 may degrade activation)."
-            echo "  ACTION: Use the skillnote:collection skill to ask the user which collection to use."
-            echo "  Available collections: ${COLS_JSON}"
-        fi
+    # Always prompt for collection selection when >15 skills and no .skillnote.json
+    if [ -n "$FOLDER_MATCH" ]; then
+        echo "SkillNote: Collection '${FOLDER_MATCH}' matches this folder."
+        echo "  ACTION: Use the skillnote:collection skill to ask the user which collection to use."
+        echo "  Recommend '${FOLDER_MATCH}' as the first option. Available collections: ${COLS_JSON}"
     elif [ "$TOTAL_SKILLS" -gt 15 ] 2>/dev/null; then
-        echo "SkillNote: ${TOTAL_SKILLS} skills synced. Use /skillnote:collection to scope."
+        echo "SkillNote: ${TOTAL_SKILLS} skills available (>15 may degrade activation)."
+        echo "  ACTION: Use the skillnote:collection skill to ask the user which collection to use."
+        echo "  Available collections: ${COLS_JSON}"
     fi
 fi
 
