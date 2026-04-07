@@ -3,7 +3,21 @@ description: Choose which SkillNote skill collections are active for this projec
 allowed-tools: Bash AskUserQuestion
 ---
 
-1. Run: `curl -sf "http://${CLAUDE_PLUGIN_OPTION_HOST:-localhost}:8082/v1/collections"`
-2. Call AskUserQuestion — header: "SkillNote", question: "Pick a collection:", options from step 1 (label=name, description="{count} skills")
-3. Run: `echo '{"collections": ["<picked>"]}' > .skillnote.json && skillnote-sync --force 2>/dev/null`
-4. Say "Switched to {name}."
+## Available collections
+
+!`curl -sf "http://${CLAUDE_PLUGIN_OPTION_HOST:-localhost}:8082/v1/collections" 2>/dev/null || echo "[]"`
+
+## Current config
+
+!`cat .skillnote.json 2>/dev/null || echo "none"`
+
+## Instructions
+
+Call AskUserQuestion with header "SkillNote", question "Pick a collection:", and options from the collections above (label=name, description="{count} skills"). Mark the current one with "(current)".
+
+After the user picks, run:
+```bash
+echo '{"collections": ["<NAME>"]}' > .skillnote.json && skillnote-sync --force 2>/dev/null || true
+```
+
+Say "Switched to {name}."
