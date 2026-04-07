@@ -297,7 +297,7 @@ def get_top_skills(
     Returns call count, avg rating, rating count, and completion rate
     (how often agents rate after using a skill).
     """
-    date_clause = _date_filter_clause(days, alias="e.created_at")
+    date_clause = _date_filter_clause(days)
 
     rows = db.execute(
         text(f"""
