@@ -112,6 +112,9 @@ with open(path, 'w') as f:
 
 # ── install plugin via claude CLI ────────────────────────────────────────────
 if command -v claude &>/dev/null; then
+    # Remove any manually-configured MCP server (plugin handles it)
+    claude mcp remove skillnote --scope user 2>/dev/null || true
+    claude mcp remove skillnote --scope project 2>/dev/null || true
     # Register marketplace, then install plugin
     claude plugin marketplace add "$MKT_DIR" 2>/dev/null || true
     claude plugin uninstall skillnote@skillnote-local --scope user 2>/dev/null || true
@@ -119,8 +122,6 @@ if command -v claude &>/dev/null; then
         echo "Warning: plugin install failed. Try manually:"
         echo "  claude plugin install skillnote@skillnote-local --scope user"
     }
-    # Add MCP server
-    claude mcp add --transport http --scope user skillnote "$MCP_URL" 2>/dev/null || true
 else
     echo "Warning: claude CLI not found. After installing claude, run:"
     echo "  claude plugin marketplace add $MKT_DIR"
