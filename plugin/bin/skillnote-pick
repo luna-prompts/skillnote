@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
-"""SkillNote collection picker — Claude Code-style FuzzyPicker with two-pane preview."""
+"""SkillNote collection picker — full-screen two-column box with search and preview."""
 import json
 import os
-import re
 import sys
 import time
 import urllib.request
@@ -13,26 +12,25 @@ try:
 except ImportError:
     HAS_CURSES = False
 
-# ── Constants (matching Claude Code's FuzzyPicker) ──
-CHROME_ROWS = 8       # divider + brand + search(3) + hints + gaps
-MIN_VISIBLE = 2       # never show fewer than 2 items
-DEFAULT_VISIBLE = 8   # default list height
-LEFT_MAX_W = 44       # max left panel width
-LEFT_MIN_W = 28       # min left panel width
-COMPACT_THRESHOLD = 70  # below this, single-column mode
+# Constants (from Claude Code's FuzzyPicker study)
+MIN_VISIBLE = 2
+DEFAULT_VISIBLE = 12
+COMPACT_THRESHOLD = 70
+LEFT_MIN_W = 28
+LEFT_MAX_W = 44
 
 
 def _get_host():
     host = os.environ.get("SKILLNOTE_HOST", os.environ.get("CLAUDE_PLUGIN_OPTION_HOST", ""))
     if host:
         return host
-    host_file = os.path.expanduser("~/.skillnote/host")
-    if os.path.exists(host_file):
+    hf = os.path.expanduser("~/.skillnote/host")
+    if os.path.exists(hf):
         try:
-            with open(host_file) as f:
-                val = f.read().strip()
-            if val:
-                return val
+            with open(hf) as f:
+                v = f.read().strip()
+            if v:
+                return v
         except Exception:
             pass
     return "localhost"
@@ -43,38 +41,35 @@ def fetch_collections():
     api = f"http://{host}:8082"
     try:
         data = json.loads(urllib.request.urlopen(f"{api}/v1/collections", timeout=3).read())
-        collections = []
+        cols = []
         for c in data:
             skills = []
             try:
-                skill_data = json.loads(urllib.request.urlopen(
-                    f"{api}/v1/skills?collections={c['name']}", timeout=3
-                ).read())
-                skills = [(s["slug"], s.get("description", "")) for s in skill_data]
+                sd = json.loads(urllib.request.urlopen(
+                    f"{api}/v1/skills?collections={c['name']}", timeout=3).read())
+                skills = [(s["slug"], s.get("description", "")) for s in sd]
             except Exception:
                 pass
-            collections.append((c["name"], c["count"], skills))
-        return host, collections
+            cols.append((c["name"], c["count"], skills))
+        return host, cols
     except Exception:
         return host, []
 
 
 def _get_recommended(items):
-    names = [n.lower() for n, _, _ in items]
     if os.path.isfile(".skillnote.json"):
         try:
             with open(".skillnote.json") as f:
-                cfg = json.load(f)
-            current = cfg.get("collections", [])
-            if current:
+                cur = json.load(f).get("collections", [])
+            if cur:
                 for i, (n, _, _) in enumerate(items):
-                    if n.lower() == current[0].lower():
+                    if n.lower() == cur[0].lower():
                         return i
         except Exception:
             pass
     folder = os.path.basename(os.getcwd()).lower()
-    for i, name in enumerate(names):
-        if name == folder:
+    for i, (n, _, _) in enumerate(items):
+        if n.lower() == folder:
             return i
     return 0
 
@@ -91,37 +86,39 @@ def _get_current_collections():
 
 def _clean_skills_dir():
     import shutil
-    skills_dir = os.path.join(".claude", "skills")
-    if os.path.isdir(skills_dir):
-        for entry in os.listdir(skills_dir):
-            path = os.path.join(skills_dir, entry)
-            if os.path.isdir(path):
-                shutil.rmtree(path)
-            elif entry.endswith(".json"):
-                os.remove(path)
+    sd = os.path.join(".claude", "skills")
+    if os.path.isdir(sd):
+        for e in os.listdir(sd):
+            p = os.path.join(sd, e)
+            if os.path.isdir(p):
+                shutil.rmtree(p)
+            elif e.endswith(".json"):
+                os.remove(p)
 
 
 def _run_sync():
     host = _get_host()
-    plugin_root = os.environ.get("CLAUDE_PLUGIN_ROOT", "")
-    if plugin_root:
-        sync_path = os.path.join(plugin_root, "hooks-handlers", "sync.sh")
-        if os.path.exists(sync_path):
+    pr = os.environ.get("CLAUDE_PLUGIN_ROOT", "")
+    if pr:
+        sp = os.path.join(pr, "hooks-handlers", "sync.sh")
+        if os.path.exists(sp):
             os.environ.setdefault("CLAUDE_PLUGIN_OPTION_HOST", host)
-            os.system(f'"{sync_path}" 2>/dev/null')
+            os.system(f'"{sp}" 2>/dev/null')
             return
-    mkt_sync = os.path.expanduser(
-        "~/.claude/plugins/marketplaces/skillnote-local/plugins/skillnote/hooks-handlers/sync.sh"
-    )
-    if os.path.exists(mkt_sync):
+    ms = os.path.expanduser(
+        "~/.claude/plugins/marketplaces/skillnote-local/plugins/skillnote/hooks-handlers/sync.sh")
+    if os.path.exists(ms):
         os.environ.setdefault("CLAUDE_PLUGIN_OPTION_HOST", host)
-        os.system(f'"{mkt_sync}" 2>/dev/null')
+        os.system(f'"{ms}" 2>/dev/null')
         return
     os.system("skillnote-sync --force 2>/dev/null")
 
 
+def _clamp(v, lo, hi):
+    return max(lo, min(v, hi))
+
+
 def _wrap(text, w):
-    """Word-wrap text to width, max 4 lines."""
     lines = []
     while text and len(lines) < 4:
         if len(text) <= w:
@@ -135,8 +132,12 @@ def _wrap(text, w):
     return lines
 
 
-def _clamp(val, lo, hi):
-    return max(lo, min(val, hi))
+def _strip_trigger(desc):
+    """Remove 'Trigger when: ...' suffix from description."""
+    idx = desc.find("Trigger when:")
+    if idx > 0:
+        return desc[:idx].rstrip(". ")
+    return desc
 
 
 def pick(stdscr, items, recommended=0):
@@ -156,17 +157,15 @@ def pick(stdscr, items, recommended=0):
     curses.curs_set(0)
     curses.start_color()
     curses.use_default_colors()
-    # Claude Code color mapping
-    curses.init_pair(1, curses.COLOR_CYAN, -1)     # accent / brand
-    curses.init_pair(2, curses.COLOR_GREEN, -1)     # success / connected
-    curses.init_pair(3, curses.COLOR_YELLOW, -1)    # warning / highlight
-    curses.init_pair(4, curses.COLOR_RED, -1)       # error
+    curses.init_pair(1, curses.COLOR_CYAN, -1)
+    curses.init_pair(2, curses.COLOR_GREEN, -1)
+    curses.init_pair(3, curses.COLOR_YELLOW, -1)
+    curses.init_pair(4, curses.COLOR_RED, -1)
     try:
-        curses.init_pair(5, 208, -1)                # orange for Clawd
+        curses.init_pair(5, 208, -1)
     except Exception:
         curses.init_pair(5, curses.COLOR_RED, -1)
 
-    # Flush stale input
     curses.flushinp()
     stdscr.nodelay(True)
     while stdscr.getch() != -1:
@@ -179,8 +178,8 @@ def pick(stdscr, items, recommended=0):
     web_url = f"http://{host}:3000"
     gh_url = "github.com/luna-prompts/skillnote"
 
-    ACCENT = curses.color_pair(1)
-    ACCENT_B = curses.color_pair(1) | curses.A_BOLD
+    BORDER = curses.color_pair(1) | curses.A_DIM
+    ACCENT = curses.color_pair(1) | curses.A_BOLD
     GREEN = curses.color_pair(2)
     YELLOW = curses.color_pair(3)
     ORANGE = curses.color_pair(5) | curses.A_BOLD
@@ -203,23 +202,19 @@ def pick(stdscr, items, recommended=0):
         if filtered:
             cur = _clamp(cur, 0, len(filtered) - 1)
 
-        # Layout — responsive
-        pad_x = 2
-        full_w = w - pad_x * 2
+        # Layout
+        pad = 2
+        bw = w - pad * 2
+        bx = pad
+        left_w = _clamp(bw * 2 // 5, LEFT_MIN_W, LEFT_MAX_W)
+        right_w = bw - left_w - 1
         compact = w < COMPACT_THRESHOLD
 
-        if compact:
-            left_w = full_w
-            right_w = 0
-        else:
-            left_w = _clamp(full_w * 2 // 5, LEFT_MIN_W, LEFT_MAX_W)
-            right_w = full_w - left_w - 1  # 1 for divider │
+        header_h = 7   # top + empty + clawd(3) + empty + separator
+        footer_h = 1
+        body_h = max(MIN_VISIBLE, h - header_h - footer_h - 1)
 
-        visible_count = _clamp(h - CHROME_ROWS, MIN_VISIBLE, DEFAULT_VISIBLE)
-        if len(filtered) < visible_count:
-            visible_count = max(MIN_VISIBLE, len(filtered))
-
-        # Selected item for preview
+        # Selected collection for preview
         sel_name, sel_count, sel_skills = "", 0, []
         sel_is_rec = False
         if filtered:
@@ -233,205 +228,209 @@ def pick(stdscr, items, recommended=0):
             except curses.error:
                 pass
 
+        def hline(r):
+            """Draw left border, divider, right border for a content row."""
+            s(r, bx, "│", BORDER)
+            if not compact:
+                s(r, bx + left_w, "│", BORDER)
+            s(r, bx + bw - 1, "│", BORDER)
+
         row = 0
-        lx = pad_x       # left panel x
-        rx = pad_x + left_w + 1  # right panel x (after divider)
 
         try:
-            # ═══ DIVIDER LINE (Pane-style) ═══
-            s(row, pad_x, "─" * full_w, ACCENT | DIM)
+            # ═══ TOP BORDER ═══
+            s(row, bx, "╭" + "─" * (bw - 2) + "╮", BORDER)
             row += 1
 
-            # ═══ BRAND: Clawd × S K I L L N O T E ═══
+            # ═══ EMPTY ═══
+            hline(row)
+            row += 1
+
+            # ═══ CLAWD × BRAND ═══
             for ci, cl in enumerate(clawd):
+                hline(row)
                 offset = (clawd_w - len(cl)) // 2
-                s(row, lx + 2 + offset, cl, ORANGE)
+                s(row, bx + 4 + offset, cl, ORANGE)
                 if ci == 1:
-                    bx = lx + 2 + clawd_w + 3
-                    s(row, bx, "×", DIM)
-                    s(row, bx + 2, "S K I L L N O T E", ACCENT_B)
-                    # Right-aligned stats
-                    stats = f"● {total_skills} skills · {len(items)} collections"
-                    sx = pad_x + full_w - len(stats)
-                    s(row, sx, "●", GREEN)
-                    s(row, sx + 2, stats[2:], DIM)
+                    bpos = bx + 4 + clawd_w + 3
+                    s(row, bpos, "×", DIM)
+                    s(row, bpos + 2, "S K I L L N O T E", ACCENT)
                 row += 1
 
-            # Gap
+            # ═══ EMPTY ═══
+            hline(row)
             row += 1
 
-            # ═══ SEARCH BOX (Claude-style rounded border) ═══
-            search_inner_w = left_w - 4
-            s(row, lx, "╭" + "─" * (search_inner_w + 2) + "╮", DIM)
+            # ═══ SEPARATOR with stats ═══
+            stats = f" ● {total_skills} skills · {len(items)} collections "
+            left_inner = left_w - 1
+            left_part = "├" + (stats + "─" * max(0, left_inner - len(stats)))[:left_inner]
+            if compact:
+                right_part = "─" * (bw - left_w - 1) + "┤"
+            else:
+                right_part = "┬" + "─" * max(0, right_w - 1) + "┤"
+            sep = left_part + right_part
+            s(row, bx, sep[:bw], BORDER)
+            s(row, bx + 2, "●", GREEN)
+            s(row, bx + 4, f"{total_skills} skills · {len(items)} collections", DIM)
             row += 1
 
-            s(row, lx, "│", DIM)
-            s(row, lx + search_inner_w + 3, "│", DIM)
-            s(row, lx + 2, "⌕ ", DIM)
+            content_top = row
+
+            # ═══ LEFT PANEL: search + list ═══
+
+            # Search box
+            hline(row)
+            search_w = left_w - 8
+            s(row, bx + 3, "╭" + "─" * search_w + "╮", DIM)
+            row += 1
+
+            hline(row)
+            s(row, bx + 3, "│", DIM)
+            s(row, bx + 3 + search_w + 1, "│", DIM)
             if search:
-                s(row, lx + 4, search[:search_inner_w - 3], BOLD)
-                cpos = lx + 4 + min(len(search), search_inner_w - 3)
+                s(row, bx + 5, search[:search_w - 2], BOLD)
+                cpos = bx + 5 + min(len(search), search_w - 2)
                 s(row, cpos, " ", curses.A_REVERSE)
             else:
-                s(row, lx + 4, "Search...", DIM)
-            if search:
-                mt = f"{len(filtered)}"
-                s(row, lx + search_inner_w + 1 - len(mt), mt, DIM)
+                s(row, bx + 5, "type to search...", DIM)
             row += 1
 
-            s(row, lx, "╰" + "─" * (search_inner_w + 2) + "╯", DIM)
+            hline(row)
+            s(row, bx + 3, "╰" + "─" * search_w + "╯", DIM)
             row += 1
 
-            # Gap
+            # Empty line
+            hline(row)
             row += 1
 
-            # ═══ LIST + PREVIEW ═══
+            # List with Claude Code scroll indicators
             list_top = row
+            list_h = h - row - footer_h - 1
+            visible_count = _clamp(list_h, MIN_VISIBLE, len(filtered) if filtered else MIN_VISIBLE)
 
-            # Scroll calculation (Claude's exact pattern)
             window_start = _clamp(cur - visible_count + 1, 0, max(0, len(filtered) - visible_count))
             visible = filtered[window_start:window_start + visible_count]
 
-            # Render list items (fixed height = visible_count)
             for vi, (sorted_idx, orig_idx, (name, count, skills)) in enumerate(visible):
+                if row >= h - footer_h - 1:
+                    break
                 fi = window_start + vi
                 is_focused = (fi == cur)
                 is_rec = (orig_idx == recommended)
-                at_top_edge = (vi == 0 and window_start > 0)
-                at_bot_edge = (vi == len(visible) - 1 and window_start + visible_count < len(filtered))
+                at_top = (vi == 0 and window_start > 0)
+                at_bot = (vi == len(visible) - 1 and window_start + visible_count < len(filtered))
 
-                # Indicator (Claude's ListItem pattern)
+                hline(row)
+
+                # Indicator (Claude Code ListItem pattern)
                 if is_focused:
-                    indicator = "❯"
-                    ind_attr = ACCENT_B
-                elif at_top_edge:
-                    indicator = "↑"
-                    ind_attr = DIM
-                elif at_bot_edge:
-                    indicator = "↓"
-                    ind_attr = DIM
-                else:
-                    indicator = " "
-                    ind_attr = 0
+                    s(row, bx + 3, "❯", ACCENT)
+                elif at_top:
+                    s(row, bx + 3, "↑", DIM)
+                elif at_bot:
+                    s(row, bx + 3, "↓", DIM)
 
-                s(row, lx, indicator, ind_attr)
-
-                # Name + count
+                # Number + name
+                num = f"{fi + 1}."
+                s(row, bx + 5, num, DIM)
+                nx = bx + 5 + len(num) + 1
                 if is_focused:
-                    s(row, lx + 2, name, ACCENT_B)
-                    if is_rec:
-                        s(row, lx + 2 + len(name) + 1, "★", YELLOW)
+                    s(row, nx, name, ACCENT)
                 else:
-                    s(row, lx + 2, name, DIM if not is_rec else 0)
-                    if is_rec:
-                        s(row, lx + 2 + len(name) + 1, "★", YELLOW | DIM)
+                    s(row, nx, name, DIM if not is_rec else 0)
+                if is_rec:
+                    s(row, nx + len(name) + 1, "★", YELLOW | (0 if is_focused else DIM))
+
                 cnt = str(count)
-                s(row, lx + left_w - len(cnt) - 1, cnt, DIM)
-
-                # Divider between panels
-                if not compact:
-                    s(row, rx - 1, "│", DIM)
-
+                s(row, bx + left_w - len(cnt) - 2, cnt, DIM)
                 row += 1
 
-            # Pad remaining list rows to fixed height
-            while row < list_top + visible_count:
-                if not compact:
-                    s(row, rx - 1, "│", DIM)
+            # Pad remaining left rows
+            while row < h - footer_h - 1:
+                hline(row)
                 row += 1
 
-            # Match count below list
-            if search and filtered:
-                s(row, lx + 2, f"{len(filtered)} match{'es' if len(filtered) != 1 else ''}", DIM)
-            elif not filtered and search:
-                s(row, lx + 2, "No results", DIM)
-            row += 1
-
-            # ═══ RIGHT PANEL (Preview) ═══
+            # ═══ RIGHT PANEL: preview ═══
             if not compact and sel_skills:
-                pr = list_top
+                rr = content_top
+
+                # Empty line
+                rr += 1
 
                 # Header
                 header = sel_name
                 if sel_is_rec:
                     header += " ★"
                 if focus == "right":
-                    s(pr, rx + 1, "❯ " + header, ACCENT_B)
+                    s(rr, bx + left_w + 3, "❯ " + header, ACCENT)
                 else:
-                    s(pr, rx + 1, header, BOLD)
+                    s(rr, bx + left_w + 4, header, BOLD)
                 cnt_txt = f"{sel_count} skills"
-                s(pr, pad_x + full_w - len(cnt_txt), cnt_txt, DIM)
-                pr += 1
+                s(rr, bx + bw - len(cnt_txt) - 2, cnt_txt, DIM)
+                rr += 1
 
                 # Separator
-                s(pr, rx + 1, "─" * (right_w - 2), DIM)
-                pr += 1
+                s(rr, bx + left_w + 4, "─" * (right_w - 6), DIM)
+                rr += 1
 
-                pr += 1  # gap
+                rr += 1  # gap
 
-                # Skills (scrollable, word-wrapped)
-                desc_w = right_w - 6
+                # Skill list with word-wrapped descriptions
+                desc_w = right_w - 8
                 skills_shown = 0
                 skill_list = sel_skills[right_scroll:]
                 for si, (slug, desc) in enumerate(skill_list):
                     real_idx = si + right_scroll
-                    if pr >= list_top + visible_count - 1:
+                    if rr >= h - footer_h - 2:
                         break
 
-                    s(pr, rx + 1, f"{real_idx + 1}.", DIM)
-                    s(pr, rx + 1 + len(str(real_idx + 1)) + 2, slug, ACCENT)
-                    pr += 1
+                    # Number + skill name
+                    num = f"{real_idx + 1}."
+                    s(rr, bx + left_w + 4, num, DIM)
+                    s(rr, bx + left_w + 4 + len(num) + 1, slug, curses.color_pair(1))
+                    rr += 1
                     skills_shown += 1
 
-                    if desc and pr < list_top + visible_count - 1:
-                        for dl in _wrap(desc, desc_w):
-                            if pr >= list_top + visible_count - 1:
+                    # Description (stripped of triggers, word-wrapped)
+                    clean_desc = _strip_trigger(desc)
+                    if clean_desc and rr < h - footer_h - 2:
+                        for dl in _wrap(clean_desc, desc_w):
+                            if rr >= h - footer_h - 2:
                                 break
-                            s(pr, rx + 5, dl, DIM)
-                            pr += 1
+                            s(rr, bx + left_w + 8, dl, DIM)
+                            rr += 1
 
-                    if pr < list_top + visible_count - 1:
-                        pr += 1  # gap
+                    # Gap between skills
+                    if rr < h - footer_h - 2:
+                        rr += 1
 
                 # Scroll info
-                if right_scroll > 0 or (right_scroll + skills_shown) < len(sel_skills):
-                    last = min(right_scroll + skills_shown, len(sel_skills))
+                last = right_scroll + skills_shown
+                if right_scroll > 0 or last < len(sel_skills):
                     info = f"{right_scroll + 1}-{last} of {len(sel_skills)}"
                     arrows = ""
                     if right_scroll > 0:
                         arrows += "↑ "
                     if last < len(sel_skills):
                         arrows += "↓"
-                    info_row = list_top + visible_count
-                    s(info_row, rx + 1, info, DIM)
-                    s(info_row, pad_x + full_w - len(arrows), arrows, DIM)
+                    s(rr, bx + left_w + 4, info, DIM)
+                    s(rr, bx + bw - len(arrows) - 2, arrows, DIM)
 
-                # Fill divider for remaining rows
-                for fr in range(list_top, list_top + visible_count + 1):
-                    s(fr, rx - 1, "│", DIM)
-
-            # ═══ HINTS (Byline-style) ═══
-            hint_row = list_top + visible_count + 2
-            if hint_row >= h:
-                hint_row = h - 1
-
-            hints_parts = ["↑/↓ navigate", "Enter select"]
-            if not compact:
-                hints_parts.append("Tab panel")
-            hints_parts.append("Esc cancel")
-            hints = " · ".join(hints_parts)
-            s(hint_row, lx, hints, DIM)
-
-            # Right-aligned links
-            links = f"{web_url} · {gh_url} ★"
-            s(hint_row, pad_x + full_w - len(links), links, DIM | ACCENT)
+            # ═══ BOTTOM BORDER with hints + links ═══
+            bot_row = h - 1
+            s(bot_row, bx, "╰" + "─" * (bw - 2) + "╯", BORDER)
+            hints = " ↑/↓ navigate · Enter select · Tab panel · Esc cancel "
+            s(bot_row, bx + 2, hints, DIM)
+            links = f" {web_url} · {gh_url} ★ "
+            s(bot_row, bx + bw - len(links) - 1, links, DIM | curses.color_pair(1))
 
         except curses.error:
             pass
 
         stdscr.refresh()
 
-        # ═══ KEY HANDLING ═══
+        # ═══ KEYS ═══
         key = stdscr.getch()
         if key == 9:  # Tab
             focus = "right" if focus == "left" else "left"
@@ -449,8 +448,7 @@ def pick(stdscr, items, recommended=0):
                     cur += 1
                     right_scroll = 0
             else:
-                max_rs = max(0, len(sel_skills) - 1)
-                if right_scroll < max_rs:
+                if sel_skills and right_scroll < len(sel_skills) - 1:
                     right_scroll += 1
         elif key == curses.KEY_LEFT:
             focus = "left"
@@ -460,7 +458,7 @@ def pick(stdscr, items, recommended=0):
             if filtered:
                 _, orig_idx, _ = filtered[cur]
                 return [items[orig_idx][0]]
-        elif key in (ord("q"), 27):  # q or Esc
+        elif key in (ord("q"), 27):
             return None
         elif key in (curses.KEY_BACKSPACE, 127, 8):
             search = search[:-1]
@@ -502,13 +500,10 @@ def pick_fallback(items, recommended=0):
 def main():
     if not os.isatty(0) or not os.isatty(1):
         return
-
     host, collections = fetch_collections()
-
     if not collections:
         print(f"  ✦ SkillNote: could not reach API at http://{host}:8082", file=sys.stderr)
         return
-
     if len(collections) == 1:
         name, count, _ = collections[0]
         if not os.path.isfile(".skillnote.json"):
@@ -521,23 +516,18 @@ def main():
                 pass
         print(f"  ✦ SkillNote: {name} ({count} skills)")
         return
-
     recommended = _get_recommended(collections)
-
     if HAS_CURSES:
         chosen = curses.wrapper(pick, collections, recommended)
     else:
         chosen = pick_fallback(collections, recommended)
-
     if not chosen:
         current = _get_current_collections()
         if current:
             print(f"  ✦ SkillNote: {', '.join(current)} (active)")
         return
-
     current = _get_current_collections()
     changed = current != chosen
-
     try:
         with open(".skillnote.json", "w") as f:
             json.dump({"collections": chosen}, f, indent=2)
@@ -545,10 +535,8 @@ def main():
     except PermissionError:
         print("  ✦ SkillNote: cannot write .skillnote.json (permission denied)", file=sys.stderr)
         return
-
     if changed and current is not None:
         _clean_skills_dir()
-
     _run_sync()
 
 
