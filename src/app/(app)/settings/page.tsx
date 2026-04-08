@@ -105,7 +105,7 @@ export default function SettingsPage() {
         <div className="max-w-2xl mx-auto px-6 py-8">
           <h1 className="text-xl font-semibold text-foreground mb-8">Settings</h1>
 
-          {/* MCP Tools */}
+          {/* Agent Tools */}
           {loaded && (
             <section className="mb-10">
               <h2 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-4">Agent Tools</h2>
