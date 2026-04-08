@@ -250,18 +250,9 @@ else:
     print(f'    {C}{col_name}{R} {D}{chr(183)}{R} {str(len(vis))} skills ({detail})')
 
 print()
-
-# ── Context for Claude (compact, not visual noise) ──
-if vis:
-    names = ', '.join(s['slug'] for s in vis)
-    print(f'{D}[SkillNote: {names}]{R}')
 " 2>/dev/null) || exit 0
 
 # Output as additionalContext for Claude's session
 if [ -n "$RESULT" ]; then
     echo "$RESULT"
-    # Welcome hint on first sync
-    if echo "$RESULT" | grep -q "new" && [ -n "$COLLECTIONS" ]; then
-        echo "  /skillnote for dashboard · /skillnote:collection to change"
-    fi
 fi
