@@ -60,10 +60,12 @@ Your skills. Your servers. Your rules.
 ```bash
 git clone https://github.com/luna-prompts/skillnote.git
 cd skillnote
-docker compose up --build -d
+./install.sh
 ```
 
-Connect Claude Code:
+The install script builds and starts all containers, waits for health checks, and prints the Claude Code plugin command when ready.
+
+Then connect Claude Code:
 
 ```bash
 curl -sf http://localhost:8082/setup | bash

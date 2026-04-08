@@ -48,7 +48,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 - `CHANGELOG.md` for tracking releases
 
 ### Fixed
-- Port collision on startup — `start.sh` now ensures ports are fully released before launching containers
+- Port collision on startup — `install.sh` now ensures ports are fully released before launching containers
 - `.gitignore` rewritten with proper entries for Next.js, Python, env files, and build artifacts
 
 ## [0.1.0] - 2026-03-07
