@@ -42,7 +42,11 @@ Claude Code loads every `SKILL.md` in `~/.claude/skills/` into context. But ther
 
 With 15+ skills, you're already at the edge. Add team-shared skills on top and it breaks entirely. You can't use all your skills at once. You need a way to pick which ones are active.
 
-That's what SkillNote does. It gives you a registry to manage skills, collections to scope them per project, and a plugin that syncs exactly what's needed to each session.
+And then there's the skills you can't put on GitHub at all. Internal deploy procedures, proprietary API patterns, compliance workflows, credentials handling, infra runbooks. These encode institutional knowledge that needs to stay on your infrastructure, not in a public repo or a third-party registry.
+
+**SkillNote** is a self-hosted skill registry that solves both problems. It gives you a private registry for skills that can't leave your network, collections to scope them per project, and a plugin that syncs exactly what's needed to each Claude Code session.
+
+Your skills. Your servers. Your rules.
 
 ---
 
