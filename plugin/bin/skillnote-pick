@@ -228,8 +228,13 @@ def pick(stdscr, items, recommended=0):
             except curses.error:
                 pass
 
+        def hline_full(r):
+            """Header row — left + right border only, no center divider."""
+            s(r, bx, "│", BORDER)
+            s(r, bx + bw - 1, "│", BORDER)
+
         def hline(r):
-            """Draw left border, divider, right border for a content row."""
+            """Content row — left border, center divider, right border."""
             s(r, bx, "│", BORDER)
             if not compact:
                 s(r, bx + left_w, "│", BORDER)
@@ -243,12 +248,12 @@ def pick(stdscr, items, recommended=0):
             row += 1
 
             # ═══ EMPTY ═══
-            hline(row)
+            hline_full(row)
             row += 1
 
             # ═══ CLAWD × BRAND ═══
             for ci, cl in enumerate(clawd):
-                hline(row)
+                hline_full(row)
                 offset = (clawd_w - len(cl)) // 2
                 s(row, bx + 4 + offset, cl, ORANGE)
                 if ci == 1:
@@ -258,7 +263,7 @@ def pick(stdscr, items, recommended=0):
                 row += 1
 
             # ═══ EMPTY ═══
-            hline(row)
+            hline_full(row)
             row += 1
 
             # ═══ SEPARATOR with stats ═══
