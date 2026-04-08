@@ -96,6 +96,7 @@ def _get_current_collections():
 
 def _clean_skills_dir():
     import shutil
+    # Clean project-level skills
     sd = os.path.join(PROJECT_DIR, ".claude", "skills")
     if os.path.isdir(sd):
         for e in os.listdir(sd):
@@ -104,6 +105,17 @@ def _clean_skills_dir():
                 shutil.rmtree(p)
             elif e.endswith(".json"):
                 os.remove(p)
+    # Also clean stale global skills from before project-scoped sync
+    gsd = os.path.expanduser("~/.claude/skills")
+    if os.path.isdir(gsd):
+        for e in os.listdir(gsd):
+            if e.startswith("skillnote-"):
+                p = os.path.join(gsd, e)
+                if os.path.isdir(p):
+                    shutil.rmtree(p)
+        gm = os.path.join(gsd, ".skillnote-manifest.json")
+        if os.path.isfile(gm):
+            os.remove(gm)
 
 
 def _run_sync():
@@ -517,7 +529,30 @@ def pick_fallback(items, recommended=0):
     return None
 
 
+def _clean_stale_global_skills():
+    """Remove any skillnote-* dirs from global ~/.claude/skills/ on every launch."""
+    import shutil
+    gsd = os.path.expanduser("~/.claude/skills")
+    if not os.path.isdir(gsd):
+        return
+    cleaned = False
+    for e in os.listdir(gsd):
+        if e.startswith("skillnote-"):
+            p = os.path.join(gsd, e)
+            if os.path.isdir(p):
+                shutil.rmtree(p)
+                cleaned = True
+    gm = os.path.join(gsd, ".skillnote-manifest.json")
+    if os.path.isfile(gm):
+        os.remove(gm)
+        cleaned = True
+    if cleaned:
+        print("  ✦ SkillNote: cleaned stale global skills", file=sys.stderr)
+
+
 def main():
+    # Always clean global skills on launch (they belong in project dir now)
+    _clean_stale_global_skills()
     if not os.isatty(0) or not os.isatty(1):
         return
     host, collections = fetch_collections()
