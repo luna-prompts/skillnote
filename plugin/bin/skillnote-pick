@@ -25,19 +25,25 @@ LEFT_MAX_W = 44
 
 
 def _get_host():
-    host = os.environ.get("SKILLNOTE_HOST", os.environ.get("CLAUDE_PLUGIN_OPTION_HOST", ""))
-    if host:
-        return host
-    hf = os.path.expanduser("~/.skillnote/host")
-    if os.path.exists(hf):
-        try:
-            with open(hf) as f:
-                v = f.read().strip()
-            if v:
-                return v
-        except Exception:
-            pass
-    return "localhost"
+    # Import shared resolver
+    _resolver_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'hooks-handlers')
+    sys.path.insert(0, os.path.normpath(_resolver_dir))
+    try:
+        from resolve_host import get_host
+        return get_host()
+    except ImportError:
+        # Fallback if resolver not found (standalone install)
+        host = os.environ.get("CLAUDE_PLUGIN_OPTION_HOST", "").strip()
+        if host:
+            return host
+        hf = os.path.expanduser("~/.skillnote/host")
+        if os.path.isfile(hf):
+            try:
+                with open(hf) as f:
+                    return f.read().strip() or "localhost"
+            except Exception:
+                pass
+        return "localhost"
 
 
 def fetch_collections():

@@ -12,16 +12,13 @@ except Exception:
     data = {}
 
 # Resolve host
-host = os.environ.get("CLAUDE_PLUGIN_OPTION_HOST", "")
-if not host:
-    host_file = os.path.expanduser("~/.skillnote/host")
-    if os.path.exists(host_file):
-        try:
-            with open(host_file) as f:
-                host = f.read().strip()
-        except Exception:
-            pass
-host = host or "localhost"
+_resolver_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'hooks-handlers')
+sys.path.insert(0, os.path.normpath(_resolver_dir))
+try:
+    from resolve_host import get_host
+    host = get_host()
+except ImportError:
+    host = os.environ.get("CLAUDE_PLUGIN_OPTION_HOST", "") or "localhost"
 web_url = f"http://{host}:3000"
 api_url = f"http://{host}:8082"
 

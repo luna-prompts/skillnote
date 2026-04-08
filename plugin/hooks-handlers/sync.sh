@@ -3,12 +3,9 @@
 # Syncs skills from the SkillNote registry to PROJECT_DIR/.claude/skills/ with full frontmatter.
 # Manages create/update/delete via a manifest. Offline-first (silent fail).
 
-# Resolve host: env var > ~/.skillnote/host file > localhost
-HOST="${CLAUDE_PLUGIN_OPTION_HOST:-}"
-if [ -z "$HOST" ] && [ -f "$HOME/.skillnote/host" ]; then
-    HOST=$(cat "$HOME/.skillnote/host" 2>/dev/null)
-fi
-HOST="${HOST:-localhost}"
+# Resolve host
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+HOST=$("$SCRIPT_DIR/resolve-host.sh")
 API_URL="http://${HOST}:8082"
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-.}"
 PROJECT_CONFIG="${PROJECT_DIR}/.skillnote.json"
