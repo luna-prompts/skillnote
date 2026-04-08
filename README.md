@@ -72,8 +72,6 @@ source ~/.zshrc
 
 Now run `claude` in any project. SkillNote picks up your skills automatically.
 
-> **Team setup:** Set `SKILLNOTE_HOST` to your server's IP when starting Docker, then have each person run the curl command pointing to that address.
-
 ---
 
 ## What You Get
