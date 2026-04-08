@@ -149,7 +149,13 @@ def pick(stdscr, items, recommended=0):
     host = _get_host()
     web_url = f"http://{host}:3000"
     gh_url = "github.com/luna-prompts/skillnote"
-    clawd = ["  ▐▛███▜▌", " ▝▜█████▛▘", "   ▘▘ ▝▝"]
+    # Clawd chars without leading spaces — we align manually
+    clawd = [
+        "▐▛███▜▌",      # 7 chars
+        "▝▜█████▛▘",    # 9 chars (widest)
+        "▘▘ ▝▝",        # 5 chars
+    ]
+    clawd_w = 9  # widest line
 
     while True:
         stdscr.erase()
@@ -205,26 +211,19 @@ def pick(stdscr, items, recommended=0):
             s(row, bx + bw - 1, "│", BORDER)
             row += 1
 
-            # Clawd line 1
-            s(row, bx, "│", BORDER)
-            s(row, bx + 4, clawd[0], ORANGE)
-            s(row, bx + bw - 1, "│", BORDER)
-            row += 1
-
-            # Clawd line 2 + brand
-            s(row, bx, "│", BORDER)
-            s(row, bx + 3, clawd[1], ORANGE)
-            brand_x = bx + 3 + len(clawd[1]) + 2
-            s(row, brand_x, "×", DIM)
-            s(row, brand_x + 2, "S K I L L N O T E", CYAN)
-            s(row, bx + bw - 1, "│", BORDER)
-            row += 1
-
-            # Clawd line 3
-            s(row, bx, "│", BORDER)
-            s(row, bx + 4, clawd[2], ORANGE)
-            s(row, bx + bw - 1, "│", BORDER)
-            row += 1
+            # Clawd lines — center-align each within clawd_w, then offset
+            cx = bx + 5  # left margin for Clawd block
+            for ci, cl in enumerate(clawd):
+                s(row, bx, "│", BORDER)
+                s(row, bx + bw - 1, "│", BORDER)
+                offset = (clawd_w - len(cl)) // 2
+                s(row, cx + offset, cl, ORANGE)
+                # Brand text on middle line (line 1)
+                if ci == 1:
+                    brand_x = cx + clawd_w + 3
+                    s(row, brand_x, "×", DIM)
+                    s(row, brand_x + 2, "S K I L L N O T E", CYAN)
+                row += 1
 
             # Empty breathing line
             s(row, bx, "│", BORDER)

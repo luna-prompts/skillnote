@@ -194,9 +194,9 @@ if skills_path.startswith(home):
 
 # ── Branded splash ──
 print()
-print('     ▐▛███▜▌')
-print('    ▝▜█████▛▘  ×  S K I L L N O T E')
-print('      ▘▘ ▝▝')
+print('      ▐▛███▜▌')
+print('     ▝▜█████▛▘  ×  S K I L L N O T E')
+print('       ▘▘ ▝▝')
 print()
 
 if slugs:
