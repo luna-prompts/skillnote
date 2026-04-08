@@ -192,34 +192,43 @@ home = _os.path.expanduser('~')
 if skills_path.startswith(home):
     skills_path = '~' + skills_path[len(home):]
 
-# ── Branded splash ──
+# ── ANSI colors ──
+O = chr(27) + '[38;5;208m'  # orange
+C = chr(27) + '[1;36m'      # cyan bold
+G = chr(27) + '[32m'         # green
+D = chr(27) + '[2m'          # dim
+B = chr(27) + '[1m'          # bold
+R = chr(27) + '[0m'          # reset
+
+# ── Branded header ──
 print()
-print('      ▐▛███▜▌')
-print('     ▝▜█████▛▘  ×  S K I L L N O T E')
-print('       ▘▘ ▝▝')
+print(f'    {C}✦ S K I L L N O T E{R}')
 print()
 
 if slugs:
     col_w = max(len(s) for s in slugs) + 6
     bw = max(col_w * 2 + 6, len(skills_path) + 10, 50)
+    dash = chr(9472)
 
     def row_line(content):
-        # Every row is exactly: '    │' + content padded to bw-2 + '│'
-        print('    ' + chr(9474) + content.ljust(bw - 2) + chr(9474))
+        print(f'    {D}{chr(9474)}{R}' + content.ljust(bw - 2) + f'{D}{chr(9474)}{R}')
     def row_empty():
-        row_line('')
+        print(f'    {D}{chr(9474)}{R}' + ' ' * (bw - 2) + f'{D}{chr(9474)}{R}')
+    import re as _re
+    def _vis_len(s):
+        return len(_re.sub(chr(27) + r'\[[0-9;]*m', '', s))
     def border_top(label):
-        inner = bw - 2  # between ╭ and ╮
-        txt = chr(9472) + ' ' + label + ' '
-        fill = chr(9472) * max(0, inner - len(txt))
-        print('    ' + chr(9581) + (txt + fill)[:inner] + chr(9582))
+        inner = bw - 2
+        prefix = dash + ' ' + label + ' '
+        fill = dash * max(0, inner - _vis_len(prefix))
+        print(f'    {D}{chr(9581)}{prefix}{fill}{chr(9582)}{R}')
     def border_bot(label):
         inner = bw - 2
-        txt = chr(9472) + chr(9472) + ' ' + label + ' '
-        fill = chr(9472) * max(0, inner - len(txt))
-        print('    ' + chr(9584) + (txt + fill)[:inner] + chr(9583))
+        prefix = dash + dash + ' ' + label + ' '
+        fill = dash * max(0, inner - _vis_len(prefix))
+        print(f'    {D}{chr(9584)}{prefix}{fill}{chr(9583)}{R}')
 
-    border_top(col_name + ' ' + chr(9472) + chr(9472) + ' ' + str(len(vis)) + ' skills synced')
+    border_top(f'{R}{B}{col_name}{R}{D} {dash}{dash} {G}{str(len(vis))} skills synced{R}{D}')
     row_empty()
 
     for i in range(0, len(slugs), 2):
@@ -227,27 +236,24 @@ if slugs:
         right = ''
         if i + 1 < len(slugs):
             right = (str(i+2).rjust(2) + '. ' + slugs[i+1]).ljust(col_w)
-        row_line('  ' + left + right)
+        row_line(f'  {C}' + left + right + f'{R}')
 
     row_empty()
-    row_line('  ' + chr(9472) * (bw - 6) + '  ')
+    row_line(f'  {D}' + dash * (bw - 6) + f'{R}  ')
     row_empty()
-    row_line('  ' + chr(8594) + ' ' + skills_path)
+    row_line(f'  {D}{chr(8594)} {skills_path}{R}')
     row_empty()
 
-    border_bot('/skillnote ' + chr(183) + ' /skillnote:collection')
+    border_bot(f'{R}{C}/skillnote{R}{D} {chr(183)} {C}/skillnote:collection{R}{D}')
 else:
-    print('    ' + col_name + ' ' + chr(183) + ' ' + str(len(vis)) + ' skills (' + detail + ')')
+    print(f'    {C}{col_name}{R} {D}{chr(183)}{R} {str(len(vis))} skills ({detail})')
 
 print()
 
-# ── Context for Claude (not visual, just data) ──
+# ── Context for Claude (compact, not visual noise) ──
 if vis:
-    print('[SkillNote skills — use automatically when task matches:]')
-    for s in vis:
-        desc = s.get('description', '')
-        if len(desc) > 120: desc = desc[:117] + '...'
-        print(f'  /skillnote-{s[\"slug\"]}: {desc}')
+    names = ', '.join(s['slug'] for s in vis)
+    print(f'{D}[SkillNote: {names}]{R}')
 " 2>/dev/null) || exit 0
 
 # Output as additionalContext for Claude's session

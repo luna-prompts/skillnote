@@ -537,10 +537,6 @@ def main():
     if changed and current is not None:
         _clean_skills_dir()
 
-    names = ", ".join(chosen)
-    total = sum(c for n, c, _ in collections if n in chosen)
-    print(f"\n  ✦ SkillNote: {names} ({total} skills)\n")
-
     _run_sync()
 
 
