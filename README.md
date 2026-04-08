@@ -38,7 +38,7 @@
 
 ## The Problem
 
-Claude Code loads every `SKILL.md` in `~/.claude/skills/` into context. But there's a hard limit: [**~8,000 characters**](https://docs.anthropic.com/en/docs/build-with-claude/claude-code/tutorials/manage-skills) shared across all active skill descriptions. Past that, descriptions get silently truncated and skills stop triggering.
+Claude Code loads every `SKILL.md` in `~/.claude/skills/` into context. But there's a hard limit: [**~8,000 characters**](https://docs.anthropic.com/en/docs/claude-code/skills) shared across all active skill descriptions. Past that, descriptions get silently truncated and skills stop triggering.
 
 With 15+ skills, you're already at the edge. Add team-shared skills on top and it breaks entirely. You can't use all your skills at once. You need a way to pick which ones are active.
 
@@ -89,7 +89,7 @@ Collections let you group skills by purpose and activate a different set per pro
 
 One project can use `Frontend + Conventions`. Another can use `DevOps`. Same skill registry, different active sets. No context wasted.
 
-> Read more about Claude Code's skill context limits in the [official documentation](https://docs.anthropic.com/en/docs/build-with-claude/claude-code/tutorials/manage-skills).
+> Read more about Claude Code's skill context limits in the [official documentation](https://docs.anthropic.com/en/docs/claude-code/skills).
 
 ---
 
@@ -164,9 +164,13 @@ Every save creates a snapshot. Browse, compare, and restore any version.
 
 ---
 
-## How It Works
+## Built on Claude Code's Native APIs
 
-The SkillNote plugin installs to `~/.claude/plugins/skillnote` and hooks into six points in Claude Code's lifecycle. No manual config needed.
+SkillNote isn't a wrapper or a workaround. It's built directly on [Claude Code's plugin system](https://docs.anthropic.com/en/docs/claude-code/plugins), [hooks](https://docs.anthropic.com/en/docs/claude-code/hooks), and [skill format](https://docs.anthropic.com/en/docs/claude-code/skills). Every feature uses the official APIs, which means the experience feels native, not bolted on.
+
+### Six Lifecycle Hooks
+
+The plugin hooks into every stage of a Claude Code session. Most tools only use one or two. SkillNote uses all six to create a seamless experience where skills are always current, usage is always tracked, and context survives compaction and subagent spawning.
 
 ```
 ┌──────────────────────────────────────────────────────┐
@@ -197,9 +201,20 @@ The SkillNote plugin installs to `~/.claude/plugins/skillnote` and hooks into si
 └──────────────────────────────────────────────────────┘
 ```
 
-Skills are written as local `SKILL.md` files with full [Claude Code frontmatter](https://docs.anthropic.com/en/docs/build-with-claude/claude-code/tutorials/manage-skills) support. Features like `allowed-tools`, `context: fork`, `effort`, and `model` all work out of the box. Skills persist offline and survive restarts.
+### Full Frontmatter Support
 
-The plugin runs a background sync every 60 seconds. Edit a skill in the web UI and Claude has the new version within a minute.
+Skills are written as local `SKILL.md` files, not piped through an abstraction layer. This means every [Claude Code frontmatter feature](https://docs.anthropic.com/en/docs/claude-code/skills) works:
+
+- **`allowed-tools`** to restrict which tools a skill can use
+- **`context: fork`** to isolate skill execution in a separate context
+- **`effort`** to control how much reasoning the agent applies
+- **`model`** to pin a skill to a specific model
+
+These features only work with local `SKILL.md` files, not with MCP tools or remote APIs. That's why SkillNote syncs to disk instead of serving skills over a network protocol.
+
+### Non-blocking by Design
+
+Only `SessionStart` blocks (for ~1 second to sync skills). Every other hook runs asynchronously. `UserPromptSubmit` re-syncs in the background without adding latency. `PostToolUse` tracks analytics without slowing down the agent. `PostCompact` and `SubagentStart` inject context silently. The `Stop` hook only fires when the session ends. You never wait for SkillNote.
 
 ---
 
