@@ -4,11 +4,11 @@ import { TopBar } from '@/components/layout/topbar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Download, Pencil, GitBranch, Check, BookOpen, ArrowLeft, Link2, Star, Command, X, Keyboard, FileText, Search, FolderOpen, Share2, MoreHorizontal, Trash2, Clock, User, Terminal } from 'lucide-react'
-import { Skill, type Comment, type SkillRatingDetail } from '@/lib/mock-data'
+import { Skill, type Comment, type SkillRatingDetail, type SkillReview } from '@/lib/mock-data'
 import { getSkills, updateSkill, deleteSkillById, saveSkillEdit } from '@/lib/skills-store'
 import { validateSkillName, validateDescription } from '@/lib/skill-validation'
 import { generateMarkdown, triggerDownload } from '@/lib/markdown-utils'
-import { createCommentApi, fetchSkillRatingDetail } from '@/lib/api/skills'
+import { createCommentApi, fetchSkillRatingDetail, fetchSkillReviews } from '@/lib/api/skills'
 import { toast } from 'sonner'
 import { formatRelative } from '@/lib/format'
 import { cn } from '@/lib/utils'
@@ -17,7 +17,6 @@ import Link from 'next/link'
 import { SkillViewTab } from './tabs/SkillViewTab'
 import { SkillEditTab } from './tabs/SkillEditTab'
 import { InstallDialog } from './InstallDialog'
-import { InstallStrip } from './InstallStrip'
 
 type PaletteAction = {
   icon: React.ComponentType<{ className?: string }>
@@ -198,10 +197,12 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
   }, [skill.slug])
 
   const [ratingDetail, setRatingDetail] = useState<SkillRatingDetail | null>(null)
+  const [reviews, setReviews] = useState<SkillReview[]>([])
 
-  // Fetch rating detail on mount
+  // Fetch rating detail + reviews on mount
   useEffect(() => {
     fetchSkillRatingDetail(skill.slug).then(setRatingDetail).catch(() => {})
+    fetchSkillReviews(skill.slug).then(setReviews).catch(() => {})
   }, [skill.slug])
 
   const [showHelp, setShowHelp] = useState(false)
@@ -455,11 +456,14 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
                       {formatRelative(skill.updated_at)}
                     </span>
                     {ratingDetail && ratingDetail.rating_count > 0 && ratingDetail.avg_rating != null && (
-                      <span className="inline-flex items-center gap-1.5 text-[11px] text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2.5 py-1 rounded-full">
+                      <button
+                        onClick={() => document.getElementById('agent-reviews')?.scrollIntoView({ behavior: 'smooth' })}
+                        className="inline-flex items-center gap-1.5 text-[11px] text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2.5 py-1 rounded-full hover:bg-amber-500/20 transition-colors cursor-pointer"
+                      >
                         <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
                         {ratingDetail.avg_rating.toFixed(1)}
-                        <span className="text-muted-foreground/60">({ratingDetail.rating_count})</span>
-                      </span>
+                        <span className="text-muted-foreground/60">({ratingDetail.rating_count >= 1000 ? `${(ratingDetail.rating_count / 1000).toFixed(1).replace(/\.0$/, '')}k` : ratingDetail.rating_count})</span>
+                      </button>
                     )}
                     {skill.collections.map(c => (
                       <Link
@@ -490,9 +494,8 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
                   </div>
                 </div>
 
-                {/* Right: install strip + version ratings — visible on lg+ */}
+                {/* Right: version ratings — visible on lg+ */}
                 <div className="hidden lg:block w-64 shrink-0 pt-1 space-y-6">
-                  <InstallStrip slug={skill.slug} />
                   {ratingDetail && ratingDetail.versions?.length > 0 && (
                     <div>
                       <p className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground/40 font-medium mb-2">Rating by Version</p>
@@ -541,7 +544,7 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
           {/* Content — no tab bar; edit is fullscreen overlay, comments inline in view */}
           <div className="flex-1 flex flex-col min-h-0">
             {activeTab !== 'edit' && (
-              <SkillViewTab skill={skill} onAddComment={handleAddComment} />
+              <SkillViewTab skill={skill} onAddComment={handleAddComment} ratingDetail={ratingDetail} reviews={reviews} />
             )}
             {activeTab === 'edit' && (
               <SkillEditTab

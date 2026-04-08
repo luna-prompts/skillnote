@@ -437,18 +437,19 @@ def get_rating_summary(
 def get_skill_reviews(
     skill_slug: str,
     limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
 ):
-    """Individual rating reviews for a skill, newest first."""
+    """Individual rating reviews for a skill, newest first. Supports offset pagination."""
     rows = db.execute(
         text("""
             SELECT id, rating, outcome, agent_name, skill_version, session_id, created_at
             FROM skill_ratings
             WHERE skill_slug = :slug
             ORDER BY created_at DESC
-            LIMIT :limit
+            LIMIT :limit OFFSET :offset
         """),
-        {"slug": skill_slug, "limit": limit},
+        {"slug": skill_slug, "limit": limit, "offset": offset},
     ).mappings().all()
 
     return [

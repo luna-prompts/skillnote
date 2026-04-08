@@ -1,7 +1,8 @@
 'use client'
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
-import { ArrowUp, Check, Copy, Hash, FileText, MessageSquare } from 'lucide-react'
-import { Skill, type Comment } from '@/lib/mock-data'
+import { ArrowUp, Check, Copy, Hash, FileText, MessageSquare, Star, Bot } from 'lucide-react'
+import { Skill, type Comment, type SkillRatingDetail, type SkillReview } from '@/lib/mock-data'
+import { fetchSkillReviews } from '@/lib/api/skills'
 import { cn } from '@/lib/utils'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -102,17 +103,125 @@ function ScrollToTopButton({ containerRef }: { containerRef: React.RefObject<HTM
   )
 }
 
+function StarRating({ rating, size = 'sm' }: { rating: number; size?: 'sm' | 'md' }) {
+  const cls = size === 'md' ? 'h-4 w-4' : 'h-3 w-3'
+  return (
+    <span className="inline-flex items-center gap-0.5">
+      {[1, 2, 3, 4, 5].map(i => (
+        <Star key={i} className={cn(cls, i <= rating ? 'fill-amber-400 text-amber-400' : 'text-muted-foreground/20')} />
+      ))}
+    </span>
+  )
+}
+
+function RatingDistribution({ reviews }: { reviews: SkillReview[] }) {
+  const dist = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 } as Record<number, number>
+  for (const r of reviews) dist[r.rating] = (dist[r.rating] || 0) + 1
+  const total = reviews.length
+  return (
+    <div className="space-y-1.5">
+      {[5, 4, 3, 2, 1].map(star => {
+        const count = dist[star]
+        const pct = total > 0 ? (count / total) * 100 : 0
+        return (
+          <div key={star} className="flex items-center gap-2.5 text-[12px]">
+            <span className="text-muted-foreground w-12 text-right shrink-0">{star} star</span>
+            <div className="flex-1 h-2 bg-muted/60 rounded-full overflow-hidden">
+              <div className="h-full bg-amber-400 rounded-full transition-all duration-300" style={{ width: `${pct}%` }} />
+            </div>
+            <span className="text-muted-foreground/60 w-8 text-right tabular-nums shrink-0">{pct > 0 ? `${Math.round(pct)}%` : ''}</span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function ReviewCard({ review }: { review: SkillReview }) {
+  const date = review.created_at ? new Date(review.created_at) : null
+  const timeAgo = date ? formatTimeAgo(date) : ''
+  return (
+    <div className="py-4 first:pt-0">
+      <div className="flex items-center gap-2.5 mb-1.5">
+        <span className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-accent/10 text-accent shrink-0">
+          <Bot className="h-3 w-3" />
+        </span>
+        <span className="text-[13px] font-medium text-foreground">{review.agent_name || 'Unknown agent'}</span>
+        {review.skill_version && (
+          <span className="text-[11px] font-mono text-muted-foreground/50">v{review.skill_version}</span>
+        )}
+      </div>
+      <div className="flex items-center gap-2 mb-1.5 pl-[34px]">
+        <StarRating rating={review.rating} />
+        {timeAgo && <span className="text-[11px] text-muted-foreground/50">{timeAgo}</span>}
+      </div>
+      {review.outcome && (
+        <p className="text-[13px] text-muted-foreground leading-relaxed pl-[34px]">{review.outcome}</p>
+      )}
+    </div>
+  )
+}
+
+function formatCount(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1).replace(/\.0$/, '')}k`
+  return String(n)
+}
+
+function formatTimeAgo(date: Date): string {
+  const now = new Date()
+  const diffMs = now.getTime() - date.getTime()
+  const diffMins = Math.floor(diffMs / 60000)
+  if (diffMins < 1) return 'just now'
+  if (diffMins < 60) return `${diffMins}m ago`
+  const diffHours = Math.floor(diffMins / 60)
+  if (diffHours < 24) return `${diffHours}h ago`
+  const diffDays = Math.floor(diffHours / 24)
+  if (diffDays < 30) return `${diffDays}d ago`
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+const REVIEWS_PAGE_SIZE = 10
+
 type SkillViewTabProps = {
   skill: Skill
   onAddComment?: (body: string) => Promise<Comment | void>
+  ratingDetail?: SkillRatingDetail | null
+  reviews?: SkillReview[]
 }
 
-export function SkillViewTab({ skill, onAddComment }: SkillViewTabProps) {
+export function SkillViewTab({ skill, onAddComment, ratingDetail, reviews: initialReviews = [] }: SkillViewTabProps) {
   const { resolvedTheme } = useTheme()
   const isDark = resolvedTheme === 'dark'
   const viewContentRef = useRef<HTMLDivElement>(null)
 
   const strippedContent = useMemo(() => stripFrontmatter(skill.content_md), [skill.content_md])
+
+  // Paginated reviews
+  const [reviews, setReviews] = useState<SkillReview[]>(initialReviews)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [hasMore, setHasMore] = useState(initialReviews.length >= REVIEWS_PAGE_SIZE)
+  const totalCount = ratingDetail?.rating_count ?? 0
+
+  // Sync when initial reviews change (e.g. navigating between skills)
+  useEffect(() => {
+    setReviews(initialReviews)
+    setHasMore(initialReviews.length >= REVIEWS_PAGE_SIZE)
+  }, [initialReviews])
+
+  const loadMore = useCallback(async () => {
+    if (loadingMore || !hasMore) return
+    setLoadingMore(true)
+    try {
+      const more = await fetchSkillReviews(skill.slug, REVIEWS_PAGE_SIZE, reviews.length)
+      if (more.length < REVIEWS_PAGE_SIZE) setHasMore(false)
+      setReviews(prev => [...prev, ...more])
+    } catch {
+      setHasMore(false)
+    } finally {
+      setLoadingMore(false)
+    }
+  }, [loadingMore, hasMore, skill.slug, reviews.length])
 
   return (
     <div className="flex-1 mt-0 overflow-y-auto overflow-x-hidden scroll-smooth animate-in fade-in duration-200" ref={viewContentRef}>
@@ -208,12 +317,86 @@ export function SkillViewTab({ skill, onAddComment }: SkillViewTabProps) {
                 },
               }}
             >
-              {stripFrontmatter(skill.content_md)}
+              {strippedContent}
             </ReactMarkdown>
           </div>
         </div>
       </div>
 
+
+      {/* Agent Reviews */}
+      {(reviews.length > 0 || (ratingDetail && ratingDetail.rating_count > 0)) && (
+        <div id="agent-reviews" className="px-4 sm:px-10 lg:px-14 pb-8 scroll-mt-4">
+          <div className="border-t border-border/40 pt-8 mt-2 max-w-[48rem]">
+            <h2 className="text-[13px] font-semibold text-foreground/90 mb-6 flex items-center gap-2 uppercase tracking-wide">
+              <Star className="h-3.5 w-3.5 text-amber-400 fill-amber-400" />
+              Agent Reviews
+              {ratingDetail && ratingDetail.rating_count > 0 && (
+                <span className="text-[10px] font-semibold text-muted-foreground bg-muted/80 rounded-full px-2 py-0.5 normal-case tracking-normal">
+                  {formatCount(ratingDetail.rating_count)}
+                </span>
+              )}
+            </h2>
+
+            {/* Summary + distribution */}
+            <div className="flex flex-col sm:flex-row gap-6 sm:gap-10 mb-6">
+              {/* Big average */}
+              {ratingDetail && ratingDetail.avg_rating != null && (
+                <div className="flex flex-col items-center sm:items-start shrink-0">
+                  <span className="text-4xl font-bold text-foreground tabular-nums">{ratingDetail.avg_rating.toFixed(1)}</span>
+                  <StarRating rating={Math.round(ratingDetail.avg_rating)} size="md" />
+                  <span className="text-[12px] text-muted-foreground mt-1">{formatCount(ratingDetail.rating_count)} rating{ratingDetail.rating_count !== 1 ? 's' : ''}</span>
+                </div>
+              )}
+              {/* Distribution bars */}
+              {reviews.length > 0 && (
+                <div className="flex-1 min-w-0 max-w-xs">
+                  <RatingDistribution reviews={reviews} />
+                </div>
+              )}
+            </div>
+
+            {/* Individual reviews */}
+            {reviews.length > 0 && (
+              <>
+                <div className="divide-y divide-border/40">
+                  {reviews.map(review => (
+                    <ReviewCard key={review.id} review={review} />
+                  ))}
+                </div>
+
+                {/* Load more / progress */}
+                {hasMore && (
+                  <div className="pt-4 flex items-center gap-3">
+                    <button
+                      onClick={loadMore}
+                      disabled={loadingMore}
+                      className="text-[13px] font-medium text-accent hover:text-accent/80 disabled:opacity-50 transition-colors"
+                    >
+                      {loadingMore ? 'Loading...' : 'Show more reviews'}
+                    </button>
+                    {totalCount > 0 && (
+                      <span className="text-[11px] text-muted-foreground/40">
+                        Showing {reviews.length} of {formatCount(totalCount)}
+                      </span>
+                    )}
+                  </div>
+                )}
+                {!hasMore && reviews.length > REVIEWS_PAGE_SIZE && (
+                  <p className="text-[11px] text-muted-foreground/40 pt-4">
+                    All {formatCount(totalCount)} reviews loaded
+                  </p>
+                )}
+              </>
+            )}
+
+            {/* Empty state — has rating but no reviews fetched */}
+            {reviews.length === 0 && ratingDetail && ratingDetail.rating_count > 0 && (
+              <p className="text-[13px] text-muted-foreground/60">Rating data available but no individual reviews yet.</p>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* TODO: Re-enable comments when ACL is ready
       <div className="px-4 sm:px-10 lg:px-14 pb-20 lg:pb-12">

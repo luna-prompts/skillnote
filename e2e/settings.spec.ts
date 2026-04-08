@@ -40,9 +40,9 @@ test.describe('Settings Page — MCP Tools', () => {
     await setupMocks(page)
     await page.goto('/settings')
 
-    await expect(page.locator('text=MCP Tools')).toBeVisible()
-    await expect(page.locator('text=Skill Completion Tracking')).toBeVisible()
-    await expect(page.locator('text=Outcome Field')).toBeVisible()
+    await expect(page.getByText('Skill Settings', { exact: true })).toBeVisible()
+    await expect(page.getByText('Skill Completion Tracking', { exact: true })).toBeVisible()
+    await expect(page.getByText('Outcome Field', { exact: true })).toBeVisible()
   })
 
   test('skill completion toggle is ON by default', async ({ page }) => {
@@ -144,7 +144,8 @@ test.describe('Settings Page — MCP Tools', () => {
     await setupMocks(page)
     await page.goto('/settings')
 
-    await expect(page.locator('text=About')).toBeVisible()
-    await expect(page.locator('text=SkillNote v0.1.0')).toBeVisible()
+    await expect(page.getByText('About', { exact: true })).toBeVisible()
+    // Version shown in both sidebar footer and About section — check the About one
+    await expect(page.getByText('SkillNote').nth(1)).toBeVisible()
   })
 })

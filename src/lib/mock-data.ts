@@ -94,6 +94,15 @@ export type SkillRatingDetail = {
   versions: { version: number; avg_rating: number; rating_count: number }[]
 }
 
+export type SkillReview = {
+  id: string
+  rating: number
+  outcome: string
+  agent_name: string
+  skill_version: string
+  created_at: string | null
+}
+
 export const mockTeamMembers: TeamMember[] = [
   { name: 'Alice', color: '#8b5cf6' },
   { name: 'Bob', color: '#ef4444' },

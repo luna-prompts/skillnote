@@ -14,16 +14,20 @@ test.describe('Skill Ratings', () => {
       }),
     )
 
-    // Mock ratings list
-    await page.route('**/v1/analytics/ratings', (route) => {
-      if (route.request().url().includes('ratings/')) return route.fallback()
-      return route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify([
-          { slug: 'react-component', avg_rating: 4.3, rating_count: 18 },
-        ]),
-      })
+    // All analytics routes — single handler
+    await page.route('**/v1/analytics/**', (route) => {
+      const url = route.request().url()
+      if (url.endsWith('/ratings') || url.endsWith('/ratings/')) {
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify([
+            { slug: 'react-component', avg_rating: 4.3, rating_count: 18 },
+          ]),
+        })
+      }
+      // Default empty for unmatched analytics routes
+      return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
     })
   })
 
@@ -69,28 +73,55 @@ test.describe('Skill Ratings', () => {
       route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
     )
 
-    // Mock rating detail
-    await page.route('**/v1/analytics/ratings/react-component', (route) =>
-      route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          slug: 'react-component',
-          avg_rating: 4.3,
-          rating_count: 18,
-          versions: [
-            { version: 3, avg_rating: 2.1, rating_count: 5 },
-            { version: 2, avg_rating: 4.8, rating_count: 8 },
-            { version: 1, avg_rating: 4.0, rating_count: 5 },
-          ],
-        }),
-      }),
-    )
+    // Override analytics for this test with detail + reviews
+    await page.route('**/v1/analytics/**', (route) => {
+      const url = route.request().url()
+
+      if (url.includes('/reviews')) {
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify([
+            { id: 'r1', rating: 5, outcome: 'Applied perfectly', agent_name: 'claude-code', skill_version: '3', created_at: '2026-03-01T10:00:00Z' },
+            { id: 'r2', rating: 4, outcome: 'Worked well with minor tweaks', agent_name: 'cursor', skill_version: '2', created_at: '2026-02-28T10:00:00Z' },
+          ]),
+        })
+      }
+
+      if (url.includes('/ratings/react-component')) {
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            slug: 'react-component',
+            avg_rating: 4.3,
+            rating_count: 18,
+            versions: [
+              { version: 3, avg_rating: 2.1, rating_count: 5 },
+              { version: 2, avg_rating: 4.8, rating_count: 8 },
+              { version: 1, avg_rating: 4.0, rating_count: 5 },
+            ],
+          }),
+        })
+      }
+
+      if (url.endsWith('/ratings') || url.endsWith('/ratings/')) {
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify([
+            { slug: 'react-component', avg_rating: 4.3, rating_count: 18 },
+          ]),
+        })
+      }
+
+      return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
+    })
 
     await page.goto('/skills/react-component')
 
-    // Overall rating in meta pills
-    await expect(page.locator('text=4.3')).toBeVisible()
+    // Overall rating in meta pills (use first() since big avg also shows 4.3)
+    await expect(page.locator('text=4.3').first()).toBeVisible()
 
     // Per-version breakdown (on lg+ screens)
     await expect(page.locator('text=Rating by Version')).toBeVisible()

@@ -24,7 +24,6 @@ import {
   fetchCollections,
   fetchTopSkills,
   fetchRatingSummary,
-  fetchSkillReviews,
   type AnalyticsSummary,
   type SkillCallStat,
   type AgentStat,
@@ -32,7 +31,6 @@ import {
   type CollectionStat,
   type TopSkillStat,
   type RatingSummary,
-  type SkillReview,
 } from '@/lib/api/analytics'
 
 // ─── MCP types ────────────────────────────────────────────────────────────────
@@ -414,9 +412,6 @@ function AnalyticsContent() {
   const [collections, setCollections] = useState<CollectionStat[]>([])
   const [topSkills, setTopSkills] = useState<TopSkillStat[]>([])
   const [ratingSummary, setRatingSummary] = useState<RatingSummary | null>(null)
-  const [expandedSkill, setExpandedSkill] = useState<string | null>(null)
-  const [skillReviews, setSkillReviews] = useState<SkillReview[]>([])
-  const [reviewsLoading, setReviewsLoading] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [trendPct, setTrendPct] = useState<number | null>(null)
@@ -1054,30 +1049,11 @@ function AnalyticsContent() {
                     </thead>
                     <tbody className="divide-y divide-border/20">
                       {topSkills.map((s, i) => {
-                        const isExpanded = expandedSkill === s.slug
                         return (
                           <React.Fragment key={s.slug}>
                             <tr
-                              onClick={async () => {
-                                if (isExpanded) {
-                                  setExpandedSkill(null)
-                                  return
-                                }
-                                setExpandedSkill(s.slug)
-                                setReviewsLoading(true)
-                                try {
-                                  const reviews = await fetchSkillReviews(s.slug)
-                                  setSkillReviews(reviews)
-                                } catch {
-                                  setSkillReviews([])
-                                } finally {
-                                  setReviewsLoading(false)
-                                }
-                              }}
-                              className={cn(
-                                'hover:bg-accent/4 cursor-pointer transition-colors group/row',
-                                isExpanded && 'bg-accent/4'
-                              )}
+                              onClick={() => router.push(`/skills/${s.slug}`)}
+                              className="hover:bg-accent/4 cursor-pointer transition-colors group/row"
                             >
                               <td className="px-4 py-2.5 text-muted-foreground/50 font-mono">{i + 1}</td>
                               <td className="px-2 py-2.5">
@@ -1115,95 +1091,10 @@ function AnalyticsContent() {
                                   ) : (
                                     <span className="text-muted-foreground/30">—</span>
                                   )}
-                                  <ChevronDown className={cn(
-                                    'h-3 w-3 text-muted-foreground/30 transition-transform',
-                                    isExpanded && 'rotate-180'
-                                  )} />
+                                  <ChevronDown className="h-3 w-3 text-muted-foreground/30" />
                                 </div>
                               </td>
                             </tr>
-                            {isExpanded && (
-                              <tr>
-                                <td colSpan={6} className="px-4 py-0">
-                                  <div className="py-3 border-t border-border/20">
-                                    <div className="flex items-center justify-between mb-2">
-                                      <p className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground/40 font-medium flex items-center gap-1.5">
-                                        Agent Reviews
-                                        <span className="relative group/rvtip">
-                                          <Info className="h-2.5 w-2.5 text-muted-foreground/30 cursor-help" />
-                                          <span className="absolute left-0 bottom-full mb-1.5 w-52 px-2 py-1.5 rounded bg-popover border border-border shadow-lg text-[10px] text-muted-foreground leading-snug opacity-0 pointer-events-none group-hover/rvtip:opacity-100 group-hover/rvtip:pointer-events-auto transition-opacity z-50 normal-case tracking-normal font-normal">
-                                            These reviews are submitted by AI agents after they apply the skill and see the results
-                                          </span>
-                                        </span>
-                                      </p>
-                                      <button
-                                        onClick={(e) => { e.stopPropagation(); router.push(`/skills/${s.slug}`) }}
-                                        className="text-[10px] text-accent hover:text-accent/80 font-medium transition-colors"
-                                      >
-                                        View skill →
-                                      </button>
-                                    </div>
-                                    {reviewsLoading ? (
-                                      <div className="space-y-2">
-                                        {[...Array(3)].map((_, j) => <Skeleton key={j} className="h-12 w-full" />)}
-                                      </div>
-                                    ) : skillReviews.length === 0 ? (
-                                      <p className="text-[12px] text-muted-foreground/40 py-3 text-center">
-                                        No reviews yet — agents haven&apos;t provided outcome descriptions
-                                      </p>
-                                    ) : (
-                                      <div className="space-y-2 max-h-[300px] overflow-y-auto">
-                                        {skillReviews.map(review => {
-                                          const cat = categorize(review.agent_name)
-                                          const info = AGENT_CATALOG[cat] ?? AGENT_CATALOG.other
-                                          return (
-                                            <div key={review.id} className="flex gap-3 py-2 px-2 rounded-lg hover:bg-muted/20 transition-colors">
-                                              <div className="shrink-0 mt-0.5">
-                                                <span
-                                                  className="w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold text-white"
-                                                  style={{ backgroundColor: info.color }}
-                                                >
-                                                  {info.label.charAt(0)}
-                                                </span>
-                                              </div>
-                                              <div className="flex-1 min-w-0">
-                                                <div className="flex items-center gap-2 mb-0.5">
-                                                  <span className="text-[11px] font-medium text-foreground">{info.label}</span>
-                                                  <span className="flex items-center gap-0.5 text-[10px] text-amber-600 dark:text-amber-400">
-                                                    {[...Array(5)].map((_, si) => (
-                                                      <Star
-                                                        key={si}
-                                                        className={cn(
-                                                          'h-2.5 w-2.5',
-                                                          si < review.rating
-                                                            ? 'fill-amber-400 text-amber-400'
-                                                            : 'text-muted-foreground/20'
-                                                        )}
-                                                      />
-                                                    ))}
-                                                  </span>
-                                                  <span className="text-[10px] font-mono text-muted-foreground/30">v{review.skill_version}</span>
-                                                  {review.created_at && (
-                                                    <span className="text-[10px] text-muted-foreground/30">{fmtRelative(review.created_at)}</span>
-                                                  )}
-                                                </div>
-                                                {review.outcome ? (
-                                                  <p className="text-[12px] text-muted-foreground/70 leading-relaxed">
-                                                    {review.outcome}
-                                                  </p>
-                                                ) : (
-                                                  <p className="text-[11px] text-muted-foreground/25 italic">No description provided</p>
-                                                )}
-                                              </div>
-                                            </div>
-                                          )
-                                        })}
-                                      </div>
-                                    )}
-                                  </div>
-                                </td>
-                              </tr>
-                            )}
                           </React.Fragment>
                         )
                       })}

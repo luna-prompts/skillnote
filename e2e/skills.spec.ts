@@ -95,6 +95,19 @@ async function setupMocks(page: Page, skills = SKILLS) {
     })
   }
 
+  // Analytics/ratings — return empty defaults so detail page doesn't make unhandled requests
+  await page.route('**/v1/analytics/ratings', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
+  )
+  await page.route('**/v1/analytics/ratings/**', (route) => {
+    if (route.request().url().includes('/reviews')) {
+      return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
+    }
+    return route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ slug: '', avg_rating: null, rating_count: 0, versions: [] }),
+    })
+  })
 }
 
 // ─── TESTS: HOME PAGE ─────────────────────────────────────────────────────────
