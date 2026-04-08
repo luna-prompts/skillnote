@@ -6,7 +6,10 @@ import sys
 import time
 import urllib.request
 
-data = json.load(sys.stdin)
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    data = {}
 
 # Resolve host
 host = os.environ.get("CLAUDE_PLUGIN_OPTION_HOST", "")
@@ -44,7 +47,7 @@ if os.path.isdir(skills_dir):
                        if os.path.isdir(os.path.join(skills_dir, d))])
 
 # Check API connectivity (cached 30s)
-cache_file = "/tmp/skillnote-status-cache"
+cache_file = os.path.expanduser("~/.skillnote/.status-cache")
 connected = False
 now = time.time()
 try:

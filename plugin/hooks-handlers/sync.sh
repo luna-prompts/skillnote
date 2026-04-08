@@ -1,6 +1,6 @@
 #!/bin/bash
 # SkillNote Sync — SessionStart hook
-# Syncs skills from the SkillNote registry to ~/.claude/skills/ with full frontmatter.
+# Syncs skills from the SkillNote registry to PROJECT_DIR/.claude/skills/ with full frontmatter.
 # Manages create/update/delete via a manifest. Offline-first (silent fail).
 
 # Resolve host: env var > ~/.skillnote/host file > localhost

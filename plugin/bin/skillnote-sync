@@ -3,15 +3,12 @@
 # Available as a bare command in Claude Code Bash tool.
 # Usage: skillnote-sync [--force]
 
+PROJECT_DIR="${CLAUDE_PROJECT_DIR:-.}"
+[ ! -f "$PROJECT_DIR/.skillnote.json" ] && { echo "No .skillnote.json — pick a collection first."; exit 0; }
+
 if [ "$1" = "--force" ]; then
     # Force re-sync by removing manifest AND all managed skill dirs
-    # Check project-scoped first, then global
-    PROJECT_DIR="${CLAUDE_PROJECT_DIR:-.}"
-    if [ -f "$PROJECT_DIR/.skillnote.json" ]; then
-        SKILLS_DIR="$PROJECT_DIR/.claude/skills"
-    else
-        SKILLS_DIR="$HOME/.claude/skills"
-    fi
+    SKILLS_DIR="$PROJECT_DIR/.claude/skills"
     MANIFEST="$SKILLS_DIR/.skillnote-manifest.json"
     if [ -n "$CLAUDE_PLUGIN_DATA" ]; then
         MANIFEST="$CLAUDE_PLUGIN_DATA/.skillnote-manifest.json"

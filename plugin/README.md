@@ -1,31 +1,32 @@
 # SkillNote Plugin for Claude Code
 
-Connect your [SkillNote](https://github.com/luna-prompts/skillnote) skill registry to Claude Code. Skills auto-sync with full Claude Code features (allowed-tools, context: fork, effort, model overrides), usage analytics are tracked automatically, and you can create new skills directly from conversations.
+Connect your [SkillNote](https://github.com/luna-prompts/skillnote) skill registry to Claude Code. Skills sync per-project with full Claude Code features (allowed-tools, context: fork, effort, model), usage is tracked automatically, and agents can create new skills from conversations.
 
 ## Install
 
 ```bash
-claude plugin install https://github.com/luna-prompts/skillnote-plugin --scope user
+curl -sf http://localhost:8082/setup | bash
+source ~/.zshrc
 ```
-
-When prompted, enter your SkillNote server address (e.g., `<your-server-ip>` or `localhost`).
 
 ## What It Does
 
-- **SessionStart hook**: Syncs all skills from SkillNote to `~/.claude/skills/` with full frontmatter. Skills get `allowed-tools`, `context: fork`, `effort`, and other Claude Code features.
-- **Skill collection picker**: Full-screen terminal UI to choose collections at every `claude` launch.
-- **Usage tracking**: Every skill invocation is automatically posted to SkillNote's analytics via a PostToolUse hook.
-- **Skill push**: Create new skills from conversations using `/skillnote:skill-push` or the `/skillnote:skill-creator` agent.
+- **Collection picker**: Full-screen terminal UI to choose which skills to activate per project
+- **SessionStart hook**: Syncs selected collection to `PROJECT/.claude/skills/` with full frontmatter
+- **Background re-sync**: UserPromptSubmit hook checks for updates every 60s (non-blocking)
+- **Usage tracking**: PostToolUse hook posts skill invocations to SkillNote analytics
+- **Context persistence**: PostCompact and SubagentStart hooks re-inject skill context
+- **Skill push**: Create new skills from conversations using `/skillnote:skill-push`
 
 ## Per-Project Scoping
 
-Add `.skillnote.json` to a project root to sync only specific collections:
+Skills are always project-level. No skills sync until you pick a collection. The picker writes `.skillnote.json` to the project root:
 
 ```json
 {"collections": ["frontend", "conventions"]}
 ```
 
-Without this file, all skills sync globally.
+Without this file, no skills are synced. Run the picker again to change collections.
 
 ## Manual Sync
 
@@ -37,6 +38,5 @@ skillnote-sync --force  # force re-sync (clears manifest)
 ## Requirements
 
 - SkillNote server running and reachable
-- Claude Code 2.1+ (for skill hot-reload and plugin support)
-- Python 3 (for sync script)
-- curl (for API calls)
+- Claude Code 2.1+ (plugin and hook support)
+- Python 3, curl

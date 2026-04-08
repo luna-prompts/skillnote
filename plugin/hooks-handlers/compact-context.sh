@@ -24,18 +24,24 @@ import json, sys
 try:
     cfg = json.load(open('${CONFIG}'))
     cols = cfg.get('collections', [])
-    if cols:
+    if cols == '*' or cols == ['*']:
+        print('')
+    elif cols:
         print(','.join(cols))
 except:
     pass
 " 2>/dev/null)
 
 if [ -z "$COLLECTIONS" ]; then
-    exit 0
+    # Wildcard or empty — fetch all
+    FETCH_URL="${API_URL}/v1/skills"
+else
+    ENCODED=$(python3 -c "import urllib.parse; print(urllib.parse.quote('${COLLECTIONS}'))" 2>/dev/null || echo "$COLLECTIONS")
+    FETCH_URL="${API_URL}/v1/skills?collections=${ENCODED}"
 fi
 
 # Fetch skill names for the active collection
-SKILLS=$(curl -sf --connect-timeout 3 --max-time 5 "${API_URL}/v1/skills?collections=${COLLECTIONS}" 2>/dev/null | python3 -c "
+SKILLS=$(curl -sf --connect-timeout 3 --max-time 5 "$FETCH_URL" 2>/dev/null | python3 -c "
 import json, sys
 try:
     skills = json.load(sys.stdin)

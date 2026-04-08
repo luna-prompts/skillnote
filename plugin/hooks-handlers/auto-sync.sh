@@ -5,13 +5,11 @@
 
 SYNC_INTERVAL=60  # seconds between syncs
 
-# Per-project timestamp: use project skills dir, not global
+# No .skillnote.json = no sync needed
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-.}"
-if [ -f "$PROJECT_DIR/.skillnote.json" ]; then
-    THROTTLE_DIR="$PROJECT_DIR/.claude/skills"
-else
-    THROTTLE_DIR="$HOME/.claude/skills"
-fi
+[ ! -f "$PROJECT_DIR/.skillnote.json" ] && exit 0
+
+THROTTLE_DIR="$PROJECT_DIR/.claude/skills"
 # Plugin data dir takes priority if available
 if [ -n "$CLAUDE_PLUGIN_DATA" ]; then
     THROTTLE_DIR="$CLAUDE_PLUGIN_DATA"

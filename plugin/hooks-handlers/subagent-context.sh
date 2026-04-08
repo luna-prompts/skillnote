@@ -15,7 +15,9 @@ import json
 try:
     cfg = json.load(open('${CONFIG}'))
     cols = cfg.get('collections', [])
-    if cols:
+    if cols == '*' or cols == ['*']:
+        print('all')
+    elif cols:
         print(','.join(cols))
 except:
     pass
