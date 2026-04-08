@@ -226,7 +226,7 @@ SkillNote is built for Claude Code today. Native plugins for other agents are on
 
 | Agent | Status |
 | --- | --- |
-| **Claude Code** | Supported (plugin + 6 hooks) |
+| **Claude Code** | Supported |
 | **Cursor** | Planned |
 | **Codex CLI** | Planned |
 | **OpenClaw** | Planned |
