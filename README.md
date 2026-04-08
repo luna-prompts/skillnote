@@ -2,7 +2,7 @@
   <img src="public/logo.svg" width="80" height="80" alt="SkillNote" />
 </p>
 
-<h1 align="center">SkillNote</h1>
+<h1 align="center">S K I L L N O T E</h1>
 
 <p align="center">
   <strong>The open-source skill registry for AI coding agents.</strong>
