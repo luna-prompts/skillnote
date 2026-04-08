@@ -200,9 +200,9 @@ D = chr(27) + '[2m'          # dim
 B = chr(27) + '[1m'          # bold
 R = chr(27) + '[0m'          # reset
 
-# ── Branded header ──
+# ── Branded header (aligned with Claude Code's logo) ──
 print()
-print(f'    {C}✦ S K I L L N O T E{R}')
+print(f' {C}✦ S K I L L N O T E{R}')
 print()
 
 if slugs:
