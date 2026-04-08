@@ -7,7 +7,7 @@
 <p align="center">
   <strong>The open-source skill registry for AI coding agents.</strong>
   <br />
-  Create, version, and distribute <code>SKILL.md</code> files across your team — with a Claude Code plugin that syncs them automatically.
+  Create, version, and distribute <code>SKILL.md</code> files across your team with a Claude Code plugin that syncs them automatically.
 </p>
 
 <p align="center">
@@ -38,14 +38,14 @@
 
 ## Why SkillNote?
 
-AI coding agents use `SKILL.md` files to learn conventions, workflows, and patterns. But managing them is a mess — scattered files, no versioning, no sharing, no way to know what actually works.
+AI coding agents use `SKILL.md` files to learn conventions, workflows, and patterns. But managing them is a mess. Files are scattered, there's no versioning, no sharing, and no way to know what actually works.
 
 **SkillNote** is a self-hosted registry that gives you:
 
 - A **web UI** to create, edit, and version skills with a Notion-style editor
 - A **Claude Code plugin** that syncs skills to every session automatically
-- **Agent reviews** — AI agents rate skills after use, so you know what's working
-- **Per-project scoping** — each project gets the right skills, nothing more
+- **Agent reviews** where AI agents rate skills after use, so you know what's working
+- **Per-project scoping** so each project gets the right skills, nothing more
 
 One setup command. Skills sync everywhere, every session. Agents get better over time.
 
@@ -72,7 +72,7 @@ source ~/.zshrc
 
 Now run `claude` in any project. SkillNote picks up your skills automatically.
 
-> **Team setup:** `SKILLNOTE_HOST=<your-server-ip> docker compose up --build -d`, then each person runs `curl -sf http://<your-server-ip>:8082/setup | bash`
+> **Team setup:** Set `SKILLNOTE_HOST` to your server's IP when starting Docker, then have each person run the curl command pointing to that address.
 
 ---
 
@@ -80,17 +80,17 @@ Now run `claude` in any project. SkillNote picks up your skills automatically.
 
 ### Skills sync to every Claude Code session
 
-The plugin writes `SKILL.md` files to `~/.claude/skills/` with full frontmatter support — `allowed-tools`, `context: fork`, `effort`, `model`. Skills are always current: they sync at session start and refresh in the background every 60 seconds.
+The plugin writes `SKILL.md` files to `~/.claude/skills/` with full frontmatter support including `allowed-tools`, `context: fork`, `effort`, and `model`. Skills are always current. They sync at session start and refresh in the background every 60 seconds.
 
 ### Scope the right skills to each project
 
-Group skills into collections (Conventions, DevOps, Frontend, etc.). Each project gets one active collection via a `.skillnote.json` file. The plugin auto-detects matching collections based on your folder name.
+Group skills into collections like Conventions, DevOps, or Frontend. Each project gets one active collection via a `.skillnote.json` file. The plugin auto-detects matching collections based on your folder name.
 
-Claude Code has a ~8,000 character budget for skill descriptions. With 15+ skills, descriptions get truncated and skills stop triggering. Collections keep things focused — 15 skills max per collection.
+Claude Code has a ~8,000 character budget for skill descriptions. With 15+ skills, descriptions get truncated and skills stop triggering. Collections keep things focused with a 15 skill maximum per collection.
 
 ### Agents rate skills after use
 
-After applying a skill, Claude rates it 1-5 and describes what it did. Over time you see which skills work, which need revision, and how they perform across versions. Real feedback, not guesswork.
+After applying a skill, Claude rates it 1 to 5 and describes what it did. Over time you see which skills work, which need revision, and how they perform across versions. Real feedback, not guesswork.
 
 <p align="center">
   <img src="docs/screenshots/skill-detail.png" width="100%" alt="Skill detail with agent reviews" />
@@ -103,7 +103,7 @@ When Claude notices you repeating the same instruction, it offers to turn it int
 ```
 User: "use pnpm not npm"  (3rd time)
 Claude: "Want me to create a skill for this?"
-      → drafts → you review → pick a collection → published
+        drafts it, you review, pick a collection, published.
 ```
 
 ---
@@ -112,7 +112,7 @@ Claude: "Want me to create a skill for this?"
 
 ### Dashboard & Editor
 
-Browse all skills. Search, filter by collection, see ratings at a glance. Edit with a Notion-style WYSIWYG editor or raw markdown. Import existing `SKILL.md` files with drag-and-drop.
+Browse all skills. Search, filter by collection, see ratings at a glance. Edit with a Notion-style WYSIWYG editor or raw markdown. Import existing `SKILL.md` files with drag and drop.
 
 <p align="center">
   <img src="docs/screenshots/hero-dashboard.png" width="100%" alt="Dashboard" />
@@ -120,7 +120,7 @@ Browse all skills. Search, filter by collection, see ratings at a glance. Edit w
 
 ### Collections
 
-Organize skills by purpose. Each collection shows a progress bar (X/15 skills) and the skills it contains.
+Organize skills by purpose. Each collection shows a progress bar and the skills it contains. Capped at 15 for optimal Claude Code performance.
 
 <p align="center">
   <img src="docs/screenshots/collections.png" width="100%" alt="Collections" />
@@ -128,7 +128,7 @@ Organize skills by purpose. Each collection shows a progress bar (X/15 skills) a
 
 ### Analytics
 
-Track usage across all connected agents. Calls, ratings, agent breakdown, timeline — filterable by time range, agent, and collection.
+Track usage across all connected agents. Calls, ratings, agent breakdown, and timeline. Filterable by time range, agent, and collection.
 
 <p align="center">
   <img src="docs/screenshots/analytics-dashboard.png" width="100%" alt="Analytics" />
@@ -151,7 +151,7 @@ The Claude Code plugin installs to `~/.claude/plugins/skillnote` and sets up six
 | Hook | What it does |
 |------|-------------|
 | **SessionStart** | Syncs skills from SkillNote to `~/.claude/skills/` |
-| **UserPromptSubmit** | Background re-sync every 60s (non-blocking) |
+| **UserPromptSubmit** | Background re-sync every 60s, non-blocking |
 | **PostToolUse** | Tracks skill usage for analytics |
 | **PostCompact** | Re-injects skill context after compaction |
 | **SubagentStart** | Injects context into subagents |
@@ -177,7 +177,7 @@ The plugin also connects via MCP for real-time features: skill ratings (`complet
 
 ### Why both local files and MCP?
 
-Local skills support `allowed-tools`, `context: fork`, `effort`, and `model` — MCP tools don't. Local skills also work offline. MCP provides real-time delivery and the ratings API. The plugin gives you both.
+Local skills support `allowed-tools`, `context: fork`, `effort`, and `model`. MCP tools don't. Local skills also work offline. MCP provides real-time delivery and the ratings API. The plugin gives you both.
 
 ---
 
@@ -210,7 +210,7 @@ Any MCP-compatible agent can connect. Skills appear as tools.
 {"mcpServers": {"skillnote": {"url": "http://localhost:8083/mcp"}}}
 ```
 
-> MCP agents get skills and ratings but not local sync features (`allowed-tools`, `context: fork`). Those require the Claude Code plugin.
+> MCP agents get skills and ratings but not local sync features like `allowed-tools` and `context: fork`. Those require the Claude Code plugin.
 
 ---
 
@@ -229,7 +229,7 @@ docker compose up --build -d
 # Web: localhost:3000 · API: localhost:8082 · MCP: localhost:8083
 ```
 
-**Custom host:**
+**Custom host (LAN or Tailscale):**
 ```bash
 SKILLNOTE_HOST=<your-server-ip> docker compose up --build -d
 ```
@@ -244,7 +244,7 @@ npm install && npm run dev
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `SKILLNOTE_HOST` | `localhost` | Host IP/domain for CORS and frontend |
+| `SKILLNOTE_HOST` | `localhost` | Host IP or domain for CORS and frontend |
 | `SKILLNOTE_API_PORT` | `8082` | API port |
 | `SKILLNOTE_MCP_PORT` | `8083` | MCP server port |
 | `SKILLNOTE_DATABASE_URL` | *(compose)* | PostgreSQL connection string |
