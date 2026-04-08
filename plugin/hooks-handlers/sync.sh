@@ -181,22 +181,41 @@ if updated: parts.append(str(updated) + ' updated')
 if deleted: parts.append(str(deleted) + ' removed')
 
 detail = ', '.join(parts) if parts else 'all current'
+col_name = '$COLLECTIONS' if '$COLLECTIONS' else 'all'
 
-# Compact status for the user
-print('  ✦ ' + str(total) + ' skills synced (' + detail + ')')
+# Visible skills (excluding plugin-provided)
+vis = [s for s in skills if s['slug'] not in plugin_provided]
+slugs = [s['slug'] for s in vis]
 
-# Skill catalog as context for Claude (not visual noise for user)
-if skills:
-    print('')
-    print('[SkillNote context — active skills for Claude to use automatically:]')
-    for s in skills:
-        slug = s['slug']
-        if slug in plugin_provided:
-            continue
+# ── User-visible output: compact branded box ──
+print(f'  ✦ {col_name} · {len(vis)} skills synced ({detail})')
+
+if slugs:
+    # Two-column grid
+    col_w = max(len(s) for s in slugs) + 6  # num + padding
+    box_w = col_w * 2 + 5  # 2 cols + borders + gap
+    print()
+    print('  ╭─ Active Skills ' + '─' * max(0, box_w - 18) + '╮')
+    for i in range(0, len(slugs), 2):
+        left = f'{i+1:>2}. {slugs[i]}'.ljust(col_w)
+        right = ''
+        if i + 1 < len(slugs):
+            right = f'{i+2:>2}. {slugs[i+1]}'.ljust(col_w)
+        row = f'  │  {left}{right}│'
+        # Pad to box width
+        inner = box_w - 2
+        content = f'{left}{right}'
+        print(f'  │  {content.ljust(inner - 2)}│')
+    print('  ╰' + '─' * (box_w - 1) + '╯')
+
+# ── Context for Claude (detailed, with descriptions) ──
+if vis:
+    print()
+    print('[SkillNote skills — use automatically when task matches:]')
+    for s in vis:
         desc = s.get('description', '')
-        if len(desc) > 120:
-            desc = desc[:117] + '...'
-        print(f'  /skillnote-{slug}: {desc}')
+        if len(desc) > 120: desc = desc[:117] + '...'
+        print(f'  /skillnote-{s[\"slug\"]}: {desc}')
 " 2>/dev/null) || exit 0
 
 # Output as additionalContext for Claude's session
