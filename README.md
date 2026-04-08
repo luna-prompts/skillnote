@@ -49,7 +49,7 @@ Claude Code skills are powerful but managing them breaks down fast.
 
 **Private skills have nowhere to go.** Internal deploy procedures, proprietary API patterns, compliance workflows, infra runbooks. These encode institutional knowledge that can't live in a public repo or third-party registry. They need to stay on your infrastructure.
 
-**SkillNote** is a self-hosted registry that solves all of this. A private registry for skills that can't leave your network. Collections to scope the right skills per project. A plugin that syncs everything to Claude Code automatically. And a feedback loop where agents rate skills after use.
+**SkillNote** is a self-hosted registry that solves all of this. A private registry for skills that can't leave your network. Collections to load only the skills you need for each session. A plugin that syncs the selected collection to Claude Code at launch and keeps it updated throughout the session. And a feedback loop where agents rate skills after use.
 
 Your skills. Your servers. Your rules.
 
