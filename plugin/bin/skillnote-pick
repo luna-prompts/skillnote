@@ -264,17 +264,20 @@ def pick(stdscr, items, recommended=0):
             s(rr, bx + left_w, "│", BORDER); s(rr, bx + bw - 1, "│", BORDER)
             rr += 1
 
-            # Collection name header
+            # Collection name header — highlighted when right panel focused
             s(rr, bx + left_w, "│", BORDER); s(rr, bx + bw - 1, "│", BORDER)
             header_text = sel_name
             if sel_is_rec:
                 header_text += " ★"
-            r_attr = BOLD if focus == "right" else BOLD
-            s(rr, bx + left_w + 4, header_text, r_attr)
+            if focus == "right":
+                s(rr, bx + left_w + 3, "❯", CYAN)
+                s(rr, bx + left_w + 5, header_text, CYAN | BOLD)
+            else:
+                s(rr, bx + left_w + 4, header_text, BOLD)
             count_text = f"{sel_count} skills"
             s(rr, bx + bw - len(count_text) - 3, count_text, DIM)
-            # Panel focus indicator
-            if focus == "right" and right_scroll > 0:
+            # Scroll indicator
+            if right_scroll > 0:
                 s(rr, bx + bw - 2, "▲", DIM)
             rr += 1
 
@@ -287,12 +290,27 @@ def pick(stdscr, items, recommended=0):
             s(rr, bx + left_w, "│", BORDER); s(rr, bx + bw - 1, "│", BORDER)
             rr += 1
 
+            # Word-wrap helper
+            def wrap_text(text, max_w):
+                lines = []
+                while text and len(lines) < 5:  # max 5 lines per desc
+                    if len(text) <= max_w:
+                        lines.append(text)
+                        break
+                    sp = text[:max_w].rfind(" ")
+                    if sp <= 0:
+                        sp = max_w
+                    lines.append(text[:sp])
+                    text = text[sp:].lstrip()
+                return lines
+
             # Skill list with numbers (scrollable)
+            desc_w = right_w - 10  # available width for description
             skill_display = sel_skills[right_scroll:]
             for si, (slug, desc) in enumerate(skill_display):
                 if rr >= h - footer_h - 1:
                     break
-                si = si + right_scroll  # correct numbering
+                si = si + right_scroll
 
                 # Number + skill name
                 s(rr, bx + left_w, "│", BORDER); s(rr, bx + bw - 1, "│", BORDER)
@@ -301,21 +319,26 @@ def pick(stdscr, items, recommended=0):
                 s(rr, bx + left_w + 4 + len(num) + 1, slug, curses.color_pair(1))
                 rr += 1
 
-                # Description
+                # Wrapped description
                 if desc and rr < h - footer_h - 1:
-                    s(rr, bx + left_w, "│", BORDER); s(rr, bx + bw - 1, "│", BORDER)
-                    short = desc[:right_w - 9]
-                    if len(desc) > right_w - 9:
-                        sp = short.rfind(" ")
-                        if sp > 0:
-                            short = short[:sp] + "..."
-                    s(rr, bx + left_w + 8, short, DIM)
-                    rr += 1
+                    for dl in wrap_text(desc, desc_w):
+                        if rr >= h - footer_h - 1:
+                            break
+                        s(rr, bx + left_w, "│", BORDER); s(rr, bx + bw - 1, "│", BORDER)
+                        s(rr, bx + left_w + 8, dl, DIM)
+                        rr += 1
 
                 # Empty line between skills
                 if rr < h - footer_h - 1:
                     s(rr, bx + left_w, "│", BORDER); s(rr, bx + bw - 1, "│", BORDER)
                     rr += 1
+
+            # More skills below indicator
+            has_more_skills = len(sel_skills) > right_scroll + len(skill_display)
+            if has_more_skills and rr < h - footer_h:
+                s(rr, bx + left_w, "│", BORDER); s(rr, bx + bw - 1, "│", BORDER)
+                s(rr, bx + bw - 2, "▼", DIM)
+                rr += 1
 
             # Fill remaining right panel rows
             while rr < h - footer_h:
