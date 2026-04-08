@@ -146,26 +146,6 @@ fi
 # ── clean up legacy rules file (picker handles collection selection now) ──────
 rm -f "$CLAUDE_HOME/rules/skillnote-collection.md" 2>/dev/null
 
-# ── first sync ────────────────────────────────────────────────────────────────
-# Find the installed plugin path (claude plugin install copies it to cache)
-INSTALLED_PATH=$(python3 -c "
-import json, os
-try:
-    d = json.load(open(os.path.expanduser('~/.claude/plugins/installed_plugins.json')))
-    entry = d.get('plugins', {}).get('skillnote@skillnote-local', [{}])[0]
-    print(entry.get('installPath', ''))
-except: print('')
-" 2>/dev/null)
-
-if [ -n "$INSTALLED_PATH" ] && [ -f "$INSTALLED_PATH/hooks-handlers/sync.sh" ]; then
-    export CLAUDE_PLUGIN_ROOT="$INSTALLED_PATH"
-    export CLAUDE_PLUGIN_OPTION_HOST="$(echo "$API_URL" | sed -E 's|https?://||;s|:.*||')"
-    "$INSTALLED_PATH/hooks-handlers/sync.sh" 2>/dev/null || true
-fi
-
-SKILL_COUNT=$(curl -sf --connect-timeout 5 --max-time 10 "$API_URL/v1/skills" 2>/dev/null \
-  | python3 -c "import json,sys;print(len(json.load(sys.stdin)))" 2>/dev/null || echo "?")
-
 COLLECTIONS_LIST=$(curl -sf --connect-timeout 5 --max-time 10 "$API_URL/v1/collections" 2>/dev/null \
   | python3 -c "import json,sys; [print(f'    {c[\"name\"]} ({c[\"count\"]} skills)') for c in json.load(sys.stdin)]" 2>/dev/null || echo "    (none)")
 
