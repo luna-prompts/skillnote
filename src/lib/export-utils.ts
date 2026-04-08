@@ -14,8 +14,8 @@ export async function exportAllAsZip() {
   }
   for (const skill of skills) {
     const md = generateMarkdown(skill)
-    // Each skill gets its own folder: {slug}/SKILL.md
-    const skillFolder = zip.folder(skill.slug)!
+    // Each skill gets its own prefixed folder: skillnote-{slug}/SKILL.md
+    const skillFolder = zip.folder('skillnote-' + skill.slug)!
     skillFolder.file('SKILL.md', md)
   }
   const blob = await zip.generateAsync({ type: 'blob' })
