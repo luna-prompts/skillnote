@@ -1,24 +1,23 @@
 ---
-description: Choose which SkillNote skill collections are active for this project
-allowed-tools: Bash AskUserQuestion
+description: Change which SkillNote skill collection is active for this project
+allowed-tools: Bash
 disable-model-invocation: true
 ---
 
-## Available collections
+Show the current collection and tell the user to restart Claude to change it:
 
-!`curl -sf "http://${CLAUDE_PLUGIN_OPTION_HOST:-localhost}:8082/v1/collections" 2>/dev/null || echo "[]"`
-
-## Current config
-
-!`cat .skillnote.json 2>/dev/null || echo "none"`
-
-## Instructions
-
-Call AskUserQuestion with header "SkillNote", question "Pick a collection:", and options from the collections above (label=name, description="{count} skills"). Mark the current one with "(current)".
-
-After the user picks, run:
 ```bash
-echo '{"collections": ["<NAME>"]}' > .skillnote.json && skillnote-sync --force 2>/dev/null || true
+if [ -f .skillnote.json ]; then
+  COL=$(python3 -c "import json; c=json.load(open('.skillnote.json')).get('collections',[]); print(c[0] if c else 'none')" 2>/dev/null)
+  echo "  Current collection: $COL"
+  echo ""
+  echo "  To change: exit Claude and run 'claude' again."
+  echo "  The collection picker will appear at startup."
+else
+  echo "  No collection set."
+  echo ""
+  echo "  Exit Claude and run 'claude' to pick one."
+fi
 ```
 
-Say "Switched to {name}."
+Display the output. Do not add commentary.
