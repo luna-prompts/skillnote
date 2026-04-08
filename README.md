@@ -220,6 +220,23 @@ Only `SessionStart` blocks (for ~1 second to sync). Every other hook runs asynch
 
 ---
 
+## Coming Soon
+
+SkillNote is built for Claude Code today. Native plugins for other agents are on the roadmap.
+
+| Agent | Status |
+| --- | --- |
+| **Claude Code** | Supported (plugin + 6 hooks) |
+| **Cursor** | Planned |
+| **Codex CLI** | Planned |
+| **OpenClaw** | Planned |
+| **Antigravity** | Planned |
+| **OpenHands** | Planned |
+
+Want to help build an adapter? [Open an issue](https://github.com/luna-prompts/skillnote/issues) or join us on [Discord](https://discord.gg/GazU4amU6H).
+
+---
+
 ## SKILL.md Format
 
 ```markdown
