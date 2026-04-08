@@ -144,38 +144,40 @@ Every save creates a snapshot. Browse, compare, and restore any version.
 
 ## How It Works
 
-The Claude Code plugin installs to `~/.claude/plugins/skillnote` and sets up six lifecycle hooks:
-
-| Hook | What it does |
-|------|-------------|
-| **SessionStart** | Syncs skills from SkillNote to `~/.claude/skills/` |
-| **UserPromptSubmit** | Background re-sync every 60s, non-blocking |
-| **PostToolUse** | Tracks skill usage for analytics |
-| **PostCompact** | Re-injects skill context after compaction |
-| **SubagentStart** | Injects context into subagents |
-| **Stop** | Prompts agent to rate skills used |
-
-The plugin also connects via MCP for real-time features: skill ratings (`complete_skill`) and skill creation (`skill-push`).
+The SkillNote plugin installs to `~/.claude/plugins/skillnote` and hooks into six points in Claude Code's lifecycle. No manual config needed.
 
 ```
-┌──────────────────────────────────────────────────┐
-│  SkillNote Server (Docker)                       │
-│  Web UI :3000  ·  REST API :8082  ·  MCP :8083   │
-│  PostgreSQL (pg_notify for real-time)             │
-└──────────────────────┬───────────────────────────┘
-                       │
-          REST API + MCP protocol
-                       │
-┌──────────────────────┴───────────────────────────┐
-│  Claude Code Plugin                              │
-│  6 hooks · MCP · skill sync · status line        │
-│  → ~/.claude/skills/skillnote-*/SKILL.md         │
-└──────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────┐
+│                                                      │
+│   SkillNote Server (Docker)                          │
+│                                                      │
+│   Web UI        REST API       PostgreSQL            │
+│   :3000         :8082          (storage + notify)    │
+│                                                      │
+└────────────────────┬─────────────────────────────────┘
+                     │
+                  REST API
+                     │
+┌────────────────────┴─────────────────────────────────┐
+│                                                      │
+│   SkillNote Plugin (on your machine)                 │
+│                                                      │
+│   SessionStart      Sync all skills on launch        │
+│   UserPromptSubmit  Background re-sync every 60s     │
+│   PostToolUse       Track which skills get used      │
+│   PostCompact       Re-inject context after compact  │
+│   SubagentStart     Share context with subagents     │
+│   Stop              Prompt agent to rate skills      │
+│                                                      │
+│   Writes to: ~/.claude/skills/skillnote-*/SKILL.md   │
+│   Supports:  allowed-tools, context, effort, model   │
+│                                                      │
+└──────────────────────────────────────────────────────┘
 ```
 
-### Why both local files and MCP?
+Skills are written as local `SKILL.md` files with full Claude Code frontmatter support. This means features like `allowed-tools`, `context: fork`, `effort`, and `model` all work out of the box. Skills also persist offline and survive restarts.
 
-Local skills support `allowed-tools`, `context: fork`, `effort`, and `model`. MCP tools don't. Local skills also work offline. MCP provides real-time delivery and the ratings API. The plugin gives you both.
+The plugin runs a background sync every 60 seconds. Edit a skill in the web UI and Claude has the new version within a minute, with zero restarts.
 
 ---
 
@@ -197,18 +199,6 @@ When the user provides a PDF file:
 2. Identify tables and format them as markdown
 3. Preserve headings and document structure
 ```
-
----
-
-## Other Agents
-
-Any MCP-compatible agent can connect. Skills appear as tools.
-
-```json
-{"mcpServers": {"skillnote": {"url": "http://localhost:8083/mcp"}}}
-```
-
-> MCP agents get skills and ratings but not local sync features like `allowed-tools` and `context: fork`. Those require the Claude Code plugin.
 
 ---
 
