@@ -50,7 +50,7 @@ function ConfirmDialog({ open, onConfirm, onCancel, title, message }: {
   )
 }
 
-const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || '0.1.0'
+const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || '0.3.0'
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<Record<string, string>>({})
