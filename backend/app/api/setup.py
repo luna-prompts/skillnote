@@ -223,10 +223,14 @@ else
 fi
 
 echo ""
+echo "  Getting started:"
+echo ""
 if [ -n "$SHELL_RC" ]; then
-    echo "  Next: source $SHELL_RC && claude"
+    echo "    1. source $SHELL_RC   (reload shell, needed once)"
+    echo "    2. claude                    (start coding!)"
 else
-    echo "  Next: claude"
+    echo "    1. Open a new terminal"
+    echo "    2. claude                    (start coding!)"
 fi
 echo ""
 '''
