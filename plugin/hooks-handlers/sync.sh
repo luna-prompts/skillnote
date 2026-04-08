@@ -181,18 +181,19 @@ if updated: parts.append(str(updated) + ' updated')
 if deleted: parts.append(str(deleted) + ' removed')
 
 detail = ', '.join(parts) if parts else 'all current'
-print('SkillNote: ' + str(total) + ' skills (' + detail + ')')
 
-# Inject skill catalog so Claude knows what's available and when to trigger
+# Compact status for the user
+print('  ✦ ' + str(total) + ' skills synced (' + detail + ')')
+
+# Skill catalog as context for Claude (not visual noise for user)
 if skills:
     print('')
-    print('SkillNote active skills (use these automatically when the task matches):')
+    print('[SkillNote context — active skills for Claude to use automatically:]')
     for s in skills:
         slug = s['slug']
         if slug in plugin_provided:
             continue
         desc = s.get('description', '')
-        # Truncate to keep context lean
         if len(desc) > 120:
             desc = desc[:117] + '...'
         print(f'  /skillnote-{slug}: {desc}')
@@ -203,7 +204,6 @@ if [ -n "$RESULT" ]; then
     echo "$RESULT"
     # Welcome hint on first sync
     if echo "$RESULT" | grep -q "new" && [ -n "$COLLECTIONS" ]; then
-        echo ""
-        echo "Type /skillnote for dashboard, /skillnote:collection to change."
+        echo "  /skillnote for dashboard · /skillnote:collection to change"
     fi
 fi
