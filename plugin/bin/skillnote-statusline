@@ -78,7 +78,7 @@ BOLD = "\033[1m"
 RESET = "\033[0m"
 
 # Build
-dot = f"{GREEN}●{RESET}" if connected else f"{RED}●{RESET}"
+dot = f"{CYAN}●{RESET}" if connected else f"{RED}○{RESET}"
 brand = f"{CYAN}{BOLD}✦ SkillNote{RESET}"
 short_url = f"{host}:3000"
 link = f"\033]8;;{web_url}\a{short_url}{RESET}\033]8;;\a"
