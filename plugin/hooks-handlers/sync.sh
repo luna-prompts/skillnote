@@ -202,7 +202,7 @@ R = chr(27) + '[0m'          # reset
 
 # ── Branded header (aligned with Claude Code's logo) ──
 print()
-print(f' {O}✦{R} {C}S K I L L N O T E{R}')
+print(f' {C}✦ S K I L L N O T E{R}')
 print()
 
 if slugs:
