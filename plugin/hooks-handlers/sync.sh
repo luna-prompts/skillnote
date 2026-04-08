@@ -183,34 +183,70 @@ if deleted: parts.append(str(deleted) + ' removed')
 detail = ', '.join(parts) if parts else 'all current'
 col_name = '$COLLECTIONS' if '$COLLECTIONS' else 'all'
 
-# Visible skills (excluding plugin-provided)
 vis = [s for s in skills if s['slug'] not in plugin_provided]
 slugs = [s['slug'] for s in vis]
 
-# ── User-visible output: compact branded box ──
-print(f'  ✦ {col_name} · {len(vis)} skills synced ({detail})')
+import os as _os
+skills_path = _os.path.abspath('$SKILLS_DIR')
+home = _os.path.expanduser('~')
+if skills_path.startswith(home):
+    skills_path = '~' + skills_path[len(home):]
+
+# ── Branded splash ──
+print()
+print('     ▐▛███▜▌')
+print('    ▝▜█████▛▘  ×  S K I L L N O T E')
+print('      ▘▘ ▝▝')
+print()
 
 if slugs:
-    # Two-column grid
-    col_w = max(len(s) for s in slugs) + 6  # num + padding
-    box_w = col_w * 2 + 5  # 2 cols + borders + gap
-    print()
-    print('  ╭─ Active Skills ' + '─' * max(0, box_w - 18) + '╮')
+    col_w = max(len(s) for s in slugs) + 6
+    box_inner = max(col_w * 2 + 2, len(skills_path) + 6, 40)
+    bw = box_inner + 4
+    sp = chr(32)
+    dash = chr(9472)  # ─
+
+    def bx_empty():
+        print('    │' + sp * (bw - 2) + '│')
+    def bx_text(t):
+        print('    │' + t.ljust(bw - 2) + '│')
+
+    # Top border
+    hdr = ' ' + col_name + ' ' + dash + dash + ' ' + str(len(vis)) + ' skills synced '
+    print('    ╭' + dash + hdr + dash * max(0, bw - len(hdr) - 3) + '╮')
+
+    bx_empty()
+
+    # Skills 2-col grid
     for i in range(0, len(slugs), 2):
-        left = f'{i+1:>2}. {slugs[i]}'.ljust(col_w)
+        left = (str(i+1).rjust(2) + '. ' + slugs[i]).ljust(col_w)
         right = ''
         if i + 1 < len(slugs):
-            right = f'{i+2:>2}. {slugs[i+1]}'.ljust(col_w)
-        row = f'  │  {left}{right}│'
-        # Pad to box width
-        inner = box_w - 2
-        content = f'{left}{right}'
-        print(f'  │  {content.ljust(inner - 2)}│')
-    print('  ╰' + '─' * (box_w - 1) + '╯')
+            right = (str(i+2).rjust(2) + '. ' + slugs[i+1]).ljust(col_w)
+        bx_text('  ' + left + right)
 
-# ── Context for Claude (detailed, with descriptions) ──
+    bx_empty()
+
+    # Separator
+    bx_text('  ' + dash * (bw - 6) + '  ')
+
+    bx_empty()
+
+    # Path
+    bx_text('  → ' + skills_path)
+
+    bx_empty()
+
+    # Bottom border
+    cmds = ' /skillnote ' + chr(183) + ' /skillnote:collection '
+    print('    ╰' + dash + dash + cmds + dash * max(0, bw - len(cmds) - 3) + '╯')
+else:
+    print('    ' + col_name + ' ' + chr(183) + ' ' + str(len(vis)) + ' skills (' + detail + ')')
+
+print()
+
+# ── Context for Claude (not visual, just data) ──
 if vis:
-    print()
     print('[SkillNote skills — use automatically when task matches:]')
     for s in vis:
         desc = s.get('description', '')
