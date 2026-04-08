@@ -51,7 +51,7 @@ section "1. PLUGIN STRUCTURE VALIDATION"
 
 # 1.1 Required files exist
 [ -f "$PLUGIN_DIR/.claude-plugin/plugin.json" ] && pass "plugin.json exists" || fail "plugin.json exists" "missing"
-[ -f "$PLUGIN_DIR/.mcp.json" ] && pass ".mcp.json exists" || fail ".mcp.json exists" "missing"
+[ ! -f "$PLUGIN_DIR/.mcp.json" ] && pass ".mcp.json correctly removed" || fail ".mcp.json" "should not exist"
 [ -f "$PLUGIN_DIR/hooks/hooks.json" ] && pass "hooks.json exists" || fail "hooks.json exists" "missing"
 [ -f "$PLUGIN_DIR/hooks-handlers/sync.sh" ] && pass "sync.sh exists" || fail "sync.sh exists" "missing"
 [ -f "$PLUGIN_DIR/hooks-handlers/track-usage.sh" ] && pass "track-usage.sh exists" || fail "track-usage.sh exists" "missing"
@@ -128,8 +128,8 @@ if 'PostToolUse' not in hooks: sys.exit(1)
 ptu = hooks['PostToolUse']
 if not ptu or ptu[0].get('matcher') != 'Skill': sys.exit(1)
 h = ptu[0]['hooks'][0]
-if h.get('type') != 'command': sys.exit(1)
-if 'track-usage.sh' not in h.get('command', ''): sys.exit(1)
+if h.get('type') != 'http': sys.exit(1)
+if 'skill-used' not in h.get('url', ''): sys.exit(1)
 if h.get('async') is not True: sys.exit(1)
 " 2>/dev/null && pass "PostToolUse[Skill] hook configured (async)" || fail "PostToolUse hook" "missing or wrong"
 
@@ -150,23 +150,11 @@ if h.get('timeout', 0) < 5: sys.exit(1)
 " 2>/dev/null && pass "SessionStart has timeout >= 5s" || fail "timeout" "too low or missing"
 
 ###############################################################################
-section "4. MCP.JSON VALIDATION"
+section "4. MCP.JSON VALIDATION (SKIPPED — removed in v0.3.0)"
 ###############################################################################
 
-MJ="$PLUGIN_DIR/.mcp.json"
-
-# 4.1 Valid JSON
-python3 -c "import json; json.load(open('$MJ'))" 2>/dev/null && pass ".mcp.json is valid JSON" || fail ".mcp.json JSON" "invalid"
-
-# 4.2 Has skillnote server
-python3 -c "
-import json, sys
-d = json.load(open('$MJ'))
-sn = d.get('mcpServers', {}).get('skillnote', {})
-if 'url' not in sn: sys.exit(1)
-if 'CLAUDE_PLUGIN_OPTION_HOST' not in sn['url']: sys.exit(1)
-if ':8083/mcp' not in sn['url']: sys.exit(1)
-" 2>/dev/null && pass ".mcp.json has skillnote server with host variable" || fail ".mcp.json server" "missing or wrong URL"
+# .mcp.json was removed — skills are delivered via local sync, not MCP
+[ ! -f "$PLUGIN_DIR/.mcp.json" ] && pass ".mcp.json correctly absent" || fail ".mcp.json exists" "should be removed"
 
 ###############################################################################
 section "5. SKILL-PUSH SKILL.MD VALIDATION"
@@ -243,29 +231,30 @@ curl -sf -X POST "$API_URL/v1/skills" \
   -H "Content-Type: application/json" \
   -d '{"name":"e2e-plugin-test","slug":"e2e-plugin-test","description":"Plugin test skill","content_md":"# Test\nContent.","collections":["test-col"]}' > /dev/null
 
-# 7.2 Fresh sync — creates skills
-rm -rf "$TEST_SKILLS_DIR"/*
-rm -f "$TEST_SKILLS_DIR/.skillnote-manifest.json"
-export SKILLS_DIR_OVERRIDE="$TEST_SKILLS_DIR"
-# Override SKILLS_DIR by temporarily modifying HOME
+# 7.2 Fresh sync — creates skills (project-scoped)
 ORIG_HOME="$HOME"
-export HOME="$TEST_SKILLS_DIR/fakehome"
-mkdir -p "$HOME/.claude/skills"
-SKILLS_DIR="$HOME/.claude/skills"
+FAKE_PROJECT="$TEST_SKILLS_DIR/fakeproject"
+mkdir -p "$FAKE_PROJECT/.claude/skills"
+export CLAUDE_PROJECT_DIR="$FAKE_PROJECT"
+# Create .skillnote.json to enable sync (required since project-scoped sync)
+echo '{"collections": ["test-col"]}' > "$FAKE_PROJECT/.skillnote.json"
+SKILLS_DIR="$FAKE_PROJECT/.claude/skills"
+rm -rf "$SKILLS_DIR"/*
+rm -f "$SKILLS_DIR/.skillnote-manifest.json"
 
 OUTPUT=$(bash "$SYNC" 2>/dev/null)
 echo "$OUTPUT" | grep -q "new" && pass "fresh sync creates skills" || fail "fresh sync" "no 'new' in output: $OUTPUT"
 
 # 7.3 Skill files created
-[ -f "$SKILLS_DIR/e2e-plugin-test/SKILL.md" ] && pass "test skill SKILL.md created" || fail "skill file" "not created"
+[ -f "$SKILLS_DIR/skillnote-e2e-plugin-test/SKILL.md" ] && pass "test skill SKILL.md created" || fail "skill file" "not created"
 
 # 7.4 SKILL.md has correct frontmatter
-grep -q "name: e2e-plugin-test" "$SKILLS_DIR/e2e-plugin-test/SKILL.md" && pass "SKILL.md has correct name" || fail "SKILL.md name" "wrong"
-grep -q "description: Plugin test skill" "$SKILLS_DIR/e2e-plugin-test/SKILL.md" && pass "SKILL.md has correct description" || fail "SKILL.md desc" "wrong"
-grep -q "collections: \[test-col\]" "$SKILLS_DIR/e2e-plugin-test/SKILL.md" && pass "SKILL.md has collections" || fail "SKILL.md collections" "missing"
+grep -q "name: skillnote-e2e-plugin-test" "$SKILLS_DIR/skillnote-e2e-plugin-test/SKILL.md" && pass "SKILL.md has correct name" || fail "SKILL.md name" "wrong"
+grep -q "Plugin test skill" "$SKILLS_DIR/skillnote-e2e-plugin-test/SKILL.md" && pass "SKILL.md has correct description" || fail "SKILL.md desc" "wrong"
+grep -q "collections: \[test-col\]" "$SKILLS_DIR/skillnote-e2e-plugin-test/SKILL.md" && pass "SKILL.md has collections" || fail "SKILL.md collections" "missing"
 
 # 7.5 SKILL.md has content body
-grep -q "# Test" "$SKILLS_DIR/e2e-plugin-test/SKILL.md" && pass "SKILL.md has content body" || fail "SKILL.md body" "missing"
+grep -q "# Test" "$SKILLS_DIR/skillnote-e2e-plugin-test/SKILL.md" && pass "SKILL.md has content body" || fail "SKILL.md body" "missing"
 
 # 7.6 Manifest created
 [ -f "$SKILLS_DIR/.skillnote-manifest.json" ] && pass "manifest created" || fail "manifest" "not created"
@@ -274,7 +263,7 @@ grep -q "# Test" "$SKILLS_DIR/e2e-plugin-test/SKILL.md" && pass "SKILL.md has co
 python3 -c "
 import json, sys
 m = json.load(open('$SKILLS_DIR/.skillnote-manifest.json'))
-if 'e2e-plugin-test' not in m.get('skills', []):
+if 'skillnote-e2e-plugin-test' not in m.get('skills', []):
     sys.exit(1)
 " 2>/dev/null && pass "manifest lists test skill" || fail "manifest content" "test skill not listed"
 
@@ -289,13 +278,18 @@ curl -sf -X PATCH "$API_URL/v1/skills/e2e-plugin-test" \
 
 OUTPUT=$(bash "$SYNC" 2>/dev/null)
 echo "$OUTPUT" | grep -q "updated" && pass "detects updates" || fail "update detection" "expected 'updated': $OUTPUT"
-grep -q "# Updated" "$SKILLS_DIR/e2e-plugin-test/SKILL.md" && pass "local file updated" || fail "local update" "content not changed"
+grep -q "# Updated" "$SKILLS_DIR/skillnote-e2e-plugin-test/SKILL.md" && pass "local file updated" || fail "local update" "content not changed"
 
-# 7.10 Delete detection
-curl -sf -X DELETE "$API_URL/v1/skills/e2e-plugin-test"
+# 7.10 Delete detection — add a second skill so the collection isn't empty after delete
+curl -sf -X POST "$API_URL/v1/skills" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"e2e-plugin-anchor","slug":"e2e-plugin-anchor","description":"Anchor skill","content_md":"# Anchor","collections":["test-col"]}' > /dev/null
+bash "$SYNC" 2>/dev/null  # sync both skills
+curl -sf -X DELETE "$API_URL/v1/skills/e2e-plugin-test" > /dev/null
 OUTPUT=$(bash "$SYNC" 2>/dev/null)
 echo "$OUTPUT" | grep -q "removed" && pass "detects deletes" || fail "delete detection" "expected 'removed': $OUTPUT"
-[ ! -d "$SKILLS_DIR/e2e-plugin-test" ] && pass "local dir removed" || fail "local delete" "dir still exists"
+[ ! -d "$SKILLS_DIR/skillnote-e2e-plugin-test" ] && pass "local dir removed" || fail "local delete" "dir still exists"
+curl -sf -X DELETE "$API_URL/v1/skills/e2e-plugin-anchor" > /dev/null
 
 # 7.11 User skills not touched (not in manifest)
 mkdir -p "$SKILLS_DIR/my-custom-skill"
@@ -307,20 +301,20 @@ rm -rf "$SKILLS_DIR/my-custom-skill"
 # 7.12 extra_frontmatter in synced SKILL.md
 curl -sf -X POST "$API_URL/v1/skills" \
   -H "Content-Type: application/json" \
-  -d '{"name":"e2e-plugin-ef","slug":"e2e-plugin-ef","description":"EF test","content_md":"# EF","collections":["testing"],"extra_frontmatter":"allowed-tools: Read Write\neffort: high"}' > /dev/null
+  -d '{"name":"e2e-plugin-ef","slug":"e2e-plugin-ef","description":"EF test","content_md":"# EF","collections":["test-col"],"extra_frontmatter":"allowed-tools: Read Write\neffort: high"}' > /dev/null
 rm -f "$SKILLS_DIR/.skillnote-manifest.json"
 bash "$SYNC" 2>/dev/null
-grep -q "allowed-tools: Read Write" "$SKILLS_DIR/e2e-plugin-ef/SKILL.md" && pass "extra_frontmatter in local SKILL.md" || fail "extra_frontmatter" "not in SKILL.md"
-grep -q "effort: high" "$SKILLS_DIR/e2e-plugin-ef/SKILL.md" && pass "effort: high in local SKILL.md" || fail "effort frontmatter" "not in SKILL.md"
+grep -q "allowed-tools: Read Write" "$SKILLS_DIR/skillnote-e2e-plugin-ef/SKILL.md" && pass "extra_frontmatter in local SKILL.md" || fail "extra_frontmatter" "not in SKILL.md"
+grep -q "effort: high" "$SKILLS_DIR/skillnote-e2e-plugin-ef/SKILL.md" && pass "effort: high in local SKILL.md" || fail "effort frontmatter" "not in SKILL.md"
 curl -sf -X DELETE "$API_URL/v1/skills/e2e-plugin-ef" > /dev/null
 
 # 7.13 Empty content_md skill
 curl -sf -X POST "$API_URL/v1/skills" \
   -H "Content-Type: application/json" \
-  -d '{"name":"e2e-plugin-empty","slug":"e2e-plugin-empty","description":"Empty test","content_md":"","collections":["testing"]}' > /dev/null
+  -d '{"name":"e2e-plugin-empty","slug":"e2e-plugin-empty","description":"Empty test","content_md":"","collections":["test-col"]}' > /dev/null
 rm -f "$SKILLS_DIR/.skillnote-manifest.json"
 bash "$SYNC" 2>/dev/null
-[ -f "$SKILLS_DIR/e2e-plugin-empty/SKILL.md" ] && pass "empty content skill synced" || fail "empty content" "not synced"
+[ -f "$SKILLS_DIR/skillnote-e2e-plugin-empty/SKILL.md" ] && pass "empty content skill synced" || fail "empty content" "not synced"
 curl -sf -X DELETE "$API_URL/v1/skills/e2e-plugin-empty" > /dev/null
 
 # Restore HOME
@@ -331,7 +325,10 @@ section "8. SYNC.SH OFFLINE & TIMEOUT TESTS"
 ###############################################################################
 
 # 8.1 Offline — unreachable host
-export HOME="$TEST_SKILLS_DIR/fakehome"
+OFFLINE_DIR=$(mktemp -d)
+echo '{"collections": ["test-col"]}' > "$OFFLINE_DIR/.skillnote.json"
+mkdir -p "$OFFLINE_DIR/.claude/skills"
+export CLAUDE_PROJECT_DIR="$OFFLINE_DIR"
 TIME_START=$(date +%s)
 CLAUDE_PLUGIN_OPTION_HOST=192.168.99.99 bash "$SYNC" 2>/dev/null
 RC=$?
@@ -340,7 +337,7 @@ ELAPSED=$((TIME_END - TIME_START))
 
 [ "$RC" -eq 0 ] && pass "offline exits 0 (graceful)" || fail "offline exit" "code $RC"
 [ "$ELAPSED" -lt 15 ] && pass "offline completes in <15s (was ${ELAPSED}s)" || fail "offline timeout" "${ELAPSED}s too slow"
-export HOME="$ORIG_HOME"
+rm -rf "$OFFLINE_DIR"
 
 ###############################################################################
 section "9. SYNC.SH PROJECT SCOPING"
@@ -361,7 +358,7 @@ bash "$SYNC" 2>/dev/null
 SCOPED_COUNT=$(ls "$PROJECT_DIR/.claude/skills/" 2>/dev/null | wc -l)
 # Should have exactly 1 skill (the one in scope-test collection)
 [ "$SCOPED_COUNT" -eq 1 ] && pass "project scoping filters correctly ($SCOPED_COUNT)" || fail "project scoping" "expected 1, got $SCOPED_COUNT"
-[ -d "$PROJECT_DIR/.claude/skills/e2e-plugin-update" ] && pass "scoped skill present" || fail "scoped skill" "missing"
+[ -d "$PROJECT_DIR/.claude/skills/skillnote-e2e-plugin-update" ] && pass "scoped skill present" || fail "scoped skill" "missing"
 
 # 9.2 .skillnote.json with empty collections = opt out
 echo '{"collections": []}' > "$PROJECT_DIR/.skillnote.json"
@@ -427,19 +424,21 @@ BIN="$PLUGIN_DIR/bin/skillnote-sync"
 # 11.1 Runs successfully
 export CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR"
 export CLAUDE_PLUGIN_OPTION_HOST="$HOST"
-export HOME="$TEST_SKILLS_DIR/fakehome2"
-mkdir -p "$HOME/.claude/skills"
+BIN_PROJECT=$(mktemp -d)
+echo '{"collections": ["Conventions"]}' > "$BIN_PROJECT/.skillnote.json"
+mkdir -p "$BIN_PROJECT/.claude/skills"
+export CLAUDE_PROJECT_DIR="$BIN_PROJECT"
 
 OUTPUT=$(bash "$BIN" 2>/dev/null)
 [ $? -eq 0 ] && pass "bin/skillnote-sync runs" || fail "bin run" "non-zero exit"
-echo "$OUTPUT" | grep -q "SkillNote:" && pass "bin produces sync output" || fail "bin output" "no SkillNote: line"
+echo "$OUTPUT" | grep -q "S K I L L N O T E" && pass "bin produces sync output" || fail "bin output" "no SkillNote line"
 
 # 11.2 --force clears manifest and re-syncs
 bash "$BIN" 2>/dev/null  # First run
 OUTPUT=$(bash "$BIN" --force 2>/dev/null)
 echo "$OUTPUT" | grep -q "new\|updated" && pass "bin --force triggers re-sync" || fail "bin --force" "expected new/updated: $OUTPUT"
 
-export HOME="$ORIG_HOME"
+rm -rf "$BIN_PROJECT"
 
 ###############################################################################
 section "12. AUTO-SYNC (BACKGROUND RE-SYNC)"
@@ -448,6 +447,10 @@ section "12. AUTO-SYNC (BACKGROUND RE-SYNC)"
 export CLAUDE_PLUGIN_OPTION_HOST="$HOST"
 export CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR"
 AUTOSYNC="$PLUGIN_DIR/hooks-handlers/auto-sync.sh"
+AS_PROJECT=$(mktemp -d)
+echo '{"collections": ["Conventions"]}' > "$AS_PROJECT/.skillnote.json"
+mkdir -p "$AS_PROJECT/.claude/skills"
+export CLAUDE_PROJECT_DIR="$AS_PROJECT"
 AS_DATA=$(mktemp -d)
 export CLAUDE_PLUGIN_DATA="$AS_DATA"
 
@@ -493,10 +496,8 @@ TS_NEW=$(cat "$AS_DATA/.last-sync-time")
 # 12.7 Mid-session skill create picked up
 curl -sf -X POST "$API_URL/v1/skills" \
   -H "Content-Type: application/json" \
-  -d '{"name":"autosync-test","slug":"autosync-test","description":"Auto-sync test","content_md":"# Auto","collections":["testing"]}' > /dev/null
-export HOME="$TEST_SKILLS_DIR/fakehome3"
-mkdir -p "$HOME/.claude/skills"
-SKILLS_DIR="$HOME/.claude/skills"
+  -d '{"name":"autosync-test","slug":"autosync-test","description":"Auto-sync test","content_md":"# Auto","collections":["Conventions"]}' > /dev/null
+SKILLS_DIR="$AS_PROJECT/.claude/skills"
 rm -f "$SKILLS_DIR/.skillnote-manifest.json"
 bash "$PLUGIN_DIR/hooks-handlers/sync.sh" 2>/dev/null  # baseline
 echo "0" > "$AS_DATA/.last-sync-time"
@@ -504,13 +505,13 @@ curl -sf -X PATCH "$API_URL/v1/skills/autosync-test" \
   -H "Content-Type: application/json" \
   -d '{"content_md":"# Auto Updated"}' > /dev/null
 bash "$AUTOSYNC" 2>/dev/null
-grep -q "Auto Updated" "$SKILLS_DIR/autosync-test/SKILL.md" 2>/dev/null && pass "mid-session update detected" || fail "mid-session update" "content not updated"
+grep -q "Auto Updated" "$SKILLS_DIR/skillnote-autosync-test/SKILL.md" 2>/dev/null && pass "mid-session update detected" || fail "mid-session update" "content not updated"
 
 # 12.8 Mid-session delete picked up
 curl -sf -X DELETE "$API_URL/v1/skills/autosync-test" > /dev/null
 echo "0" > "$AS_DATA/.last-sync-time"
 bash "$AUTOSYNC" 2>/dev/null
-[ ! -d "$SKILLS_DIR/autosync-test" ] && pass "mid-session delete detected" || fail "mid-session delete" "still exists"
+[ ! -d "$SKILLS_DIR/skillnote-autosync-test" ] && pass "mid-session delete detected" || fail "mid-session delete" "still exists"
 
 # 12.9 Offline — graceful
 echo "0" > "$AS_DATA/.last-sync-time"
@@ -527,8 +528,7 @@ bash "$AUTOSYNC" 2>/dev/null
 rm -f "$SKILLS_DIR/.last-sync-time"
 export CLAUDE_PLUGIN_DATA="$SAVED_PD"
 
-export HOME="$ORIG_HOME"
-rm -rf "$AS_DATA"
+rm -rf "$AS_DATA" "$AS_PROJECT"
 
 ###############################################################################
 # RESULTS
