@@ -130,9 +130,6 @@ with open(path, 'w') as f:
 
 # ── install plugin via claude CLI ────────────────────────────────────────────
 if command -v claude &>/dev/null; then
-    # Remove any manually-configured MCP server (plugin handles it)
-    claude mcp remove skillnote --scope user 2>/dev/null || true
-    claude mcp remove skillnote --scope project 2>/dev/null || true
     # Register marketplace, then install plugin
     claude plugin marketplace add "$MKT_DIR" 2>/dev/null || true
     claude plugin uninstall skillnote@skillnote-local --scope user 2>/dev/null || true
