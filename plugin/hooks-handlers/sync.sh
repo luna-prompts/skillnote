@@ -202,7 +202,7 @@ R = chr(27) + '[0m'          # reset
 
 # ── Branded header (aligned with Claude Code's logo) ──
 print()
-print(f' {C}✦ S K I L L N O T E{R}')
+print(f' {O}✦{R} {C}S K I L L N O T E{R}')
 print()
 
 if slugs:
@@ -210,13 +210,14 @@ if slugs:
     bw = max(col_w * 2 + 6, len(skills_path) + 10, 50)
     dash = chr(9472)
 
-    def row_line(content):
-        print(f'    {D}{chr(9474)}{R}' + content.ljust(bw - 2) + f'{D}{chr(9474)}{R}')
-    def row_empty():
-        print(f'    {D}{chr(9474)}{R}' + ' ' * (bw - 2) + f'{D}{chr(9474)}{R}')
     import re as _re
     def _vis_len(s):
         return len(_re.sub(chr(27) + r'\[[0-9;]*m', '', s))
+    def row_line(content):
+        pad = bw - 2 - _vis_len(content)
+        print(f'    {D}{chr(9474)}{R}' + content + ' ' * max(0, pad) + f'{D}{chr(9474)}{R}')
+    def row_empty():
+        print(f'    {D}{chr(9474)}{R}' + ' ' * (bw - 2) + f'{D}{chr(9474)}{R}')
     def border_top(label):
         inner = bw - 2
         prefix = dash + ' ' + label + ' '
@@ -228,7 +229,7 @@ if slugs:
         fill = dash * max(0, inner - _vis_len(prefix))
         print(f'    {D}{chr(9584)}{prefix}{fill}{chr(9583)}{R}')
 
-    border_top(f'{R}{B}{col_name}{R}{D} {dash}{dash} {G}{str(len(vis))} skills synced{R}{D}')
+    border_top(f'{R}{B}{col_name}{R}{D} {dash}{dash} {G}{str(len(vis))} skills ({detail}){R}{D}')
     row_empty()
 
     for i in range(0, len(slugs), 2):
