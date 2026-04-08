@@ -105,17 +105,17 @@ export default function SettingsPage() {
         <div className="max-w-2xl mx-auto px-6 py-8">
           <h1 className="text-xl font-semibold text-foreground mb-8">Settings</h1>
 
-          {/* Agent Tools */}
+          {/* Skill Settings */}
           {loaded && (
             <section className="mb-10">
-              <h2 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-4">Agent Tools</h2>
+              <h2 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-4">Skill Settings</h2>
 
               {/* Info box */}
               <div className="flex gap-3 p-3.5 rounded-lg bg-muted/50 border border-border mb-6">
                 <Info className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
                 <div className="space-y-2 text-[13px] text-muted-foreground">
                   <p>
-                    The <span className="font-mono text-[12px] text-foreground">complete_skill</span> tool creates a feedback loop between AI agents and your skill library. When enabled, agents can rate skills (1-5) after applying them, helping you:
+                    Skill completion tracking creates a feedback loop between AI agents and your skill library. When enabled, agents can rate skills (1-5) after applying them, helping you:
                   </p>
                   <ul className="list-disc pl-4 space-y-1">
                     <li>Identify high-performing skills and double down on what works</li>
@@ -131,7 +131,7 @@ export default function SettingsPage() {
                   <div>
                     <p className="text-[14px] font-medium text-foreground">Skill Completion Tracking</p>
                     <p className="text-[13px] text-muted-foreground mt-0.5">
-                      Include the <span className="font-mono text-[12px]">complete_skill</span> tool so agents can rate skills after use
+                      Allow agents to rate skills (1-5) after using them
                     </p>
                   </div>
                   <Toggle checked={csEnabled} onChange={handleCompleteSkillToggle} />
