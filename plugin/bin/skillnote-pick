@@ -305,41 +305,52 @@ def pick(stdscr, items, recommended=0):
                 return lines
 
             # Skill list with numbers (scrollable)
-            desc_w = right_w - 10  # available width for description
+            desc_w = right_w - 10
+            skills_rendered = 0
             skill_display = sel_skills[right_scroll:]
             for si, (slug, desc) in enumerate(skill_display):
-                if rr >= h - footer_h - 1:
+                if rr >= h - footer_h - 2:  # leave room for scroll info
                     break
-                si = si + right_scroll
+                real_idx = si + right_scroll
 
                 # Number + skill name
                 s(rr, bx + left_w, "│", BORDER); s(rr, bx + bw - 1, "│", BORDER)
-                num = f"{si + 1}."
+                num = f"{real_idx + 1}."
                 s(rr, bx + left_w + 4, num, DIM)
                 s(rr, bx + left_w + 4 + len(num) + 1, slug, curses.color_pair(1))
                 rr += 1
+                skills_rendered += 1
 
                 # Wrapped description
-                if desc and rr < h - footer_h - 1:
+                if desc and rr < h - footer_h - 2:
                     for dl in wrap_text(desc, desc_w):
-                        if rr >= h - footer_h - 1:
+                        if rr >= h - footer_h - 2:
                             break
                         s(rr, bx + left_w, "│", BORDER); s(rr, bx + bw - 1, "│", BORDER)
                         s(rr, bx + left_w + 8, dl, DIM)
                         rr += 1
 
                 # Empty line between skills
-                if rr < h - footer_h - 1:
+                if rr < h - footer_h - 2:
                     s(rr, bx + left_w, "│", BORDER); s(rr, bx + bw - 1, "│", BORDER)
                     rr += 1
 
-            # More skills below indicator
-            has_more_skills = len(sel_skills) > right_scroll + len(skill_display)
-            if has_more_skills and rr < h - footer_h:
-                s(rr, bx + left_w, "│", BORDER); s(rr, bx + bw - 1, "│", BORDER)
-                s(rr, bx + bw - 2, "▼", DIM)
-                rr += 1
+            # Scroll info line
+            last_shown = right_scroll + skills_rendered
+            has_more = last_shown < len(sel_skills)
+            has_above = right_scroll > 0
 
+            if has_more or has_above:
+                s(rr, bx + left_w, "│", BORDER); s(rr, bx + bw - 1, "│", BORDER)
+                info = f"showing {right_scroll + 1}-{last_shown} of {len(sel_skills)}"
+                arrows = ""
+                if has_above:
+                    arrows += "▲ "
+                if has_more:
+                    arrows += "▼"
+                s(rr, bx + left_w + 4, info, DIM)
+                s(rr, bx + bw - len(arrows) - 3, arrows, DIM)
+                rr += 1
             # Fill remaining right panel rows
             while rr < h - footer_h:
                 s(rr, bx + left_w, "│", BORDER); s(rr, bx + bw - 1, "│", BORDER)
@@ -458,7 +469,8 @@ def pick(stdscr, items, recommended=0):
                     cur += 1
                     right_scroll = 0
             else:
-                if sel_skills and right_scroll < len(sel_skills) - 1:
+                max_rs = max(0, len(sel_skills) - 1)
+                if right_scroll < max_rs:
                     right_scroll += 1
         elif key == curses.KEY_LEFT:
             focus = "left"
