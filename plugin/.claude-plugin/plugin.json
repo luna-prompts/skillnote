@@ -10,7 +10,7 @@
   "homepage": "https://github.com/luna-prompts/skillnote",
   "repository": "https://github.com/luna-prompts/skillnote",
   "license": "MIT",
-  "keywords": ["skills", "registry", "sync", "analytics", "collections", "mcp", "hooks", "offline-first"],
+  "keywords": ["skills", "registry", "sync", "analytics", "collections", "hooks", "offline-first"],
   "userConfig": {
     "host": {
       "title": "SkillNote Server",

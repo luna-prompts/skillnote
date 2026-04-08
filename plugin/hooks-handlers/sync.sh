@@ -142,7 +142,7 @@ for skill in skills:
         fm_lines.append(extra.strip())
 
     raw_body = skill.get('content_md') or ''
-    # Substitute URL placeholders (same as MCP server does at serve time)
+    # Substitute URL placeholders
     api_url = '$API_URL'
     host = api_url.split('://')[1].split(':')[0] if '://' in api_url else 'localhost'
     web_url = f'http://{host}:3000'

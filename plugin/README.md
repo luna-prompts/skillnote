@@ -13,7 +13,7 @@ When prompted, enter your SkillNote server address (e.g., `<your-server-ip>` or 
 ## What It Does
 
 - **SessionStart hook**: Syncs all skills from SkillNote to `~/.claude/skills/` with full frontmatter. Skills get `allowed-tools`, `context: fork`, `effort`, and other Claude Code features.
-- **MCP connection**: Connects to SkillNote's MCP server for ratings (`complete_skill`) and fallback skill delivery.
+- **Skill collection picker**: Full-screen terminal UI to choose collections at every `claude` launch.
 - **Usage tracking**: Every skill invocation is automatically posted to SkillNote's analytics via a PostToolUse hook.
 - **Skill push**: Create new skills from conversations using `/skillnote:skill-push` or the `/skillnote:skill-creator` agent.
 

@@ -64,7 +64,7 @@ _SETUP_SCRIPT = r'''#!/bin/bash
 set -euo pipefail
 
 API_URL="__API_URL__"
-MCP_URL="__MCP_URL__"
+# MCP server removed — skills delivered via sync hooks
 WEB_URL="__WEB_URL__"
 CLAUDE_HOME="$HOME/.claude"
 MKT_DIR="$CLAUDE_HOME/plugins/marketplaces/skillnote-local"
