@@ -1,54 +1,50 @@
-# Dependencies
-node_modules/
+# Ralph generated files (inside .ralph/ subfolder)
+.ralph/.call_count
+.ralph/.last_reset
+.ralph/.exit_signals
+.ralph/status.json
+.ralph/.ralph_session
+.ralph/.ralph_session_history
+.ralph/.claude_session_id
+.ralph/.response_analysis
+.ralph/.circuit_breaker_state
+.ralph/.circuit_breaker_history
 
-# Next.js
-.next/
-out/
+# Ralph logs and generated docs
+.ralph/logs/*
+!.ralph/logs/.gitkeep
+.ralph/docs/generated/*
+!.ralph/docs/generated/.gitkeep
 
-# Build
-dist/
-tsconfig.tsbuildinfo
-
-# Environment
-.env
-.env.local
-.env.*.local
-
-# Testing
-test-results/
-playwright-report/
-
-# Python
-__pycache__/
-*.pyc
-*.pyo
-.pytest_cache/
-*.egg-info/
+# General logs
+*.log
 
 # OS files
 .DS_Store
 Thumbs.db
 
-# IDE
+# Temporary files
+*.tmp
+.temp/
+
+# Node modules (if using Node.js projects)
+node_modules/
+
+# Python cache (if using Python projects)
+__pycache__/
+*.pyc
+
+# Rust build (if using Rust projects)
+target/
+
+# IDE files
 .vscode/
 .idea/
 *.swp
 *.swo
 
-# Logs
-*.log
-
-# Temporary files
-*.tmp
-.temp/
-
-# Docker volumes (local data)
-postgres-data/
-
-# Ralph
-.ralph/
-.ralphrc
+# Ralph backup directories (created by migration)
 .ralph_backup_*
 
-# Rust (if using CLI builds)
-target/
+# Next.js build output
+.next/
