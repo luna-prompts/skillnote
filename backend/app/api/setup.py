@@ -223,22 +223,26 @@ else
 fi
 
 echo ""
-echo "  ╭─ Getting started ────────────────────────────────────────╮"
-echo "  │                                                          │"
-if [ -n "$SHELL_RC" ]; then
-    echo "  │  1. source $SHELL_RC                │"
-    echo "  │     or open a new terminal                           │"
-    echo "  │                                                      │"
-    echo "  │  2. claude                                           │"
-    echo "  │     the skill collection picker will appear           │"
-else
-    echo "  │  1. Open a new terminal                              │"
-    echo "  │                                                      │"
-    echo "  │  2. claude                                           │"
-    echo "  │     the skill collection picker will appear           │"
-fi
-echo "  │                                                          │"
-echo "  ╰──────────────────────────────────────────────────────────╯"
+python3 -c "
+rc = '$SHELL_RC'
+bw = 60
+
+def row(text=''):
+    print('  │' + text.ljust(bw - 2) + '│')
+
+print('  ╭─ Getting started ' + '─' * (bw - 20) + '╮')
+row()
+if rc:
+    row('  1. source ' + rc)
+    row('     or open a new terminal')
+else:
+    row('  1. Open a new terminal')
+row()
+row('  2. claude')
+row('     the skill collection picker will appear')
+row()
+print('  ╰' + '─' * (bw - 2) + '╯')
+" 2>/dev/null
 echo ""
 '''
 
