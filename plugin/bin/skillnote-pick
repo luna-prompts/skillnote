@@ -251,13 +251,16 @@ def pick(stdscr, items, recommended=0):
             hline_full(row); row += 1
             hline_full(row); row += 1
 
-            # ═══ CLAWD × BRAND ═══
+            # ═══ CLAWD × BRAND (centered) ═══
+            brand_text = "×  S K I L L N O T E"
+            brand_total_w = clawd_w + 3 + len(brand_text)  # clawd + gap + brand
+            brand_start = bx + (bw - brand_total_w) // 2
             for ci, cl in enumerate(clawd):
                 hline_full(row)
                 offset = (clawd_w - len(cl)) // 2
-                s(row, bx + 5 + offset, cl, ORANGE)
+                s(row, brand_start + offset, cl, ORANGE)
                 if ci == 1:
-                    bpos = bx + 5 + clawd_w + 3
+                    bpos = brand_start + clawd_w + 3
                     s(row, bpos, "×", DIM)
                     s(row, bpos + 2, "S K I L L N O T E", ACCENT)
                 row += 1
