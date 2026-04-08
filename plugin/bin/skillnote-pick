@@ -14,7 +14,6 @@ except ImportError:
 
 
 def _get_host():
-    """Resolve SkillNote API host."""
     host = os.environ.get("SKILLNOTE_HOST", os.environ.get("CLAUDE_PLUGIN_OPTION_HOST", ""))
     if host:
         return host
@@ -113,9 +112,18 @@ def _run_sync():
 
 
 def pick(stdscr, items, recommended=0):
-    cur = recommended
+    # Sort: recommended first, then rest in original order
+    sorted_items = []
+    if 0 <= recommended < len(items):
+        sorted_items.append((recommended, items[recommended]))
+    for i, it in enumerate(items):
+        if i != recommended:
+            sorted_items.append((i, it))
+
+    cur = 0  # recommended is now always index 0
     search = ""
     scroll_offset = 0
+
     curses.curs_set(0)
     curses.start_color()
     curses.use_default_colors()
@@ -124,7 +132,7 @@ def pick(stdscr, items, recommended=0):
     curses.init_pair(3, curses.COLOR_WHITE, -1)
     curses.init_pair(4, curses.COLOR_YELLOW, -1)
     try:
-        curses.init_pair(5, 208, -1)
+        curses.init_pair(5, 208, -1)  # orange for Clawd
     except Exception:
         curses.init_pair(5, curses.COLOR_RED, -1)
 
@@ -138,32 +146,37 @@ def pick(stdscr, items, recommended=0):
     total_skills = sum(c for _, c, _ in items)
     host = _get_host()
     web_url = f"http://{host}:3000"
+    gh_url = "github.com/luna-prompts/skillnote"
     clawd = ["  ▐▛███▜▌", " ▝▜█████▛▘", "   ▘▘ ▝▝"]
 
     while True:
         stdscr.erase()
         h, w = stdscr.getmaxyx()
 
+        # Filter
         if search:
-            filtered = [(i, it) for i, it in enumerate(items) if search.lower() in it[0].lower()]
+            filtered = [(si, oi, it) for si, (oi, it) in enumerate(sorted_items)
+                        if search.lower() in it[0].lower()]
         else:
-            filtered = list(enumerate(items))
+            filtered = [(si, oi, it) for si, (oi, it) in enumerate(sorted_items)]
+
         if filtered:
             cur = max(0, min(cur, len(filtered) - 1))
 
-        # ── Responsive layout: use full terminal ──
-        pad = 2                              # padding from edges
-        bw = w - pad * 2                     # full width minus padding
-        bx = pad                             # left edge
-        left_w = max(30, bw * 2 // 5)       # left panel ~40%, min 30
-        right_w = bw - left_w - 1            # right panel fills rest
-        header_rows = 8                      # rows for header (clawd + stats + search)
-        footer_rows = 3                      # bottom bar + border
-        body_rows = h - header_rows - footer_rows  # rows for collection list
+        # Layout — full screen with padding
+        pad = 2
+        bw = w - pad * 2
+        bx = pad
+        left_w = max(28, min(bw * 2 // 5, 44))
+        right_w = bw - left_w - 1
+        header_h = 6   # top border + empty + 3 clawd + empty
+        footer_h = 1   # bottom border with hints
+        sep_h = 1      # separator with stats
+        body_h = h - header_h - sep_h - footer_h
 
         BORDER = curses.color_pair(1) | curses.A_DIM
         ORANGE = curses.color_pair(5) | curses.A_BOLD
-        CYAN_B = curses.color_pair(1) | curses.A_BOLD
+        CYAN = curses.color_pair(1) | curses.A_BOLD
         DIM = curses.A_DIM
         BOLD = curses.A_BOLD
         GREEN = curses.color_pair(2)
@@ -176,142 +189,200 @@ def pick(stdscr, items, recommended=0):
             except curses.error:
                 pass
 
-        def borders(r):
-            s(r, bx, "│", BORDER)
-            s(r, bx + left_w, "│", BORDER)
-            s(r, bx + bw - 1, "│", BORDER)
-
         row = 0
 
         try:
-            # ── Top border ──
-            top = "╭─ ✦ SkillNote " + "─" * max(0, left_w - 16) + "┬" + "─" * right_w + "╮"
-            s(row, bx, top[:bw], BORDER)
-            s(row, bx + 4, "✦", CYAN_B)
-            s(row, bx + 6, "SkillNote", CYAN_B)
+            # ═══ HEADER: brand zone (full width, no column split) ═══
+
+            # Top border
+            s(row, bx, "╭" + "─" * (bw - 2) + "╮", BORDER)
             row += 1
 
-            # ── Empty + Clawd + brand ──
-            borders(row); row += 1
-
-            for i, cl in enumerate(clawd):
-                borders(row)
-                s(row, bx + 3, cl, ORANGE)
-                if i == 1:
-                    me = bx + 3 + len(cl) + 2
-                    s(row, me, "×", DIM)
-                    s(row, me + 2, "S K I L L N O T E", CYAN_B)
-                row += 1
-
-            # ── Stats ──
-            borders(row)
-            s(row, bx + 3, "●", GREEN)
-            s(row, bx + 5, f"{total_skills} skills · {len(items)} collections", DIM)
+            # Empty breathing line
+            s(row, bx, "│", BORDER)
+            s(row, bx + bw - 1, "│", BORDER)
             row += 1
 
-            # ── Search ──
-            borders(row)
-            s(row, bx + 3, "> ", BOLD)
-            if search:
-                s(row, bx + 5, search, BOLD)
-            s(row, bx + 5 + len(search), "▌", CYAN_B)
-            if search:
-                mt = f"{len(filtered)} match{'es' if len(filtered) != 1 else ''}"
-                s(row, bx + left_w - len(mt) - 2, mt, DIM)
+            # Clawd line 1
+            s(row, bx, "│", BORDER)
+            s(row, bx + 4, clawd[0], ORANGE)
+            s(row, bx + bw - 1, "│", BORDER)
             row += 1
 
-            # ── Right panel header ──
+            # Clawd line 2 + brand
+            s(row, bx, "│", BORDER)
+            s(row, bx + 3, clawd[1], ORANGE)
+            brand_x = bx + 3 + len(clawd[1]) + 2
+            s(row, brand_x, "×", DIM)
+            s(row, brand_x + 2, "S K I L L N O T E", CYAN)
+            s(row, bx + bw - 1, "│", BORDER)
+            row += 1
+
+            # Clawd line 3
+            s(row, bx, "│", BORDER)
+            s(row, bx + 4, clawd[2], ORANGE)
+            s(row, bx + bw - 1, "│", BORDER)
+            row += 1
+
+            # Empty breathing line
+            s(row, bx, "│", BORDER)
+            s(row, bx + bw - 1, "│", BORDER)
+            row += 1
+
+            # ═══ SEPARATOR: stats + column split ═══
+            sep_text = f" ● {total_skills} skills · {len(items)} collections "
+            sep_left = "├──" + sep_text + "─" * max(0, left_w - len(sep_text) - 3)
+            sep_right = "┬" + "─" * (right_w) + "┤"
+            s(row, bx, (sep_left + sep_right)[:bw], BORDER)
+            # Color the stats
+            s(row, bx + 4, "●", GREEN)
+            s(row, bx + 6, f"{total_skills} skills · {len(items)} collections", DIM)
+            row += 1
+
+            # ═══ CONTENT: two columns ═══
+            content_start = row
+
+            # Get selected collection for right panel
             sel_name = ""
+            sel_count = 0
             sel_skills = []
+            sel_is_rec = False
             if filtered:
-                _, (sel_name, _, sel_skills) = filtered[cur]
+                _, orig_idx, (sel_name, sel_count, sel_skills) = filtered[cur]
+                sel_is_rec = (orig_idx == recommended)
 
-            rh_row = 2  # right panel starts at row 2
-            s(rh_row, bx + left_w + 3, sel_name, BOLD)
-            rh_row += 1
-            s(rh_row, bx + left_w + 3, "─" * (right_w - 5), DIM)
-            rh_row += 1
+            # --- RIGHT PANEL (render first so we know how many rows it needs) ---
+            rr = content_start
 
-            # Right panel: skills with descriptions
-            for slug, desc in sel_skills:
-                if rh_row >= h - footer_rows:
+            # Empty line
+            s(rr, bx + left_w, "│", BORDER); s(rr, bx + bw - 1, "│", BORDER)
+            rr += 1
+
+            # Collection name header
+            s(rr, bx + left_w, "│", BORDER); s(rr, bx + bw - 1, "│", BORDER)
+            header_text = sel_name
+            if sel_is_rec:
+                header_text += " ★"
+            s(rr, bx + left_w + 4, header_text, BOLD)
+            count_text = f"{sel_count} skills"
+            s(rr, bx + bw - len(count_text) - 3, count_text, DIM)
+            rr += 1
+
+            # Separator
+            s(rr, bx + left_w, "│", BORDER); s(rr, bx + bw - 1, "│", BORDER)
+            s(rr, bx + left_w + 4, "─" * (right_w - 6), DIM)
+            rr += 1
+
+            # Empty line
+            s(rr, bx + left_w, "│", BORDER); s(rr, bx + bw - 1, "│", BORDER)
+            rr += 1
+
+            # Skill list with numbers
+            for si, (slug, desc) in enumerate(sel_skills):
+                if rr >= h - footer_h - 1:
                     break
-                s(rh_row, bx + left_w, "│", BORDER)
-                s(rh_row, bx + bw - 1, "│", BORDER)
-                s(rh_row, bx + left_w + 3, slug, curses.color_pair(1))
-                rh_row += 1
-                if desc and rh_row < h - footer_rows:
-                    short = desc[:right_w - 6]
-                    if len(desc) > right_w - 6:
+
+                # Number + skill name
+                s(rr, bx + left_w, "│", BORDER); s(rr, bx + bw - 1, "│", BORDER)
+                num = f"{si + 1}."
+                s(rr, bx + left_w + 4, num, DIM)
+                s(rr, bx + left_w + 4 + len(num) + 1, slug, curses.color_pair(1))
+                rr += 1
+
+                # Description
+                if desc and rr < h - footer_h - 1:
+                    s(rr, bx + left_w, "│", BORDER); s(rr, bx + bw - 1, "│", BORDER)
+                    short = desc[:right_w - 9]
+                    if len(desc) > right_w - 9:
                         sp = short.rfind(" ")
                         if sp > 0:
                             short = short[:sp] + "..."
-                    s(rh_row, bx + left_w, "│", BORDER)
-                    s(rh_row, bx + bw - 1, "│", BORDER)
-                    s(rh_row, bx + left_w + 3, short, DIM)
-                    rh_row += 1
+                    s(rr, bx + left_w + 8, short, DIM)
+                    rr += 1
 
-            # Fill right panel empty rows
-            while rh_row < h - footer_rows:
-                s(rh_row, bx + left_w, "│", BORDER)
-                s(rh_row, bx + bw - 1, "│", BORDER)
-                rh_row += 1
+                # Empty line between skills
+                if rr < h - footer_h - 1:
+                    s(rr, bx + left_w, "│", BORDER); s(rr, bx + bw - 1, "│", BORDER)
+                    rr += 1
 
-            # ── Collection list (left panel, scrollable) ──
-            list_start = row
-            visible = body_rows
+            # Fill remaining right panel rows
+            while rr < h - footer_h:
+                s(rr, bx + left_w, "│", BORDER); s(rr, bx + bw - 1, "│", BORDER)
+                rr += 1
 
-            # Scroll handling
-            if cur < scroll_offset:
-                scroll_offset = cur
-            elif cur >= scroll_offset + visible:
-                scroll_offset = cur - visible + 1
+            # --- LEFT PANEL ---
+            lr = content_start
 
-            vis_items = filtered[scroll_offset:scroll_offset + visible]
+            # Empty line
+            s(lr, bx, "│", BORDER)
+            lr += 1
 
-            for vi, (orig_idx, (name, count, skills)) in enumerate(vis_items):
-                if row >= h - footer_rows:
+            # Search input
+            s(lr, bx, "│", BORDER)
+            s(lr, bx + 4, ">", BOLD)
+            if search:
+                s(lr, bx + 6, search, BOLD)
+            s(lr, bx + 6 + len(search), "▌", CYAN)
+            if search:
+                mt = f"{len(filtered)} match{'es' if len(filtered) != 1 else ''}"
+                s(lr, bx + left_w - len(mt) - 2, mt, DIM)
+            lr += 1
+
+            # Empty line
+            s(lr, bx, "│", BORDER)
+            lr += 1
+
+            # Collection list with numbers
+            list_area = h - footer_h - lr
+            if filtered:
+                if cur < scroll_offset:
+                    scroll_offset = cur
+                elif cur >= scroll_offset + list_area:
+                    scroll_offset = cur - list_area + 1
+
+            vis = filtered[scroll_offset:scroll_offset + list_area]
+
+            for vi, (sorted_idx, orig_idx, (name, count, skills)) in enumerate(vis):
+                if lr >= h - footer_h:
                     break
                 fi = scroll_offset + vi
                 is_rec = (orig_idx == recommended)
-                borders(row)
 
+                s(lr, bx, "│", BORDER)
+
+                num = f"{fi + 1}."
                 if fi == cur:
-                    s(row, bx + 3, "❯", CYAN_B)
-                    s(row, bx + 5, name, BOLD)
+                    s(lr, bx + 4, num, CYAN)
+                    s(lr, bx + 4 + len(num), " ❯", CYAN)
+                    s(lr, bx + 4 + len(num) + 3, name, BOLD)
                     if is_rec:
-                        s(row, bx + 5 + len(name) + 1, "★", YELLOW)
+                        s(lr, bx + 4 + len(num) + 3 + len(name) + 1, "★", YELLOW)
                     cnt = str(count)
-                    s(row, bx + left_w - len(cnt) - 2, cnt, DIM)
+                    s(lr, bx + left_w - len(cnt) - 2, cnt, DIM)
                 else:
-                    s(row, bx + 5, name, DIM)
+                    s(lr, bx + 4, num, DIM)
+                    s(lr, bx + 4 + len(num) + 3, name, DIM)
                     if is_rec:
-                        s(row, bx + 5 + len(name) + 1, "★", YELLOW | DIM)
+                        s(lr, bx + 4 + len(num) + 3 + len(name) + 1, "★", YELLOW | DIM)
                     cnt = str(count)
-                    s(row, bx + left_w - len(cnt) - 2, cnt, DIM)
-                row += 1
+                    s(lr, bx + left_w - len(cnt) - 2, cnt, DIM)
+                lr += 1
 
             # Fill remaining left panel rows
-            while row < h - footer_rows:
-                borders(row)
-                row += 1
+            while lr < h - footer_h:
+                s(lr, bx, "│", BORDER)
+                lr += 1
 
-            # ── Bottom bar ──
-            mid = "├" + "─" * (left_w - 1) + "┴" + "─" * right_w + "┤"
-            s(row, bx, mid[:bw], BORDER)
-            row += 1
-
-            borders(row)
-            s(row, bx + 3, web_url, DIM | curses.color_pair(1))
-            gh = "github.com/luna-prompts/skillnote  ★"
-            s(row, bx + bw - len(gh) - 2, gh, DIM)
-            row += 1
-
-            bot = "╰" + "─" * (left_w - 1) + "─" + "─" * right_w + "╯"
-            s(row, bx, bot[:bw], BORDER)
-            # Hints on bottom border
+            # ═══ FOOTER: hints left, links right ═══
             hints = " ↑/↓ navigate · type to search · Enter select · q keep current "
-            s(row, bx + 3, hints, DIM)
+            links = f" {web_url} · {gh_url} ★ "
+            bot = "╰──" + hints + "─" * max(0, bw - len(hints) - len(links) - 4) + links + "─╯"
+            s(h - 1, bx, bot[:bw], BORDER)
+            # Re-color the hints
+            s(h - 1, bx + 3, hints.strip(), DIM)
+            # Re-color the links
+            link_start = bx + bw - len(links) - 1
+            s(h - 1, link_start, links.strip(), DIM | curses.color_pair(1))
 
         except curses.error:
             pass
@@ -327,7 +398,8 @@ def pick(stdscr, items, recommended=0):
                 cur += 1
         elif key in (ord("\n"), curses.KEY_ENTER, 10, 13):
             if filtered:
-                return [items[filtered[cur][0]][0]]
+                _, orig_idx, _ = filtered[cur]
+                return [items[orig_idx][0]]
         elif key in (ord("q"), 27):
             return None
         elif key in (curses.KEY_BACKSPACE, 127, 8):
@@ -342,9 +414,12 @@ def pick(stdscr, items, recommended=0):
 
 def pick_fallback(items, recommended=0):
     print("\n  ✦ SkillNote — Pick a collection\n")
-    for i, (name, count, skills) in enumerate(items, 1):
-        rec = " ★" if i - 1 == recommended else ""
-        print(f"  {i}. {name} ({count} skills){rec}")
+    # Show recommended first
+    order = [recommended] + [i for i in range(len(items)) if i != recommended]
+    for pos, i in enumerate(order):
+        name, count, skills = items[i]
+        rec = " ★" if i == recommended else ""
+        print(f"  {pos + 1}. {name} ({count} skills){rec}")
         if skills:
             print(f"     {', '.join(s for s, _ in skills[:5])}")
     print()
@@ -357,7 +432,7 @@ def pick_fallback(items, recommended=0):
     try:
         n = int(reply)
         if 1 <= n <= len(items):
-            return [items[n - 1][0]]
+            return [items[order[n - 1]][0]]
     except (ValueError, IndexError):
         pass
     return None
