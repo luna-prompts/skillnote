@@ -230,12 +230,12 @@ if [ -n "$SHELL_RC" ]; then
     echo "  │     or open a new terminal                           │"
     echo "  │                                                      │"
     echo "  │  2. claude                                           │"
-    echo "  │     the collection picker will appear                │"
+    echo "  │     the skill collection picker will appear           │"
 else
     echo "  │  1. Open a new terminal                              │"
     echo "  │                                                      │"
     echo "  │  2. claude                                           │"
-    echo "  │     the collection picker will appear                │"
+    echo "  │     the skill collection picker will appear           │"
 fi
 echo "  │                                                          │"
 echo "  ╰──────────────────────────────────────────────────────────╯"
