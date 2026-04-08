@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "skillnote": {
-      "type": "http",
-      "url": "http://${CLAUDE_PLUGIN_OPTION_HOST:-localhost}:8083/mcp"
-    }
-  }
-}
