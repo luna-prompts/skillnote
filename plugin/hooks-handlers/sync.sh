@@ -13,10 +13,12 @@ API_URL="http://${HOST}:8082"
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-.}"
 PROJECT_CONFIG="${PROJECT_DIR}/.skillnote.json"
 
-# Determine scope: project-level or global
+# No .skillnote.json = no sync. Picker must run first.
+if [ ! -f "$PROJECT_CONFIG" ]; then
+    exit 0
+fi
 
-if [ -f "$PROJECT_CONFIG" ]; then
-    COLLECTIONS=$(python3 -c "
+COLLECTIONS=$(python3 -c "
 import json, sys
 try:
     cfg = json.load(open('${PROJECT_CONFIG}'))
@@ -32,39 +34,15 @@ else:
     print(','.join(cols))
 " 2>/dev/null)
 
-    if [ "$COLLECTIONS" = "__NONE__" ] || [ "$COLLECTIONS" = "__ERROR__" ]; then
-        if [ "$COLLECTIONS" = "__ERROR__" ]; then
-            echo "SkillNote: invalid .skillnote.json"
-        fi
-        exit 0
+if [ "$COLLECTIONS" = "__NONE__" ] || [ "$COLLECTIONS" = "__ERROR__" ]; then
+    if [ "$COLLECTIONS" = "__ERROR__" ]; then
+        echo "SkillNote: invalid .skillnote.json"
     fi
-
-    SKILLS_DIR="${PROJECT_DIR}/.claude/skills"
-
-    # Clean skillnote-managed skills from global dir when using project-local scope
-    # This prevents stale skills from a previous unscoped session showing up
-    GLOBAL_SKILLS="$HOME/.claude/skills"
-    GLOBAL_MANIFEST="$GLOBAL_SKILLS/.skillnote-manifest.json"
-    if [ -f "$GLOBAL_MANIFEST" ]; then
-        python3 -c "
-import json, os, shutil
-manifest_path = '$GLOBAL_MANIFEST'
-skills_dir = '$GLOBAL_SKILLS'
-with open(manifest_path) as f:
-    managed = json.load(f).get('skills', [])
-for name in managed:
-    p = os.path.join(skills_dir, name)
-    if os.path.isdir(p):
-        shutil.rmtree(p)
-os.remove(manifest_path)
-" 2>/dev/null
-    fi
-else
-    # No .skillnote.json — don't sync any skills.
-    # The picker runs at session start and writes .skillnote.json.
-    # Skills only sync after a collection is chosen.
     exit 0
 fi
+
+# Always project-level — never write to global ~/.claude/skills/
+SKILLS_DIR="${PROJECT_DIR}/.claude/skills"
 
 # Use plugin data dir for manifest if available, else alongside skills
 if [ -n "$CLAUDE_PLUGIN_DATA" ]; then
