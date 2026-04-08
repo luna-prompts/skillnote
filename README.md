@@ -27,27 +27,22 @@
 
 <p align="center">
   <a href="#quick-start">Quick Start</a> &middot;
-  <a href="#what-you-get">What You Get</a> &middot;
+  <a href="#why-collections">Why Collections</a> &middot;
+  <a href="#agent-reviews">Agent Reviews</a> &middot;
   <a href="#the-web-ui">Web UI</a> &middot;
   <a href="#how-it-works">How It Works</a> &middot;
-  <a href="#self-hosting">Self-Hosting</a> &middot;
   <a href="#contributing">Contributing</a>
 </p>
 
 ---
 
-## Why SkillNote?
+## The Problem
 
-AI coding agents use `SKILL.md` files to learn conventions, workflows, and patterns. But managing them is a mess. Files are scattered, there's no versioning, no sharing, and no way to know what actually works.
+Claude Code loads every `SKILL.md` in `~/.claude/skills/` into context. But there's a hard limit: [**~8,000 characters**](https://docs.anthropic.com/en/docs/build-with-claude/claude-code/tutorials/manage-skills) shared across all active skill descriptions. Past that, descriptions get silently truncated and skills stop triggering.
 
-**SkillNote** is a self-hosted registry that gives you:
+With 15+ skills, you're already at the edge. Add team-shared skills on top and it breaks entirely. You can't use all your skills at once. You need a way to pick which ones are active.
 
-- A **web UI** to create, edit, and version skills with a Notion-style editor
-- A **Claude Code plugin** that syncs skills to every session automatically
-- **Agent reviews** where AI agents rate skills after use, so you know what's working
-- **Per-project scoping** so each project gets the right skills, nothing more
-
-One setup command. Skills sync everywhere, every session. Agents get better over time.
+That's what SkillNote does. It gives you a registry to manage skills, collections to scope them per project, and a plugin that syncs exactly what's needed to each session.
 
 ---
 
@@ -70,27 +65,50 @@ Now run `claude` in any project. SkillNote picks up your skills automatically.
 
 ---
 
-## What You Get
+## Why Collections
 
-### Skills sync to every Claude Code session
+Every project has different needs. Your frontend project needs React hooks and testing patterns, not your Docker deploy checklist. Your API project needs error handling conventions, not your CSS guidelines.
 
-The plugin writes `SKILL.md` files to `~/.claude/skills/` with full frontmatter support including `allowed-tools`, `context: fork`, `effort`, and `model`. Skills are always current. They sync at session start and refresh in the background every 60 seconds.
+Collections let you group skills by purpose and activate a different set per project. Instead of cluttering Claude's context with 30+ skills (half of which will be truncated anyway), you scope 10 to 15 relevant skills per project.
 
-### Scope the right skills to each project
+<p align="center">
+  <img src="docs/screenshots/collections.png" width="100%" alt="Collections" />
+</p>
 
-Group skills into collections like Conventions, DevOps, or Frontend. Each project gets one active collection via a `.skillnote.json` file. The plugin auto-detects matching collections based on your folder name.
+**How it works in practice:**
 
-Claude Code has a ~8,000 character budget for skill descriptions. With 15+ skills, descriptions get truncated and skills stop triggering. Collections keep things focused with a 15 skill maximum per collection.
+- You create collections in the web UI: `Conventions`, `DevOps`, `Frontend`, etc.
+- Each collection holds up to **15 skills** (the sweet spot for Claude Code's context budget)
+- When you run `claude`, the plugin shows a picker. You select a collection for this project
+- The selection is saved in `.skillnote.json` so it persists across sessions
+- If your folder name matches a collection name, the plugin recommends it automatically
 
-### Agents rate skills after use
+One project can use `Frontend + Conventions`. Another can use `DevOps`. Same skill registry, different active sets. No context wasted.
 
-After applying a skill, Claude rates it 1 to 5 and describes what it did. Over time you see which skills work, which need revision, and how they perform across versions. Real feedback, not guesswork.
+> Read more about Claude Code's skill context limits in the [official documentation](https://docs.anthropic.com/en/docs/build-with-claude/claude-code/tutorials/manage-skills).
+
+---
+
+## Agent Reviews
+
+Most skill systems are fire and forget. You write a skill, hope it works, and never hear back. SkillNote closes the loop.
+
+After applying a skill, Claude rates it 1 to 5 and describes what it did. Every skill page shows an Amazon-style reviews section with star distribution, individual review cards, agent names, versions, and timestamps.
 
 <p align="center">
   <img src="docs/screenshots/skill-detail.png" width="100%" alt="Skill detail with agent reviews" />
 </p>
 
-### Create skills from conversations
+This tells you:
+- Which skills are actually being used
+- Which ones work well and which need revision
+- How performance changes across versions
+
+Skills get better over time because you have real signal, not guesswork.
+
+---
+
+## Skill Push
 
 When Claude notices you repeating the same instruction, it offers to turn it into a skill. The skill gets pushed to SkillNote and syncs to every connected agent within 60 seconds.
 
@@ -100,24 +118,18 @@ Claude: "Want me to create a skill for this?"
         drafts it, you review, pick a collection, published.
 ```
 
+Your team's knowledge compounds. What one person corrects once becomes a skill everyone benefits from.
+
 ---
 
 ## The Web UI
 
 ### Dashboard & Editor
 
-Browse all skills. Search, filter by collection, see ratings at a glance. Edit with a Notion-style WYSIWYG editor or raw markdown. Import existing `SKILL.md` files with drag and drop.
+Browse all skills with search, collection filters, and ratings at a glance. Edit with a Notion-style WYSIWYG editor or raw markdown. Import existing `SKILL.md` files with drag and drop.
 
 <p align="center">
   <img src="docs/screenshots/hero-dashboard.png" width="100%" alt="Dashboard" />
-</p>
-
-### Collections
-
-Organize skills by purpose. Each collection shows a progress bar and the skills it contains. Capped at 15 for optimal Claude Code performance.
-
-<p align="center">
-  <img src="docs/screenshots/collections.png" width="100%" alt="Collections" />
 </p>
 
 ### Analytics
@@ -171,9 +183,9 @@ The SkillNote plugin installs to `~/.claude/plugins/skillnote` and hooks into si
 └──────────────────────────────────────────────────────┘
 ```
 
-Skills are written as local `SKILL.md` files with full Claude Code frontmatter support. This means features like `allowed-tools`, `context: fork`, `effort`, and `model` all work out of the box. Skills also persist offline and survive restarts.
+Skills are written as local `SKILL.md` files with full [Claude Code frontmatter](https://docs.anthropic.com/en/docs/build-with-claude/claude-code/tutorials/manage-skills) support. Features like `allowed-tools`, `context: fork`, `effort`, and `model` all work out of the box. Skills persist offline and survive restarts.
 
-The plugin runs a background sync every 60 seconds. Edit a skill in the web UI and Claude has the new version within a minute, with zero restarts.
+The plugin runs a background sync every 60 seconds. Edit a skill in the web UI and Claude has the new version within a minute.
 
 ---
 
@@ -204,7 +216,6 @@ When the user provides a PDF file:
 | --- | --- |
 | Frontend | Next.js 16, React 19, TypeScript, Tailwind CSS 4, Tiptap |
 | Backend | Python 3.12, FastAPI, SQLAlchemy 2, Alembic |
-| MCP Server | Python 3.12, FastMCP |
 | Plugin | Bash, Python, Claude Code Plugin API |
 | Database | PostgreSQL 16 |
 | Infra | Docker Compose |
