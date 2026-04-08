@@ -40,28 +40,30 @@ else:
     fi
 
     SKILLS_DIR="${PROJECT_DIR}/.claude/skills"
-else
-    COLLECTIONS=""
-    SKILLS_DIR="$HOME/.claude/skills"
-    PROJECT_NAME=$(basename "${PROJECT_DIR}")
 
-    # Check if folder name matches a collection — auto-filter if so
-    COLS_JSON=$(curl -sf --connect-timeout 3 --max-time 5 "${API_URL}/v1/collections" 2>/dev/null || echo "[]")
-    FOLDER_MATCH=$(echo "$COLS_JSON" | python3 -c "
-import json,sys
-try:
-    cols = json.load(sys.stdin)
-    folder = '${PROJECT_NAME}'.lower()
-    for c in cols:
-        if c['name'].lower() == folder:
-            print(c['name'])
-            break
-except: pass
-" 2>/dev/null)
-
-    if [ -n "$FOLDER_MATCH" ]; then
-        COLLECTIONS="$FOLDER_MATCH"
+    # Clean skillnote-managed skills from global dir when using project-local scope
+    # This prevents stale skills from a previous unscoped session showing up
+    GLOBAL_SKILLS="$HOME/.claude/skills"
+    GLOBAL_MANIFEST="$GLOBAL_SKILLS/.skillnote-manifest.json"
+    if [ -f "$GLOBAL_MANIFEST" ]; then
+        python3 -c "
+import json, os, shutil
+manifest_path = '$GLOBAL_MANIFEST'
+skills_dir = '$GLOBAL_SKILLS'
+with open(manifest_path) as f:
+    managed = json.load(f).get('skills', [])
+for name in managed:
+    p = os.path.join(skills_dir, name)
+    if os.path.isdir(p):
+        shutil.rmtree(p)
+os.remove(manifest_path)
+" 2>/dev/null
     fi
+else
+    # No .skillnote.json — don't sync any skills.
+    # The picker runs at session start and writes .skillnote.json.
+    # Skills only sync after a collection is chosen.
+    exit 0
 fi
 
 # Use plugin data dir for manifest if available, else alongside skills
