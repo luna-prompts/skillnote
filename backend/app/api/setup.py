@@ -173,19 +173,8 @@ COLLECTIONS_LIST=$(curl -sf --connect-timeout 5 --max-time 10 "$API_URL/v1/colle
   | python3 -c "import json,sys; [print(f'    {c[\"name\"]} ({c[\"count\"]} skills)') for c in json.load(sys.stdin)]" 2>/dev/null || echo "    (none)")
 
 echo ""
-echo "  ● SkillNote connected"
-echo ""
-echo "  Skills:  $SKILL_COUNT synced"
-echo "  Web:     $WEB_URL"
-echo "  API:     $API_URL"
-echo ""
-echo "  Collections:"
-echo "$COLLECTIONS_LIST"
-echo ""
-echo "  Commands:"
-echo "    /skillnote                Dashboard"
-echo "    /skillnote:collection     Change skills"
-echo "    /skillnote:skill-push     Create skills"
+echo "  Web:  $WEB_URL"
+echo "  API:  $API_URL"
 echo ""
 echo "  ★ github.com/luna-prompts/skillnote — Star us!"
 echo ""
@@ -235,8 +224,7 @@ else
 fi
 
 echo ""
-echo "  Ready! Type 'claude' in any project folder."
-echo "  You'll pick a collection each time (↑/↓ + Enter)."
+echo "  Ready! Run 'claude' to get started."
 echo ""
 '''
 
