@@ -210,7 +210,7 @@ def pick(stdscr, items, recommended=0):
         right_w = bw - left_w - 1
         compact = w < COMPACT_THRESHOLD
 
-        header_h = 7   # top + empty + clawd(3) + empty + separator
+        header_h = 9   # top + 2empty + clawd(3) + 2empty + separator
         footer_h = 1
         body_h = max(MIN_VISIBLE, h - header_h - footer_h - 1)
 
@@ -247,24 +247,24 @@ def pick(stdscr, items, recommended=0):
             s(row, bx, "╭" + "─" * (bw - 2) + "╮", BORDER)
             row += 1
 
-            # ═══ EMPTY ═══
-            hline_full(row)
-            row += 1
+            # ═══ BREATHING SPACE ═══
+            hline_full(row); row += 1
+            hline_full(row); row += 1
 
             # ═══ CLAWD × BRAND ═══
             for ci, cl in enumerate(clawd):
                 hline_full(row)
                 offset = (clawd_w - len(cl)) // 2
-                s(row, bx + 4 + offset, cl, ORANGE)
+                s(row, bx + 5 + offset, cl, ORANGE)
                 if ci == 1:
-                    bpos = bx + 4 + clawd_w + 3
+                    bpos = bx + 5 + clawd_w + 3
                     s(row, bpos, "×", DIM)
                     s(row, bpos + 2, "S K I L L N O T E", ACCENT)
                 row += 1
 
-            # ═══ EMPTY ═══
-            hline_full(row)
-            row += 1
+            # ═══ BREATHING SPACE ═══
+            hline_full(row); row += 1
+            hline_full(row); row += 1
 
             # ═══ SEPARATOR with stats ═══
             stats = f" ● {total_skills} skills · {len(items)} collections "
@@ -283,6 +283,9 @@ def pick(stdscr, items, recommended=0):
             content_top = row
 
             # ═══ LEFT PANEL: search + list ═══
+
+            # Breathing space
+            hline(row); row += 1
 
             # Search box
             hline(row)
@@ -305,9 +308,8 @@ def pick(stdscr, items, recommended=0):
             s(row, bx + 3, "╰" + "─" * search_w + "╯", DIM)
             row += 1
 
-            # Empty line
-            hline(row)
-            row += 1
+            # Breathing space
+            hline(row); row += 1
 
             # List with Claude Code scroll indicators
             list_top = row
