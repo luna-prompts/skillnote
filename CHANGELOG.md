@@ -3,6 +3,44 @@
 All notable changes to SkillNote will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.3.0] - 2026-04-08
+
+### Added
+- **Claude Code Plugin** — one-command install (`curl | bash`) with auto-sync, analytics, and skill creation
+- **Collection Picker** — full-screen curses TUI at every `claude` launch with search, two-column preview, Clawd × SkillNote branding
+- **Status Line** — persistent `● S K I L L N O T E │ Collection │ Skills │ URL` at bottom of Claude Code
+- **6 Hook Events** — SessionStart (sync), FileChanged (instant sync), PostToolUse (HTTP analytics), PostCompact (context re-injection), SubagentStart (context injection), Stop (skill-push suggestion)
+- **Skill Catalog Injection** — SessionStart injects skill names + descriptions into Claude's context so skills trigger automatically
+- **Skill Usage Confirmation** — PostToolUse shows "Using skillnote-X from Collection" when a skill fires
+- **`/skillnote` Dashboard** — one command to see active collection, skills, URLs, commands
+- **`/skillnote:skill-push`** — create new skills from conversations
+- **Output Style** — SkillNote-branded response style for Claude Code
+- **15-Skill Cap** — collections limited to 15 skills for optimal context budget
+- **Connect Page** — rewritten from MCP configs to a clean Claude Code setup page with feature grid and getting started steps
+- **Branded Sync Splash** — `✦ S K I L L N O T E` with skill card box after every sync
+- **`skillnote-` Prefix** — all synced skills use `skillnote-{slug}` for grouped autocomplete
+- **Collection Descriptions** — skill descriptions prefixed with collection name in autocomplete
+
+### Changed
+- **Claude Code Only** — removed support for Cursor, OpenHands, Codex, Universal agents (will return later)
+- **MCP Removed from Plugin** — skills delivered via sync hooks, not MCP tools
+- **Collections Required** — every skill must belong to at least one collection
+- **Sidebar** — "MCP Integrations" renamed to "Connect"
+- **Settings** — "MCP Tools" renamed to "Agent Tools"
+- **Analytics** — "via MCP" references replaced with "by AI agents"
+- **Install Paths** — show Claude Code only with `skillnote-{slug}` prefix
+- **Setup Output** — clean branded box + getting started steps (no redundant info)
+
+### Fixed
+- 36+ bugs across picker, sync, hooks, analytics, and setup
+- Session eval data corruption (was storing in wrong DB column)
+- SQL injection in analytics `days` parameter (now parameterized)
+- Shell injection via Host header in setup script
+- Generic 500 handler (no more stack trace leaks)
+- CORS now respects config (was hardcoded `*`)
+- Separator/box alignment at all terminal widths
+- Silent failures throughout — every error now shows a message
+
 ## [0.2.0] - 2026-03-08
 
 ### Added

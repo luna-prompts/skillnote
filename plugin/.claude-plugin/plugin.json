@@ -1,6 +1,6 @@
 {
   "name": "skillnote",
-  "version": "1.0.0",
+  "version": "0.3.0",
   "description": "Self-hosted skill registry for AI coding agents. Create, version, and distribute reusable SKILL.md files across Claude Code, Cursor, Codex, and more.",
   "author": {
     "name": "Luna Prompts",
