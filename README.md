@@ -70,7 +70,7 @@ claude
 That's it. The collection picker appears, you select your skills, and they're active.
 
 <p align="center">
-  <img src="docs/terminal/setup.svg" width="100%" alt="Setup output" />
+  <img src="docs/terminal/setup.png" width="100%" alt="Setup output" />
 </p>
 
 > **LAN/team setup:** `SKILLNOTE_HOST=<your-server-ip> docker compose up --build -d`, then each teammate runs `curl -sf http://<your-server-ip>:8082/setup | bash`
@@ -84,7 +84,7 @@ That's it. The collection picker appears, you select your skills, and they're ac
 Every time you run `claude`, a full-screen TUI picker appears. Browse collections, preview skills, and select which ones to activate for this project.
 
 <p align="center">
-  <img src="docs/terminal/picker.svg" width="100%" alt="Collection Picker" />
+  <img src="docs/terminal/picker.png" width="100%" alt="Collection Picker" />
 </p>
 
 ### Session Sync & Status Line
@@ -92,7 +92,7 @@ Every time you run `claude`, a full-screen TUI picker appears. Browse collection
 Once you pick a collection, skills sync to `~/.claude/skills/` with full frontmatter. Claude auto-triggers skills when your task matches a skill's description. The status line shows what's active.
 
 <p align="center">
-  <img src="docs/terminal/sync.svg" width="100%" alt="Sync and Status Line" />
+  <img src="docs/terminal/sync.png" width="100%" alt="Sync and Status Line" />
 </p>
 
 ### How It Works Under the Hood
