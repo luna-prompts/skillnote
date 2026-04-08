@@ -391,7 +391,7 @@ function LiveConnectionsEmpty() {
         <div className="relative w-2.5 h-2.5 shrink-0">
           <div className="absolute inset-0 rounded-full bg-muted-foreground/20 animate-pulse" />
         </div>
-        <span className="text-[12px] font-mono text-muted-foreground/40">Listening on :8083...</span>
+        <span className="text-[12px] font-mono text-muted-foreground/40">Connecting...</span>
       </div>
     </div>
   )
@@ -1221,7 +1221,7 @@ function AnalyticsContent() {
                 <div className="relative group/tip ml-1">
                   <Info className="h-3 w-3 text-muted-foreground/40 cursor-help" />
                   <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-56 px-3 py-2 rounded-lg bg-popover border border-border shadow-lg text-[11px] text-muted-foreground leading-relaxed opacity-0 pointer-events-none group-hover/tip:opacity-100 group-hover/tip:pointer-events-auto transition-opacity z-50">
-                    Aggregated from ratings submitted by AI agents after they apply skills via the MCP complete_skill tool.
+                    Aggregated from ratings submitted by AI agents after they apply skills via the complete_skill tool.
                   </div>
                 </div>
               </div>
@@ -1402,7 +1402,7 @@ function AnalyticsContent() {
                 {mcpError && (
                   <span className="ml-auto flex items-center gap-1.5 text-[11px] text-muted-foreground/40">
                     <WifiOff className="h-3 w-3" />
-                    MCP offline
+                    Server offline
                   </span>
                 )}
               </div>
@@ -1410,7 +1410,7 @@ function AnalyticsContent() {
               {mcpError ? (
                 <div className="flex flex-col items-center gap-2.5 py-10 text-center px-4">
                   <WifiOff className="h-7 w-7 text-muted-foreground/20" />
-                  <p className="text-[13px] text-muted-foreground/50">MCP server not reachable</p>
+                  <p className="text-[13px] text-muted-foreground/50">Server not reachable</p>
                   <p className="text-[11px] font-mono text-muted-foreground/25">{buildMcpBase()}/status</p>
                 </div>
               ) : mcpStatus === null ? (
