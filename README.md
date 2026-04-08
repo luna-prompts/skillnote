@@ -112,6 +112,16 @@ Skills get better over time because you have real signal, not guesswork.
 
 ---
 
+## Live Sync
+
+SkillNote connects your web UI and Claude Code in real time. Edit a skill in the browser, and every running Claude Code session picks up the change within 60 seconds. No restarts, no manual copying, no "did you pull the latest skills?"
+
+The plugin runs a background sync on every prompt. When it detects changes on the server, it updates the local `SKILL.md` files and Claude hot-reloads them mid-session. This works across your whole team. One person updates a skill, everyone gets it.
+
+This also means onboarding is instant. A new teammate runs the setup command, picks a collection, and has every skill the team has built. No Slack messages asking "where's the deploy checklist?"
+
+---
+
 ## Skill Push
 
 When Claude notices you repeating the same instruction, it offers to turn it into a skill. The skill gets pushed to SkillNote and syncs to every connected agent within 60 seconds.
