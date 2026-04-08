@@ -198,44 +198,6 @@ When the user provides a PDF file:
 
 ---
 
-## Self-Hosting
-
-### Requirements
-
-~250 MB RAM idle, ~420 MB under load. ~1.9 GB disk for images.
-
-### Docker Compose
-
-```bash
-git clone https://github.com/luna-prompts/skillnote.git
-cd skillnote
-docker compose up --build -d
-# Web: localhost:3000 · API: localhost:8082 · MCP: localhost:8083
-```
-
-**Custom host (LAN or Tailscale):**
-```bash
-SKILLNOTE_HOST=<your-server-ip> docker compose up --build -d
-```
-
-**Local dev:**
-```bash
-docker compose up --build -d postgres api mcp
-npm install && npm run dev
-```
-
-### Environment Variables
-
-| Variable | Default | Description |
-| --- | --- | --- |
-| `SKILLNOTE_HOST` | `localhost` | Host IP or domain for CORS and frontend |
-| `SKILLNOTE_API_PORT` | `8082` | API port |
-| `SKILLNOTE_MCP_PORT` | `8083` | MCP server port |
-| `SKILLNOTE_DATABASE_URL` | *(compose)* | PostgreSQL connection string |
-| `NEXT_PUBLIC_API_BASE_URL` | `http://localhost:8082` | Frontend API endpoint |
-
----
-
 ## Tech Stack
 
 | Layer | Technology |
