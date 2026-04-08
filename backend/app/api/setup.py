@@ -217,14 +217,17 @@ claude() {
 }
 WRAPEOF
     echo "  Shell wrapper added to $SHELL_RC"
-    echo "  Run: source $SHELL_RC (or open a new terminal)"
 else
     echo "  Warning: No .zshrc or .bashrc found."
     echo "  Collection picker won't auto-run. Run skillnote-pick manually."
 fi
 
 echo ""
-echo "  Ready! Run 'claude' to get started."
+if [ -n "$SHELL_RC" ]; then
+    echo "  Next: source $SHELL_RC && claude"
+else
+    echo "  Next: claude"
+fi
 echo ""
 '''
 
