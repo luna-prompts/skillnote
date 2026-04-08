@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""SkillNote collection picker — minimal terminal UI."""
+"""SkillNote collection picker — two-column terminal UI with search and preview."""
 import json
 import os
 import sys
@@ -14,7 +14,7 @@ except ImportError:
 
 
 def _get_host():
-    """Resolve SkillNote API host. Check env, then ~/.skillnote/host file."""
+    """Resolve SkillNote API host."""
     host = os.environ.get("SKILLNOTE_HOST", os.environ.get("CLAUDE_PLUGIN_OPTION_HOST", ""))
     if host:
         return host
@@ -37,13 +37,12 @@ def fetch_collections():
         data = json.loads(urllib.request.urlopen(f"{api}/v1/collections", timeout=3).read())
         collections = []
         for c in data:
-            # Fetch skill names for preview
             skills = []
             try:
                 skill_data = json.loads(urllib.request.urlopen(
                     f"{api}/v1/skills?collections={c['name']}", timeout=3
                 ).read())
-                skills = [s["slug"] for s in skill_data]
+                skills = [(s["slug"], s.get("description", "")) for s in skill_data]
             except Exception:
                 pass
             collections.append((c["name"], c["count"], skills))
@@ -53,10 +52,7 @@ def fetch_collections():
 
 
 def _get_recommended(items):
-    """Return index of recommended collection: from .skillnote.json or folder name match."""
     names = [n.lower() for n, _, _ in items]
-
-    # 1. Current .skillnote.json
     if os.path.isfile(".skillnote.json"):
         try:
             with open(".skillnote.json") as f:
@@ -68,18 +64,14 @@ def _get_recommended(items):
                         return i
         except Exception:
             pass
-
-    # 2. Folder name match (exact only — consistent with sync.sh)
     folder = os.path.basename(os.getcwd()).lower()
     for i, name in enumerate(names):
         if name == folder:
             return i
-
     return 0
 
 
 def _get_current_collections():
-    """Read current collections from .skillnote.json, or None if missing/invalid."""
     if os.path.isfile(".skillnote.json"):
         try:
             with open(".skillnote.json") as f:
@@ -90,7 +82,6 @@ def _get_current_collections():
 
 
 def _clean_skills_dir():
-    """Remove all managed skills and manifests so sync starts fresh."""
     import shutil
     skills_dir = os.path.join(".claude", "skills")
     if os.path.isdir(skills_dir):
@@ -103,9 +94,7 @@ def _clean_skills_dir():
 
 
 def _run_sync():
-    """Run sync using the best available path."""
     host = _get_host()
-    # Try plugin root first (set during Claude sessions)
     plugin_root = os.environ.get("CLAUDE_PLUGIN_ROOT", "")
     if plugin_root:
         sync_path = os.path.join(plugin_root, "hooks-handlers", "sync.sh")
@@ -113,8 +102,6 @@ def _run_sync():
             os.environ.setdefault("CLAUDE_PLUGIN_OPTION_HOST", host)
             os.system(f'"{sync_path}" 2>/dev/null')
             return
-
-    # Try installed plugin in marketplace
     mkt_sync = os.path.expanduser(
         "~/.claude/plugins/marketplaces/skillnote-local/plugins/skillnote/hooks-handlers/sync.sh"
     )
@@ -122,22 +109,26 @@ def _run_sync():
         os.environ.setdefault("CLAUDE_PLUGIN_OPTION_HOST", host)
         os.system(f'"{mkt_sync}" 2>/dev/null')
         return
-
-    # Try skillnote-sync in PATH as last resort
     os.system("skillnote-sync --force 2>/dev/null")
 
 
 def pick(stdscr, items, recommended=0):
     cur = recommended
+    search = ""
     curses.curs_set(0)
     curses.start_color()
     curses.use_default_colors()
-    curses.init_pair(1, curses.COLOR_CYAN, -1)
-    curses.init_pair(2, curses.COLOR_GREEN, -1)
-    curses.init_pair(3, curses.COLOR_WHITE, -1)
-    curses.init_pair(4, curses.COLOR_YELLOW, -1)
+    curses.init_pair(1, curses.COLOR_CYAN, -1)      # brand / borders
+    curses.init_pair(2, curses.COLOR_GREEN, -1)      # connected dot
+    curses.init_pair(3, curses.COLOR_WHITE, -1)      # bright text
+    curses.init_pair(4, curses.COLOR_YELLOW, -1)     # highlights
 
-    # Flush stale input (the Enter from typing 'claude')
+    # Orange for Clawd (208 = orange in 256-color)
+    try:
+        curses.init_pair(5, 208, -1)
+    except Exception:
+        curses.init_pair(5, curses.COLOR_RED, -1)  # fallback
+
     curses.flushinp()
     stdscr.nodelay(True)
     while stdscr.getch() != -1:
@@ -149,96 +140,200 @@ def pick(stdscr, items, recommended=0):
     host = _get_host()
     web_url = f"http://{host}:3000"
 
-    brand = [
-        "███████╗██╗  ██╗██╗██╗     ██╗     ███╗   ██╗ ██████╗ ████████╗███████╗",
-        "██╔════╝██║ ██╔╝██║██║     ██║     ████╗  ██║██╔═══██╗╚══██╔══╝██╔════╝",
-        "███████╗█████╔╝ ██║██║     ██║     ██╔██╗ ██║██║   ██║   ██║   █████╗  ",
-        "╚════██║██╔═██╗ ██║██║     ██║     ██║╚██╗██║██║   ██║   ██║   ██╔══╝  ",
-        "███████║██║  ██╗██║███████╗███████╗██║ ╚████║╚██████╔╝   ██║   ███████╗",
-        "╚══════╝╚═╝  ╚═╝╚═╝╚══════╝╚══════╝╚═╝  ╚═══╝ ╚═════╝    ╚═╝   ╚══════╝",
-    ]
+    clawd = ["  ▐▛███▜▌", " ▝▜█████▛▘", "   ▘▘ ▝▝"]
 
     while True:
         stdscr.erase()
         h, w = stdscr.getmaxyx()
-        row = 1
 
-        cw = min(w - 4, 76)
-        mx = (w - cw) // 2
+        # Filter items by search
+        if search:
+            filtered = [(i, it) for i, it in enumerate(items) if search.lower() in it[0].lower()]
+        else:
+            filtered = list(enumerate(items))
 
-        def ctr_x(text):
-            return mx + max(0, cw - len(text)) // 2
+        # Clamp cursor
+        if filtered:
+            cur = max(0, min(cur, len(filtered) - 1))
+
+        # Layout
+        bw = min(w - 2, 96)          # total box width
+        bx = max(0, (w - bw) // 2)   # box left margin
+        left_w = bw * 2 // 5          # left panel width (~40%)
+        right_w = bw - left_w - 1     # right panel width
+        iw = bw - 2                    # inner width (inside box)
+
+        BORDER = curses.color_pair(1) | curses.A_DIM
+        ORANGE = curses.color_pair(5) | curses.A_BOLD
+        CYAN_BOLD = curses.color_pair(1) | curses.A_BOLD
+        DIM = curses.A_DIM
+        BOLD = curses.A_BOLD
+        GREEN = curses.color_pair(2)
+        YELLOW = curses.color_pair(4)
+
+        row = max(0, (h - 22) // 3)  # vertically offset (golden ratio ~1/3)
+
+        def safe(r, c, text, attr=0):
+            try:
+                if r < h and c < w:
+                    stdscr.addstr(r, c, text[:w - c - 1], attr)
+            except curses.error:
+                pass
+
+        def hline(r):
+            safe(r, bx, "│", BORDER)
+            safe(r, bx + left_w, "│", BORDER)
+            safe(r, bx + bw - 1, "│", BORDER)
+
+        def box_top(r):
+            top = "╭" + "─" * (left_w - 1) + "┬" + "─" * (right_w) + "╮"
+            safe(r, bx, top[:bw], BORDER)
+
+        def box_mid(r):
+            mid = "├" + "─" * (left_w - 1) + "┼" + "─" * (right_w) + "┤"
+            safe(r, bx, mid[:bw], BORDER)
+
+        def box_bot(r):
+            bot = "╰" + "─" * (left_w - 1) + "┴" + "─" * (right_w) + "╯"
+            safe(r, bx, bot[:bw], BORDER)
+
+        def left_text(r, text, attr=0, indent=2):
+            hline(r)
+            safe(r, bx + indent, text[:left_w - indent - 2], attr)
+
+        def right_text(r, text, attr=0, indent=2):
+            safe(r, bx + left_w + indent, text[:right_w - indent - 1], attr)
+
+        def full_line(r):
+            """Draw empty bordered line."""
+            hline(r)
 
         try:
-            # ── Brand ──
-            brand_w = len(brand[0])
-            if cw >= brand_w:
-                for bl in brand:
-                    stdscr.addstr(row, ctr_x(bl), bl, curses.A_BOLD | curses.color_pair(1))
-                    row += 1
-            else:
-                t = "S K I L L N O T E"
-                stdscr.addstr(row, ctr_x(t), t, curses.A_BOLD | curses.color_pair(1))
+            # ── Header with title ──
+            header = "─ ✦ SkillNote " + "─" * max(0, left_w - 16) + "┬" + "─" * right_w + "╮"
+            safe(row, bx, "╭" + header[:bw - 2], BORDER)
+            # Overwrite the ✦ SkillNote with colors
+            safe(row, bx + 3, "✦", CYAN_BOLD)
+            safe(row, bx + 5, "SkillNote", CYAN_BOLD)
+            row += 1
+
+            # ── Clawd mascot + brand ──
+            full_line(row)
+            row += 1
+
+            for cl in clawd:
+                hline(row)
+                safe(row, bx + 2, cl, ORANGE)
                 row += 1
+
+            # "× S K I L L N O T E" next to the mascot (on the middle clawd line)
+            mascot_end = bx + 2 + len(clawd[1]) + 2
+            safe(row - 2, mascot_end, "×", DIM)
+            safe(row - 2, mascot_end + 2, "S K I L L N O T E", CYAN_BOLD)
+
+            full_line(row)
             row += 1
 
-            # ── Tagline + info ──
-            tag = "Reusable skills for AI coding agents"
-            stdscr.addstr(row, ctr_x(tag), tag, curses.A_DIM)
+            # ── Stats ──
+            hline(row)
+            safe(row, bx + 2, "●", GREEN)
+            safe(row, bx + 4, f"{total_skills} skills · {len(items)} collections", DIM)
             row += 1
-            info = f"{total_skills} skills · {len(items)} collections · {web_url}"
-            stdscr.addstr(row, ctr_x(info), info, curses.A_DIM)
-            row += 2
 
-            # ── Rule ──
-            stdscr.addstr(row, mx, "─" * cw, curses.color_pair(1) | curses.A_DIM)
-            row += 2
+            full_line(row)
+            row += 1
 
-            # ── Prompt ──
-            stdscr.addstr(row, mx + 2, "Pick a collection for this project:", curses.A_BOLD)
-            row += 2
+            # ── Search ──
+            hline(row)
+            safe(row, bx + 2, "> ", BOLD)
+            if search:
+                safe(row, bx + 4, search, BOLD)
+            safe(row, bx + 4 + len(search), "▌", CYAN_BOLD)
+            match_text = f"{len(filtered)} match" if search else ""
+            if match_text:
+                safe(row, bx + left_w - len(match_text) - 2, match_text, DIM)
+            row += 1
 
-            # ── Items ──
-            for i, (name, count, skills) in enumerate(items):
-                if row >= h - 6:
+            full_line(row)
+            row += 1
+
+            # ── Right panel header (selected collection) ──
+            sel_name = ""
+            sel_skills = []
+            if filtered:
+                orig_idx, (sel_name, sel_count, sel_skills) = filtered[cur]
+
+            # Right panel: collection name header
+            right_text(row - (len(clawd) + 4), sel_name, BOLD)
+            right_text(row - (len(clawd) + 4) + 1, "─" * (right_w - 4), DIM)
+
+            # Right panel: skill list with descriptions
+            pr = row - (len(clawd) + 4) + 2
+            for slug, desc in sel_skills[:12]:
+                if pr >= row + len(filtered) + 2:
                     break
-                is_rec = (i == recommended)
-                if i == cur:
-                    stdscr.addstr(row, mx + 4, "❯ ", curses.color_pair(1) | curses.A_BOLD)
-                    stdscr.addstr(name, curses.A_BOLD)
-                    stdscr.addstr(f"  {count} skills", curses.A_DIM)
+                right_text(pr, slug, curses.color_pair(1))
+                pr += 1
+                if desc:
+                    # Truncate description
+                    short_desc = desc[:right_w - 6]
+                    if len(desc) > right_w - 6:
+                        short_desc = short_desc[:short_desc.rfind(" ")] + "..."
+                    right_text(pr, short_desc, DIM)
+                    pr += 1
+
+            # ── Collection list (left panel) ──
+            list_start = row
+            for fi, (orig_idx, (name, count, skills)) in enumerate(filtered):
+                if row >= h - 4:
+                    break
+                is_rec = (orig_idx == recommended)
+                hline(row)
+
+                if fi == cur:
+                    safe(row, bx + 2, "❯", CYAN_BOLD)
+                    safe(row, bx + 4, name, BOLD)
+                    count_str = f"{count}"
+                    safe(row, bx + left_w - len(count_str) - 3, count_str, DIM)
                     if is_rec:
-                        stdscr.addstr("  ★", curses.color_pair(4))
+                        safe(row, bx + 4 + len(name) + 1, "★", YELLOW)
                 else:
-                    stdscr.addstr(row, mx + 4, "  ")
-                    stdscr.addstr(name, curses.A_DIM)
-                    stdscr.addstr(f"  {count} skills", curses.A_DIM)
+                    safe(row, bx + 4, name, DIM)
+                    count_str = f"{count}"
+                    safe(row, bx + left_w - len(count_str) - 3, count_str, DIM)
                     if is_rec:
-                        stdscr.addstr("  ★", curses.color_pair(4) | curses.A_DIM)
+                        safe(row, bx + 4 + len(name) + 1, "★", YELLOW | curses.A_DIM)
                 row += 1
-                # Show skill names preview under the selected item
-                if skills and i == cur and row < h - 6:
-                    preview = ", ".join(skills[:6])
-                    if len(skills) > 6:
-                        preview += f" +{len(skills)-6} more"
-                    stdscr.addstr(row, mx + 8, preview[:cw-10], curses.A_DIM)
-                    row += 1
-            row += 2
 
-            # ── Rule ──
-            if row < h - 4:
-                stdscr.addstr(row, mx, "─" * cw, curses.color_pair(1) | curses.A_DIM)
-                row += 2
+            # Fill remaining rows
+            while row < list_start + max(len(filtered), 8):
+                if row >= h - 4:
+                    break
+                full_line(row)
+                row += 1
 
-            # ── Browse link ──
-            if row < h - 2:
-                stdscr.addstr(row, mx + 2, "Browse all → ", curses.A_DIM)
-                stdscr.addstr(f"{web_url}/collections", curses.color_pair(1))
-                row += 2
+            # Fill right panel remaining
+            while pr < row:
+                if pr < h:
+                    safe(pr, bx + left_w, "│", BORDER)
+                    safe(pr, bx + bw - 1, "│", BORDER)
+                pr += 1
 
-            # ── Hints ──
-            hints = "↑/↓ move · Enter select · q keep current"
-            stdscr.addstr(min(row, h - 1), mx + 2, hints, curses.A_DIM)
+            full_line(row)
+            row += 1
+
+            # ── Bottom bar ──
+            hline(row)
+            safe(row, bx + 2, f"{web_url}", DIM | curses.color_pair(1))
+            right_text(row, "github.com/luna-prompts/skillnote  ★", DIM)
+            row += 1
+
+            hline(row)
+            safe(row, bx + 2, "↑/↓ navigate · type to search · Enter · q", DIM)
+            row += 1
+
+            # ── Bottom border ──
+            box_bot(row)
 
         except curses.error:
             pass
@@ -246,24 +341,33 @@ def pick(stdscr, items, recommended=0):
         stdscr.refresh()
 
         key = stdscr.getch()
-        if key == curses.KEY_UP and cur > 0:
-            cur -= 1
-        elif key == curses.KEY_DOWN and cur < len(items) - 1:
-            cur += 1
+        if key == curses.KEY_UP:
+            if cur > 0:
+                cur -= 1
+        elif key == curses.KEY_DOWN:
+            if filtered and cur < len(filtered) - 1:
+                cur += 1
         elif key in (ord("\n"), curses.KEY_ENTER, 10, 13):
-            return [items[cur][0]]
+            if filtered:
+                orig_idx = filtered[cur][0]
+                return [items[orig_idx][0]]
         elif key in (ord("q"), 27):
             return None
+        elif key == curses.KEY_BACKSPACE or key == 127 or key == 8:
+            search = search[:-1]
+            cur = 0
+        elif 32 <= key <= 126:
+            search += chr(key)
+            cur = 0
 
 
 def pick_fallback(items, recommended=0):
-    print("\n  SkillNote — Pick a collection for this project")
-    print("  Enter number to select, q to keep current\n")
+    print("\n  ✦ SkillNote — Pick a collection\n")
     for i, (name, count, skills) in enumerate(items, 1):
         rec = " ★" if i - 1 == recommended else ""
         print(f"  {i}. {name} ({count} skills){rec}")
         if skills:
-            print(f"     {', '.join(skills[:5])}")
+            print(f"     {', '.join(s for s, _ in skills[:5])}")
     print()
     try:
         reply = input("  > ").strip()
@@ -287,10 +391,9 @@ def main():
     host, collections = fetch_collections()
 
     if not collections:
-        print(f"  SkillNote: could not reach API at http://{host}:8082", file=sys.stderr)
+        print(f"  ✦ SkillNote: could not reach API at http://{host}:8082", file=sys.stderr)
         return
 
-    # Single collection: auto-select, no picker needed
     if len(collections) == 1:
         name, count, _ = collections[0]
         if not os.path.isfile(".skillnote.json"):
@@ -301,7 +404,7 @@ def main():
                 _run_sync()
             except PermissionError:
                 pass
-        print(f"  SkillNote: {name} ({count} skills)")
+        print(f"  ✦ SkillNote: {name} ({count} skills)")
         return
 
     recommended = _get_recommended(collections)
@@ -312,13 +415,11 @@ def main():
         chosen = pick_fallback(collections, recommended)
 
     if not chosen:
-        # q pressed — keep current config if exists
         current = _get_current_collections()
         if current:
-            print(f"  SkillNote: {', '.join(current)} (active)")
+            print(f"  ✦ SkillNote: {', '.join(current)} (active)")
         return
 
-    # Check if collection actually changed
     current = _get_current_collections()
     changed = current != chosen
 
@@ -327,16 +428,15 @@ def main():
             json.dump({"collections": chosen}, f, indent=2)
             f.write("\n")
     except PermissionError:
-        print("  SkillNote: cannot write .skillnote.json (permission denied)", file=sys.stderr)
+        print("  ✦ SkillNote: cannot write .skillnote.json (permission denied)", file=sys.stderr)
         return
 
-    # Clean old skills when collection changes so sync starts fresh
     if changed and current is not None:
         _clean_skills_dir()
 
     names = ", ".join(chosen)
     total = sum(c for n, c, _ in collections if n in chosen)
-    print(f"\n  SkillNote: {names} ({total} skills)\n")
+    print(f"\n  ✦ SkillNote: {names} ({total} skills)\n")
 
     _run_sync()
 
