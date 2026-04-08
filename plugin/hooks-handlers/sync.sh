@@ -201,45 +201,41 @@ print()
 
 if slugs:
     col_w = max(len(s) for s in slugs) + 6
-    box_inner = max(col_w * 2 + 2, len(skills_path) + 6, 40)
-    bw = box_inner + 4
-    sp = chr(32)
-    dash = chr(9472)  # ─
+    bw = max(col_w * 2 + 6, len(skills_path) + 10, 50)
 
-    def bx_empty():
-        print('    │' + sp * (bw - 2) + '│')
-    def bx_text(t):
-        print('    │' + t.ljust(bw - 2) + '│')
+    def row_line(content):
+        # Every row is exactly: '    │' + content padded to bw-2 + '│'
+        print('    ' + chr(9474) + content.ljust(bw - 2) + chr(9474))
+    def row_empty():
+        row_line('')
+    def border_top(label):
+        inner = bw - 2  # between ╭ and ╮
+        txt = chr(9472) + ' ' + label + ' '
+        fill = chr(9472) * max(0, inner - len(txt))
+        print('    ' + chr(9581) + (txt + fill)[:inner] + chr(9582))
+    def border_bot(label):
+        inner = bw - 2
+        txt = chr(9472) + chr(9472) + ' ' + label + ' '
+        fill = chr(9472) * max(0, inner - len(txt))
+        print('    ' + chr(9584) + (txt + fill)[:inner] + chr(9583))
 
-    # Top border
-    hdr = ' ' + col_name + ' ' + dash + dash + ' ' + str(len(vis)) + ' skills synced '
-    print('    ╭' + dash + hdr + dash * max(0, bw - len(hdr) - 3) + '╮')
+    border_top(col_name + ' ' + chr(9472) + chr(9472) + ' ' + str(len(vis)) + ' skills synced')
+    row_empty()
 
-    bx_empty()
-
-    # Skills 2-col grid
     for i in range(0, len(slugs), 2):
         left = (str(i+1).rjust(2) + '. ' + slugs[i]).ljust(col_w)
         right = ''
         if i + 1 < len(slugs):
             right = (str(i+2).rjust(2) + '. ' + slugs[i+1]).ljust(col_w)
-        bx_text('  ' + left + right)
+        row_line('  ' + left + right)
 
-    bx_empty()
+    row_empty()
+    row_line('  ' + chr(9472) * (bw - 6) + '  ')
+    row_empty()
+    row_line('  ' + chr(8594) + ' ' + skills_path)
+    row_empty()
 
-    # Separator
-    bx_text('  ' + dash * (bw - 6) + '  ')
-
-    bx_empty()
-
-    # Path
-    bx_text('  → ' + skills_path)
-
-    bx_empty()
-
-    # Bottom border
-    cmds = ' /skillnote ' + chr(183) + ' /skillnote:collection '
-    print('    ╰' + dash + dash + cmds + dash * max(0, bw - len(cmds) - 3) + '╯')
+    border_bot('/skillnote ' + chr(183) + ' /skillnote:collection')
 else:
     print('    ' + col_name + ' ' + chr(183) + ' ' + str(len(vis)) + ' skills (' + detail + ')')
 
