@@ -66,10 +66,6 @@ curl -sf http://localhost:8082/setup | bash
 source ~/.zshrc
 ```
 
-<p align="center">
-  <img src="docs/terminal/setup.png" width="680" alt="SkillNote setup" />
-</p>
-
 Now run `claude` in any project. SkillNote picks up your skills automatically.
 
 ---
