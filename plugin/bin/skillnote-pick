@@ -123,6 +123,8 @@ def pick(stdscr, items, recommended=0):
     cur = 0  # recommended is now always index 0
     search = ""
     scroll_offset = 0
+    right_scroll = 0   # scroll offset for right panel
+    focus = "left"     # "left" or "right" panel focus
 
     curses.curs_set(0)
     curses.start_color()
@@ -230,13 +232,13 @@ def pick(stdscr, items, recommended=0):
             row += 1
 
             # ═══ SEPARATOR: stats + column split ═══
-            sep_text = f" ● {total_skills} skills · {len(items)} collections "
-            sep_left = "├──" + sep_text + "─" * max(0, left_w - len(sep_text) - 3)
-            sep_right = "┬" + "─" * (right_w) + "┤"
-            s(row, bx, (sep_left + sep_right)[:bw], BORDER)
-            # Color the stats
-            s(row, bx + 4, "●", GREEN)
-            s(row, bx + 6, f"{total_skills} skills · {len(items)} collections", DIM)
+            stats = f" ● {total_skills} skills · {len(items)} collections "
+            left_fill = max(0, left_w - len(stats) - 2)
+            right_fill = right_w - 1
+            sep = "├─" + stats + "─" * left_fill + "┬" + "─" * right_fill + "┤"
+            s(row, bx, sep[:bw], BORDER)
+            s(row, bx + 3, "●", GREEN)
+            s(row, bx + 5, f"{total_skills} skills · {len(items)} collections", DIM)
             row += 1
 
             # ═══ CONTENT: two columns ═══
@@ -263,9 +265,13 @@ def pick(stdscr, items, recommended=0):
             header_text = sel_name
             if sel_is_rec:
                 header_text += " ★"
-            s(rr, bx + left_w + 4, header_text, BOLD)
+            r_attr = BOLD if focus == "right" else BOLD
+            s(rr, bx + left_w + 4, header_text, r_attr)
             count_text = f"{sel_count} skills"
             s(rr, bx + bw - len(count_text) - 3, count_text, DIM)
+            # Panel focus indicator
+            if focus == "right" and right_scroll > 0:
+                s(rr, bx + bw - 2, "▲", DIM)
             rr += 1
 
             # Separator
@@ -277,10 +283,12 @@ def pick(stdscr, items, recommended=0):
             s(rr, bx + left_w, "│", BORDER); s(rr, bx + bw - 1, "│", BORDER)
             rr += 1
 
-            # Skill list with numbers
-            for si, (slug, desc) in enumerate(sel_skills):
+            # Skill list with numbers (scrollable)
+            skill_display = sel_skills[right_scroll:]
+            for si, (slug, desc) in enumerate(skill_display):
                 if rr >= h - footer_h - 1:
                     break
+                si = si + right_scroll  # correct numbering
 
                 # Number + skill name
                 s(rr, bx + left_w, "│", BORDER); s(rr, bx + bw - 1, "│", BORDER)
@@ -317,15 +325,26 @@ def pick(stdscr, items, recommended=0):
             s(lr, bx, "│", BORDER)
             lr += 1
 
-            # Search input
+            # Search box
             s(lr, bx, "│", BORDER)
-            s(lr, bx + 4, ">", BOLD)
+            search_w = left_w - 6
+            s(lr, bx + 3, "╭" + "─" * search_w + "╮", BORDER)
+            lr += 1
+
+            s(lr, bx, "│", BORDER)
+            s(lr, bx + 3, "│", BORDER)
+            s(lr, bx + 3 + search_w + 1, "│", BORDER)
             if search:
-                s(lr, bx + 6, search, BOLD)
-            s(lr, bx + 6 + len(search), "▌", CYAN)
-            if search:
-                mt = f"{len(filtered)} match{'es' if len(filtered) != 1 else ''}"
-                s(lr, bx + left_w - len(mt) - 2, mt, DIM)
+                s(lr, bx + 5, search[:search_w - 3], BOLD)
+                s(lr, bx + 5 + min(len(search), search_w - 3), "▌", CYAN)
+                mt = f"{len(filtered)}"
+                s(lr, bx + 3 + search_w - len(mt), mt, DIM)
+            else:
+                s(lr, bx + 5, "type to search...", DIM)
+            lr += 1
+
+            s(lr, bx, "│", BORDER)
+            s(lr, bx + 3, "╰" + "─" * search_w + "╯", BORDER)
             lr += 1
 
             # Empty line
@@ -368,21 +387,27 @@ def pick(stdscr, items, recommended=0):
                     s(lr, bx + left_w - len(cnt) - 2, cnt, DIM)
                 lr += 1
 
+            # Scroll indicators
+            if scroll_offset > 0 and lr < h - footer_h:
+                s(content_start + 4, bx + left_w - 3, "▲", DIM)
+            if filtered and scroll_offset + list_area < len(filtered):
+                ind_row = min(lr, h - footer_h - 1)
+                s(ind_row, bx + left_w - 3, "▼", DIM)
+
             # Fill remaining left panel rows
             while lr < h - footer_h:
                 s(lr, bx, "│", BORDER)
                 lr += 1
 
             # ═══ FOOTER: hints left, links right ═══
-            hints = " ↑/↓ navigate · type to search · Enter select · q keep current "
+            hints = " ↑/↓ · Tab panel · Enter · q "
             links = f" {web_url} · {gh_url} ★ "
-            bot = "╰──" + hints + "─" * max(0, bw - len(hints) - len(links) - 4) + links + "─╯"
-            s(h - 1, bx, bot[:bw], BORDER)
-            # Re-color the hints
-            s(h - 1, bx + 3, hints.strip(), DIM)
-            # Re-color the links
-            link_start = bx + bw - len(links) - 1
-            s(h - 1, link_start, links.strip(), DIM | curses.color_pair(1))
+            fill = max(0, bw - 2 - len(hints) - len(links))
+            bot_line = "╰" + "─" * 1 + hints + "─" * fill + links + "─" * max(0, bw - 2 - len(hints) - fill - len(links)) + "╯"
+            # Simplified: just draw border then overlay text
+            s(h - 1, bx, "╰" + "─" * (bw - 2) + "╯", BORDER)
+            s(h - 1, bx + 2, hints, DIM)
+            s(h - 1, bx + bw - len(links) - 1, links, DIM | curses.color_pair(1))
 
         except curses.error:
             pass
@@ -390,12 +415,28 @@ def pick(stdscr, items, recommended=0):
         stdscr.refresh()
 
         key = stdscr.getch()
-        if key == curses.KEY_UP:
-            if cur > 0:
-                cur -= 1
+        if key == 9:  # Tab — switch panel focus
+            focus = "right" if focus == "left" else "left"
+        elif key == curses.KEY_UP:
+            if focus == "left":
+                if cur > 0:
+                    cur -= 1
+                    right_scroll = 0
+            else:
+                if right_scroll > 0:
+                    right_scroll -= 1
         elif key == curses.KEY_DOWN:
-            if filtered and cur < len(filtered) - 1:
-                cur += 1
+            if focus == "left":
+                if filtered and cur < len(filtered) - 1:
+                    cur += 1
+                    right_scroll = 0
+            else:
+                if sel_skills and right_scroll < len(sel_skills) - 1:
+                    right_scroll += 1
+        elif key == curses.KEY_LEFT:
+            focus = "left"
+        elif key == curses.KEY_RIGHT:
+            focus = "right"
         elif key in (ord("\n"), curses.KEY_ENTER, 10, 13):
             if filtered:
                 _, orig_idx, _ = filtered[cur]
@@ -406,10 +447,14 @@ def pick(stdscr, items, recommended=0):
             search = search[:-1]
             cur = 0
             scroll_offset = 0
+            right_scroll = 0
+            focus = "left"
         elif 32 <= key <= 126:
             search += chr(key)
             cur = 0
             scroll_offset = 0
+            right_scroll = 0
+            focus = "left"
 
 
 def pick_fallback(items, recommended=0):
