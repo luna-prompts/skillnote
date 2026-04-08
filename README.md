@@ -274,7 +274,7 @@ MIT &copy; [Luna Prompts](https://github.com/luna-prompts)
   <br />
   <a href="https://github.com/luna-prompts/skillnote"><img src="https://img.shields.io/github/stars/luna-prompts/skillnote?style=for-the-badge&logo=github&label=Star%20on%20GitHub" alt="Star on GitHub" /></a>
   <br /><br />
-  Built with <code>&#9829;</code> by <a href="https://github.com/luna-prompts"><strong>Luna Prompts</strong></a>
+  Built with ❤️ by <a href="https://github.com/luna-prompts"><strong>Luna Prompts</strong></a>
   <br />
   <sub>If SkillNote helps your workflow, a star goes a long way.</sub>
 </p>
