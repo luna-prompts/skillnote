@@ -216,6 +216,44 @@ def get_timeline(
     return result
 
 
+@router.post("/ratings", status_code=201)
+def submit_rating(
+    payload: dict,
+    db: Session = Depends(get_db),
+):
+    """Submit a skill rating (1-5) with optional outcome text."""
+    import uuid
+    slug = payload.get("skill_slug", "")
+    rating = payload.get("rating")
+    outcome = payload.get("outcome", "")
+    agent = payload.get("agent_name", "claude-code")
+    version = payload.get("skill_version", "1")
+    session_id = payload.get("session_id", "")
+
+    if not slug or not rating or not isinstance(rating, int) or rating < 1 or rating > 5:
+        from app.core.errors import api_error
+        raise api_error(422, "INVALID_RATING", "skill_slug and rating (1-5) are required")
+
+    db.execute(
+        text(
+            "INSERT INTO skill_ratings "
+            "(id, skill_slug, skill_version, rating, outcome, agent_name, session_id) "
+            "VALUES (:id, :slug, :ver, :rating, :outcome, :agent, :session)"
+        ),
+        {
+            "id": str(uuid.uuid4()),
+            "slug": slug,
+            "ver": version,
+            "rating": rating,
+            "outcome": outcome[:500] if outcome else "",
+            "agent": agent[:128],
+            "session": session_id[:256],
+        },
+    )
+    db.commit()
+    return {"status": "accepted", "skill_slug": slug, "rating": rating}
+
+
 @router.get("/ratings")
 def get_ratings(
     db: Session = Depends(get_db),
