@@ -232,13 +232,18 @@ def pick(stdscr, items, recommended=0):
             row += 1
 
             # ═══ SEPARATOR: stats + column split ═══
+            # Build: ├─ + stats + ─fill + ┬ + ─fill + ┤ = bw total
             stats = f" ● {total_skills} skills · {len(items)} collections "
-            left_fill = max(0, left_w - len(stats) - 2)
-            right_fill = right_w - 1
-            sep = "├─" + stats + "─" * left_fill + "┬" + "─" * right_fill + "┤"
+            # Left part must be exactly left_w chars: ├ + (left_w - 1 chars)
+            left_inner = left_w - 1  # after ├
+            stats_and_fill = stats + "─" * max(0, left_inner - len(stats))
+            left_part = "├" + stats_and_fill[:left_inner]
+            # Right part: ┬ + ─ * (right_w - 1) + ┤ = right_w + 1
+            right_part = "┬" + "─" * max(0, right_w - 1) + "┤"
+            sep = left_part + right_part
             s(row, bx, sep[:bw], BORDER)
-            s(row, bx + 3, "●", GREEN)
-            s(row, bx + 5, f"{total_skills} skills · {len(items)} collections", DIM)
+            s(row, bx + 2, "●", GREEN)
+            s(row, bx + 4, f"{total_skills} skills · {len(items)} collections", DIM)
             row += 1
 
             # ═══ CONTENT: two columns ═══
