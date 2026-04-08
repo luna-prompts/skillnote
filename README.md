@@ -22,7 +22,7 @@
 <br />
 
 <p align="center">
-  <img src="docs/terminal/picker.png" width="680" alt="SkillNote collection picker in Claude Code terminal" />
+  <img src="docs/terminal/picker4.png" width="680" alt="SkillNote collection picker in Claude Code terminal" />
 </p>
 
 <p align="center">
