@@ -13,6 +13,7 @@ from app.db.models import Skill, SkillVersion, SkillContentVersion
 from app.db.session import get_db
 from app.schemas.skill import SkillListItem, SkillDetail, SkillCreate, SkillUpdate
 from app.schemas.version import SkillVersionItem, ContentVersionItem
+from app.validators.skill_validator import validate_collection_skill_count
 
 router = APIRouter(prefix="/v1/skills", tags=["skills"])
 
@@ -289,6 +290,12 @@ def create_skill(
     if existing:
         raise api_error(409, "SKILL_SLUG_EXISTS", f"Slug '{payload.slug}' already exists")
 
+    # Check collection skill-count limits
+    for col_name in (payload.collections or []):
+        err = validate_collection_skill_count(db, col_name)
+        if err:
+            raise api_error(422, "COLLECTION_LIMIT_REACHED", err)
+
     skill = Skill(
         id=uuid_lib.uuid4(),
         name=payload.name,
@@ -346,6 +353,13 @@ def update_skill(
     if payload.content_md is not None:
         skill_row.content_md = payload.content_md
     if payload.collections is not None:
+        # Check collection skill-count limits for any newly added collections
+        current_collections = set(skill_row.collections or [])
+        for col_name in payload.collections:
+            if col_name not in current_collections:
+                err = validate_collection_skill_count(db, col_name, exclude_skill_id=skill_row.id)
+                if err:
+                    raise api_error(422, "COLLECTION_LIMIT_REACHED", err)
         skill_row.collections = payload.collections
     if payload.extra_frontmatter is not None:
         skill_row.extra_frontmatter = payload.extra_frontmatter

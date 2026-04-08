@@ -75,7 +75,7 @@ export default function SettingsPage() {
     setSettings(prev => ({ ...prev, ...patch }))
     try {
       await updateSettings(patch)
-      toast.success('Setting updated — MCP clients will refresh automatically')
+      toast.success('Setting updated — connected agents will refresh automatically')
     } catch {
       // Revert all changes
       const revert: Record<string, string> = {}
@@ -108,7 +108,7 @@ export default function SettingsPage() {
           {/* MCP Tools */}
           {loaded && (
             <section className="mb-10">
-              <h2 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-4">MCP Tools</h2>
+              <h2 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-4">Agent Tools</h2>
 
               {/* Info box */}
               <div className="flex gap-3 p-3.5 rounded-lg bg-muted/50 border border-border mb-6">
@@ -122,7 +122,7 @@ export default function SettingsPage() {
                     <li>Spot underperforming skills that need revision</li>
                     <li>Track adoption trends across agents and versions on the Analytics page</li>
                   </ul>
-                  <p>Changes take effect immediately for all connected MCP clients.</p>
+                  <p>Changes take effect immediately for all connected agents.</p>
                 </div>
               </div>
 
@@ -180,7 +180,7 @@ export default function SettingsPage() {
       <ConfirmDialog
         open={confirmDisable}
         title="Disable Skill Completion Tracking?"
-        message="This will remove the complete_skill tool from all connected MCP clients immediately. Agents will no longer be able to rate skills after use. You can re-enable it at any time."
+        message="This will remove the complete_skill tool from all connected agents immediately. Agents will no longer be able to rate skills after use. You can re-enable it at any time."
         onConfirm={() => { setConfirmDisable(false); update('complete_skill_enabled', false) }}
         onCancel={() => setConfirmDisable(false)}
       />

@@ -4,22 +4,21 @@ import { Button } from '@/components/ui/button'
 import { X, Check, Copy, Terminal } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-type Agent = 'claude-code' | 'openclaw' | 'cursor'
 type OS = 'unix' | 'windows'
 
-const AGENTS: { id: Agent; label: string; dir: (slug: string) => string }[] = [
-  { id: 'claude-code', label: 'Claude Code', dir: (s) => `.claude/skills/${s}` },
-  { id: 'openclaw', label: 'OpenClaw', dir: (s) => `.openclaw/skills/${s}` },
-  { id: 'cursor', label: 'Cursor', dir: (s) => `.cursor/skills/${s}` },
-]
+const AGENT = {
+  id: 'claude-code',
+  label: 'Claude Code',
+  dir: (s: string) => `.claude/skills/skillnote-${s}`,
+}
 
 const OS_TABS: { id: OS; label: string }[] = [
   { id: 'unix', label: 'macOS / Linux' },
   { id: 'windows', label: 'Windows' },
 ]
 
-function buildCommand(agent: (typeof AGENTS)[number], slug: string, os: OS, apiBase: string): string {
-  const relDir = agent.dir(slug)
+function buildCommand(slug: string, os: OS, apiBase: string): string {
+  const relDir = AGENT.dir(slug)
 
   if (os === 'windows') {
     const winDir = relDir.replace(/\//g, '\\')
@@ -32,8 +31,8 @@ function buildCommand(agent: (typeof AGENTS)[number], slug: string, os: OS, apiB
   return `mkdir -p ${dest} && curl -sL ${apiBase}/v1/skills/${slug}/raw -o ${dest}/SKILL.md`
 }
 
-function displayPath(agent: (typeof AGENTS)[number], slug: string, os: OS): string {
-  const relDir = agent.dir(slug)
+function displayPath(slug: string, os: OS): string {
+  const relDir = AGENT.dir(slug)
   if (os === 'windows') {
     return `%USERPROFILE%\\${relDir.replace(/\//g, '\\')}\\SKILL.md`
   }
@@ -41,13 +40,11 @@ function displayPath(agent: (typeof AGENTS)[number], slug: string, os: OS): stri
 }
 
 export function InstallDialog({ slug, onClose }: { slug: string; onClose: () => void }) {
-  const [selectedAgent, setSelectedAgent] = useState<Agent>('claude-code')
   const [selectedOS, setSelectedOS] = useState<OS>('unix')
   const [copied, setCopied] = useState(false)
 
-  const agent = AGENTS.find(a => a.id === selectedAgent)!
   const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8082'
-  const command = buildCommand(agent, slug, selectedOS, apiBase)
+  const command = buildCommand(slug, selectedOS, apiBase)
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(command)
@@ -62,36 +59,15 @@ export function InstallDialog({ slug, onClose }: { slug: string; onClose: () => 
         <div className="flex items-center justify-between px-5 py-4 border-b border-border/60">
           <div className="flex items-center gap-2.5">
             <Terminal className="h-4 w-4 text-muted-foreground" />
-            <h3 className="text-sm font-semibold text-foreground">Install Skill</h3>
+            <h3 className="text-sm font-semibold text-foreground">Install to Claude Code</h3>
           </div>
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted/50" aria-label="Close">
             <X className="h-4 w-4" />
           </button>
         </div>
 
-        {/* Agent tabs */}
-        <div className="px-5 pt-4 pb-3">
-          <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground/60 font-medium mb-2.5">Select your agent</p>
-          <div className="flex gap-1.5">
-            {AGENTS.map(a => (
-              <button
-                key={a.id}
-                onClick={() => { setSelectedAgent(a.id); setCopied(false) }}
-                className={cn(
-                  'px-3 py-1.5 rounded-md text-[13px] font-medium transition-colors',
-                  selectedAgent === a.id
-                    ? 'bg-accent/10 text-accent border border-accent/20'
-                    : 'text-muted-foreground hover:bg-muted/60 border border-transparent'
-                )}
-              >
-                {a.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
         {/* OS tabs + Command */}
-        <div className="px-5 pb-4">
+        <div className="px-5 pt-4 pb-4">
           <div className="flex items-center justify-between mb-2">
             <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground/60 font-medium">Paste in your terminal</p>
             <div className="flex gap-1 bg-muted/40 rounded-md p-0.5">
@@ -133,7 +109,7 @@ export function InstallDialog({ slug, onClose }: { slug: string; onClose: () => 
         {/* Footer */}
         <div className="px-5 py-3 border-t border-border/60 bg-muted/20 flex items-center justify-between">
           <p className="text-[11px] text-muted-foreground/50">
-            Installs to <code className="font-mono text-[10px]">{displayPath(agent, slug, selectedOS)}</code>
+            Installs to <code className="font-mono text-[10px]">{displayPath(slug, selectedOS)}</code>
           </p>
           <Button size="sm" className="h-8 text-[13px] gap-1.5" onClick={handleCopy}>
             {copied ? <><Check className="h-3.5 w-3.5" /> Copied</> : <><Copy className="h-3.5 w-3.5" /> Copy Command</>}

@@ -113,7 +113,7 @@ function PickContent() {
           </div>
           <p className="text-[15px] font-semibold text-foreground mb-1">No Session</p>
           <p className="text-[13px] text-muted-foreground/60">
-            Open this page from Claude Code using <span className="font-mono text-[12px] text-foreground/70">/skillnote:collection</span>
+            The collection picker appears when you run <span className="font-mono text-[12px] text-foreground/70">claude</span>. You can also browse collections here.
           </p>
         </div>
       </div>

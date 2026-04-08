@@ -105,7 +105,7 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
                 )}
               >
                 <Plug2 className={cn('h-[15px] w-[15px] shrink-0', isActive ? 'text-accent' : '')} />
-                MCP Integrations
+                Connect
               </Link>
             )
           })()}

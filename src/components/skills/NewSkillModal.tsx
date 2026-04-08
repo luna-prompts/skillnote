@@ -1,12 +1,14 @@
 'use client'
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useMemo } from 'react'
 import { Plus, X, BookOpen, Loader2, AlertCircle, Info } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { createSkill } from '@/lib/skills-store'
+import { createSkill, getSkills } from '@/lib/skills-store'
 import { validateSkillName, validateDescription, validateCollections, normalizeSkillName, NAME_MAX, DESC_MAX, type ValidationError } from '@/lib/skill-validation'
 import { CollectionPicker } from '@/components/collections/CollectionPicker'
 import { toast } from 'sonner'
 import { useRouter } from 'next/navigation'
+
+const MAX_SKILLS_PER_COLLECTION = 15
 
 type NewSkillModalProps = {
   onClose: () => void
@@ -43,6 +45,19 @@ export function NewSkillModal({ onClose, collections }: NewSkillModalProps) {
   const [saving, setSaving] = useState(false)
   const [touched, setTouched] = useState<Record<string, boolean>>({})
   const router = useRouter()
+
+  // Track collection skill counts for limit warnings
+  const collectionCounts = useMemo(() => {
+    const skills = getSkills()
+    const counts: Record<string, number> = {}
+    for (const s of skills) {
+      for (const c of s.collections || []) {
+        counts[c] = (counts[c] || 0) + 1
+      }
+    }
+    return counts
+  }, [])
+  const fullCollections = selectedCollections.filter(c => (collectionCounts[c] || 0) >= MAX_SKILLS_PER_COLLECTION)
 
   useEffect(() => {
     const handler = (e: globalThis.KeyboardEvent) => { if (e.key === 'Escape') onClose() }
@@ -164,6 +179,22 @@ export function NewSkillModal({ onClose, collections }: NewSkillModalProps) {
             {collectionErrors.length > 0 && (
               <p className="text-[12px] text-destructive mt-1">{collectionErrors[0].message}</p>
             )}
+            {fullCollections.length > 0 && (
+              <div className="mt-2 flex items-start gap-1.5 p-2 bg-red-500/5 border border-red-500/10 rounded-lg">
+                <AlertCircle className="h-3 w-3 text-red-500 mt-0.5 shrink-0" />
+                <p className="text-[10px] text-red-600 dark:text-red-400 leading-relaxed">
+                  {fullCollections.length === 1
+                    ? `"${fullCollections[0]}" has reached the 15-skill limit. Remove a skill before adding a new one.`
+                    : `${fullCollections.map(c => `"${c}"`).join(', ')} have reached the 15-skill limit. Remove skills before adding a new one.`}
+                </p>
+              </div>
+            )}
+            <div className="mt-1.5 flex items-start gap-1.5 p-2 bg-blue-500/5 border border-blue-500/10 rounded-lg">
+              <Info className="h-3 w-3 text-blue-500 mt-0.5 shrink-0" />
+              <p className="text-[10px] text-blue-600 dark:text-blue-400 leading-relaxed">
+                Collections are required. They control which skills load into Claude&apos;s context. Keep collections under 15 skills for best Claude Code performance.
+              </p>
+            </div>
           </div>
         </div>
 
@@ -172,7 +203,7 @@ export function NewSkillModal({ onClose, collections }: NewSkillModalProps) {
           <Button
             size="sm"
             className="h-8 text-[13px] gap-1.5 bg-foreground text-background hover:bg-foreground/90"
-            disabled={!isValid || saving}
+            disabled={!isValid || saving || fullCollections.length > 0}
             onClick={handleSubmit}
           >
             {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}

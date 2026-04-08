@@ -341,7 +341,7 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
                 </button>
                 <div className="flex items-center gap-1.5">
                   <FolderOpen className="h-3 w-3 text-muted-foreground/40 shrink-0" />
-                  <code className="font-mono text-[11px] text-muted-foreground/50 tracking-wide">{skill.slug}/SKILL.md</code>
+                  <code className="font-mono text-[11px] text-muted-foreground/50 tracking-wide">skillnote-{skill.slug}/SKILL.md</code>
                 </div>
               </div>
               <div className="flex items-center gap-1.5">

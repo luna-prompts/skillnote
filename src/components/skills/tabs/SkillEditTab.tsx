@@ -1,11 +1,14 @@
 'use client'
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { RotateCcw, Save, Loader2, X, AlertCircle, ArrowRight, ChevronDown } from 'lucide-react'
 import { NAME_MAX, DESC_MAX, slugFromName, normalizeSkillName, validateSkillName, validateDescription, validateCollections } from '@/lib/skill-validation'
 import { Button } from '@/components/ui/button'
 import { WysiwygEditor, type EditorMode } from '@/components/skills/WysiwygEditor'
 import { FieldError } from '@/components/skills/FieldError'
 import { CollectionPicker } from '@/components/collections/CollectionPicker'
+import { getSkills } from '@/lib/skills-store'
+
+const MAX_SKILLS_PER_COLLECTION = 15
 
 type SkillEditTabProps = {
   editorContent: string
@@ -82,6 +85,20 @@ export function SkillEditTab({
     window.addEventListener('keydown', handleKey, true)
     return () => window.removeEventListener('keydown', handleKey, true)
   }, [fullscreen, onCancel])
+
+  // Track collection skill counts for limit warnings
+  const collectionCounts = useMemo(() => {
+    const skills = getSkills()
+    const counts: Record<string, number> = {}
+    for (const s of skills) {
+      if (s.slug === skillSlug) continue // exclude the skill being edited
+      for (const c of s.collections || []) {
+        counts[c] = (counts[c] || 0) + 1
+      }
+    }
+    return counts
+  }, [skillSlug])
+  const fullCollections = skillCollections.filter(c => (collectionCounts[c] || 0) >= MAX_SKILLS_PER_COLLECTION)
 
   const nameErrors = touched.name ? validateSkillName(skillTitle) : []
   const descErrors = touched.description ? validateDescription(skillDescription) : []
@@ -235,7 +252,7 @@ export function SkillEditTab({
       </div>
       <div className="flex items-center gap-3 mb-1">
         {previewSlug && (
-          <code className="text-[11px] font-mono text-muted-foreground/50">{previewSlug}/SKILL.md</code>
+          <code className="text-[11px] font-mono text-muted-foreground/50">skillnote-{previewSlug}/SKILL.md</code>
         )}
         <span className={`text-[10px] tabular-nums ${skillTitle.length > NAME_MAX * 0.9 ? 'text-destructive' : 'text-muted-foreground/40'}`}>
           {skillTitle.length}/{NAME_MAX}
@@ -291,6 +308,16 @@ export function SkillEditTab({
           />
           {collectionErrors.length > 0 && (
             <p className="text-[12px] text-destructive mt-1.5">{collectionErrors[0].message}</p>
+          )}
+          {fullCollections.length > 0 && (
+            <div className="mt-2 flex items-start gap-1.5 p-2 bg-red-500/5 border border-red-500/10 rounded-lg">
+              <AlertCircle className="h-3 w-3 text-red-500 mt-0.5 shrink-0" />
+              <p className="text-[10px] text-red-600 dark:text-red-400 leading-relaxed">
+                {fullCollections.length === 1
+                  ? `"${fullCollections[0]}" has reached the 15-skill limit. Remove a skill before adding a new one.`
+                  : `${fullCollections.map(c => `"${c}"`).join(', ')} have reached the 15-skill limit. Remove skills before adding a new one.`}
+              </p>
+            </div>
           )}
           <p className="text-[11px] text-muted-foreground/50 mt-1">Collections organize skills and control which sync per project. Keep 12-15 per collection.</p>
         </div>

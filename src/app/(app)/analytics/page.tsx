@@ -339,7 +339,7 @@ function LeaderboardEmpty() {
 ──┴──`
       }</pre>
       <p className="text-[12px] text-muted-foreground/50 max-w-[220px]">
-        Skills get tracked here once your first MCP tool call fires.
+        Skills get tracked here once your first skill invocation fires.
       </p>
       <code className="text-[10px] font-mono text-muted-foreground/30 bg-muted/20 rounded px-2 py-1">
         Use any skill via Claude Code → calls appear here
@@ -999,7 +999,7 @@ function AnalyticsContent() {
                 <div className="relative group/tip ml-1">
                   <Info className="h-3 w-3 text-muted-foreground/40 cursor-help" />
                   <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-64 px-3 py-2 rounded-lg bg-popover border border-border shadow-lg text-[11px] text-muted-foreground leading-relaxed opacity-0 pointer-events-none group-hover/tip:opacity-100 group-hover/tip:pointer-events-auto transition-opacity z-50">
-                    Ratings are provided by AI agents (Claude Code, Cursor, Codex, etc.) after they use a skill via MCP. The completion rate shows how often agents rate a skill after calling it.
+                    Ratings are provided by AI agents (Claude Code, Cursor, Codex, etc.) after they use a skill. The completion rate shows how often agents rate a skill after calling it.
                   </div>
                 </div>
                 {!loading && topSkills.length > 0 && (
@@ -1017,7 +1017,7 @@ function AnalyticsContent() {
                 <div className="flex flex-col items-center gap-2 py-10 text-center px-4">
                   <Award className="h-7 w-7 text-muted-foreground/20" />
                   <p className="text-[13px] text-muted-foreground/50">No skill data yet</p>
-                  <p className="text-[11px] text-muted-foreground/30">Skills appear here once agents start calling them via MCP</p>
+                  <p className="text-[11px] text-muted-foreground/30">Skills appear here once agents start calling them</p>
                 </div>
               ) : (
                 <div className="overflow-x-auto">
@@ -1033,7 +1033,7 @@ function AnalyticsContent() {
                             <span className="relative group/rtip">
                               <Info className="h-2.5 w-2.5 text-muted-foreground/30 cursor-help" />
                               <span className="absolute right-0 bottom-full mb-1.5 w-48 px-2 py-1.5 rounded bg-popover border border-border shadow-lg text-[10px] text-muted-foreground leading-snug opacity-0 pointer-events-none group-hover/rtip:opacity-100 group-hover/rtip:pointer-events-auto transition-opacity z-50 normal-case tracking-normal font-normal">
-                                Average rating (1-5) given by MCP agents after using this skill
+                                Average rating (1-5) given by AI agents after using this skill
                               </span>
                             </span>
                           </span>
@@ -1132,7 +1132,7 @@ function AnalyticsContent() {
                                         <span className="relative group/rvtip">
                                           <Info className="h-2.5 w-2.5 text-muted-foreground/30 cursor-help" />
                                           <span className="absolute left-0 bottom-full mb-1.5 w-52 px-2 py-1.5 rounded bg-popover border border-border shadow-lg text-[10px] text-muted-foreground leading-snug opacity-0 pointer-events-none group-hover/rvtip:opacity-100 group-hover/rvtip:pointer-events-auto transition-opacity z-50 normal-case tracking-normal font-normal">
-                                            These reviews are submitted by AI agents (via MCP) after they apply the skill and see the results
+                                            These reviews are submitted by AI agents after they apply the skill and see the results
                                           </span>
                                         </span>
                                       </p>
@@ -1236,7 +1236,7 @@ function AnalyticsContent() {
                   <Star className="h-7 w-7 text-muted-foreground/20" />
                   <p className="text-[13px] text-muted-foreground/50">No ratings yet</p>
                   <p className="text-[11px] text-muted-foreground/30 max-w-[200px]">
-                    Agents rate skills after using them via the MCP complete_skill tool
+                    Agents rate skills after using them via the complete_skill tool
                   </p>
                 </div>
               ) : (
