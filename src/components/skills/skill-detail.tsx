@@ -201,8 +201,10 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
 
   // Fetch rating detail + reviews on mount
   useEffect(() => {
-    fetchSkillRatingDetail(skill.slug).then(setRatingDetail).catch(() => {})
-    fetchSkillReviews(skill.slug).then(setReviews).catch(() => {})
+    let cancelled = false
+    fetchSkillRatingDetail(skill.slug).then(d => { if (!cancelled) setRatingDetail(d) }).catch(() => {})
+    fetchSkillReviews(skill.slug).then(d => { if (!cancelled) setReviews(d) }).catch(() => {})
+    return () => { cancelled = true }
   }, [skill.slug])
 
   const [showHelp, setShowHelp] = useState(false)
@@ -242,7 +244,7 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
       setSaveToast(false)
       toast.error('Failed to save')
     }
-  }, [skill.slug, titleValue, descriptionValue, editorContent, onSkillUpdated, router])
+  }, [skill.slug, titleValue, descriptionValue, editorContent, collectionsValue, extraFrontmatterValue, onSkillUpdated, router])
 
   const handleCancel = useCallback(() => {
     setActiveTab('view')

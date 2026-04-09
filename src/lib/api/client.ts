@@ -24,7 +24,9 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}): Promi
   const headers = new Headers(init.headers || {})
   if (!headers.has('Content-Type') && init.body) headers.set('Content-Type', 'application/json')
 
-  const res = await fetch(`${getApiBaseUrl()}${path}`, { ...init, headers })
+  // 15s timeout prevents UI from hanging if backend is unresponsive
+  const signal = init.signal || AbortSignal.timeout(15_000)
+  const res = await fetch(`${getApiBaseUrl()}${path}`, { ...init, headers, signal })
   if (!res.ok) {
     let code = `HTTP_${res.status}`
     let message = `HTTP ${res.status}`

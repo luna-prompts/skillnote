@@ -23,6 +23,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    restart: unless-stopped
 
   api:
     build: ./backend
@@ -49,6 +50,7 @@ services:
              alembic upgrade head &&
              python scripts/seed_data.py &&
              uvicorn app.main:app --host 0.0.0.0 --port 8080"
+    restart: unless-stopped
 
   mcp:
     build:
@@ -61,6 +63,13 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8083/status')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    restart: unless-stopped
 
   web:
     build:

@@ -217,7 +217,7 @@ export function SkillViewTab({ skill, onAddComment, ratingDetail, reviews: initi
       if (more.length < REVIEWS_PAGE_SIZE) setHasMore(false)
       setReviews(prev => [...prev, ...more])
     } catch {
-      setHasMore(false)
+      // Don't disable hasMore on transient errors — user can retry
     } finally {
       setLoadingMore(false)
     }

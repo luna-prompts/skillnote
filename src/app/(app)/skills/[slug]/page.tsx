@@ -22,12 +22,15 @@ export default function SkillPage({ params }: { params: Promise<{ slug: string }
 
   // Fetch full skill from API on mount
   useEffect(() => {
+    let cancelled = false
     fetchSkill(slug)
       .then(fullSkill => {
+        if (cancelled) return
         setSkill(fullSkill)
         updateSkill(slug, fullSkill)
       })
       .catch(() => {})
+    return () => { cancelled = true }
   }, [slug])
 
   // Called by SkillDetail after a successful save — update local state directly
