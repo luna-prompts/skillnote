@@ -558,9 +558,46 @@ def _clean_stale_global_skills():
         print("  ✦ SkillNote: cleaned stale global skills", file=sys.stderr)
 
 
+def _clean_orphan_project_skills():
+    """Remove skillnote-* dirs not belonging to the current collection.
+    Runs BEFORE claude starts so Claude Code never sees stale skills."""
+    import shutil
+    config = CONFIG_PATH
+    if not os.path.isfile(config):
+        return
+    try:
+        with open(config) as f:
+            cols = json.load(f).get("collections", [])
+    except Exception:
+        return
+    if not cols:
+        return
+    # Fetch expected skills from API
+    host = _get_host()
+    try:
+        encoded = urllib.request.quote(",".join(cols)) if cols != ["*"] and cols != "*" else ""
+        url = f"http://{host}:8082/v1/skills" + (f"?collections={encoded}" if encoded else "")
+        data = json.loads(urllib.request.urlopen(url, timeout=3).read())
+        expected = {f"skillnote-{s['slug']}" for s in data if s.get('slug') not in ('skill-push', 'collection')}
+    except Exception:
+        return  # offline — don't clean, sync will handle it
+    sd = os.path.join(PROJECT_DIR, ".claude", "skills")
+    if not os.path.isdir(sd):
+        return
+    for entry in os.listdir(sd):
+        if entry.startswith("skillnote-") and entry not in expected:
+            p = os.path.join(sd, entry)
+            if os.path.isdir(p):
+                try:
+                    shutil.rmtree(p)
+                except Exception:
+                    pass
+
+
 def main():
-    # Always clean global skills on launch (they belong in project dir now)
+    # Always clean stale skills BEFORE claude starts
     _clean_stale_global_skills()
+    _clean_orphan_project_skills()
     if not os.isatty(0) or not os.isatty(1):
         return
     host, collections = fetch_collections()
