@@ -132,10 +132,21 @@ BUILD_PID=$!
 progress $BUILD_PID "Building api, mcp, web..."
 if ! wait $BUILD_PID; then
   echo ""
-  echo -e "${RED}Build failed. Last 10 lines:${NC}"
-  tail -10 "$BUILD_LOG"
-  rm -f "$BUILD_LOG"
-  err "Build failed. Run: $COMPOSE -f docker-compose.yml build"
+  warn "Build failed — retrying without cache..."
+  SKILLNOTE_HOST="$SKILLNOTE_HOST" \
+  SKILLNOTE_API_PORT="$API_PORT" \
+  SKILLNOTE_MCP_PORT="$MCP_PORT" \
+  SKILLNOTE_WEB_PORT="$WEB_PORT" \
+    compose build --no-cache > "$BUILD_LOG" 2>&1 &
+  BUILD_PID=$!
+  progress $BUILD_PID "Rebuilding from scratch..."
+  if ! wait $BUILD_PID; then
+    echo ""
+    echo -e "${RED}Build failed. Last 10 lines:${NC}"
+    tail -10 "$BUILD_LOG"
+    rm -f "$BUILD_LOG"
+    err "Build failed. Run: $COMPOSE -f docker-compose.yml build --no-cache"
+  fi
 fi
 rm -f "$BUILD_LOG"
 ok "Images built"
