@@ -473,8 +473,8 @@ python3 -c "
 import json, sys
 d = json.load(open('$PLUGIN_DIR/hooks/hooks.json'))
 m = d['hooks']['SessionStart'][0].get('matcher', '')
-if 'compact' not in m: sys.exit(1)
-" 2>/dev/null && pass "SessionStart matcher includes compact" || fail "matcher" "missing compact"
+if 'compact' not in m or 'resume' not in m: sys.exit(1)
+" 2>/dev/null && pass "SessionStart matcher includes compact and resume" || fail "matcher" "missing compact or resume"
 
 # 12.4 First run creates timestamp
 rm -f "$AS_DATA/.last-sync-time"
