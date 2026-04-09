@@ -2,6 +2,7 @@ from datetime import date, timedelta, timezone, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -216,23 +217,51 @@ def get_timeline(
     return result
 
 
+class RatingPayload(BaseModel):
+    """Validated rating submission."""
+    skill_slug: str = Field(..., max_length=128)
+    rating: int = Field(..., ge=1, le=5)
+    outcome: str = Field(default="", max_length=500)
+    agent_name: str = Field(default="claude-code", max_length=128)
+    skill_version: int = Field(default=1, ge=0)
+    session_id: str = Field(default="", max_length=256)
+
+
 @router.post("/ratings", status_code=201)
 def submit_rating(
-    payload: dict,
+    payload: RatingPayload,
     db: Session = Depends(get_db),
 ):
     """Submit a skill rating (1-5) with optional outcome text."""
     import uuid
-    slug = payload.get("skill_slug", "")
-    rating = payload.get("rating")
-    outcome = payload.get("outcome", "")
-    agent = payload.get("agent_name", "claude-code")
-    version = payload.get("skill_version", "1")
-    session_id = payload.get("session_id", "")
 
-    if not slug or not rating or not isinstance(rating, int) or rating < 1 or rating > 5:
-        from app.core.errors import api_error
-        raise api_error(422, "INVALID_RATING", "skill_slug and rating (1-5) are required")
+    # Deduplicate: one rating per (skill, session, agent) combo
+    if payload.session_id:
+        existing = db.execute(
+            text(
+                "SELECT id FROM skill_ratings "
+                "WHERE skill_slug = :slug AND session_id = :session AND agent_name = :agent "
+                "LIMIT 1"
+            ),
+            {"slug": payload.skill_slug, "session": payload.session_id, "agent": payload.agent_name},
+        ).first()
+        if existing:
+            # Update existing rating instead of creating duplicate
+            db.execute(
+                text(
+                    "UPDATE skill_ratings SET rating = :rating, outcome = :outcome, "
+                    "skill_version = :ver, created_at = NOW() "
+                    "WHERE id = :id"
+                ),
+                {
+                    "id": existing[0],
+                    "rating": payload.rating,
+                    "outcome": payload.outcome,
+                    "ver": payload.skill_version,
+                },
+            )
+            db.commit()
+            return {"status": "accepted", "skill_slug": payload.skill_slug, "rating": payload.rating}
 
     db.execute(
         text(
@@ -242,16 +271,16 @@ def submit_rating(
         ),
         {
             "id": str(uuid.uuid4()),
-            "slug": slug,
-            "ver": version,
-            "rating": rating,
-            "outcome": outcome[:500] if outcome else "",
-            "agent": agent[:128],
-            "session": session_id[:256],
+            "slug": payload.skill_slug,
+            "ver": payload.skill_version,
+            "rating": payload.rating,
+            "outcome": payload.outcome,
+            "agent": payload.agent_name,
+            "session": payload.session_id,
         },
     )
     db.commit()
-    return {"status": "accepted", "skill_slug": slug, "rating": rating}
+    return {"status": "accepted", "skill_slug": payload.skill_slug, "rating": payload.rating}
 
 
 @router.get("/ratings")

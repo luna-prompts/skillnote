@@ -86,7 +86,7 @@ def session_eval(payload: SessionEvalPayload, db: Session = Depends(get_db)):
         text(
             "INSERT INTO skill_call_events "
             "(id, skill_slug, event_type, agent_name, agent_version, session_id, collection_scope, remote_ip) "
-            "VALUES (:id, :slug, 'eval', 'plugin-hook', '', :session, NULL, :eval)"
+            "VALUES (:id, :slug, 'eval', :eval, '', :session, NULL, 'plugin-hook')"
         ),
         {
             "id": str(uuid.uuid4()),
