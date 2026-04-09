@@ -42,8 +42,8 @@
         "matcher": "Skill",
         "hooks": [
           {
-            "type": "http",
-            "url": "http://${CLAUDE_PLUGIN_OPTION_HOST:-localhost}:8082/v1/hooks/skill-used",
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks-handlers/track-usage.sh",
             "async": true
           },
           {

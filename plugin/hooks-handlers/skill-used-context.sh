@@ -18,8 +18,8 @@ except:
     pass
 " 2>/dev/null)
 
-# Only for skillnote- prefixed skills
-if [ -n "$SKILL_NAME" ] && echo "$SKILL_NAME" | grep -q "^skillnote-"; then
+# Show context for any skill (with or without skillnote- prefix)
+if [ -n "$SKILL_NAME" ]; then
     PROJECT_DIR="${CLAUDE_PROJECT_DIR:-.}"
     COL=""
     if [ -f "$PROJECT_DIR/.skillnote.json" ]; then

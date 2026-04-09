@@ -128,8 +128,8 @@ if 'PostToolUse' not in hooks: sys.exit(1)
 ptu = hooks['PostToolUse']
 if not ptu or ptu[0].get('matcher') != 'Skill': sys.exit(1)
 h = ptu[0]['hooks'][0]
-if h.get('type') != 'http': sys.exit(1)
-if 'skill-used' not in h.get('url', ''): sys.exit(1)
+if h.get('type') != 'command': sys.exit(1)
+if 'track-usage' not in h.get('command', ''): sys.exit(1)
 if h.get('async') is not True: sys.exit(1)
 " 2>/dev/null && pass "PostToolUse[Skill] hook configured (async)" || fail "PostToolUse hook" "missing or wrong"
 
