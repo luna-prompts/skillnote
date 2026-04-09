@@ -12,15 +12,19 @@ router = APIRouter(prefix="/v1/hooks", tags=["hooks"])
 
 
 class SkillUsedPayload(BaseModel):
-    """Accepts both direct POST and Claude Code HTTP hook format."""
+    """Accepts both direct POST and Claude Code HTTP hook format.
+    Claude Code sends camelCase (toolName, toolInput, hookEventName, sessionId).
+    We also accept snake_case for direct API calls."""
+    model_config = {"populate_by_name": True}
+
     # Direct format
     skill_slug: Optional[str] = Field(default=None, max_length=128)
-    agent_name: str = Field(default="claude-code", max_length=128)
-    session_id: Optional[str] = Field(default="", max_length=256)
-    # HTTP hook format (PostToolUse event)
-    tool_name: Optional[str] = None
-    tool_input: Optional[dict] = None
-    hook_event_name: Optional[str] = None
+    agent_name: str = Field(default="claude-code", max_length=128, alias="agentName")
+    session_id: Optional[str] = Field(default="", max_length=256, alias="sessionId")
+    # HTTP hook format (PostToolUse event) — camelCase from Claude Code
+    tool_name: Optional[str] = Field(default=None, alias="toolName")
+    tool_input: Optional[dict] = Field(default=None, alias="toolInput")
+    hook_event_name: Optional[str] = Field(default=None, alias="hookEventName")
 
 
 class SessionEvalPayload(BaseModel):
@@ -46,6 +50,10 @@ def skill_used(payload: SkillUsedPayload, db: Session = Depends(get_db)):
 
     if not slug:
         return {"status": "ignored", "reason": "no skill identified"}
+
+    # Normalize: strip skillnote- prefix so it matches the registry slug
+    if slug.startswith("skillnote-"):
+        slug = slug[len("skillnote-"):]
 
     # Extract session_id from HTTP hook format
     if not session and payload.hook_event_name:
