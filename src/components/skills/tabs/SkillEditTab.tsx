@@ -141,7 +141,7 @@ export function SkillEditTab({
     } else {
       onSave()
     }
-  }, [skillTitle, skillDescription, mode, currentVersion, onSave])
+  }, [skillTitle, skillDescription, skillCollections, mode, currentVersion, onSave])
 
   const confirmSave = useCallback(() => {
     setShowSaveConfirm(false)

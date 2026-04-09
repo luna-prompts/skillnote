@@ -138,13 +138,16 @@ export async function deleteSkillById(slug: string): Promise<void> {
 export async function saveSkillEdit(slug: string, patch: { title?: string; description?: string; content_md?: string; collections?: string[]; extra_frontmatter?: string }): Promise<Skill> {
   let apiVersion: number | null = null
   let newSlug: string | null = null
+  let apiError: Error | null = null
   try {
     const apiSkill = await updateSkillApi(slug, { name: patch.title, description: patch.description, content_md: patch.content_md, collections: patch.collections, extra_frontmatter: patch.extra_frontmatter })
     apiVersion = apiSkill.current_version
     if (apiSkill.slug !== slug) {
       newSlug = apiSkill.slug
     }
-  } catch {}
+  } catch (err) {
+    apiError = err instanceof Error ? err : new Error('API save failed')
+  }
 
   // Use the backend's version if available, otherwise increment locally
   const existing = getSkills().find(s => s.slug === slug)
@@ -167,5 +170,10 @@ export async function saveSkillEdit(slug: string, patch: { title?: string; descr
   const lookupSlug = newSlug ?? slug
   const updated = getSkills().find(s => s.slug === lookupSlug)
   if (!updated) throw new Error('Skill not found after save')
+
+  // Attach api save status so caller can show appropriate feedback
+  if (apiError) {
+    (updated as Skill & { _savedLocally?: boolean })._savedLocally = true
+  }
   return updated
 }

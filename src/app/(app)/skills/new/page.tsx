@@ -78,7 +78,7 @@ function NewSkillContent() {
     } finally {
       setSaving(false)
     }
-  }, [name, description, content, collections, router])
+  }, [name, description, content, collections, extraFrontmatter, router])
 
   return (
     <SkillEditTab

@@ -44,7 +44,7 @@ export type SkillReview = {
   rating: number
   outcome: string | null
   agent_name: string
-  skill_version: number
+  skill_version: string
   created_at: string | null
 }
 

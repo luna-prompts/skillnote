@@ -236,6 +236,9 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
       setSaveToast('saved')
       setActiveTab('view')
       setTimeout(() => setSaveToast(false), 1500)
+      if ((updated as Record<string, unknown>)._savedLocally) {
+        toast.warning('Saved locally. Backend unreachable.')
+      }
       // Redirect if slug changed (e.g. skill was renamed)
       if (updated.slug !== skill.slug) {
         router.replace(`/skills/${updated.slug}`)
