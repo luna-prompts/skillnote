@@ -1,45 +1,74 @@
 #!/bin/bash
-# SkillNote PostToolUse[Skill] — confirm usage + prompt agent to rate
-# Async — does not block. Output goes to Claude as additionalContext.
+# SkillNote PostToolUse[Skill] — prompt Claude to rate the skill
+# Output JSON with hookSpecificOutput.additionalContext so Claude sees it.
+# Plain text stdout is shown to user only, NOT injected into Claude's context.
 
 INPUT=$(cat)
-# Extract skill name and session_id from PostToolUse JSON payload
-eval $(echo "$INPUT" | python3 -c "
-import json, sys
+
+# Extract and output as JSON — all in Python for safe string handling
+echo "$INPUT" | python3 -c "
+import json, sys, os, subprocess
+
 try:
     d = json.load(sys.stdin)
-    ti = d.get('tool_input', {})
-    name = ti.get('skill', '') or ti.get('name', '')
-    sid = d.get('session_id', '')
-    if name:
-        print(f'SKILL_NAME={name}')
-    if sid:
-        print(f'HOOK_SESSION_ID={sid}')
 except:
-    pass
-" 2>/dev/null)
+    sys.exit(0)
 
-# Only show context if we got an actual skill name from tool_input
-if [ -n "$SKILL_NAME" ]; then
-    PROJECT_DIR="${CLAUDE_PROJECT_DIR:-.}"
-    COL=""
-    if [ -f "$PROJECT_DIR/.skillnote.json" ]; then
-        COL=$(python3 -c "
-import json
+ti = d.get('tool_input', {})
+name = ti.get('skill', '') or ti.get('name', '')
+sid = d.get('session_id', 'unknown')
+
+if not name:
+    sys.exit(0)
+
+short = name.replace('skillnote-', '', 1) if name.startswith('skillnote-') else name
+
+# Resolve host
+script_dir = os.path.dirname(os.path.abspath('$0'))
 try:
-    c = json.load(open('${PROJECT_DIR}/.skillnote.json')).get('collections', [])
-    if c: print(c[0])
-except: pass
-" 2>/dev/null)
-    fi
+    host_script = os.path.join(os.path.dirname(os.path.realpath(__file__ if '__file__' in dir() else '.')), 'resolve-host.sh')
+except:
+    host_script = None
 
-    SHORT=$(echo "$SKILL_NAME" | sed 's/^skillnote-//')
+# Try resolve-host.sh, fall back to env var, fall back to host file
+host = os.environ.get('CLAUDE_PLUGIN_OPTION_HOST', '').strip()
+if not host:
+    hf = os.path.expanduser('~/.skillnote/host')
+    if os.path.isfile(hf):
+        try:
+            host = open(hf).read().strip()
+        except:
+            pass
+host = host or 'localhost'
 
-    if [ -n "$COL" ]; then
-        echo "Using $SKILL_NAME from $COL."
-    else
-        echo "Using $SKILL_NAME."
-    fi
-    RATING_HOST=$("$(cd "$(dirname "$0")" && pwd)/resolve-host.sh")
-    echo "After completing the task, rate this skill by running: curl -sf -X POST http://${RATING_HOST}:8082/v1/analytics/ratings -H 'Content-Type: application/json' -d '{\"skill_slug\":\"$SHORT\",\"rating\":<1-5>,\"outcome\":\"<what you did>\",\"agent_name\":\"claude-code\",\"session_id\":\"'\"${HOOK_SESSION_ID:-unknown}\"'\"}'"
-fi
+# Read collection
+project_dir = os.environ.get('CLAUDE_PROJECT_DIR', '.')
+col = ''
+config = os.path.join(project_dir, '.skillnote.json')
+if os.path.isfile(config):
+    try:
+        cols = json.load(open(config)).get('collections', [])
+        if cols:
+            col = cols[0]
+    except:
+        pass
+
+ctx_parts = []
+if col:
+    ctx_parts.append(f'Used {name} from {col}.')
+else:
+    ctx_parts.append(f'Used {name}.')
+
+rating_url = f'http://{host}:8082/v1/analytics/ratings'
+curl_cmd = f'curl -sf -X POST {rating_url} -H \"Content-Type: application/json\" -d \'{{\"skill_slug\":\"{short}\",\"rating\":<1-5>,\"outcome\":\"<what you did>\",\"agent_name\":\"claude-code\",\"session_id\":\"{sid}\"}}\''
+ctx_parts.append(f'After completing the task, rate this skill by running: {curl_cmd}')
+
+ctx = ' '.join(ctx_parts)
+
+print(json.dumps({
+    'hookSpecificOutput': {
+        'hookEventName': 'PostToolUse',
+        'additionalContext': ctx
+    }
+}))
+" 2>/dev/null
