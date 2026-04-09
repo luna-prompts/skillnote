@@ -3,6 +3,9 @@
 # Syncs skills from the SkillNote registry to PROJECT_DIR/.claude/skills/ with full frontmatter.
 # Manages create/update/delete via a manifest. Offline-first (silent fail).
 
+# Ensure Python outputs UTF-8 for box-drawing chars on any locale
+export PYTHONIOENCODING=utf-8
+
 # Resolve host
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 HOST=$("$SCRIPT_DIR/resolve-host.sh")

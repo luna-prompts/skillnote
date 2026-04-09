@@ -156,14 +156,19 @@ echo ""
 echo "  ★ github.com/luna-prompts/skillnote — Star us!"
 echo ""
 # ── shell wrapper (collection picker before claude) ───────────────────────────
-# Detect RC file from the user's actual shell, not just which files exist
+# Detect RC file from the user's actual shell
 SHELL_RC=""
-case "$(basename "$SHELL")" in
+case "$(basename "${SHELL:-/bin/sh}")" in
   zsh)  SHELL_RC="$HOME/.zshrc" ;;
-  bash) SHELL_RC="$HOME/.bashrc" ;;
-  *)    # Fallback: check which file exists
+  bash) # bash: prefer .bashrc, fall back to .bash_profile (macOS pre-Catalina)
         if [ -f "$HOME/.bashrc" ]; then SHELL_RC="$HOME/.bashrc"
-        elif [ -f "$HOME/.zshrc" ]; then SHELL_RC="$HOME/.zshrc"; fi ;;
+        elif [ -f "$HOME/.bash_profile" ]; then SHELL_RC="$HOME/.bash_profile"
+        else SHELL_RC="$HOME/.bashrc"; fi ;;
+  fish) SHELL_RC="$HOME/.config/fish/config.fish" ;;
+  *)    # Fallback: try common RC files in order
+        for rc in "$HOME/.bashrc" "$HOME/.bash_profile" "$HOME/.zshrc" "$HOME/.profile"; do
+            if [ -f "$rc" ]; then SHELL_RC="$rc"; break; fi
+        done ;;
 esac
 
 # ── install skillnote-pick to stable location ─────────────────────────────────
@@ -189,7 +194,21 @@ open(path, 'w').write(content)
 fi
 
 if [ -n "$SHELL_RC" ]; then
-    cat >> "$SHELL_RC" << WRAPEOF
+    case "$SHELL_RC" in
+      *config.fish)
+        cat >> "$SHELL_RC" << WRAPEOF
+
+# SkillNote: collection picker before launching claude
+function claude
+  if isatty stdin; and isatty stdout
+    "$PICKER_PATH"; or true
+  end
+  command claude \$argv
+end
+WRAPEOF
+        ;;
+      *)
+        cat >> "$SHELL_RC" << WRAPEOF
 
 # SkillNote: collection picker before launching claude
 claude() {
@@ -199,10 +218,12 @@ claude() {
   command claude "\$@"
 }
 WRAPEOF
+        ;;
+    esac
     echo "  Shell wrapper added to $SHELL_RC"
 else
-    echo "  Warning: No .zshrc or .bashrc found."
-    echo "  Collection picker won't auto-run. Run skillnote-pick manually."
+    echo "  Warning: Could not detect shell RC file."
+    echo "  Collection picker won't auto-run. Run skillnote-pick manually before claude."
 fi
 
 echo ""

@@ -6,6 +6,14 @@ import sys
 import time
 import urllib.request
 
+# Ensure UTF-8 output even if locale is C/POSIX
+if hasattr(sys.stdout, 'reconfigure'):
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
+
 try:
     import curses
     HAS_CURSES = True

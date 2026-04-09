@@ -52,8 +52,20 @@ fi
 # Detect LAN IP: Linux hostname -I, macOS ipconfig getifaddr
 _detect_ip() {
   local ip=""
+  # Linux
   ip=$(hostname -I 2>/dev/null | awk '{print $1}') && [ -n "$ip" ] && echo "$ip" && return
-  ip=$(ipconfig getifaddr en0 2>/dev/null) && [ -n "$ip" ] && echo "$ip" && return
+  # macOS: find active interface via default route, then get its IP
+  if command -v ipconfig &>/dev/null; then
+    local iface
+    iface=$(route -n get default 2>/dev/null | awk '/interface:/ {print $2}')
+    if [ -n "$iface" ]; then
+      ip=$(ipconfig getifaddr "$iface" 2>/dev/null) && [ -n "$ip" ] && echo "$ip" && return
+    fi
+    # Fallback: try common interfaces
+    for iface in en0 en1 en6 en8; do
+      ip=$(ipconfig getifaddr "$iface" 2>/dev/null) && [ -n "$ip" ] && echo "$ip" && return
+    done
+  fi
   echo ""
 }
 SKILLNOTE_HOST="${SKILLNOTE_HOST:-$(_detect_ip)}"
