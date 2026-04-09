@@ -8,7 +8,8 @@ eval $(echo "$INPUT" | python3 -c "
 import json, sys
 try:
     d = json.load(sys.stdin)
-    name = d.get('tool_input', {}).get('skill', '') or d.get('tool_input', {}).get('name', '') or d.get('tool_name', '')
+    ti = d.get('tool_input', {})
+    name = ti.get('skill', '') or ti.get('name', '')
     sid = d.get('session_id', '')
     if name:
         print(f'SKILL_NAME={name}')
@@ -18,7 +19,7 @@ except:
     pass
 " 2>/dev/null)
 
-# Show context for any skill (with or without skillnote- prefix)
+# Only show context if we got an actual skill name from tool_input
 if [ -n "$SKILL_NAME" ]; then
     PROJECT_DIR="${CLAUDE_PROJECT_DIR:-.}"
     COL=""
