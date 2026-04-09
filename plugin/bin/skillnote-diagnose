@@ -1,0 +1,51 @@
+#!/bin/bash
+# SkillNote diagnostic — run this to debug sync issues
+echo "=== SkillNote Diagnostic ==="
+echo ""
+echo "Project dir: ${CLAUDE_PROJECT_DIR:-.}"
+echo "Plugin root: ${CLAUDE_PLUGIN_ROOT:-not set}"
+echo "Plugin data: ${CLAUDE_PLUGIN_DATA:-not set}"
+echo "Host option: ${CLAUDE_PLUGIN_OPTION_HOST:-not set}"
+echo ""
+
+PD="${CLAUDE_PROJECT_DIR:-.}"
+echo "Config: $PD/.skillnote.json"
+cat "$PD/.skillnote.json" 2>/dev/null || echo "  NOT FOUND"
+echo ""
+
+SD="$PD/.claude/skills"
+echo "Skills dir: $SD"
+if [ -d "$SD" ]; then
+    echo "  Contents:"
+    ls -la "$SD/" 2>/dev/null | grep "^d" | grep -v "^\." | awk '{print "    " $NF}'
+    echo "  Manifest:"
+    if [ -n "$CLAUDE_PLUGIN_DATA" ] && [ -f "$CLAUDE_PLUGIN_DATA/.skillnote-manifest.json" ]; then
+        cat "$CLAUDE_PLUGIN_DATA/.skillnote-manifest.json"
+    elif [ -f "$SD/.skillnote-manifest.json" ]; then
+        cat "$SD/.skillnote-manifest.json"
+    else
+        echo "    NOT FOUND"
+    fi
+else
+    echo "  NOT FOUND"
+fi
+echo ""
+
+echo "Host file: ~/.skillnote/host"
+cat "$HOME/.skillnote/host" 2>/dev/null || echo "  NOT FOUND"
+echo ""
+
+echo "Global skills:"
+ls "$HOME/.claude/skills/" 2>/dev/null | grep "^skillnote-" || echo "  none"
+echo ""
+
+echo "Plugin cache:"
+ls -d "$HOME/.claude/plugins/cache/skillnote-local/" 2>/dev/null && echo "  EXISTS" || echo "  not found"
+echo ""
+
+echo "Sync.sh version check (orphan cleanup):"
+if [ -n "$CLAUDE_PLUGIN_ROOT" ]; then
+    grep -c "stale" "$CLAUDE_PLUGIN_ROOT/hooks-handlers/sync.sh" 2>/dev/null | xargs -I{} echo "  'stale' found {} times (expect 2+)"
+else
+    echo "  CLAUDE_PLUGIN_ROOT not set — can't check"
+fi
