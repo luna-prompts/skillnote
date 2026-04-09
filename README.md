@@ -258,6 +258,26 @@ When the user provides a PDF file:
 
 ---
 
+## FAQ
+
+**Skills from another collection are showing up**
+
+Claude Code discovers skills from parent directories. If you previously ran `claude` in a parent folder (like `~/projects/`) and picked a collection, those skills persist in `~/projects/.claude/skills/` and leak into every subdirectory project.
+
+Fix: remove the stale skills from the parent directory.
+
+```bash
+rm -rf ~/path/to/parent/.claude/skills/skillnote-*
+```
+
+To avoid this, always run `claude` from the actual project directory, not from umbrella folders that contain multiple projects.
+
+**Plugin changes not taking effect**
+
+Claude Code loads plugins at startup. If you reinstall the plugin while Claude Code is running, quit and restart Claude Code for the new plugin to load.
+
+---
+
 ## Tech Stack
 
 | Layer | Technology |
