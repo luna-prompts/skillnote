@@ -97,16 +97,6 @@ compose() {
   $COMPOSE -f "$PROJECT_DIR/docker-compose.yml" "$@"
 }
 
-# ── Banner ────────────────────────────────────────────────────────
-echo ""
-echo -e "${BOLD}  SkillNote${NC}  ${DIM}— self-hosted skill registry for AI agents${NC}"
-echo ""
-echo -e "  ${DIM}Web:${NC}      ${WEB_URL}"
-echo -e "  ${DIM}API:${NC}      ${API_URL}"
-echo -e "  ${DIM}MCP:${NC}      ${MCP_URL}"
-echo -e "  ${DIM}Runtime:${NC}  ${COMPOSE}"
-echo ""
-
 # ── 1. Stop any existing stack ────────────────────────────────────
 step "Stopping any existing containers"
 compose down 2>/dev/null || true
