@@ -156,9 +156,15 @@ echo ""
 echo "  ★ github.com/luna-prompts/skillnote — Star us!"
 echo ""
 # ── shell wrapper (collection picker before claude) ───────────────────────────
+# Detect RC file from the user's actual shell, not just which files exist
 SHELL_RC=""
-if [ -f "$HOME/.zshrc" ]; then SHELL_RC="$HOME/.zshrc"
-elif [ -f "$HOME/.bashrc" ]; then SHELL_RC="$HOME/.bashrc"; fi
+case "$(basename "$SHELL")" in
+  zsh)  SHELL_RC="$HOME/.zshrc" ;;
+  bash) SHELL_RC="$HOME/.bashrc" ;;
+  *)    # Fallback: check which file exists
+        if [ -f "$HOME/.bashrc" ]; then SHELL_RC="$HOME/.bashrc"
+        elif [ -f "$HOME/.zshrc" ]; then SHELL_RC="$HOME/.zshrc"; fi ;;
+esac
 
 # ── install skillnote-pick to stable location ─────────────────────────────────
 SKILL_HOST=$(echo "$API_URL" | sed -E 's|https?://||;s|:.*||')
