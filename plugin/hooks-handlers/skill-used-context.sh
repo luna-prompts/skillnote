@@ -8,7 +8,7 @@ eval $(echo "$INPUT" | python3 -c "
 import json, sys
 try:
     d = json.load(sys.stdin)
-    name = d.get('tool_input', {}).get('name', '') or d.get('tool_name', '')
+    name = d.get('tool_input', {}).get('name', '') or d.get('tool_input', {}).get('skill', '') or d.get('tool_name', '')
     sid = d.get('session_id', '')
     if name:
         print(f'SKILL_NAME={name}')

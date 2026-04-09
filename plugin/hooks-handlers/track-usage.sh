@@ -21,7 +21,7 @@ except:
     hook_input = {}
 
 tool_input = hook_input.get('tool_input', {})
-skill_name = tool_input.get('name', '') or hook_input.get('tool_name', '')
+skill_name = tool_input.get('name', '') or tool_input.get('skill', '') or hook_input.get('tool_name', '')
 session_id = hook_input.get('session_id', '')
 
 if not skill_name:
