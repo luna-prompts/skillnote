@@ -142,8 +142,14 @@ for skill in skills:
     with open(filepath, 'w') as f:
         f.write(content)
 
-# Delete skills removed from registry (only managed ones)
-for name in old_managed - local_names:
+# Delete skills not in current collection
+# Check manifest (tracked skills) AND scan disk (catches orphans from before manifest existed)
+stale = old_managed - local_names
+if os.path.isdir(skills_dir):
+    for entry in os.listdir(skills_dir):
+        if entry.startswith('skillnote-') and entry not in local_names:
+            stale.add(entry)
+for name in stale:
     skill_dir = os.path.join(skills_dir, name)
     if os.path.isdir(skill_dir):
         shutil.rmtree(skill_dir)
