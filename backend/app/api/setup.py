@@ -129,6 +129,9 @@ with open(path, 'w') as f:
 " 2>/dev/null
 
 # ── install plugin via claude CLI ────────────────────────────────────────────
+# Clear plugin cache to ensure fresh code is loaded
+rm -rf "$CLAUDE_HOME/plugins/cache/skillnote-local" 2>/dev/null
+
 if command -v claude &>/dev/null; then
     # Register marketplace, then install plugin
     claude plugin marketplace add "$MKT_DIR" 2>/dev/null || true
