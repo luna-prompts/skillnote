@@ -151,32 +151,57 @@ else
     echo "  claude plugin install skillnote@skillnote-local --scope user"
 fi
 
-# ── post-install verification: detect and purge any stale wrapper files ──────
-# Historical versions of the plugin shipped commands/skill-push.md and
-# commands/collection.md as thin wrappers with `disable-model-invocation: true`.
-# Those wrappers have been removed — if they reappear in any cache location,
-# scrub them and warn the user loudly so they know their plugin was out of date.
-STALE=0
-for wrapper in skill-push.md collection.md; do
-    for stale_file in "$CLAUDE_HOME/plugins/cache/skillnote-local"/*/commands/"$wrapper" \
-                      "$MKT_DIR/plugins/skillnote/commands/$wrapper"; do
-        if [ -f "$stale_file" ]; then
-            rm -f "$stale_file"
-            STALE=1
-        fi
-    done
-done
-if [ "$STALE" -eq 1 ]; then
-    echo "  Note: removed stale wrapper commands from your install."
-fi
+# ── generic cache reconciliation (catches ANY stale file, not just wrappers) ──
+# After `claude plugin install`, compare the cache directory file-by-file
+# against the freshly-unzipped marketplace source. Delete any file in the
+# cache that doesn't exist in the current marketplace. This is the generic
+# safety net for ALL future file removals — not just the skill-push.md /
+# collection.md wrappers. Whenever we delete a file from the plugin source,
+# existing installs will automatically drop it on the next setup run.
+MKT_ROOT="$MKT_DIR/plugins/skillnote" \
+CACHE_GLOB="$CLAUDE_HOME/plugins/cache/skillnote-local/skillnote/*/" \
+python3 - << 'RECONCILE_EOF' 2>/dev/null || true
+import os, sys, glob
 
-# Final sanity: the only command that should remain is the dashboard.
-REMAINING=$(find "$CLAUDE_HOME/plugins/cache/skillnote-local" -path "*/commands/*.md" 2>/dev/null | xargs -I {} basename {} 2>/dev/null | sort -u | tr '\n' ' ')
-if [ -n "$REMAINING" ] && [ "$REMAINING" != "skillnote.md " ]; then
-    echo "  Warning: plugin cache contains unexpected commands: $REMAINING"
-    echo "  Expected only: skillnote.md"
-    echo "  Run: rm -rf $CLAUDE_HOME/plugins/cache/skillnote-local $MKT_DIR && curl -sf $API_URL/setup | bash"
-fi
+market_root = os.environ.get("MKT_ROOT", "")
+cache_glob  = os.environ.get("CACHE_GLOB", "")
+
+if not market_root or not os.path.isdir(market_root):
+    sys.exit(0)
+
+# Set of relative paths that SHOULD exist in every cache copy
+expected = set()
+for dirpath, _dirs, files in os.walk(market_root):
+    rel_dir = os.path.relpath(dirpath, market_root)
+    for f in files:
+        expected.add(os.path.normpath(os.path.join(rel_dir, f)))
+
+removed_files = 0
+for cache_root in glob.glob(cache_glob):
+    if not os.path.isdir(cache_root):
+        continue
+    for dirpath, _dirs, files in os.walk(cache_root):
+        rel_dir = os.path.relpath(dirpath, cache_root)
+        for f in files:
+            rel = os.path.normpath(os.path.join(rel_dir, f))
+            if rel not in expected:
+                try:
+                    os.unlink(os.path.join(dirpath, f))
+                    removed_files += 1
+                except OSError:
+                    pass
+    # Prune empty directories left behind
+    for dirpath, _dirs, _files in os.walk(cache_root, topdown=False):
+        if dirpath == cache_root:
+            continue
+        try:
+            os.rmdir(dirpath)
+        except OSError:
+            pass
+
+if removed_files:
+    print(f"  Cleaned up {removed_files} stale file(s) from plugin cache.")
+RECONCILE_EOF
 
 # ── clean up legacy rules file (picker handles collection selection now) ──────
 rm -f "$CLAUDE_HOME/rules/skillnote-collection.md" 2>/dev/null
@@ -215,17 +240,30 @@ chmod +x "$SKILLNOTE_HOME/bin/skillnote-pick" "$SKILLNOTE_HOME/bin/skillnote-sta
 # Save host for the picker to read at runtime
 echo "$SKILL_HOST" > "$SKILLNOTE_HOME/host"
 PICKER_PATH="$SKILLNOTE_HOME/bin/skillnote-pick"
-# Remove any old wrapper first (handles updates cleanly)
-if [ -n "$SHELL_RC" ]; then
-    # macOS sed needs '' after -i, Linux doesn't — use Python for portability
-    python3 -c "
-import re
-path = '$SHELL_RC'
+# Remove any old wrapper first (handles updates cleanly). Uses explicit
+# BEGIN/END markers so future format changes can still be detected and
+# scrubbed reliably, and also matches the old regex-based format for
+# migration from pre-marker installs.
+if [ -n "$SHELL_RC" ] && [ -f "$SHELL_RC" ]; then
+    SHELL_RC_PATH="$SHELL_RC" python3 - << 'WRAPCLEAN_EOF' 2>/dev/null || true
+import os, re
+path = os.environ.get("SHELL_RC_PATH", "")
+if not path or not os.path.isfile(path):
+    raise SystemExit(0)
 content = open(path).read()
-# Remove old SkillNote wrapper block
-content = re.sub(r'\n# SkillNote:.*?command claude.*?\n\}', '', content, flags=re.DOTALL)
+# New marker-based format (SkillNote v3+)
+content = re.sub(r'\n?# >>> SKILLNOTE WRAPPER BEGIN.*?# <<< SKILLNOTE WRAPPER END\n?',
+                 '', content, flags=re.DOTALL)
+# Legacy bash/zsh format (pre-marker)
+content = re.sub(r'\n# SkillNote:[^\n]*\nclaude\(\) \{.*?\n\}\n?',
+                 '', content, flags=re.DOTALL)
+# Legacy fish format (pre-marker)
+content = re.sub(r'\n# SkillNote:[^\n]*\nfunction claude.*?\nend\n?',
+                 '', content, flags=re.DOTALL)
+# Collapse multiple blank lines that may be left behind
+content = re.sub(r'\n{3,}', '\n\n', content)
 open(path, 'w').write(content)
-" 2>/dev/null
+WRAPCLEAN_EOF
 fi
 
 if [ -n "$SHELL_RC" ]; then
@@ -233,25 +271,27 @@ if [ -n "$SHELL_RC" ]; then
       *config.fish)
         cat >> "$SHELL_RC" << WRAPEOF
 
-# SkillNote: collection picker before launching claude
+# >>> SKILLNOTE WRAPPER BEGIN (do not edit; managed by skillnote setup)
 function claude
   if isatty stdin; and isatty stdout
     "$PICKER_PATH"; or true
   end
   command claude \$argv
 end
+# <<< SKILLNOTE WRAPPER END
 WRAPEOF
         ;;
       *)
         cat >> "$SHELL_RC" << WRAPEOF
 
-# SkillNote: collection picker before launching claude
+# >>> SKILLNOTE WRAPPER BEGIN (do not edit; managed by skillnote setup)
 claude() {
   if [ -t 0 ] && [ -t 1 ]; then
     "$PICKER_PATH" || true
   fi
   command claude "\$@"
 }
+# <<< SKILLNOTE WRAPPER END
 WRAPEOF
         ;;
     esac
