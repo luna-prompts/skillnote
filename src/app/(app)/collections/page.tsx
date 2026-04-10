@@ -60,7 +60,7 @@ export default function CollectionsPage() {
           <div className="mb-6 flex items-start gap-2.5 px-4 py-3 rounded-lg bg-muted/40 border border-border/40">
             <Info className="h-4 w-4 text-muted-foreground/60 mt-0.5 shrink-0" />
             <p className="text-[12px] text-muted-foreground leading-relaxed">
-              Collections group skills by purpose. Each collection is capped at 15 skills &mdash; this keeps Claude Code&apos;s context efficient and ensures your skills trigger reliably.
+              Collections group skills by purpose. Each collection is capped at 15 skills. This keeps Claude Code&apos;s context efficient and ensures your skills trigger reliably.
             </p>
           </div>
         )}
