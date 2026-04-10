@@ -33,6 +33,11 @@
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks-handlers/auto-sync.sh",
             "async": true
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks-handlers/prompt-watch.sh",
+            "timeout": 5
           }
         ]
       }
