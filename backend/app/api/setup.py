@@ -77,8 +77,16 @@ command -v python3 &>/dev/null || { echo "Error: python3 required."; exit 1; }
 command -v curl &>/dev/null || { echo "Error: curl required."; exit 1; }
 command -v unzip &>/dev/null || { echo "Error: unzip required."; exit 1; }
 
-# ── download plugin into marketplace dir ─────────────────────────────────────
+# ── wipe ALL prior SkillNote plugin state (idempotent clean install) ────────
+# Nuke every known location Claude Code might read SkillNote files from, so
+# the new install cannot inherit stale wrapper commands, old hooks, or
+# version-pinned cache directories from previous installs.
 rm -rf "$MKT_DIR"
+rm -rf "$CLAUDE_HOME/plugins/cache/skillnote-local"
+rm -rf "$CLAUDE_HOME/plugins/data/skillnote-skillnote-local"
+# Temp staging dirs created by `claude plugin install` sometimes persist
+find "$CLAUDE_HOME/plugins/cache" -maxdepth 1 -type d -name "temp_local_*" -exec rm -rf {} + 2>/dev/null || true
+
 mkdir -p "$MKT_DIR/.claude-plugin" "$PLUGIN_SRC"
 
 # Download and extract plugin files
@@ -129,9 +137,6 @@ with open(path, 'w') as f:
 " 2>/dev/null
 
 # ── install plugin via claude CLI ────────────────────────────────────────────
-# Clear plugin cache to ensure fresh code is loaded
-rm -rf "$CLAUDE_HOME/plugins/cache/skillnote-local" 2>/dev/null
-
 if command -v claude &>/dev/null; then
     # Register marketplace, then install plugin
     claude plugin marketplace add "$MKT_DIR" 2>/dev/null || true
@@ -144,6 +149,33 @@ else
     echo "Warning: claude CLI not found. After installing claude, run:"
     echo "  claude plugin marketplace add $MKT_DIR"
     echo "  claude plugin install skillnote@skillnote-local --scope user"
+fi
+
+# ── post-install verification: detect and purge any stale wrapper files ──────
+# Historical versions of the plugin shipped commands/skill-push.md and
+# commands/collection.md as thin wrappers with `disable-model-invocation: true`.
+# Those wrappers have been removed — if they reappear in any cache location,
+# scrub them and warn the user loudly so they know their plugin was out of date.
+STALE=0
+for wrapper in skill-push.md collection.md; do
+    for stale_file in "$CLAUDE_HOME/plugins/cache/skillnote-local"/*/commands/"$wrapper" \
+                      "$MKT_DIR/plugins/skillnote/commands/$wrapper"; do
+        if [ -f "$stale_file" ]; then
+            rm -f "$stale_file"
+            STALE=1
+        fi
+    done
+done
+if [ "$STALE" -eq 1 ]; then
+    echo "  Note: removed stale wrapper commands from your install."
+fi
+
+# Final sanity: the only command that should remain is the dashboard.
+REMAINING=$(find "$CLAUDE_HOME/plugins/cache/skillnote-local" -path "*/commands/*.md" 2>/dev/null | xargs -I {} basename {} 2>/dev/null | sort -u | tr '\n' ' ')
+if [ -n "$REMAINING" ] && [ "$REMAINING" != "skillnote.md " ]; then
+    echo "  Warning: plugin cache contains unexpected commands: $REMAINING"
+    echo "  Expected only: skillnote.md"
+    echo "  Run: rm -rf $CLAUDE_HOME/plugins/cache/skillnote-local $MKT_DIR && curl -sf $API_URL/setup | bash"
 fi
 
 # ── clean up legacy rules file (picker handles collection selection now) ──────
