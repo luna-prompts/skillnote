@@ -26,6 +26,12 @@ prompt = (d.get('prompt') or '').strip()
 session_id = d.get('session_id', 'unknown')
 project_dir = os.environ.get('CLAUDE_PROJECT_DIR', '.')
 
+# Skip subagent contexts — agent_id is present only when the hook fires from
+# inside a subagent (per BaseHookInputSchema in Claude Code source). Subagent
+# prompts are not user typing, so there's nothing to extract as a skill.
+if d.get('agent_id'):
+    sys.exit(0)
+
 if not prompt or not project_dir:
     sys.exit(0)
 
