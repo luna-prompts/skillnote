@@ -79,7 +79,7 @@
         "hooks": [
           {
             "type": "prompt",
-            "prompt": "Review the conversation in $ARGUMENTS. Did the user establish a reusable coding pattern, workflow, or convention that could benefit other projects? Only respond {\"ok\": false, \"reason\": \"This looks like a reusable pattern. Run /skillnote:skill-push to save it as a skill.\"} if there is a CLEAR, specific, reusable pattern (not just a bug fix or one-off task). Otherwise respond {\"ok\": true}. Be very selective — most conversations do NOT contain reusable patterns.",
+            "prompt": "Review the conversation in $ARGUMENTS. Did the user establish a reusable coding pattern, workflow, or convention that could benefit other projects? Only respond {\"ok\": false, \"reason\": \"You noticed a potentially reusable pattern: [briefly name it]. ASK the user first: 'Want me to save this as a SkillNote skill?' Do NOT draft or create the skill until the user confirms. If they say yes, then run /skillnote:skill-push.\"} if there is a CLEAR, specific, reusable pattern (not just a bug fix or one-off task). Otherwise respond {\"ok\": true}. Be very selective — most conversations do NOT contain reusable patterns.",
             "timeout": 10
           }
         ]

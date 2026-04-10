@@ -17,9 +17,15 @@ The SkillNote API is at: `http://${CLAUDE_PLUGIN_OPTION_HOST:-localhost}:8082`
 
 Only suggest for PERSISTENT conventions, not temporary workarounds.
 
-## Step 1: Confirm
+## Step 1: Confirm (REQUIRED — never skip)
 
-Tell the user what you noticed. Be specific. Ask: "Want me to create a skill for this?"
+**If the user did not explicitly ask to create a skill, you MUST ask first before doing anything else.**
+
+Tell the user what you noticed in one sentence. Be specific. Then ask: **"Want me to save this as a SkillNote skill?"**
+
+Stop and wait for an explicit yes. Do NOT draft the name/description/content, fetch collections, or present a preview until the user confirms. Unsolicited drafts feel pushy and waste attention.
+
+Skip this step only when the user already said "create a skill for X" / "save this pattern" / "push a skill" in their own words.
 
 ## Step 2: Draft
 
