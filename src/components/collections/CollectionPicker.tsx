@@ -2,6 +2,7 @@
 import { useState, useMemo, useRef, useEffect } from 'react'
 import { Plus, X, FolderOpen, Check, Search } from 'lucide-react'
 import { getSkills } from '@/lib/skills-store'
+import { createCollectionApi, fetchCollectionsApi } from '@/lib/api/collections'
 
 type Props = {
   selected: string[]
@@ -11,15 +12,23 @@ type Props = {
   compact?: boolean
 }
 
-function getAllCollections(): string[] {
+async function getAllCollectionsAsync(): Promise<string[]> {
   const set = new Set<string>()
   try {
     for (const s of getSkills()) {
       for (const c of s.collections || []) set.add(c)
     }
-    const meta = JSON.parse(localStorage.getItem('skillnote:collections-meta') || '{}')
-    for (const name of Object.keys(meta)) set.add(name)
   } catch {}
+  try {
+    const apiCols = await fetchCollectionsApi()
+    for (const c of apiCols) set.add(c.name)
+  } catch {
+    // Offline fallback: read localStorage meta
+    try {
+      const meta = JSON.parse(localStorage.getItem('skillnote:collections-meta') || '{}')
+      for (const name of Object.keys(meta)) set.add(name)
+    } catch {}
+  }
   return Array.from(set).sort((a, b) => a.localeCompare(b))
 }
 
@@ -41,7 +50,9 @@ export function CollectionPicker({ selected, onChange, placeholder, compact = fa
   const searchRef = useRef<HTMLInputElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
-  useEffect(() => { setAllCollections(getAllCollections()) }, [])
+  useEffect(() => {
+    getAllCollectionsAsync().then(setAllCollections)
+  }, [])
 
   // Focus search input whenever dropdown opens
   useEffect(() => {
@@ -83,13 +94,21 @@ export function CollectionPicker({ selected, onChange, placeholder, compact = fa
   // Flat ordered list of items for keyboard navigation
   const items: string[] = [...filtered, ...(canCreate ? ['__create__'] : [])]
 
-  function add(item: string) {
+  async function add(item: string) {
     const name = item === '__create__' ? query.trim() : item
     if (!name) return
     if (!selected.some(c => c.toLowerCase() === name.toLowerCase())) {
       onChange([...selected, name])
-      persistCollection(name)
-      setAllCollections(getAllCollections())
+      if (item === '__create__') {
+        try {
+          await createCollectionApi(name, '')
+        } catch {
+          // Offline fallback: store locally
+          persistCollection(name)
+        }
+        const fresh = await getAllCollectionsAsync()
+        setAllCollections(fresh)
+      }
     }
     setOpen(false)
   }
