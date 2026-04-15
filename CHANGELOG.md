@@ -3,6 +3,18 @@
 All notable changes to SkillNote will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## 0.3.1 — 2026-04-15
+
+### Fixed
+- Empty collections created in the web UI now appear in the CLI collection picker (`skillnote-pick`). Previously they were only written to browser localStorage and invisible to the backend.
+
+### Added
+- `collections` table with full CRUD: `POST/PUT/DELETE /v1/collections`. `DELETE` is refused with 409 when any skill still references the collection.
+- Auto-migration: existing `skillnote:collections-meta` localStorage entries are POSTed to the API on first load of `/collections`, then cleared from localStorage on success.
+
+### Changed
+- `GET /v1/collections` response now includes `description` field (additive, backwards-compatible).
+
 ## [0.3.0] - 2026-04-08
 
 ### Added
