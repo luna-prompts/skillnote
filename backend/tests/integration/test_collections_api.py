@@ -91,3 +91,23 @@ def test_post_trims_whitespace(unique_name):
     assert body["name"] == unique_name
 
     _request("DELETE", f"/v1/collections/{unique_name}")
+
+
+def test_put_updates_description(unique_name):
+    _request("POST", "/v1/collections", {"name": unique_name, "description": "original"})
+
+    status, body = _request("PUT", f"/v1/collections/{unique_name}", {"description": "updated"})
+    assert status == 200
+    assert body["description"] == "updated"
+
+    status, cols = _request("GET", "/v1/collections")
+    match = next(c for c in cols if c["name"] == unique_name)
+    assert match["description"] == "updated"
+
+    _request("DELETE", f"/v1/collections/{unique_name}")
+
+
+def test_put_returns_404_when_not_exists():
+    status, body = _request("PUT", "/v1/collections/does-not-exist-xyz", {"description": "x"})
+    assert status == 404
+    assert body["error"]["code"] == "COLLECTION_NOT_FOUND"

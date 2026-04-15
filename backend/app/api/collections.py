@@ -68,3 +68,16 @@ def create_collection(payload: CollectionCreate, db: Session = Depends(get_db)):
         raise api_error(409, "COLLECTION_EXISTS", f'Collection "{payload.name}" already exists')
     db.refresh(col)
     return col
+
+
+@router.put("/{name}", response_model=CollectionDetail)
+def update_collection(name: str, payload: CollectionUpdate, db: Session = Depends(get_db)):
+    col = db.query(Collection).filter(Collection.name == name).first()
+    if not col:
+        raise api_error(404, "COLLECTION_NOT_FOUND", f'Collection "{name}" not found')
+
+    col.description = payload.description
+    col.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(col)
+    return col
