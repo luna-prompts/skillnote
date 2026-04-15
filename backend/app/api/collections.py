@@ -66,8 +66,7 @@ def create_collection(payload: CollectionCreate, db: Session = Depends(get_db)):
     except IntegrityError:
         db.rollback()
         raise api_error(409, "COLLECTION_EXISTS", f'Collection "{payload.name}" already exists')
-    db.refresh(col)
-    return col
+    return db.query(Collection).filter(Collection.name == payload.name).first()
 
 
 @router.put("/{name}", response_model=CollectionDetail)
@@ -79,8 +78,7 @@ def update_collection(name: str, payload: CollectionUpdate, db: Session = Depend
     col.description = payload.description
     col.updated_at = datetime.now(timezone.utc)
     db.commit()
-    db.refresh(col)
-    return col
+    return db.query(Collection).filter(Collection.name == name).first()
 
 
 @router.delete("/{name}", status_code=http_status.HTTP_204_NO_CONTENT)
