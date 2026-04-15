@@ -3,7 +3,7 @@
 All notable changes to SkillNote will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
-## 0.3.1 — 2026-04-15
+## [0.3.1] - 2026-04-15
 
 ### Fixed
 - Empty collections created in the web UI now appear in the CLI collection picker (`skillnote-pick`). Previously they were only written to browser localStorage and invisible to the backend.
