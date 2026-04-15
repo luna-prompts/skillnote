@@ -60,3 +60,34 @@ def test_list_shape_includes_description_field():
         assert "description" in cols[0]
         assert "name" in cols[0]
         assert "count" in cols[0]
+
+
+def test_post_creates_collection(unique_name):
+    status, body = _request("POST", "/v1/collections", {"name": unique_name, "description": ""})
+    assert status == 201
+    assert body["name"] == unique_name
+
+    _request("DELETE", f"/v1/collections/{unique_name}")
+
+
+def test_post_duplicate_returns_409(unique_name):
+    _request("POST", "/v1/collections", {"name": unique_name, "description": ""})
+    status, body = _request("POST", "/v1/collections", {"name": unique_name, "description": ""})
+    assert status == 409
+    assert body["error"]["code"] == "COLLECTION_EXISTS"
+
+    _request("DELETE", f"/v1/collections/{unique_name}")
+
+
+def test_post_rejects_empty_name():
+    status, _ = _request("POST", "/v1/collections", {"name": "", "description": ""})
+    assert status == 422
+
+
+def test_post_trims_whitespace(unique_name):
+    padded = f"  {unique_name}  "
+    status, body = _request("POST", "/v1/collections", {"name": padded, "description": ""})
+    assert status == 201
+    assert body["name"] == unique_name
+
+    _request("DELETE", f"/v1/collections/{unique_name}")
