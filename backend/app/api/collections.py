@@ -81,3 +81,28 @@ def update_collection(name: str, payload: CollectionUpdate, db: Session = Depend
     db.commit()
     db.refresh(col)
     return col
+
+
+@router.delete("/{name}", status_code=http_status.HTTP_204_NO_CONTENT)
+def delete_collection(name: str, db: Session = Depends(get_db)):
+    skill_ref_count = db.execute(
+        text(
+            "SELECT COUNT(*) FROM skills WHERE :name = ANY(collections)"
+        ),
+        {"name": name},
+    ).scalar()
+
+    if skill_ref_count and skill_ref_count > 0:
+        raise api_error(
+            409,
+            "COLLECTION_IN_USE",
+            f'Cannot delete "{name}": {skill_ref_count} skill(s) still reference it',
+        )
+
+    col = db.query(Collection).filter(Collection.name == name).first()
+    if not col:
+        raise api_error(404, "COLLECTION_NOT_FOUND", f'Collection "{name}" not found')
+
+    db.delete(col)
+    db.commit()
+    return None

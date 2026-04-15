@@ -111,3 +111,37 @@ def test_put_returns_404_when_not_exists():
     status, body = _request("PUT", "/v1/collections/does-not-exist-xyz", {"description": "x"})
     assert status == 404
     assert body["error"]["code"] == "COLLECTION_NOT_FOUND"
+
+
+def test_delete_empty_collection(unique_name):
+    _request("POST", "/v1/collections", {"name": unique_name, "description": ""})
+
+    status, _ = _request("DELETE", f"/v1/collections/{unique_name}")
+    assert status == 204
+
+    status, cols = _request("GET", "/v1/collections")
+    names = [c["name"] for c in cols]
+    assert unique_name not in names
+
+
+def test_delete_404_when_not_exists():
+    status, body = _request("DELETE", "/v1/collections/does-not-exist-xyz")
+    assert status == 404
+
+
+def test_delete_409_when_skills_reference(unique_name):
+    """Creating a skill in a collection implicitly registers it — DELETE should refuse."""
+    skill_slug = f"test-skill-{uuid.uuid4().hex[:8]}"
+    _request("POST", "/v1/skills", {
+        "name": skill_slug,
+        "slug": skill_slug,
+        "description": "test fixture",
+        "content_md": "",
+        "collections": [unique_name],
+    })
+
+    status, body = _request("DELETE", f"/v1/collections/{unique_name}")
+    assert status == 409
+    assert body["error"]["code"] == "COLLECTION_IN_USE"
+
+    _request("DELETE", f"/v1/skills/{skill_slug}")
