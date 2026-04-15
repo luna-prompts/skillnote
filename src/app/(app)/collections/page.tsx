@@ -5,7 +5,8 @@ import { FolderOpen, Plus, ArrowRight, Info } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useEffect, useMemo, useState } from 'react'
 import { getSkills, syncSkillsFromApi } from '@/lib/skills-store'
-import { deriveCollections } from '@/lib/derived'
+import { deriveCollectionsFromApi } from '@/lib/derived'
+import { createCollectionApi, fetchCollectionsApi, type CollectionListItem } from '@/lib/api/collections'
 import { NewCollectionModal } from '@/components/collections/NewCollectionModal'
 import type { Skill } from '@/lib/mock-data'
 
@@ -17,16 +18,64 @@ function getSkillsForCollection(skills: Skill[], name: string): Skill[] {
 
 export default function CollectionsPage() {
   const [skills, setSkills] = useState(getSkills())
+  const [apiCollections, setApiCollections] = useState<CollectionListItem[]>([])
   const [newCollectionOpen, setNewCollectionOpen] = useState(false)
+
+  // One-shot migration: push stale localStorage-meta entries to the API.
+  async function migrateLocalStorageCollections(apiNames: Set<string>) {
+    let meta: Record<string, { description: string; created_at: string }>
+    try {
+      meta = JSON.parse(localStorage.getItem('skillnote:collections-meta') || '{}')
+    } catch {
+      return
+    }
+    const toMigrate = Object.entries(meta).filter(([name]) => !apiNames.has(name))
+    if (toMigrate.length === 0) return
+
+    const succeeded: string[] = []
+    for (const [name, data] of toMigrate) {
+      try {
+        await createCollectionApi(name, data.description || '')
+        succeeded.push(name)
+      } catch {
+        // Leave in localStorage; try again next page load
+      }
+    }
+    if (succeeded.length === 0) return
+
+    // Remove migrated entries from localStorage
+    const remaining = { ...meta }
+    for (const name of succeeded) delete remaining[name]
+    localStorage.setItem('skillnote:collections-meta', JSON.stringify(remaining))
+
+    // Re-fetch so UI reflects migrated collections
+    try {
+      const fresh = await fetchCollectionsApi()
+      setApiCollections(fresh)
+    } catch {}
+  }
 
   useEffect(() => {
     syncSkillsFromApi().then(setSkills).catch(() => {})
+    fetchCollectionsApi()
+      .then(async (cols) => {
+        setApiCollections(cols)
+        await migrateLocalStorageCollections(new Set(cols.map(c => c.name)))
+      })
+      .catch(() => {})
   }, [])
 
-  const collections = useMemo(() => deriveCollections(skills), [skills])
+  const collections = useMemo(
+    () => deriveCollectionsFromApi(skills, apiCollections),
+    [skills, apiCollections],
+  )
 
-  function handleCollectionCreated() {
+  async function handleCollectionCreated() {
     setSkills(s => [...s])
+    try {
+      const fresh = await fetchCollectionsApi()
+      setApiCollections(fresh)
+    } catch {}
     setNewCollectionOpen(false)
   }
 
