@@ -12,6 +12,8 @@ type Props = {
   onAdded: () => void
 }
 
+const MAX_SKILLS_PER_COLLECTION = 15
+
 export function AddSkillsModal({ collectionName, allSkills, onClose, onAdded }: Props) {
   const [query, setQuery] = useState('')
   const [toggling, setToggling] = useState<Set<string>>(new Set())
@@ -20,6 +22,17 @@ export function AddSkillsModal({ collectionName, allSkills, onClose, onAdded }: 
   const searchRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => { searchRef.current?.focus() }, [])
+
+  // Current count of skills already in this collection at open-time
+  const initialCount = useMemo(
+    () => allSkills.filter(s => (s.collections || []).some(c => c.toLowerCase() === collectionName.toLowerCase())).length,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
+  )
+
+  const totalSelected = initialCount + addedSlugs.size
+  const atCap = totalSelected >= MAX_SKILLS_PER_COLLECTION
+  const remaining = Math.max(0, MAX_SKILLS_PER_COLLECTION - totalSelected)
 
   // Skills not in this collection at open-time
   const initialAvailable = useMemo(
@@ -44,6 +57,11 @@ export function AddSkillsModal({ collectionName, allSkills, onClose, onAdded }: 
   async function handleToggle(skill: Skill) {
     if (toggling.has(skill.slug)) return
     const isAdded = addedSlugs.has(skill.slug)
+    // Block adding if we're at the cap (removal is always allowed)
+    if (!isAdded && atCap) {
+      toast.error(`"${collectionName}" has reached the ${MAX_SKILLS_PER_COLLECTION}-skill limit`)
+      return
+    }
     setToggling(prev => new Set(prev).add(skill.slug))
     try {
       if (isAdded) {
@@ -59,8 +77,13 @@ export function AddSkillsModal({ collectionName, allSkills, onClose, onAdded }: 
         setAddedSlugs(prev => new Set(prev).add(skill.slug))
       }
       onAdded()
-    } catch {
-      toast.error(isAdded ? `Failed to remove "${skill.title}"` : `Failed to add "${skill.title}"`)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : ''
+      if (msg.toLowerCase().includes('limit')) {
+        toast.error(msg)
+      } else {
+        toast.error(isAdded ? `Failed to remove "${skill.title}"` : `Failed to add "${skill.title}"`)
+      }
     } finally {
       setToggling(prev => { const s = new Set(prev); s.delete(skill.slug); return s })
     }
@@ -88,6 +111,9 @@ export function AddSkillsModal({ collectionName, allSkills, onClose, onAdded }: 
       onClick={onClose}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="add-skills-title"
         className="w-full sm:max-w-[420px] bg-card border border-border/50 sm:rounded-xl rounded-t-2xl shadow-2xl flex flex-col max-h-[88vh] sm:max-h-[68vh] mx-0 sm:mx-4 animate-in fade-in slide-in-from-bottom-3 sm:zoom-in-95 duration-200 sm:origin-center"
         onClick={e => e.stopPropagation()}
         onKeyDown={handleKeyDown}
@@ -95,18 +121,24 @@ export function AddSkillsModal({ collectionName, allSkills, onClose, onAdded }: 
         {/* ── Header ── */}
         <div className="flex items-center justify-between px-4 pt-4 pb-3 shrink-0">
           <div className="min-w-0">
-            <p className="text-[13px] font-semibold text-foreground">
+            <p id="add-skills-title" className="text-[13px] font-semibold text-foreground">
               Add skills to &ldquo;{collectionName}&rdquo;
             </p>
-            {addedSlugs.size > 0 && (
-              <p className="text-[11px] text-emerald-600 dark:text-emerald-400 mt-0.5 font-medium">
-                {addedSlugs.size} added · click to undo
-              </p>
-            )}
+            <p className={`text-[11px] mt-0.5 font-medium ${
+              atCap ? 'text-red-500' :
+              remaining <= 3 ? 'text-amber-500' :
+              'text-muted-foreground/60'
+            }`}>
+              {atCap
+                ? `Collection is full (${totalSelected}/${MAX_SKILLS_PER_COLLECTION})`
+                : `${totalSelected}/${MAX_SKILLS_PER_COLLECTION} skills · ${remaining} remaining`}
+              {addedSlugs.size > 0 && !atCap && ` · ${addedSlugs.size} added`}
+            </p>
           </div>
           <button
             onClick={onClose}
             className="h-7 w-7 rounded-lg flex items-center justify-center text-muted-foreground/60 hover:text-foreground hover:bg-muted/60 transition-colors shrink-0 ml-3"
+            aria-label="Close"
           >
             <X className="h-4 w-4" />
           </button>

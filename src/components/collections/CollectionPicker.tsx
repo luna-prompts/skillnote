@@ -51,7 +51,7 @@ export function CollectionPicker({ selected, onChange, placeholder, compact = fa
   const containerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    getAllCollectionsAsync().then(setAllCollections)
+    getAllCollectionsAsync().then(setAllCollections).catch(() => {})
   }, [])
 
   // Focus search input whenever dropdown opens
@@ -106,8 +106,10 @@ export function CollectionPicker({ selected, onChange, placeholder, compact = fa
           // Offline fallback: store locally
           persistCollection(name)
         }
-        const fresh = await getAllCollectionsAsync()
-        setAllCollections(fresh)
+        try {
+          const fresh = await getAllCollectionsAsync()
+          setAllCollections(fresh)
+        } catch {}
       }
     }
     setOpen(false)

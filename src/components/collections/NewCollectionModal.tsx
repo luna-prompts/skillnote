@@ -53,12 +53,15 @@ export function NewCollectionModal({ onClose, onCreated }: Props) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-[2px] animate-in fade-in duration-150" onClick={onClose}>
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="new-collection-title"
         className="w-full max-w-md bg-card border border-border rounded-xl shadow-2xl overflow-hidden mx-4 animate-in zoom-in-95 duration-150"
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border/60">
-          <h3 className="text-sm font-semibold flex items-center gap-2">
+          <h3 id="new-collection-title" className="text-sm font-semibold flex items-center gap-2">
             <FolderOpen className="h-4 w-4 text-muted-foreground" />
             New Collection
           </h3>
