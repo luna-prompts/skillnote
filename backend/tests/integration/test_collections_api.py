@@ -145,3 +145,138 @@ def test_delete_409_when_skills_reference(unique_name):
     assert body["error"]["code"] == "COLLECTION_IN_USE"
 
     _request("DELETE", f"/v1/skills/{skill_slug}")
+
+
+# ── Case-insensitive uniqueness ──────────────────────────────────────────────
+
+def test_duplicate_case_variant_rejected(unique_name):
+    """POSTing two case-variant names must fail with 409."""
+    mixed_case = unique_name.upper()
+    status, _ = _request("POST", "/v1/collections", {"name": unique_name, "description": ""})
+    assert status == 201
+
+    status, body = _request("POST", "/v1/collections", {"name": mixed_case, "description": ""})
+    assert status == 409
+    assert body["error"]["code"] == "COLLECTION_EXISTS"
+
+    _request("DELETE", f"/v1/collections/{unique_name}")
+
+
+def test_get_single_collection_case_insensitive(unique_name):
+    """GET /v1/collections/{name} must accept case variants."""
+    _request("POST", "/v1/collections", {"name": unique_name, "description": "hello"})
+
+    status, body = _request("GET", f"/v1/collections/{unique_name.upper()}")
+    assert status == 200
+    assert body["name"] == unique_name
+    assert body["description"] == "hello"
+
+    _request("DELETE", f"/v1/collections/{unique_name}")
+
+
+def test_put_via_case_variant_url(unique_name):
+    """PUT /v1/collections/{CASE-VARIANT} must update the original."""
+    _request("POST", "/v1/collections", {"name": unique_name, "description": "orig"})
+
+    status, body = _request("PUT", f"/v1/collections/{unique_name.upper()}",
+                            {"description": "updated"})
+    assert status == 200
+    assert body["description"] == "updated"
+
+    _request("DELETE", f"/v1/collections/{unique_name}")
+
+
+def test_delete_via_case_variant_url(unique_name):
+    """DELETE /v1/collections/{CASE-VARIANT} must delete the original."""
+    _request("POST", "/v1/collections", {"name": unique_name, "description": ""})
+
+    status, _ = _request("DELETE", f"/v1/collections/{unique_name.upper()}")
+    assert status == 204
+
+    status, _ = _request("GET", f"/v1/collections/{unique_name}")
+    assert status == 404
+
+
+# ── Skill-collection integration (case-insensitive) ──────────────────────────
+
+def test_skills_collections_normalized_on_save(unique_name):
+    """Creating a skill with case-variant collection names canonicalizes them."""
+    # First create the collection with a canonical form
+    _request("POST", "/v1/collections", {"name": unique_name, "description": ""})
+
+    # Save a skill using a DIFFERENT case variant
+    skill_slug = f"norm-test-{uuid.uuid4().hex[:8]}"
+    status, skill = _request("POST", "/v1/skills", {
+        "name": skill_slug,
+        "slug": skill_slug,
+        "description": "test",
+        "content_md": "# test",
+        "collections": [unique_name.upper()],
+    })
+    assert status == 201
+    # API should have canonicalized to the stored form (unique_name, not uppercase)
+    assert skill["collections"] == [unique_name], (
+        f"expected canonical {[unique_name]}, got {skill['collections']}"
+    )
+
+    _request("DELETE", f"/v1/skills/{skill_slug}")
+    _request("DELETE", f"/v1/collections/{unique_name}")
+
+
+def test_get_collections_no_case_duplicates(unique_name):
+    """Even if skills have mixed-case collection refs, GET returns one row."""
+    _request("POST", "/v1/collections", {"name": unique_name, "description": ""})
+
+    # Save a skill with the uppercase variant — canonicalization should map it
+    skill_slug = f"dup-test-{uuid.uuid4().hex[:8]}"
+    _request("POST", "/v1/skills", {
+        "name": skill_slug,
+        "slug": skill_slug,
+        "description": "test",
+        "content_md": "# test",
+        "collections": [unique_name.upper()],
+    })
+
+    # GET /v1/collections must list this name exactly once
+    status, cols = _request("GET", "/v1/collections")
+    assert status == 200
+    matches = [c for c in cols if c["name"].lower() == unique_name.lower()]
+    assert len(matches) == 1, f"expected 1 row, got {len(matches)}: {matches}"
+
+    _request("DELETE", f"/v1/skills/{skill_slug}")
+    _request("DELETE", f"/v1/collections/{unique_name}")
+
+
+def test_filter_skills_case_insensitive(unique_name):
+    """GET /v1/skills?collections=xxx must be case-insensitive."""
+    _request("POST", "/v1/collections", {"name": unique_name, "description": ""})
+
+    skill_slug = f"filt-test-{uuid.uuid4().hex[:8]}"
+    _request("POST", "/v1/skills", {
+        "name": skill_slug,
+        "slug": skill_slug,
+        "description": "test",
+        "content_md": "# test",
+        "collections": [unique_name],
+    })
+
+    # Filter by lowercase variant — should still find the skill
+    status, skills = _request("GET", f"/v1/skills?collections={unique_name.lower()}")
+    assert status == 200
+    slugs = [s["slug"] for s in skills]
+    assert skill_slug in slugs
+
+    # Uppercase variant — also finds it
+    status, skills = _request("GET", f"/v1/skills?collections={unique_name.upper()}")
+    assert status == 200
+    slugs = [s["slug"] for s in skills]
+    assert skill_slug in slugs
+
+    _request("DELETE", f"/v1/skills/{skill_slug}")
+    _request("DELETE", f"/v1/collections/{unique_name}")
+
+
+def test_get_single_collection_not_found():
+    status, body = _request("GET", "/v1/collections/does-not-exist-xyz-12345")
+    assert status == 404
+    assert body["error"]["code"] == "COLLECTION_NOT_FOUND"
