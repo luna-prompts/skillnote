@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, status as http_status
-from sqlalchemy import text
+from sqlalchemy import func, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -19,11 +19,12 @@ def list_collections(db: Session = Depends(get_db)):
 
     UNIONs collections-with-skills (derived from skills.collections arrays)
     with explicitly-created empty collections from the collections table.
+    Uses LOWER() throughout so case variants are merged, not duplicated.
     """
     rows = db.execute(
         text(
             """
-            SELECT name, count, COALESCE(c.description, '') AS description
+            SELECT u.name, u.count, COALESCE(c.description, '') AS description
             FROM (
                 SELECT name, COUNT(*) AS count FROM (
                     SELECT unnest(collections) AS name FROM skills
@@ -31,13 +32,13 @@ def list_collections(db: Session = Depends(get_db)):
                 ) sub GROUP BY name
                 UNION
                 SELECT name, 0 AS count FROM collections
-                WHERE name NOT IN (
-                    SELECT DISTINCT unnest(collections) FROM skills
+                WHERE lower(name) NOT IN (
+                    SELECT DISTINCT lower(unnest(collections)) FROM skills
                     WHERE collections IS NOT NULL AND collections != '{}'
                 )
             ) u
-            LEFT JOIN collections c USING (name)
-            ORDER BY name
+            LEFT JOIN collections c ON lower(c.name) = lower(u.name)
+            ORDER BY u.name
             """
         )
     ).mappings().all()
@@ -47,9 +48,22 @@ def list_collections(db: Session = Depends(get_db)):
     ]
 
 
+@router.get("/{name}", response_model=CollectionDetail)
+def get_collection(name: str, db: Session = Depends(get_db)):
+    """Fetch a single collection by name (case-insensitive)."""
+    col = db.query(Collection).filter(
+        func.lower(Collection.name) == name.lower()
+    ).first()
+    if not col:
+        raise api_error(404, "COLLECTION_NOT_FOUND", f'Collection "{name}" not found')
+    return col
+
+
 @router.post("", response_model=CollectionDetail, status_code=http_status.HTTP_201_CREATED)
 def create_collection(payload: CollectionCreate, db: Session = Depends(get_db)):
-    existing = db.query(Collection).filter(Collection.name == payload.name).first()
+    existing = db.query(Collection).filter(
+        func.lower(Collection.name) == payload.name.strip().lower()
+    ).first()
     if existing:
         raise api_error(409, "COLLECTION_EXISTS", f'Collection "{payload.name}" already exists')
 
@@ -66,26 +80,31 @@ def create_collection(payload: CollectionCreate, db: Session = Depends(get_db)):
     except IntegrityError:
         db.rollback()
         raise api_error(409, "COLLECTION_EXISTS", f'Collection "{payload.name}" already exists')
-    return db.query(Collection).filter(Collection.name == payload.name).first()
+    return db.query(Collection).filter(Collection.name == col.name).first()
 
 
 @router.put("/{name}", response_model=CollectionDetail)
 def update_collection(name: str, payload: CollectionUpdate, db: Session = Depends(get_db)):
-    col = db.query(Collection).filter(Collection.name == name).first()
+    col = db.query(Collection).filter(
+        func.lower(Collection.name) == name.lower()
+    ).first()
     if not col:
         raise api_error(404, "COLLECTION_NOT_FOUND", f'Collection "{name}" not found')
 
     col.description = payload.description
     col.updated_at = datetime.now(timezone.utc)
     db.commit()
-    return db.query(Collection).filter(Collection.name == name).first()
+    return db.query(Collection).filter(Collection.name == col.name).first()
 
 
 @router.delete("/{name}", status_code=http_status.HTTP_204_NO_CONTENT)
 def delete_collection(name: str, db: Session = Depends(get_db)):
+    # Check if any skills still reference this collection (case-insensitive)
     skill_ref_count = db.execute(
         text(
-            "SELECT COUNT(*) FROM skills WHERE :name = ANY(collections)"
+            "SELECT COUNT(*) FROM skills WHERE EXISTS ("
+            "  SELECT 1 FROM unnest(collections) AS c WHERE lower(c) = lower(:name)"
+            ")"
         ),
         {"name": name},
     ).scalar()
@@ -97,7 +116,9 @@ def delete_collection(name: str, db: Session = Depends(get_db)):
             f'Cannot delete "{name}": {skill_ref_count} skill(s) still reference it',
         )
 
-    col = db.query(Collection).filter(Collection.name == name).first()
+    col = db.query(Collection).filter(
+        func.lower(Collection.name) == name.lower()
+    ).first()
     if not col:
         raise api_error(404, "COLLECTION_NOT_FOUND", f'Collection "{name}" not found')
 

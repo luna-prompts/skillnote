@@ -35,11 +35,11 @@ class CollectionCreate(BaseModel):
 
 
 class CollectionUpdate(BaseModel):
-    description: str
+    description: str = ""
 
     @field_validator("description")
     @classmethod
-    def check_description(cls, v: str) -> str:
+    def check_description(cls, v: Optional[str]) -> str:
         if v is None:
             return ""
         if len(v) > 1024:

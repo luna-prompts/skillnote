@@ -96,10 +96,36 @@ def seed_skill(db, slug: str, name: str, description: str, content_md: str, coll
     print(f"  Seeded '{slug}' with v1")
 
 
+def seed_collections(db):
+    """Explicitly create collection rows. Idempotent — skips existing names."""
+    seeds = [
+        ("Official", "Skills curated by the SkillNote team."),
+        ("Conventions", "Team coding conventions and best practices."),
+        ("DevOps", "Deployment, infrastructure, and release workflows."),
+    ]
+    for name, description in seeds:
+        exists = db.execute(
+            text("SELECT 1 FROM collections WHERE lower(name) = lower(:name)"),
+            {"name": name},
+        ).first()
+        if exists:
+            continue
+        db.execute(
+            text(
+                "INSERT INTO collections (name, description, created_at, updated_at) "
+                "VALUES (:name, :desc, now(), now())"
+            ),
+            {"name": name, "desc": description},
+        )
+        print(f"  Seeded collection '{name}'")
+
+
 def main():
     db = SessionLocal()
     try:
         db.execute(text("SELECT 1"))
+        print("Seeding collections...")
+        seed_collections(db)
         print("Seeding skills...")
 
         # 1. Skill Creator (from Anthropic's official skills repo)

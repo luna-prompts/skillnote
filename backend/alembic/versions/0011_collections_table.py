@@ -21,7 +21,10 @@ def upgrade() -> None:
         sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
         sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
     )
+    # Prevent case-variant duplicates ("Frontend" vs "frontend")
+    op.create_index('ix_collections_name_ci', 'collections', [sa.text('lower(name)')], unique=True)
 
 
 def downgrade() -> None:
+    op.drop_index('ix_collections_name_ci', table_name='collections')
     op.drop_table('collections')
