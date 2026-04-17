@@ -17,6 +17,10 @@ export async function fetchCollectionsApi(): Promise<CollectionListItem[]> {
   return apiRequest<CollectionListItem[]>('/v1/collections')
 }
 
+export async function fetchCollectionApi(name: string): Promise<CollectionDetail> {
+  return apiRequest<CollectionDetail>(`/v1/collections/${encodeURIComponent(name)}`)
+}
+
 export async function createCollectionApi(
   name: string,
   description: string,
