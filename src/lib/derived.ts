@@ -1,4 +1,26 @@
 import { Skill } from './mock-data'
+import type { CollectionListItem } from './api/collections'
+
+/**
+ * URL-safe slug for a collection name. Uses encodeURIComponent so special
+ * characters (spaces, +, &, etc.) round-trip correctly through the URL.
+ */
+export function collectionSlug(name: string): string {
+  return encodeURIComponent(name)
+}
+
+/**
+ * Decode a collection slug from URL params. This is a best-effort decode:
+ * the canonical name should be resolved from the API (case-sensitive match
+ * is not guaranteed since collections are stored with case-insensitive dedup).
+ */
+export function decodeCollectionSlug(slug: string): string {
+  try {
+    return decodeURIComponent(slug)
+  } catch {
+    return slug
+  }
+}
 
 export function deriveCollections(skills: Skill[]) {
   const map = new Map<string, { count: number; updatedAt: string }>()
@@ -30,4 +52,26 @@ export function deriveCollections(skills: Skill[]) {
       updated_at: updatedAt,
     }
   })
+}
+
+export function deriveCollectionsFromApi(
+  skills: Skill[],
+  apiCollections: CollectionListItem[],
+) {
+  // Build map of "most recent updatedAt" per collection from skills
+  const updatedAtBySkill = new Map<string, string>()
+  for (const s of skills) {
+    for (const c of s.collections || []) {
+      const cur = updatedAtBySkill.get(c)
+      if (!cur || s.updated_at > cur) updatedAtBySkill.set(c, s.updated_at)
+    }
+  }
+
+  return apiCollections.map((c, i) => ({
+    id: String(i + 1),
+    name: c.name,
+    description: c.description || `${c.name} skills`,
+    skill_count: c.count,
+    updated_at: updatedAtBySkill.get(c.name) || new Date().toISOString(),
+  }))
 }

@@ -2,54 +2,15 @@
 import { TopBar } from '@/components/layout/topbar'
 import { SkillListItem } from '@/components/skills/skill-list-item'
 import { AddSkillsModal } from '@/components/collections/AddSkillsModal'
-import { ArrowLeft, FolderOpen, Minus, Plus, Loader2, Pencil, Trash2, Check, X } from 'lucide-react'
+import { ArrowLeft, ChevronLeft, ChevronRight, FolderOpen, Minus, Plus, Loader2, Pencil, Trash2, Check, X } from 'lucide-react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { getSkills, syncSkillsFromApi, saveSkillEdit } from '@/lib/skills-store'
+import { fetchCollectionApi, fetchCollectionsApi, updateCollectionApi, deleteCollectionApi, createCollectionApi, type CollectionListItem } from '@/lib/api/collections'
+import { collectionSlug, decodeCollectionSlug } from '@/lib/derived'
 import { type Skill } from '@/lib/mock-data'
 import { toast } from 'sonner'
-
-function readMeta(name: string): { description: string } {
-  try {
-    const meta = JSON.parse(localStorage.getItem('skillnote:collections-meta') || '{}')
-    return meta[name] || { description: '' }
-  } catch { return { description: '' } }
-}
-
-function writeMeta(name: string, data: { description: string }) {
-  try {
-    const meta = JSON.parse(localStorage.getItem('skillnote:collections-meta') || '{}')
-    meta[name] = { ...meta[name], ...data }
-    localStorage.setItem('skillnote:collections-meta', JSON.stringify(meta))
-  } catch {}
-}
-
-function renameMeta(oldName: string, newName: string) {
-  try {
-    const skills = getSkills()
-    for (const s of skills) {
-      if ((s.collections || []).some(c => c.toLowerCase() === oldName.toLowerCase())) {
-        saveSkillEdit(s.slug, {
-          collections: s.collections!.map(c =>
-            c.toLowerCase() === oldName.toLowerCase() ? newName : c
-          ),
-        })
-      }
-    }
-    const meta = JSON.parse(localStorage.getItem('skillnote:collections-meta') || '{}')
-    if (meta[oldName]) { meta[newName] = { ...meta[oldName] }; delete meta[oldName] }
-    localStorage.setItem('skillnote:collections-meta', JSON.stringify(meta))
-  } catch {}
-}
-
-function deleteMeta(name: string) {
-  try {
-    const meta = JSON.parse(localStorage.getItem('skillnote:collections-meta') || '{}')
-    delete meta[name]
-    localStorage.setItem('skillnote:collections-meta', JSON.stringify(meta))
-  } catch {}
-}
 
 export default function CollectionDetailPage() {
   const { slug } = useParams<{ slug: string }>()
@@ -68,20 +29,61 @@ export default function CollectionDetailPage() {
   const [savingEdit, setSavingEdit] = useState(false)
   const editNameRef = useRef<HTMLInputElement>(null)
 
+  // API-backed collection metadata (canonical name from API overrides slug decode)
+  const [apiDescription, setApiDescription] = useState('')
+  const [canonicalName, setCanonicalName] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [notFound, setNotFound] = useState(false)
+
+  // All collections for prev/next navigation
+  const [allCollections, setAllCollections] = useState<CollectionListItem[]>([])
+
   // Delete state
   const [confirmDelete, setConfirmDelete] = useState(false)
 
   useEffect(() => {
     syncSkillsFromApi().then(setSkills).catch(() => {})
-  }, [])
+    fetchCollectionsApi().then(setAllCollections).catch(() => {})
+    const decodedSlug = decodeCollectionSlug(slug)
+    setLoading(true)
+    setNotFound(false)
+    fetchCollectionApi(decodedSlug)
+      .then(col => {
+        setCanonicalName(col.name)
+        setApiDescription(col.description || '')
+        setLoading(false)
+      })
+      .catch(() => {
+        // Not in collections table — may be a skill-derived collection
+        // Fall back to the decoded slug as the name
+        setCanonicalName(null)
+        setLoading(false)
+      })
+  }, [slug])
 
-  const collectionName = decodeURIComponent(slug).replace(/-/g, ' ')
-  const meta = useMemo(() => readMeta(collectionName), [collectionName, skills]) // eslint-disable-line
+  // Use canonical API name if available, else fall back to decoded slug
+  const collectionName = canonicalName || decodeCollectionSlug(slug)
 
   const filtered = useMemo(
     () => skills.filter(s => (s.collections || []).some(c => c.toLowerCase() === collectionName.toLowerCase())),
     [skills, collectionName]
   )
+
+  // Prev / next collection for header navigation
+  const { prevCollection, nextCollection, currentIndex } = useMemo(() => {
+    if (allCollections.length <= 1) {
+      return { prevCollection: null, nextCollection: null, currentIndex: -1 }
+    }
+    const idx = allCollections.findIndex(
+      c => c.name.toLowerCase() === collectionName.toLowerCase(),
+    )
+    if (idx === -1) return { prevCollection: null, nextCollection: null, currentIndex: -1 }
+    return {
+      prevCollection: idx > 0 ? allCollections[idx - 1] : null,
+      nextCollection: idx < allCollections.length - 1 ? allCollections[idx + 1] : null,
+      currentIndex: idx,
+    }
+  }, [allCollections, collectionName])
 
   function refresh() {
     setSkills(getSkills())
@@ -90,9 +92,13 @@ export default function CollectionDetailPage() {
 
   function startEdit() {
     setEditName(collectionName)
-    setEditDesc(meta.description || '')
+    setEditDesc(apiDescription)
     setEditing(true)
-    setTimeout(() => editNameRef.current?.focus(), 0)
+    // Focus + select so the user can immediately type over the name
+    setTimeout(() => {
+      editNameRef.current?.focus()
+      editNameRef.current?.select()
+    }, 0)
   }
 
   async function saveEdit() {
@@ -100,13 +106,41 @@ export default function CollectionDetailPage() {
     if (!newName) return
     setSavingEdit(true)
     try {
-      if (newName !== collectionName) renameMeta(collectionName, newName)
-      writeMeta(newName, { description: editDesc.trim() })
+      const trimmedDesc = editDesc.trim()
+      if (newName.toLowerCase() !== collectionName.toLowerCase()) {
+        // Rename: create new, then migrate skills, then delete old.
+        // If create fails (duplicate name), abort before touching skills.
+        try {
+          await createCollectionApi(newName, trimmedDesc)
+        } catch (err) {
+          toast.error(err instanceof Error ? err.message : `Collection "${newName}" may already exist`)
+          return
+        }
+        const allSkills = getSkills()
+        for (const s of allSkills) {
+          if ((s.collections || []).some(c => c.toLowerCase() === collectionName.toLowerCase())) {
+            await saveSkillEdit(s.slug, {
+              collections: s.collections!.map(c =>
+                c.toLowerCase() === collectionName.toLowerCase() ? newName : c
+              ),
+            })
+          }
+        }
+        try {
+          await deleteCollectionApi(collectionName)
+        } catch {}
+      } else {
+        // Description-only update
+        try {
+          await updateCollectionApi(collectionName, trimmedDesc)
+        } catch {}
+      }
+      setApiDescription(trimmedDesc)
       toast.success('Collection updated')
       setEditing(false)
       refresh()
-      if (newName !== collectionName) {
-        router.replace(`/collections/${newName.toLowerCase().replace(/\s+/g, '-')}`)
+      if (newName.toLowerCase() !== collectionName.toLowerCase()) {
+        router.replace(`/collections/${collectionSlug(newName)}`)
       }
     } finally {
       setSavingEdit(false)
@@ -118,17 +152,32 @@ export default function CollectionDetailPage() {
       const updated = (skill.collections || []).filter(c => c.toLowerCase() !== collectionName.toLowerCase())
       await saveSkillEdit(skill.slug, { collections: updated })
     }
-    deleteMeta(collectionName)
+    try {
+      await deleteCollectionApi(collectionName)
+    } catch {}
     toast.success(`"${collectionName}" deleted`)
     router.push('/collections')
   }
 
   async function handleRemove(skill: Skill) {
+    const wasLast = filtered.length === 1
     setRemoving(skill.slug)
     try {
       const updated = (skill.collections || []).filter(c => c.toLowerCase() !== collectionName.toLowerCase())
       await saveSkillEdit(skill.slug, { collections: updated })
-      toast.success(`Removed from "${collectionName}"`, { description: skill.title })
+      if (wasLast) {
+        // Collection is now empty — offer a one-click cleanup
+        toast.success(`Removed "${skill.title}" — "${collectionName}" is now empty`, {
+          description: 'Delete the empty collection?',
+          action: {
+            label: 'Delete',
+            onClick: () => { setConfirmDelete(true) },
+          },
+          duration: 8000,
+        })
+      } else {
+        toast.success(`Removed from "${collectionName}"`, { description: skill.title })
+      }
       setConfirmRemove(null)
       refresh()
     } catch {
@@ -138,21 +187,89 @@ export default function CollectionDetailPage() {
     }
   }
 
+  // Loading state — show a skeleton while the initial fetch is in flight
+  if (loading) {
+    return (
+      <>
+        <TopBar />
+        <main className="flex-1 overflow-auto">
+          <div className="px-6 py-5 border-b border-border/50">
+            <Link
+              href="/collections"
+              className="inline-flex items-center gap-1.5 text-[12px] text-muted-foreground hover:text-foreground transition-colors mb-4"
+            >
+              <ArrowLeft className="h-3 w-3" />
+              Collections
+            </Link>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-muted/60 animate-pulse" />
+              <div className="flex-1 space-y-2">
+                <div className="h-5 w-40 bg-muted/60 rounded animate-pulse" />
+                <div className="h-3 w-24 bg-muted/40 rounded animate-pulse" />
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center justify-center py-20">
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground/40" />
+          </div>
+        </main>
+      </>
+    )
+  }
+
   return (
     <>
       <TopBar />
       <main className="flex-1 overflow-auto">
 
-        {/* ── Header ── */}
-        <div className="px-6 py-5 border-b border-border/50">
-          {/* Breadcrumb */}
-          <Link
-            href="/collections"
-            className="inline-flex items-center gap-1.5 text-[12px] text-muted-foreground hover:text-foreground transition-colors mb-4"
-          >
-            <ArrowLeft className="h-3 w-3" />
-            Collections
-          </Link>
+        {/* ── Header (sticky so Edit/Delete/Add remain accessible when scrolling) ── */}
+        <div className="sticky top-0 z-10 px-6 py-5 border-b border-border/50 bg-background/95 backdrop-blur-sm">
+          {/* Navigation row: back link + prev/next + position indicator */}
+          <div className="flex items-center justify-between mb-4">
+            <Link
+              href="/collections"
+              className="inline-flex items-center gap-1.5 text-[12px] text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <ArrowLeft className="h-3 w-3" />
+              Collections
+            </Link>
+
+            {currentIndex >= 0 && allCollections.length > 1 && (
+              <div className="flex items-center gap-1 text-[11px] text-muted-foreground/70">
+                {prevCollection ? (
+                  <Link
+                    href={`/collections/${collectionSlug(prevCollection.name)}`}
+                    className="h-6 w-6 rounded flex items-center justify-center hover:bg-muted/60 hover:text-foreground transition-colors"
+                    title={`Previous: ${prevCollection.name}`}
+                    aria-label={`Previous collection: ${prevCollection.name}`}
+                  >
+                    <ChevronLeft className="h-3.5 w-3.5" />
+                  </Link>
+                ) : (
+                  <span className="h-6 w-6 flex items-center justify-center text-muted-foreground/20">
+                    <ChevronLeft className="h-3.5 w-3.5" />
+                  </span>
+                )}
+                <span className="px-1.5 tabular-nums">
+                  {currentIndex + 1} / {allCollections.length}
+                </span>
+                {nextCollection ? (
+                  <Link
+                    href={`/collections/${collectionSlug(nextCollection.name)}`}
+                    className="h-6 w-6 rounded flex items-center justify-center hover:bg-muted/60 hover:text-foreground transition-colors"
+                    title={`Next: ${nextCollection.name}`}
+                    aria-label={`Next collection: ${nextCollection.name}`}
+                  >
+                    <ChevronRight className="h-3.5 w-3.5" />
+                  </Link>
+                ) : (
+                  <span className="h-6 w-6 flex items-center justify-center text-muted-foreground/20">
+                    <ChevronRight className="h-3.5 w-3.5" />
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
 
           {editing ? (
             /* ── Edit mode ── */
@@ -205,8 +322,8 @@ export default function CollectionDetailPage() {
                 </div>
                 <div className="min-w-0">
                   <h1 className="text-[17px] font-semibold text-foreground capitalize">{collectionName}</h1>
-                  {meta.description ? (
-                    <p className="text-[12px] text-muted-foreground/70 mt-0.5 leading-relaxed">{meta.description}</p>
+                  {apiDescription ? (
+                    <p className="text-[12px] text-muted-foreground/70 mt-0.5 leading-relaxed">{apiDescription}</p>
                   ) : null}
                   <p className="text-[12px] text-muted-foreground/50 mt-0.5">
                     {filtered.length} {filtered.length === 1 ? 'skill' : 'skills'}
@@ -218,8 +335,9 @@ export default function CollectionDetailPage() {
               <div className="flex items-center gap-1.5 shrink-0 mt-0.5">
                 <button
                   onClick={startEdit}
-                  className="h-8 w-8 rounded-lg flex items-center justify-center text-muted-foreground/50 hover:text-foreground hover:bg-muted/60 transition-colors"
+                  className="h-8 w-8 rounded-lg flex items-center justify-center text-muted-foreground/50 hover:text-foreground hover:bg-muted/60 transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                   title="Edit collection"
+                  aria-label="Edit collection"
                 >
                   <Pencil className="h-3.5 w-3.5" />
                 </button>
@@ -237,8 +355,9 @@ export default function CollectionDetailPage() {
                 ) : (
                   <button
                     onClick={() => setConfirmDelete(true)}
-                    className="h-8 w-8 rounded-lg flex items-center justify-center text-muted-foreground/40 hover:text-destructive hover:bg-destructive/10 transition-colors"
+                    className="h-8 w-8 rounded-lg flex items-center justify-center text-muted-foreground/40 hover:text-destructive hover:bg-destructive/10 transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                     title="Delete collection"
+                    aria-label="Delete collection"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>

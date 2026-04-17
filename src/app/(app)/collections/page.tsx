@@ -1,11 +1,12 @@
 'use client'
 import Link from 'next/link'
 import { TopBar } from '@/components/layout/topbar'
-import { FolderOpen, Plus, ArrowRight, Info } from 'lucide-react'
+import { FolderOpen, Plus, ArrowRight, Info, Search, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { getSkills, syncSkillsFromApi } from '@/lib/skills-store'
-import { deriveCollections } from '@/lib/derived'
+import { deriveCollectionsFromApi, collectionSlug } from '@/lib/derived'
+import { createCollectionApi, fetchCollectionsApi, type CollectionListItem } from '@/lib/api/collections'
 import { NewCollectionModal } from '@/components/collections/NewCollectionModal'
 import type { Skill } from '@/lib/mock-data'
 
@@ -17,16 +18,94 @@ function getSkillsForCollection(skills: Skill[], name: string): Skill[] {
 
 export default function CollectionsPage() {
   const [skills, setSkills] = useState(getSkills())
+  const [apiCollections, setApiCollections] = useState<CollectionListItem[]>([])
   const [newCollectionOpen, setNewCollectionOpen] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
+
+  // One-shot migration: push stale localStorage-meta entries to the API.
+  // Guard prevents concurrent runs (React StrictMode, double page load).
+  const migratingRef = useRef(false)
+  async function migrateLocalStorageCollections(apiNames: Set<string>) {
+    if (migratingRef.current) return
+    migratingRef.current = true
+    try {
+      let meta: Record<string, { description: string; created_at: string }>
+      try {
+        meta = JSON.parse(localStorage.getItem('skillnote:collections-meta') || '{}')
+      } catch {
+        return
+      }
+      const toMigrate = Object.entries(meta).filter(([name]) => !apiNames.has(name))
+      if (toMigrate.length === 0) return
+
+      const succeeded: string[] = []
+      for (const [name, data] of toMigrate) {
+        try {
+          await createCollectionApi(name, data.description || '')
+          succeeded.push(name)
+        } catch {
+          // Leave in localStorage; try again next page load
+        }
+      }
+      if (succeeded.length === 0) return
+
+      // Remove migrated entries from localStorage
+      const remaining = { ...meta }
+      for (const name of succeeded) delete remaining[name]
+      localStorage.setItem('skillnote:collections-meta', JSON.stringify(remaining))
+
+      // Re-fetch so UI reflects migrated collections
+      try {
+        const fresh = await fetchCollectionsApi()
+        setApiCollections(fresh)
+      } catch {}
+    } finally {
+      migratingRef.current = false
+    }
+  }
+
+  async function loadCollections() {
+    setLoadError(null)
+    setLoading(true)
+    try {
+      const cols = await fetchCollectionsApi()
+      setApiCollections(cols)
+      await migrateLocalStorageCollections(new Set(cols.map(c => c.name)))
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : 'Failed to load collections')
+    } finally {
+      setLoading(false)
+    }
+  }
 
   useEffect(() => {
     syncSkillsFromApi().then(setSkills).catch(() => {})
+    loadCollections()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const collections = useMemo(() => deriveCollections(skills), [skills])
+  const collections = useMemo(
+    () => deriveCollectionsFromApi(skills, apiCollections),
+    [skills, apiCollections],
+  )
 
-  function handleCollectionCreated() {
+  const filteredCollections = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase()
+    if (!q) return collections
+    return collections.filter(c =>
+      c.name.toLowerCase().includes(q) ||
+      (c.description || '').toLowerCase().includes(q),
+    )
+  }, [collections, searchQuery])
+
+  async function handleCollectionCreated() {
     setSkills(s => [...s])
+    try {
+      const fresh = await fetchCollectionsApi()
+      setApiCollections(fresh)
+    } catch {}
     setNewCollectionOpen(false)
   }
 
@@ -65,7 +144,74 @@ export default function CollectionsPage() {
           </div>
         )}
 
-        {collections.length === 0 ? (
+        {/* Search bar — shown once there are enough collections to warrant it */}
+        {collections.length >= 5 && (
+          <div className="mb-5">
+            <div className="relative max-w-md">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/40 pointer-events-none" />
+              <input
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                placeholder="Search collections…"
+                className="w-full h-9 pl-9 pr-9 text-[13px] bg-muted/50 border border-border/40 rounded-lg focus:outline-none focus:ring-1 focus:ring-ring focus:border-transparent placeholder:text-muted-foreground/40 transition-all"
+                aria-label="Search collections"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 h-5 w-5 flex items-center justify-center text-muted-foreground/40 hover:text-muted-foreground rounded"
+                  aria-label="Clear search"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Error banner — shown when API fetch fails */}
+        {loadError && !loading && (
+          <div className="mb-6 flex items-start gap-2.5 px-4 py-3 rounded-lg bg-destructive/5 border border-destructive/20">
+            <Info className="h-4 w-4 text-destructive mt-0.5 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-[12px] text-destructive leading-relaxed">
+                {loadError}
+              </p>
+              <button
+                onClick={loadCollections}
+                className="mt-1.5 text-[11px] font-medium text-destructive hover:underline"
+              >
+                Retry
+              </button>
+            </div>
+          </div>
+        )}
+
+        {loading && collections.length === 0 ? (
+          /* ── Loading skeleton ── */
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {[...Array(3)].map((_, i) => (
+              <div key={i} className="bg-card border border-border/40 rounded-2xl overflow-hidden animate-pulse">
+                <div className="p-5">
+                  <div className="flex items-start gap-3.5 mb-4">
+                    <div className="w-11 h-11 rounded-xl bg-muted/60" />
+                    <div className="flex-1 pt-1 space-y-2">
+                      <div className="h-3.5 w-28 bg-muted/60 rounded" />
+                      <div className="h-2.5 w-40 bg-muted/40 rounded" />
+                    </div>
+                  </div>
+                  <div className="flex gap-1.5">
+                    <div className="h-6 w-20 bg-muted/50 rounded-md" />
+                    <div className="h-6 w-16 bg-muted/50 rounded-md" />
+                  </div>
+                </div>
+                <div className="px-5 py-3 border-t border-border/30 bg-muted/20">
+                  <div className="h-1 w-full bg-border/40 rounded-full" />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : collections.length === 0 ? (
           /* ── Empty state ── */
           <div className="flex flex-col items-center justify-center py-28 px-6">
             <div className="w-16 h-16 rounded-2xl bg-muted/70 border border-border/40 flex items-center justify-center mb-5">
@@ -84,11 +230,25 @@ export default function CollectionsPage() {
               New Collection
             </Button>
           </div>
+        ) : filteredCollections.length === 0 ? (
+          /* ── No search results ── */
+          <div className="flex flex-col items-center justify-center py-20 px-6">
+            <Search className="h-8 w-8 text-muted-foreground/25 mb-3" />
+            <p className="text-[13px] text-muted-foreground/70">
+              No collections match &ldquo;{searchQuery}&rdquo;
+            </p>
+            <button
+              onClick={() => setSearchQuery('')}
+              className="mt-3 text-[12px] text-accent hover:underline"
+            >
+              Clear search
+            </button>
+          </div>
         ) : (
           /* ── Collection grid ── */
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pb-24 lg:pb-6">
-            {collections.map(col => {
-              const slug = col.name.toLowerCase().replace(/\s+/g, '-')
+            {filteredCollections.map(col => {
+              const slug = collectionSlug(col.name)
               const preview = getSkillsForCollection(skills, col.name).slice(0, 5)
               const overflow = col.skill_count - preview.length
               const initial = col.name.charAt(0).toUpperCase()

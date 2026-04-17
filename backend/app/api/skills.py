@@ -13,7 +13,10 @@ from app.db.models import Skill, SkillVersion, SkillContentVersion
 from app.db.session import get_db
 from app.schemas.skill import SkillListItem, SkillDetail, SkillCreate, SkillUpdate
 from app.schemas.version import SkillVersionItem, ContentVersionItem
-from app.validators.skill_validator import validate_collection_skill_count
+from app.validators.skill_validator import (
+    canonicalize_collection_names,
+    validate_collection_skill_count,
+)
 
 router = APIRouter(prefix="/v1/skills", tags=["skills"])
 
@@ -75,7 +78,15 @@ def list_skills(
     if collections:
         col_list = [c.strip() for c in collections.split(",") if c.strip()]
         if col_list:
-            query = query.filter(Skill.collections.overlap(col_list))
+            # Case-insensitive match: any collection in the skill's array
+            # lowercases to one of the requested names.
+            lower_list = [c.lower() for c in col_list]
+            query = query.filter(
+                text(
+                    "EXISTS (SELECT 1 FROM unnest(skills.collections) AS c "
+                    "WHERE lower(c) = ANY(:lower_list))"
+                ).bindparams(lower_list=lower_list)
+            )
     rows = query.order_by(Skill.slug.asc()).all()
 
     out: list[SkillListItem] = []
@@ -290,8 +301,11 @@ def create_skill(
     if existing:
         raise api_error(409, "SKILL_SLUG_EXISTS", f"Slug '{payload.slug}' already exists")
 
+    # Canonicalize: map case variants to existing stored forms, de-duplicate
+    canonical_collections = canonicalize_collection_names(db, payload.collections or [])
+
     # Check collection skill-count limits
-    for col_name in (payload.collections or []):
+    for col_name in canonical_collections:
         err = validate_collection_skill_count(db, col_name)
         if err:
             raise api_error(422, "COLLECTION_LIMIT_REACHED", err)
@@ -302,7 +316,7 @@ def create_skill(
         slug=payload.slug,
         description=payload.description,
         content_md=payload.content_md,
-        collections=payload.collections,
+        collections=canonical_collections,
         extra_frontmatter=payload.extra_frontmatter,
         current_version=0,
     )
@@ -353,14 +367,16 @@ def update_skill(
     if payload.content_md is not None:
         skill_row.content_md = payload.content_md
     if payload.collections is not None:
-        # Check collection skill-count limits for any newly added collections
-        current_collections = set(skill_row.collections or [])
-        for col_name in payload.collections:
-            if col_name not in current_collections:
+        # Canonicalize incoming names to stored case + de-duplicate variants
+        canonical_collections = canonicalize_collection_names(db, payload.collections)
+        # Check skill-count limits for any newly added collections (case-insensitive)
+        current_lower = {c.lower() for c in (skill_row.collections or [])}
+        for col_name in canonical_collections:
+            if col_name.lower() not in current_lower:
                 err = validate_collection_skill_count(db, col_name, exclude_skill_id=skill_row.id)
                 if err:
                     raise api_error(422, "COLLECTION_LIMIT_REACHED", err)
-        skill_row.collections = payload.collections
+        skill_row.collections = canonical_collections
     if payload.extra_frontmatter is not None:
         skill_row.extra_frontmatter = payload.extra_frontmatter
     skill_row.updated_at = datetime.now(timezone.utc)

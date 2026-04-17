@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react'
 import { FolderOpen, Plus, X, Loader2, AlertCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
+import { createCollectionApi } from '@/lib/api/collections'
 
 type Props = { onClose: () => void; onCreated: (name: string, description: string) => void }
 
@@ -20,16 +21,29 @@ export function NewCollectionModal({ onClose, onCreated }: Props) {
     return () => document.removeEventListener('keydown', onKey)
   }, [onClose])
 
-  function handleCreate() {
+  async function handleCreate() {
     if (!name.trim()) { setNameError('Name is required'); nameRef.current?.focus(); return }
     setNameError('')
     setSaving(true)
     try {
-      const meta = JSON.parse(localStorage.getItem('skillnote:collections-meta') || '{}')
-      meta[name.trim()] = { description: description.trim(), created_at: new Date().toISOString() }
-      localStorage.setItem('skillnote:collections-meta', JSON.stringify(meta))
-      onCreated(name.trim(), description.trim())
-      toast.success(`Collection "${name.trim()}" created`)
+      const trimmedName = name.trim()
+      const trimmedDesc = description.trim()
+      try {
+        await createCollectionApi(trimmedName, trimmedDesc)
+      } catch (err) {
+        // Fallback: keep local-only entry so user doesn't lose their work if offline
+        try {
+          const meta = JSON.parse(localStorage.getItem('skillnote:collections-meta') || '{}')
+          meta[trimmedName] = { description: trimmedDesc, created_at: new Date().toISOString() }
+          localStorage.setItem('skillnote:collections-meta', JSON.stringify(meta))
+        } catch {}
+        toast.error(err instanceof Error ? err.message : 'Could not create collection on server — saved locally')
+        onCreated(trimmedName, trimmedDesc)
+        onClose()
+        return
+      }
+      onCreated(trimmedName, trimmedDesc)
+      toast.success(`Collection "${trimmedName}" created`)
       onClose()
     } finally {
       setSaving(false)
@@ -39,12 +53,15 @@ export function NewCollectionModal({ onClose, onCreated }: Props) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-[2px] animate-in fade-in duration-150" onClick={onClose}>
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="new-collection-title"
         className="w-full max-w-md bg-card border border-border rounded-xl shadow-2xl overflow-hidden mx-4 animate-in zoom-in-95 duration-150"
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border/60">
-          <h3 className="text-sm font-semibold flex items-center gap-2">
+          <h3 id="new-collection-title" className="text-sm font-semibold flex items-center gap-2">
             <FolderOpen className="h-4 w-4 text-muted-foreground" />
             New Collection
           </h3>
