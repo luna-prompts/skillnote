@@ -93,6 +93,24 @@ def inspect_source(parsed: Optional[dict], *, token: Optional[str] = None, timeo
         return InspectResult(error_code="UPSTREAM_TIMEOUT",
                              error_message="Upstream unreachable")
 
+    from app.services.imports.cloner import clone_and_scan
+
+    # Attempt clone + SKILL.md scan for github source type
+    clone_parsed = {
+        "source_type": "github",
+        "url": f"https://github.com/{repo}.git",
+        "ref": ref,
+        "subpath": parsed.get("subpath"),
+    }
+    clone_result = clone_and_scan(clone_parsed, token=token, timeout_s=timeout_s)
+
+    if clone_result.error_code:
+        return InspectResult(
+            source_type="github",
+            error_code=clone_result.error_code,
+            error_message=clone_result.error_message,
+        )
+
     return InspectResult(
         source_type="github",
         url=f"github.com/{repo}",
@@ -100,6 +118,8 @@ def inspect_source(parsed: Optional[dict], *, token: Optional[str] = None, timeo
         owner=owner_str,
         repo=repo_str,
         ref=ref,
-        resolved_sha=sha,
-        kind="plugin",  # v1: assume plugin; full kind detection adds clone + manifest parse
+        resolved_sha=clone_result.resolved_sha or sha,
+        subpath=parsed.get("subpath"),
+        kind="plugin",  # full kind detection (marketplace vs plugin vs skill_bundle) = future
+        skills=clone_result.skills,
     )
