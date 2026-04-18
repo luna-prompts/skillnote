@@ -3,6 +3,7 @@ import { useState, useMemo, useRef, useEffect } from 'react'
 import { Plus, X, FolderOpen, Check, Search } from 'lucide-react'
 import { getSkills } from '@/lib/skills-store'
 import { createCollectionApi, fetchCollectionsApi } from '@/lib/api/collections'
+import { isValidCollectionSlug } from '@/lib/collection-validation'
 
 type Props = {
   selected: string[]
@@ -87,6 +88,7 @@ export function CollectionPicker({ selected, onChange, placeholder, compact = fa
   const canCreate = useMemo(() => {
     const v = query.trim()
     if (!v) return false
+    if (!isValidCollectionSlug(v)) return false
     return !allCollections.some(c => c.toLowerCase() === v.toLowerCase()) &&
            !selected.some(c => c.toLowerCase() === v.toLowerCase())
   }, [query, allCollections, selected])
