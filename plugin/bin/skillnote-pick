@@ -27,6 +27,7 @@ CONFIG_PATH = os.path.join(PROJECT_DIR, ".skillnote.json")
 import re as _re
 
 RESERVED_WORDS = ("anthropic", "claude")
+SKIP_SENTINEL = "__SKIP__"
 _SLUG_PATTERN = _re.compile(r"^[a-z0-9_-]+$")
 _MAX_NAME = 128
 
@@ -65,20 +66,38 @@ def _resolve_recommendation(folder_raw, existing):
 def _confirm_skip(stdscr):
     """Draw a centered modal and return True if user confirms."""
     import curses
-    h, w = stdscr.getmaxyx()
+    curses.flushinp()  # discard any buffered type-ahead so Enter can't auto-confirm
     box_h, box_w = 5, 40
-    y = (h - box_h) // 2
-    x = (w - box_w) // 2
-    for i in range(box_h):
-        stdscr.addstr(y + i, x, " " * box_w, curses.A_REVERSE)
-    stdscr.addstr(y + 1, x + 2, "Are you sure you want to skip?", curses.A_REVERSE | curses.A_BOLD)
-    stdscr.addstr(y + 3, x + 2, "[Y] Yes       [N] Cancel", curses.A_REVERSE)
-    stdscr.refresh()
     while True:
+        h, w = stdscr.getmaxyx()
+        if h < box_h + 2 or w < box_w + 2:
+            # Fallback: too small for a centered modal
+            try:
+                stdscr.addstr(max(0, h - 1), 0, " Skip? [y/N] ", curses.A_REVERSE)
+                stdscr.clrtoeol()
+                stdscr.refresh()
+            except curses.error:
+                pass
+        else:
+            y = (h - box_h) // 2
+            x = (w - box_w) // 2
+            try:
+                for i in range(box_h):
+                    stdscr.addstr(y + i, x, " " * box_w, curses.A_REVERSE)
+                stdscr.addstr(y + 1, x + 2, "Are you sure you want to skip?", curses.A_REVERSE | curses.A_BOLD)
+                stdscr.addstr(y + 3, x + 2, "[Y] Yes       [N] Cancel", curses.A_REVERSE)
+                stdscr.refresh()
+            except curses.error:
+                pass
         k = stdscr.getch()
+        if k == curses.KEY_RESIZE:
+            stdscr.erase()
+            continue  # redraw on next loop iteration
         if k in (ord("y"), ord("Y"), 10, 13, curses.KEY_ENTER):
+            curses.flushinp()
             return True
         if k in (ord("n"), ord("N"), 27):
+            curses.flushinp()
             return False
 
 
@@ -287,8 +306,12 @@ def pick(stdscr, items, recommended=0):
                         if search.lower() in it[0].lower()]
         else:
             filtered = [(si, oi, it) for si, (oi, it) in enumerate(sorted_items)]
+        # Allow cur == len(filtered) so the pinned Skip row is focusable
         if filtered:
-            cur = _clamp(cur, 0, len(filtered) - 1)
+            cur = _clamp(cur, 0, len(filtered))
+        else:
+            # With no filtered items, cur=0 lands on Skip (only focusable thing)
+            cur = 0
 
         # Layout
         pad = 2
@@ -305,7 +328,7 @@ def pick(stdscr, items, recommended=0):
         # Selected collection for preview
         sel_name, sel_count, sel_skills = "", 0, []
         sel_is_rec = False
-        if filtered:
+        if filtered and cur < len(filtered):
             _, orig_idx, (sel_name, sel_count, sel_skills) = filtered[cur]
             sel_is_rec = (orig_idx == recommended)
 
@@ -530,7 +553,7 @@ def pick(stdscr, items, recommended=0):
             # ═══ BOTTOM BORDER with hints + links ═══
             bot_row = h - 1
             s(bot_row, bx, "╰" + "─" * (bw - 2) + "╯", BORDER)
-            hints = " ↑/↓ navigate · Enter select · Tab panel · Esc cancel "
+            hints = " ↑/↓ navigate · ↵ select · Ctrl+K skip · Esc cancel "
             s(bot_row, bx + 2, hints, DIM)
             links = f" {web_url} · {gh_url} ★ "
             s(bot_row, bx + bw - len(links) - 1, links, DIM | curses.color_pair(1))
@@ -569,14 +592,14 @@ def pick(stdscr, items, recommended=0):
             if focus == "left" and cur == len(filtered):
                 # Skip row
                 if _confirm_skip(stdscr):
-                    return "__SKIP__"
+                    return SKIP_SENTINEL
                 continue
             if filtered:
                 _, orig_idx, _ = filtered[cur]
                 return [items[orig_idx][0]]
         elif key == 11:  # Ctrl+K
             if _confirm_skip(stdscr):
-                return "__SKIP__"
+                return SKIP_SENTINEL
         elif key in (ord("q"), 27):
             return None
         elif key in (curses.KEY_BACKSPACE, 127, 8):
@@ -706,7 +729,7 @@ def main():
             print(f"  ✦ SkillNote: {', '.join(current)} (active)")
         return
     current = _get_current_collections()
-    if chosen == "__SKIP__":
+    if chosen == SKIP_SENTINEL:
         try:
             with open(CONFIG_PATH, "w") as f:
                 json.dump({"collections": []}, f, indent=2)
