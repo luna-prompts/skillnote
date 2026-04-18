@@ -10,6 +10,9 @@ type ApiSkillListItem = {
   latestVersion?: string
   currentVersion?: number
   extra_frontmatter?: string
+  import_source_id?: string | null
+  forked_from_source?: boolean
+  source_path?: string | null
 }
 
 type ApiSkillDetail = {
@@ -23,6 +26,9 @@ type ApiSkillDetail = {
   extra_frontmatter?: string
   created_at: string
   updated_at: string
+  import_source_id?: string | null
+  forked_from_source?: boolean
+  source_path?: string | null
 }
 
 type ApiComment = {
@@ -45,6 +51,9 @@ function listItemToSkill(item: ApiSkillListItem): Skill {
     extra_frontmatter: item.extra_frontmatter ?? undefined,
     created_at: now,
     updated_at: now,
+    import_source_id: item.import_source_id ?? null,
+    forked_from_source: item.forked_from_source ?? false,
+    source_path: item.source_path ?? null,
   }
 }
 
@@ -60,6 +69,9 @@ function detailToSkill(item: ApiSkillDetail, existingComments?: Comment[]): Skil
     created_at: item.created_at,
     updated_at: item.updated_at,
     comments: existingComments,
+    import_source_id: item.import_source_id ?? null,
+    forked_from_source: item.forked_from_source ?? false,
+    source_path: item.source_path ?? null,
   }
 }
 

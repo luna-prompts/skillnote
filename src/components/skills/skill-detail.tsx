@@ -570,6 +570,9 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
                 setExtraFrontmatter={setExtraFrontmatterValue}
                 openFullscreen={true}
                 currentVersion={skill.current_version}
+                importSourceId={skill.import_source_id}
+                forkedFromSource={skill.forked_from_source}
+                sourcePath={skill.source_path}
               />
             )}
           </div>

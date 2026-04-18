@@ -71,6 +71,12 @@ export type Skill = {
   comments?: Comment[]
   attachments?: Attachment[]
   revisions?: Revision[]
+  /** If set, this skill was imported from a marketplace/upstream source. */
+  import_source_id?: string | null
+  /** True once the user has edited an imported skill and diverged from upstream. */
+  forked_from_source?: boolean
+  /** Human-readable path/URL the skill was imported from (e.g. "anthropics/skills@a1b2/my-skill"). */
+  source_path?: string | null
 }
 
 export type Collection = {
