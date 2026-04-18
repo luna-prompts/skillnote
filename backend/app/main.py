@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -46,6 +47,35 @@ async def http_exception_handler(_: Request, exc: HTTPException):
     else:
         payload = {"code": "HTTP_ERROR", "message": str(detail)}
     return JSONResponse(status_code=exc.status_code, content={"error": payload})
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(_: Request, exc: RequestValidationError):
+    """Wrap Pydantic/FastAPI validation errors in the standard error envelope.
+
+    Without this handler, FastAPI returns `{"detail": [...]}`, which (a) breaks
+    the frontend error-parsing contract (`body.error.message`), (b) echoes the
+    raw user input back as `input` fields, and (c) leaks internal `ctx` keys.
+    """
+    errors = exc.errors()
+    # Build a human-readable message from the first (or joined) errors.
+    # Strip Pydantic-internal fields (`input`, `ctx`, `url`) before stringifying.
+    messages = []
+    for err in errors:
+        loc = " → ".join(str(p) for p in err.get("loc", ()) if p != "body")
+        msg = err.get("msg", "invalid")
+        # Pydantic wraps custom ValueErrors as "Value error, <real message>" — strip the prefix
+        if msg.startswith("Value error, "):
+            msg = msg[len("Value error, "):]
+        if loc:
+            messages.append(f"{loc}: {msg}")
+        else:
+            messages.append(msg)
+    message = "; ".join(messages) if messages else "Validation failed"
+    return JSONResponse(
+        status_code=422,
+        content={"error": {"code": "VALIDATION_ERROR", "message": message}},
+    )
 
 
 @app.exception_handler(Exception)
