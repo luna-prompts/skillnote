@@ -52,8 +52,8 @@ This spec adds all three, and tightens collection-name validation to keep the re
 
 ### Validation
 
-- **`backend/app/validators/collection_validator.py`** — add regex rule `^[a-z0-9_-]+$` and reserved-word check (`anthropic`, `claude`, matching `src/lib/skill-validation.ts:7`) alongside existing length/newline/XML checks. This validator is already wired into `POST /v1/collections` via `backend/app/schemas/collection.py:19-25`, so no schema change needed there.
-- **`backend/app/schemas/skill.py`** — extend the existing `SkillCreate.check_collections` field_validator (lines 64-70) so that, after the current "at least one collection required" check, it also runs each entry through `validate_collection_name`. Apply the same change to `SkillUpdate.collections`. Closes the skill-push path that currently lets arbitrary strings land in `skills.collections[]`.
+- **`backend/app/validators/collection_validator.py`** — add regex rule `^[a-z0-9_-]+$` and reserved-word check alongside existing length/newline/XML checks. Import `RESERVED_WORDS` from `backend/app/validators/skill_validator.py:8` to avoid duplicating the list. This validator is already wired into `POST /v1/collections` via `backend/app/schemas/collection.py:19-25`, so no change needed there.
+- **`backend/app/api/skills.py`** (not schema) — add per-name validation in the handler **after** `canonicalize_collection_names(...)` in both `create_skill` (around line 305) and `update_skill` (around line 371). Schema-level validation would break tolerance: today a client posts `collections: ["Frontend"]`, Pydantic passes the "at least one" check, then the handler calls `canonicalize_collection_names` which maps `Frontend` → `frontend` (the canonical stored form). If we validated at the schema layer, `Frontend` would 422 before canonicalization ever runs. Correct placement: validate the canonical forms, so clients keep their case-insensitive tolerance while truly new invalid names (e.g. `"Bad Name"`) are still rejected. Return `api_error(422, "COLLECTION_NAME_INVALID", ...)` on failure, matching the pattern used by `validate_collection_skill_count` errors at `skills.py:311`.
 - **`src/lib/collection-validation.ts`** (new) — mirror backend rule for frontend use; export `validateCollectionName`, `normalizeCollectionName`, `slugFromCollectionName` following the pattern in `src/lib/skill-validation.ts`.
 - **`src/components/collections/NewCollectionModal.tsx`** — wire validator; show inline error and disable Create button when invalid.
 - **`src/components/collections/CollectionPicker.tsx`** — gate `canCreate` on slug validity; disable `+ Create 'X'` row when query fails validation. The existing `persistCollection` offline-fallback helper (lines 35-43) is only reached via `add('__create__')` after `canCreate === true`, so the `canCreate` gate is the single enforcement point — no separate validation needed inside `persistCollection`.
@@ -109,7 +109,7 @@ Frontend unit tests for the pure validator are intentionally omitted — `packag
     ↑/↓ navigate · ↵ select · esc cancel
 ```
 
-Skip is always visible regardless of list length. Recommended collection (or `+ Create '{folder}' (Recommended)` row when no match) sorts to the top of the list area.
+Skip is always visible regardless of list length. Recommended collection (or `+ Create '{folder_slug}' (Recommended)` row when no match) sorts to the top of the list area.
 
 ### Fallback (non-curses) picker
 
@@ -128,8 +128,9 @@ Skip is always visible regardless of list length. Recommended collection (or `+ 
 ```
 
 - Numeric input selects a collection.
-- `C` followed by a name on next prompt → create flow.
+- `C` followed by a name on next prompt → create flow. On 409 conflict → same `"'X' already exists with N skills. Activate it? [Y/N]"` prompt as the curses path.
 - `S` → Skip, with the same confirmation phrasing (`Are you sure you want to skip? [Y/N]`).
+- When `folder_slug` is non-empty and has no existing match, the fallback prepends a `0. + Create '{folder_slug}' (Recommended)` entry above the numbered collections so keyboard parity with the curses picker is preserved.
 
 ## Validation Rules
 
@@ -144,7 +145,7 @@ Single shared rule across backend, frontend, and picker:
 
 | Site | Behavior |
 |---|---|
-| `backend/app/validators/collection_validator.py` | Return error list; the Pydantic `check_name` field_validator in `schemas/collection.py:19-25` raises `ValueError`, which FastAPI surfaces as **422 Unprocessable Entity** (same pattern `skill-push/SKILL.md:106` documents). |
+| `backend/app/validators/collection_validator.py` | Return error list. Called in two places: (1) `POST /v1/collections` via the existing Pydantic `check_name` field_validator at `schemas/collection.py:19-25` — raises `ValueError` → FastAPI surfaces as **422 Unprocessable Entity**. (2) `POST /v1/skills` and `PATCH /v1/skills/{slug}` handlers — called after `canonicalize_collection_names()` (see `skills.py:305` and `:371`). Returns `api_error(422, "COLLECTION_NAME_INVALID", ...)` on failure. |
 | `src/lib/collection-validation.ts` (new) | Pure function, mirror of backend. |
 | `NewCollectionModal.tsx` | Inline error below input (`AlertCircle` + red text matching the existing `nameError` pattern at `NewCollectionModal.tsx:91-96`); Create button disabled while invalid. |
 | `CollectionPicker.tsx` (inline web picker) | `canCreate` memo gated on slug validity; `+ Create 'X'` option hidden when invalid. |
@@ -217,6 +218,10 @@ Example: `[Frontend, "frontend-", frontend_]` (created in that order) → `[fron
   - `test_collision_resolution` — seed `[Frontend, "frontend-", frontend_]` in order → assert `[frontend, frontend-2, frontend-3]`.
   - `test_idempotent` — run twice; second run changes nothing.
   - `test_skill_references_updated` — skills whose `collections` arrays contain old names get rewritten to new names.
+- `backend/tests/integration/test_skills_api.py` (extend if exists, else new):
+  - `test_create_skill_rejects_invalid_collection_name` — POST `/v1/skills` with `collections: ["Bad Name"]` → 422 `COLLECTION_NAME_INVALID`.
+  - `test_create_skill_accepts_canonicalizable_variant` — POST with `collections: ["Frontend"]` when `frontend` exists → 201 (canonicalization + validation pipeline works together).
+  - `test_update_skill_rejects_invalid_collection_name` — same check on PATCH path.
 
 ### Frontend
 
