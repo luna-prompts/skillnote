@@ -52,22 +52,25 @@ This spec adds all three, and tightens collection-name validation to keep the re
 
 ### Validation
 
-- **`backend/app/validators/collection_validator.py`** — add regex rule `^[a-z0-9_-]+$` alongside existing length/newline/XML checks.
-- **`src/lib/collection-validation.ts`** (new) — mirror backend rule for frontend use.
+- **`backend/app/validators/collection_validator.py`** — add regex rule `^[a-z0-9_-]+$` and reserved-word check (`anthropic`, `claude`, matching `src/lib/skill-validation.ts:7`) alongside existing length/newline/XML checks. This validator is already wired into `POST /v1/collections` via `backend/app/schemas/collection.py:19-25`, so no schema change needed there.
+- **`backend/app/schemas/skill.py`** — add a `field_validator` on `SkillCreate.collections` / `SkillUpdate.collections` that runs each entry through `validate_collection_name`. Closes the skill-push path that currently lets arbitrary strings land in `skills.collections[]`.
+- **`src/lib/collection-validation.ts`** (new) — mirror backend rule for frontend use; export `validateCollectionName`, `normalizeCollectionName`, `slugFromCollectionName` following the pattern in `src/lib/skill-validation.ts`.
 - **`src/components/collections/NewCollectionModal.tsx`** — wire validator; show inline error and disable Create button when invalid.
-- **`src/components/collections/CollectionPicker.tsx`** — gate `canCreate` on slug validity; disable `+ Create 'X'` row when query fails validation.
+- **`src/components/collections/CollectionPicker.tsx`** — gate `canCreate` on slug validity; disable `+ Create 'X'` row when query fails validation. Also apply validation to the offline-fallback write at lines 37-42 so local state cannot drift from backend rules.
+- **`plugin/skills/skill-push/SKILL.md`** — update Step 4 to instruct the user that new collection names must match `^[a-z0-9_-]+$`. Informational guidance only; the backend `SkillCreate` validator is the actual enforcement point.
 
 ### Migration
 
-- **`backend/alembic/versions/0011_slugify_collection_names.py`** (new) — slugify all existing collection names; update all skill records' embedded `collections` arrays.
+- **`backend/alembic/versions/0012_slugify_collection_names.py`** (new) — `revision = '0012_slugify_collection_names'`, `down_revision = '0011_collections_table'`. Slugifies all existing collection names and updates all skill records' embedded `collections` arrays.
 
 ### Tests
 
-- `backend/tests/test_collection_validator.py` (new)
-- `backend/tests/test_migration_0011_slugify.py` (new)
-- `plugin/tests/test_skillnote_pick_helpers.py` (new)
-- `src/lib/__tests__/collection-validation.test.ts` (new)
-- `e2e/collection-validation.spec.ts` (new)
+- `backend/tests/unit/test_collection_validator.py` (**extend** — file already exists) — add regex + reserved-word cases.
+- `backend/tests/integration/test_migration_0012_slugify.py` (new) — seeded migration run + idempotency + collision test.
+- `plugin/tests/test_skillnote_pick_helpers.py` (new) — pure-function unit tests for `_slugify`, `_is_valid_slug`, `_resolve_recommendation`.
+- `e2e/collection-validation.spec.ts` (new) — Playwright coverage for New Collection modal + inline CollectionPicker create path.
+
+Frontend unit tests for the pure validator are intentionally omitted — `package.json` does not ship `vitest`/`jest`, and the Playwright e2e proves the same behavior without introducing a new test framework for a 10-line regex.
 
 ## User Flow (Terminal Picker)
 
@@ -133,6 +136,7 @@ Single shared rule across backend, frontend, and picker:
 
 - Pattern: `^[a-z0-9_-]+$`
 - Length: 1–128 characters (after trim)
+- Reserved words (blocked as substrings): `anthropic`, `claude` — matches `src/lib/skill-validation.ts:7`
 - Existing checks retained: no newlines, no XML tags (defense-in-depth)
 
 ### Enforcement sites
@@ -145,7 +149,7 @@ Single shared rule across backend, frontend, and picker:
 | `CollectionPicker.tsx` (inline web picker) | `canCreate` memo gated on slug validity; `+ Create 'X'` option hidden when invalid. |
 | `skillnote-pick` (curses) | The `+ Create 'X'` row is displayed only when the condition in the User Flow table holds (filter empty, `slugify(query)` non-empty, no existing match). Invalid queries produce no row and no popup — silent. The displayed name is always the slugified form. |
 
-## Slugify Migration (`0011_slugify_collection_names.py`)
+## Slugify Migration (`0012_slugify_collection_names.py`)
 
 ### Algorithm
 
@@ -158,7 +162,7 @@ slug(name) =
   truncate to 128 chars
 ```
 
-Empty result (e.g. `"!!!"` → `""`) falls back to `collection-{id}` where `{id}` is the row's primary key.
+Empty result (e.g. `"!!!"` → `""`) falls back to `collection-{hash8}` where `{hash8}` is the first 8 hex chars of `sha1(original_name)`. The `collections` table uses `name` as its primary key (`backend/app/db/models/collection.py:12`) — there is no surrogate `id` column to fall back on. Hash-based suffix is deterministic, collision-safe in practice, and preserves migration reproducibility.
 
 ### Collision resolution
 
@@ -174,8 +178,8 @@ Example: `[Frontend, "frontend-", frontend_]` (created in that order) → `[fron
 1. Inside a single transaction:
    1. SELECT all distinct collection names from `collections` table + from skills' embedded `collections` arrays.
    2. Build rename map `{old_name → new_slug}`, resolving collisions.
-   3. `UPDATE collections SET name = new_slug` for each changed entry.
-   4. For each skill whose `collections` array contains any renamed name, rewrite that array.
+   3. `UPDATE collections SET name = new_slug` for each changed entry. Because `name` is the primary key and `ix_collections_name_ci` enforces case-insensitive uniqueness (added in `0011_collections_table.py:25`), updates must be ordered so that no intermediate state violates the index. Simplest approach: apply all renames via a single `UPDATE ... FROM (VALUES ...) AS map` statement that Postgres executes atomically.
+   4. For each skill whose `collections` array contains any renamed name, rewrite that array (also via a single set-based UPDATE using `array_replace` chained per rename pair, or a procedural loop if simpler).
 2. Commit.
 
 ### Properties
@@ -204,18 +208,20 @@ Example: `[Frontend, "frontend-", frontend_]` (created in that order) → `[fron
 
 ### Backend (pytest)
 
-- `backend/tests/test_collection_validator.py`:
+- `backend/tests/unit/test_collection_validator.py` (**extend** — file already exists):
   - Valid: `frontend`, `my-app_2`, `a`, 128-char boundary.
-  - Invalid: `Frontend`, `my app`, `foo!`, empty, 129-char, newline/XML (preserved).
-- `backend/tests/test_migration_0011_slugify.py`:
-  - `test_basic_slugify` — seed `[Frontend, "lp assessment", my-app, "!!!"]` + skills referencing them → run migration → assert names become `[frontend, lp-assessment, my-app, collection-{id}]` and all skill records updated.
+  - Invalid: `Frontend`, `my app`, `foo!`, empty, 129-char, names containing reserved words (`anthropic`, `claude`), newline/XML (preserved).
+- `backend/tests/integration/test_migration_0012_slugify.py` (new):
+  - `test_basic_slugify` — seed `[Frontend, "lp assessment", my-app, "!!!"]` + skills referencing them → run migration → assert names become `[frontend, lp-assessment, my-app, collection-{hash8}]` and all skill records updated.
   - `test_collision_resolution` — seed `[Frontend, "frontend-", frontend_]` in order → assert `[frontend, frontend-2, frontend-3]`.
   - `test_idempotent` — run twice; second run changes nothing.
+  - `test_skill_references_updated` — skills whose `collections` arrays contain old names get rewritten to new names.
 
 ### Frontend
 
-- `src/lib/__tests__/collection-validation.test.ts` — unit tests mirroring backend regex.
-- `e2e/collection-validation.spec.ts` — Playwright: New Collection modal rejects `Frontend`, accepts `frontend`; picker's inline create path follows same rules.
+- `e2e/collection-validation.spec.ts` (new) — Playwright: New Collection modal rejects `Frontend`, accepts `frontend`; picker's inline create path follows same rules; offline-fallback write also rejects invalid names.
+
+No frontend unit tests — `package.json` does not ship `vitest`/`jest`, and Playwright e2e proves the same regex behavior without introducing a new test framework.
 
 ### Picker (Python helpers only)
 
