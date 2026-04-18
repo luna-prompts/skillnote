@@ -149,17 +149,16 @@ def test_delete_409_when_skills_reference(unique_name):
 
 # ── Case-insensitive uniqueness ──────────────────────────────────────────────
 
-def test_duplicate_case_variant_rejected(unique_name):
-    """POSTing two case-variant names must fail with 409."""
-    mixed_case = unique_name.upper()
-    status, _ = _request("POST", "/v1/collections", {"name": unique_name, "description": ""})
-    assert status == 201
+def test_post_rejects_uppercase_name(unique_name):
+    """POST with an uppercase name must fail validation with 422.
 
-    status, body = _request("POST", "/v1/collections", {"name": mixed_case, "description": ""})
-    assert status == 409
-    assert body["error"]["code"] == "COLLECTION_EXISTS"
-
-    _request("DELETE", f"/v1/collections/{unique_name}")
+    The stricter name rule (`^[a-z0-9_-]+$`) means uppercase variants can no
+    longer be created at all; case-insensitive dedup only applies on lookup.
+    """
+    status, body = _request(
+        "POST", "/v1/collections", {"name": unique_name.upper(), "description": ""}
+    )
+    assert status == 422, f"expected 422, got {status}: {body}"
 
 
 def test_get_single_collection_case_insensitive(unique_name):
