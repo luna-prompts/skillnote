@@ -1,6 +1,7 @@
 """Pydantic request/response schemas for /v1/import/* endpoints."""
 from __future__ import annotations
 
+from datetime import datetime
 from typing import List, Literal, Optional
 from pydantic import BaseModel, Field
 
@@ -62,3 +63,22 @@ class ApplyResponse(BaseModel):
     collection_slug: str
     imported: List[ApplyResponseSkill]
     skipped: List[dict] = []
+
+
+class SourceListItem(BaseModel):
+    id: str
+    url: str
+    host: Optional[str] = None
+    owner: Optional[str] = None
+    repo: Optional[str] = None
+    ref: Optional[str] = None
+    kind: str
+    collection_slug: str
+    pinned: bool
+    imported_at_sha: Optional[str] = None
+    upstream_sha: Optional[str] = None
+    last_synced_at: Optional[datetime] = None
+    last_checked_at: Optional[datetime] = None
+    status: str
+    skill_count: int
+    drift_summary: Optional[dict] = None

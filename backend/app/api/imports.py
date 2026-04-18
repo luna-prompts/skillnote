@@ -7,10 +7,14 @@ the global HTTPException handler in app/main.py.
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from datetime import datetime, timedelta, timezone
+from typing import List
+
+from fastapi import APIRouter, BackgroundTasks, Depends
 from sqlalchemy.orm import Session
 
 from app.core.errors import api_error
+from app.db.models import ImportSource, Skill
 from app.db.session import get_db
 from app.schemas.imports import (
     ApplyRequest,
@@ -20,11 +24,13 @@ from app.schemas.imports import (
     InspectResponse,
     InspectResponseSource,
     InspectSkill,
+    SourceListItem,
 )
 from app.services.imports.input_parser import parse_input
 from app.services.imports.security import validate_import_url, SecurityError
 from app.services.imports.inspector import inspect_source
 from app.services.imports.importer import apply_import, ImportError as ImportErr
+from app.services.imports.refresher import probe_head_sha
 
 
 router = APIRouter(prefix="/v1/import", tags=["imports"])
@@ -133,3 +139,45 @@ def apply_endpoint(body: ApplyRequest, db: Session = Depends(get_db)):
         imported=[ApplyResponseSkill(**s) for s in out["imported"]],
         skipped=out["skipped"],
     )
+
+
+@router.get("/sources", response_model=List[SourceListItem])
+def list_sources(
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    sources = db.query(ImportSource).all()
+    now = datetime.now(timezone.utc)
+    ten_min_ago = now - timedelta(minutes=10)
+    result = []
+    for src in sources:
+        skill_count = db.query(Skill).filter(Skill.import_source_id == src.id).count()
+        result.append(SourceListItem(
+            id=str(src.id),
+            url=src.url,
+            host=src.host, owner=src.owner, repo=src.repo, ref=src.ref,
+            kind=src.kind, collection_slug=src.collection_name,
+            pinned=src.pinned,
+            imported_at_sha=src.imported_at_sha,
+            upstream_sha=src.upstream_sha,
+            last_synced_at=src.last_synced_at,
+            last_checked_at=src.last_checked_at,
+            status=src.status,
+            skill_count=skill_count,
+        ))
+        eligible = (
+            src.source_type == "github" and not src.pinned
+            and (src.last_checked_at is None or src.last_checked_at < ten_min_ago)
+        )
+        if eligible:
+            background_tasks.add_task(_probe_in_bg, src.id)
+    return result
+
+
+def _probe_in_bg(src_id):
+    from app.db.session import SessionLocal
+    with SessionLocal() as db:
+        src = db.get(ImportSource, src_id)
+        if src:
+            probe_head_sha(src)
+            db.commit()
