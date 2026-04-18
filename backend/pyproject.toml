@@ -24,7 +24,10 @@ include = ["app*"]
 [project.optional-dependencies]
 test = [
   "hypothesis>=6.100.0",
+  "flask>=3.0",
+  "requests>=2.31",
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
