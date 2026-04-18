@@ -49,9 +49,8 @@ def is_private_address(addr: str) -> bool:
         return True
     # CGNAT 100.64.0.0/10 is NOT private in Python's stdlib
     if isinstance(ip, ipaddress.IPv4Address):
-        if ipaddress.ip_network("100.64.0.0/10").supernet_of(ipaddress.ip_network(f"{ip}/32")):
+        if ip in ipaddress.ip_network("100.64.0.0/10"):
             return True
-    # AWS metadata is already link-local but double-check
     return False
 
 

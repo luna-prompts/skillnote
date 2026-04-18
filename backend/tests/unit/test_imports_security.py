@@ -59,3 +59,21 @@ def test_validate_import_url_private_ip_hostname():
 def test_validate_import_url_localhost():
     with pytest.raises(SecurityError, match="URL_SCHEME_FORBIDDEN"):
         validate_import_url("http://localhost:8082/")
+
+
+def test_validate_import_url_ssh_form_to_private_host():
+    """SSH-form URLs must also be checked against private-IP blocklist."""
+    with pytest.raises(SecurityError, match="URL_SCHEME_FORBIDDEN"):
+        validate_import_url("git@10.0.0.1:someone/repo.git")
+
+
+def test_validate_import_url_empty_string():
+    """Empty URL fails scheme gate."""
+    with pytest.raises(SecurityError, match="URL_SCHEME_FORBIDDEN"):
+        validate_import_url("")
+
+
+def test_validate_import_url_scheme_only_no_host():
+    """URL with scheme but no host fails."""
+    with pytest.raises(SecurityError, match="URL_SCHEME_FORBIDDEN"):
+        validate_import_url("https://")
