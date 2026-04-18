@@ -420,9 +420,14 @@ def pick(stdscr, items, recommended=0, recommended_kind="pick", recommended_slug
         # Selected collection for preview
         sel_name, sel_count, sel_skills = "", 0, []
         sel_is_rec = False
+        sel_is_synthetic = False
         if filtered and cur < len(filtered):
             _, orig_idx, (sel_name, sel_count, sel_skills) = filtered[cur]
-            sel_is_rec = (orig_idx == recommended)
+            sel_is_synthetic = (orig_idx == -1)
+            # Only mark as "recommended" for the right-panel suffix when this
+            # is a real matching collection (not a synthetic Create row, whose
+            # label already embeds the suffix).
+            sel_is_rec = (not sel_is_synthetic) and (orig_idx == recommended)
 
         def s(r, c, text, attr=0):
             try:
@@ -530,7 +535,12 @@ def pick(stdscr, items, recommended=0, recommended_kind="pick", recommended_slug
                     break
                 fi = window_start + vi
                 is_focused = (fi == cur)
-                is_rec = (orig_idx == recommended)
+                is_synthetic = (orig_idx == -1)  # synthetic "+ Create 'X'" row
+                # Only treat as "recommended" (for the inline suffix) when this is a
+                # real existing-collection row that matches the folder-name recommendation.
+                # Synthetic create rows already embed the suffix in `name`, so we must
+                # NOT double-draw it.
+                is_rec = (not is_synthetic) and (orig_idx == recommended)
                 at_top = (vi == 0 and window_start > 0)
                 at_bot = (vi == len(visible) - 1 and window_start + visible_count < len(filtered))
 
@@ -548,16 +558,38 @@ def pick(stdscr, items, recommended=0, recommended_kind="pick", recommended_slug
                 num = f"{fi + 1}."
                 s(row, bx + 5, num, DIM)
                 nx = bx + 5 + len(num) + 1
-                if is_focused:
-                    s(row, nx, name, ACCENT)
-                else:
-                    s(row, nx, name, DIM if not is_rec else 0)
-                if is_rec:
-                    rec_label = " (Recommended)"
-                    s(row, nx + len(name), rec_label, DIM if not is_focused else ACCENT)
 
-                cnt = str(count)
-                s(row, bx + left_w - len(cnt) - 2, cnt, DIM)
+                # Compute the column where the count would draw (or the panel edge
+                # for synthetic rows, which have no count). Reserve 2 cols of padding
+                # before it so the name doesn't butt up against the count / divider.
+                cnt = str(count) if not is_synthetic else ""
+                if is_synthetic:
+                    count_col = bx + left_w - 1  # up to the center divider
+                else:
+                    count_col = bx + left_w - len(cnt) - 2
+                max_name_w = max(0, count_col - nx - 2)
+
+                # If this row will also draw a " (Recommended)" suffix separately,
+                # reserve room for it up front so the name-truncation leaves space.
+                suffix = " (Recommended)" if is_rec else ""
+                name_budget = max(0, max_name_w - len(suffix))
+
+                display_name = name
+                if len(display_name) > name_budget:
+                    display_name = display_name[: max(0, name_budget - 1)] + "…"
+
+                if is_focused:
+                    s(row, nx, display_name, ACCENT)
+                else:
+                    s(row, nx, display_name, DIM if not is_rec else 0)
+                if suffix:
+                    s(row, nx + len(display_name), suffix,
+                      DIM if not is_focused else ACCENT)
+
+                # Count only for real collections. Synthetic Create rows have count=0
+                # which is meaningless and collides with a long label.
+                if not is_synthetic:
+                    s(row, bx + left_w - len(cnt) - 2, cnt, DIM)
                 row += 1
 
             # Pad remaining left rows (reserve one row for the pinned Skip entry)
