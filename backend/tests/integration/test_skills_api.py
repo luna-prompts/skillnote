@@ -34,14 +34,17 @@ def _request(method: str, path: str, body: dict | None = None):
 
 @pytest.fixture
 def seed_collection():
-    name = "frontend"
-    _request("POST", "/v1/collections", {"name": name, "description": ""})  # ignore 409 if already exists
+    name = f"seed-{uuid.uuid4().hex[:8]}"
+    _request("POST", "/v1/collections", {"name": name, "description": ""})
     yield name
+    _request("DELETE", f"/v1/collections/{name}")
 
 
 @pytest.fixture
 def unique_skill_slug():
-    return f"test-skill-{uuid.uuid4().hex[:8]}"
+    slug = f"test-skill-{uuid.uuid4().hex[:8]}"
+    yield slug
+    _request("DELETE", f"/v1/skills/{slug}")  # idempotent — 404 is fine
 
 
 def _skill_payload(slug: str, collections: list[str]):
@@ -61,18 +64,17 @@ def test_create_skill_rejects_invalid_collection_name(seed_collection, unique_sk
 
 
 def test_create_skill_accepts_canonicalizable_variant(seed_collection, unique_skill_slug):
-    status, body = _request("POST", "/v1/skills", _skill_payload(unique_skill_slug, ["Frontend"]))
+    # Send uppercase variant; canonicalize should map it to the seeded lowercase form
+    status, body = _request("POST", "/v1/skills", _skill_payload(unique_skill_slug, [seed_collection.upper()]))
     assert status == 201, body
-    assert body["collections"] == ["frontend"]
-    _request("DELETE", f"/v1/skills/{unique_skill_slug}")
+    assert body["collections"] == [seed_collection]
 
 
 def test_update_skill_rejects_invalid_collection_name(seed_collection, unique_skill_slug):
-    status, _ = _request("POST", "/v1/skills", _skill_payload(unique_skill_slug, ["frontend"]))
+    status, _ = _request("POST", "/v1/skills", _skill_payload(unique_skill_slug, [seed_collection]))
     assert status == 201
     status, body = _request(
         "PATCH", f"/v1/skills/{unique_skill_slug}", {"collections": ["Bad Name"]}
     )
     assert status == 422
     assert body["error"]["code"] == "COLLECTION_NAME_INVALID"
-    _request("DELETE", f"/v1/skills/{unique_skill_slug}")
