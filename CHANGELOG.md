@@ -3,6 +3,43 @@
 All notable changes to SkillNote will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.3.3] - 2026-04-19
+
+### Added
+- **Marketplace Import** — paste a GitHub URL (`owner/repo`, full URL, or `.json` marketplace) to import skills into SkillNote. Inspector clones the repo, enumerates `SKILL.md` files, validates frontmatter, and presents a two-pane preview drawer with per-row conflict handling.
+- **Browse page** (`/browse`) — home for imported sources with drift-detection badges (amber `N new · M changed` pill), per-source action menu (Resync / Pin / Change tracked ref / Unlink), and a "Paste a URL" empty-state CTA.
+- **Two-pane ImportSheet** with shadcn `Resizable` divider — left: skill selection list with checkboxes + per-row conflict dropdown; right: focused skill preview. Auto-save split position via `react-resizable-panels`.
+- **DiffDrawer** — click a drift pill to open a three-section drawer (New / Changed / Removed) with per-row checkboxes + forked-skill overwrite warnings.
+- **Fork-on-edit** — editing an imported skill triggers a confirmation modal. Backend flips `forked_from_source=TRUE` automatically on any content-changing PATCH.
+- **`GET /marketplace/{slug}.json`** publish-back endpoint — every SkillNote collection is exposed as a Claude-Code-compatible manifest with ETag + `Cache-Control: public, max-age=60, must-revalidate`. User-authored skills omitted from the manifest; shown as `⊙ local only` in the UI.
+- **Collection integrations** — import banner on collection detail pages, "Browse the community →" nudge on the collections index, `SourceBadge` + `LocalOnlyChip` components ready for skill cards.
+- **6 new API endpoints** — `POST /v1/import/inspect`, `POST /v1/import/apply`, `GET /v1/import/sources`, `POST /v1/import/sources/{id}/refresh`, `DELETE /v1/import/sources/{id}`, `GET /marketplace/{slug}.json`.
+- **7 Playwright E2E journey tests** — first-time user, upstream change, conflict rename, fork warning, unlink (keep skills), private repo, publish-back.
+- **axe-core a11y coverage** — 4 tests across ImportSheet empty/preview and Browse empty/populated states.
+
+### Security
+- **URL security layer** — scheme allowlist (`http`, `https`, `git`, `ssh` only), private-IP block covering RFC1918 + CGNAT (100.64.0.0/10) + IPv6 equivalents (`::1`, `fe80::/10`, `fc00::/7`) + AWS metadata endpoint (169.254.169.254) + localhost literal. SSH-form URLs (`user@host:path`) routed through the same gate.
+- **Adversarial input matrix** — 60+ parametrized tests covering malicious schemes (`file://`, `javascript:`, `data:`, `gopher:`), SSRF probes, path traversal in refs (`owner/repo@../../etc/passwd`), control characters, 5000-char input, null bytes, embedded newlines.
+- **Manifest schema validation** mirroring Claude Code's Zod schemas — `SkillFrontmatter` enforces `^[a-z0-9-]+$` names (≤64 chars), ≤1024-char descriptions, reserved-word rejection (`anthropic`, `claude`).
+- **Per-skill apply-time validation** — skills failing `SkillFrontmatter` checks or containing path-traversal (`..`) in `source_path` are skipped with `reason="validation_failed"`. If ALL skills in a source fail, apply aborts with 422 `ALL_SKILLS_INVALID`.
+- **Shallow-clone safety caps** — 50 MB repo size limit, 256 KB per-SKILL.md limit, symlink-traversal rejection via resolved-path containment check, no submodule recursion.
+- **Token-bucket rate limiter** — 10 imports/min + 60 marketplace-reads/min per client IP. `X-Forwarded-For` aware.
+
+### Changed
+- `parse_input` in the input parser supports GitHub shorthand (`owner/repo[@ref]`), full HTTPS/SSH URLs, Azure DevOps (`/_git/`), and generic `.json` marketplace URLs; returns discriminated `ParsedSource` dict or `None` for unrecognized input.
+- `POST /v1/skills/{slug}` PATCH handler flips `forked_from_source=TRUE` on any content-changing edit of an imported skill.
+
+### Migrated
+- **`0013_import_sources`** — adds `import_sources` table (UUID PK, 19 columns, 3 Postgres enums: `import_source_type`, `import_source_kind`, `import_source_status`) with unique constraint `(url, ref, subpath)` and FK `collection_name → collections.name ON DELETE CASCADE`. Also adds 5 columns to `skills`: `import_source_id` (FK SET NULL), `source_path`, `source_sha`, `source_content_hash`, `forked_from_source`.
+
+### Known limitations (scheduled for v1.1)
+- **`on_conflict="replace"`** returns `NOT_IMPLEMENTED_YET` (422); use `rename` or `skip` in v1.
+- **Per-row conflict dropdown in ImportSheet** is UI-only; apply sends a single global conflict mode.
+- **Refresh `mode=apply`** returns stub `{applied: 0}` — the diff drawer updates the UI but changes are recorded via the UPSERT path from re-applying.
+- **GitHub default branch detection** — repos with `master` as default (not `main`) may fail the HEAD-SHA probe until user specifies `@master` explicitly.
+- **Plain `https://github.com/owner/repo` URL** (without `.git` suffix or shorthand form) currently rejected as `UNSUPPORTED_SOURCE_TYPE` — users must paste shorthand `owner/repo` in v1.
+- **Multi-process deployments** — rate limiter is in-memory (single-process). Migrate to Redis for horizontal scaling.
+
 ## [0.3.2] - 2026-04-18
 
 ### Added
