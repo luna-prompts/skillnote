@@ -37,3 +37,15 @@ def test_fallback_uses_hash8():
 def test_fallback_deterministic():
     m = _load()
     assert m._fallback("xyz") == m._fallback("xyz")
+
+
+def test_clamp_with_suffix_never_exceeds_max():
+    m = _load()
+    # Base at max length — suffix must fit within 128 total
+    base = "a" * 128
+    assert len(m._clamp_with_suffix(base, "-2")) == 128
+    assert len(m._clamp_with_suffix(base, "-99")) == 128
+    # Short base — no truncation, plain concat
+    assert m._clamp_with_suffix("foo", "-2") == "foo-2"
+    # Base shorter than allowance — suffix appended as-is
+    assert m._clamp_with_suffix("x", "-5") == "x-5"

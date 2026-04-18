@@ -3,6 +3,14 @@
 Revision ID: 0012_slugify_collection_names
 Revises: 0011_collections_table
 Create Date: 2026-04-18
+
+Key invariant: all valid names are reserved in ``used`` BEFORE any collision
+resolution begins, so a collision-resolved ``-N`` suffix can never clobber a
+pre-existing valid slug. Additionally, every candidate (base and any
+``-N``-suffixed variant) is clamped via ``_clamp_with_suffix`` so the final
+rewritten name always fits in ``MAX_LEN`` — preserving the bound checked by
+the post-migration smoke test (``test_collection_names_are_bounded``) and any
+future validator call.
 """
 import hashlib
 import re
@@ -32,6 +40,14 @@ def _fallback(original: str) -> str:
     return f"collection-{hashlib.sha1(original.encode('utf-8')).hexdigest()[:8]}"
 
 
+def _clamp_with_suffix(base: str, suffix: str) -> str:
+    """Truncate base so that base + suffix fits in MAX_LEN. Strip trailing '-'
+    after truncation so we don't leave '---2'."""
+    max_base = MAX_LEN - len(suffix)
+    truncated = base[:max_base].rstrip("-")
+    return truncated + suffix
+
+
 def upgrade() -> None:
     conn = op.get_bind()
 
@@ -49,20 +65,31 @@ def upgrade() -> None:
         """
     )).all()
 
-    # 2. Build the rename map with collision resolution
+    # 2. Build the rename map with collision resolution.
+    # First pass: reserve EVERY already-valid name so later collision resolution
+    # cannot clobber a pre-existing valid slug.
+    used: set[str] = {
+        name for name, _created in rows
+        if NAME_PATTERN.match(name) and len(name) <= MAX_LEN
+    }
+
+    # Second pass: slugify + collision-resolve the invalid names only.
     rename: dict[str, str] = {}
-    used: set[str] = set()
     for name, _created in rows:
-        if NAME_PATTERN.match(name) and len(name) <= MAX_LEN:
-            used.add(name)
-            continue
+        if name in used:
+            continue  # already a valid slug — no rename needed
         candidate = _slugify(name) or _fallback(name)
+        # Clamp candidate to MAX_LEN before collision check (see I1)
+        candidate = _clamp_with_suffix(candidate, "")
         if candidate in used:
             base = candidate
             i = 2
-            while f"{base}-{i}" in used:
+            while True:
+                suffixed = _clamp_with_suffix(base, f"-{i}")
+                if suffixed not in used:
+                    candidate = suffixed
+                    break
                 i += 1
-            candidate = f"{base}-{i}"
         rename[name] = candidate
         used.add(candidate)
 
