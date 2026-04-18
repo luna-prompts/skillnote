@@ -7,10 +7,15 @@ the global HTTPException handler in app/main.py.
 """
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
 
 from app.core.errors import api_error
+from app.db.session import get_db
 from app.schemas.imports import (
+    ApplyRequest,
+    ApplyResponse,
+    ApplyResponseSkill,
     InspectRequest,
     InspectResponse,
     InspectResponseSource,
@@ -19,6 +24,7 @@ from app.schemas.imports import (
 from app.services.imports.input_parser import parse_input
 from app.services.imports.security import validate_import_url, SecurityError
 from app.services.imports.inspector import inspect_source
+from app.services.imports.importer import apply_import, ImportError as ImportErr
 
 
 router = APIRouter(prefix="/v1/import", tags=["imports"])
@@ -87,4 +93,43 @@ def inspect_endpoint(body: InspectRequest) -> InspectResponse:
         skills=[InspectSkill(**s) for s in result.skills],
         manifest=result.manifest,
         suggested_collection_slug=suggested,
+    )
+
+
+@router.post("/apply", response_model=ApplyResponse, status_code=201)
+def apply_endpoint(body: ApplyRequest, db: Session = Depends(get_db)):
+    parsed = parse_input(body.input)
+    if parsed is None or "error" in parsed:
+        raise api_error(400, "INPUT_UNPARSEABLE", "Unable to parse input")
+
+    url_for_check = parsed.get("url") or f"https://github.com/{parsed.get('repo')}"
+    try:
+        validate_import_url(url_for_check)
+    except SecurityError as e:
+        raise api_error(400, str(e), "URL rejected by security policy")
+
+    if body.subpath:
+        parsed["subpath"] = body.subpath
+    result = inspect_source(parsed, token=body.github_token, timeout_s=60)
+    if result.error_code:
+        status = _INSPECT_ERROR_STATUS.get(result.error_code, 500)
+        raise api_error(status, result.error_code, result.error_message or result.error_code)
+
+    target = body.target_collection_slug or (
+        f"{result.owner}-{result.repo}".lower() if result.owner and result.repo else "imported"
+    )
+    try:
+        out = apply_import(
+            db, result, target,
+            skill_selection=body.skill_selection,
+            on_conflict=body.on_conflict,
+        )
+    except ImportErr as e:
+        raise api_error(422, e.code, e.message)
+
+    return ApplyResponse(
+        source_id=out["source_id"],
+        collection_slug=out["collection_slug"],
+        imported=[ApplyResponseSkill(**s) for s in out["imported"]],
+        skipped=out["skipped"],
     )

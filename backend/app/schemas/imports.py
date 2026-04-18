@@ -38,3 +38,27 @@ class InspectResponse(BaseModel):
     warnings: List[dict] = []
     suggested_collection_slug: Optional[str] = None
     existing_source_id: Optional[str] = None
+
+
+class ApplyRequest(BaseModel):
+    input: str = Field(..., min_length=1)
+    github_token: Optional[str] = None
+    ref: Optional[str] = None
+    subpath: Optional[str] = None
+    target_collection_slug: Optional[str] = None
+    skill_selection: Optional[List[str]] = None  # None = all
+    on_conflict: str = "rename"  # "rename" | "skip" | "replace"
+
+
+class ApplyResponseSkill(BaseModel):
+    name: str
+    slug: str
+    original_name: Optional[str] = None
+    renamed_reason: Optional[str] = None
+
+
+class ApplyResponse(BaseModel):
+    source_id: str
+    collection_slug: str
+    imported: List[ApplyResponseSkill]
+    skipped: List[dict] = []
