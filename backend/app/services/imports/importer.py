@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models import Skill, Collection, ImportSource
 from app.services.imports.inspector import InspectResult
+from app.services.imports.manifest_schema import SkillFrontmatter
 
 
 class ImportError(Exception):
@@ -92,6 +93,38 @@ def apply_import(
         if skill_selection is not None and name not in skill_selection:
             continue
 
+        # Defense-in-depth per-skill validation. SkillFrontmatter runs at clone
+        # time (Task 21) but we re-run here to guard against in-flight tampering
+        # of InspectResult.skills (e.g., test stubs, future inspector paths).
+        try:
+            SkillFrontmatter.model_validate({
+                "name": name,
+                "description": skill_meta.get("description") or "",
+            })
+        except Exception as e:
+            skipped.append({
+                "name": name,
+                "reason": "validation_failed",
+                "message": str(e)[:200],
+            })
+            continue
+
+        # Path safety: reject absolute paths and any `..` segments.
+        # Full symlink-safety is enforced by bundle_validator at upload time;
+        # string-based checks are sufficient for inspector-provided paths.
+        path = skill_meta.get("path") or ""
+        if (
+            ".." in path.split("/")
+            or path.startswith("/")
+            or path.startswith("\\")
+        ):
+            skipped.append({
+                "name": name,
+                "reason": "validation_failed",
+                "message": "Unsafe path: contains .. or is absolute",
+            })
+            continue
+
         existing = db.query(Skill).filter(Skill.slug == name).first()
         if existing is None:
             content_hash = skill_meta.get("content_hash") or ""
@@ -139,6 +172,28 @@ def apply_import(
                     "NOT_IMPLEMENTED_YET",
                     "on_conflict='replace' is scheduled for v1.1; use 'rename' or 'skip' in v1",
                 )
+
+    # If every candidate skill was rejected BY VALIDATION, abort so the user
+    # sees a clear error instead of a silent zero-imported success. We only
+    # consider validation_failed — conflict-skip with on_conflict=skip is a
+    # valid zero-import outcome (user's explicit choice) that shouldn't 422.
+    validation_failures = [
+        s for s in skipped if s.get("reason") == "validation_failed"
+    ]
+    if (
+        not imported
+        and validation_failures
+        and len(validation_failures) == len(skipped)
+        and inspect_result.skills
+    ):
+        raise ImportError(
+            "ALL_SKILLS_INVALID",
+            f"All {len(validation_failures)} skills failed validation: "
+            + "; ".join(
+                f"{s['name']}: {s.get('message', s['reason'])}"
+                for s in validation_failures[:3]
+            ),
+        )
 
     db.commit()
     return {

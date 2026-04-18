@@ -134,7 +134,16 @@ def apply_endpoint(body: ApplyRequest, db: Session = Depends(get_db)):
             on_conflict=body.on_conflict,
         )
     except ImportErr as e:
-        raise api_error(422, e.code, e.message)
+        # All apply-path errors are client-actionable (validation / not-yet-impl)
+        # so they 422. Map is explicit to make future divergence (e.g. 409 for
+        # conflict-specific codes) a one-line change.
+        status_map = {
+            "NOT_IMPLEMENTED_YET": 422,
+            "COLLECTION_NAME_INVALID": 422,
+            "ALL_SKILLS_INVALID": 422,
+        }
+        status = status_map.get(e.code, 422)
+        raise api_error(status, e.code, e.message)
 
     return ApplyResponse(
         source_id=out["source_id"],
