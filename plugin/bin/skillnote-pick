@@ -734,21 +734,72 @@ def pick(stdscr, items, recommended=0, recommended_kind="pick", recommended_slug
 
 
 def pick_fallback(items, recommended=0, recommended_kind="pick", recommended_slug=None):
+    """Non-curses fallback — plain numbered input, parity with curses options."""
     print("\n ✦ S K I L L N O T E — Pick a collection\n")
-    order = [recommended] + [i for i in range(len(items)) if i != recommended]
+
+    # Optional Create-suggestion row for unmatched folder
+    offset = 0
+    if recommended_kind == "create" and recommended_slug:
+        print(f"  0. + Create '{recommended_slug}' (Recommended)")
+        offset = 1
+
+    if recommended_kind == "pick" and 0 <= recommended < len(items):
+        order = [recommended] + [i for i in range(len(items)) if i != recommended]
+    else:
+        order = list(range(len(items)))
+
     for pos, i in enumerate(order):
         name, count, skills = items[i]
-        rec = " ★" if i == recommended else ""
+        rec = " (Recommended)" if i == recommended and recommended_kind == "pick" else ""
         print(f"  {pos + 1}. {name} ({count} skills){rec}")
-        if skills:
-            print(f"     {', '.join(s for s, _ in skills[:5])}")
+
+    print(f"  C. Create new collection")
+    print(f"  S. Skip (use no collections)")
     print()
     try:
         reply = input("  > ").strip()
     except (EOFError, KeyboardInterrupt):
         return None
-    if reply.lower() == "q" or not reply:
+    if not reply or reply.lower() == "q":
         return None
+
+    if reply.lower() == "s":
+        try:
+            confirm = input("  Are you sure you want to skip? [Y/N] ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            return None
+        return SKIP_SENTINEL if confirm in ("y", "yes") else None
+
+    if reply.lower() == "c":
+        try:
+            new_name = input("  New collection name: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            return None
+        if not _is_valid_slug(new_name):
+            print("  Invalid name. Use only lowercase letters, numbers, hyphens, underscores.")
+            return None
+        status, payload = _create_collection(new_name)
+        if status == "ok":
+            return [new_name]
+        if status == "exists":
+            try:
+                confirm = input(f'  "{new_name}" exists with {payload or 0} skill(s). Activate? [Y/N] ').strip().lower()
+            except (EOFError, KeyboardInterrupt):
+                return None
+            return [new_name] if confirm in ("y", "yes") else None
+        print(f"  Create failed: {payload}")
+        return None
+
+    # "0" → create-suggestion (Recommended path)
+    if offset and reply == "0":
+        status, payload = _create_collection(recommended_slug)
+        if status == "ok":
+            return [recommended_slug]
+        if status == "exists":
+            return [recommended_slug]  # already exists — activate it
+        print(f"  Create failed: {payload}")
+        return None
+
     try:
         n = int(reply)
         if 1 <= n <= len(items):
