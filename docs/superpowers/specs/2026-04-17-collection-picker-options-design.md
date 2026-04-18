@@ -53,10 +53,10 @@ This spec adds all three, and tightens collection-name validation to keep the re
 ### Validation
 
 - **`backend/app/validators/collection_validator.py`** — add regex rule `^[a-z0-9_-]+$` and reserved-word check (`anthropic`, `claude`, matching `src/lib/skill-validation.ts:7`) alongside existing length/newline/XML checks. This validator is already wired into `POST /v1/collections` via `backend/app/schemas/collection.py:19-25`, so no schema change needed there.
-- **`backend/app/schemas/skill.py`** — add a `field_validator` on `SkillCreate.collections` / `SkillUpdate.collections` that runs each entry through `validate_collection_name`. Closes the skill-push path that currently lets arbitrary strings land in `skills.collections[]`.
+- **`backend/app/schemas/skill.py`** — extend the existing `SkillCreate.check_collections` field_validator (lines 64-70) so that, after the current "at least one collection required" check, it also runs each entry through `validate_collection_name`. Apply the same change to `SkillUpdate.collections`. Closes the skill-push path that currently lets arbitrary strings land in `skills.collections[]`.
 - **`src/lib/collection-validation.ts`** (new) — mirror backend rule for frontend use; export `validateCollectionName`, `normalizeCollectionName`, `slugFromCollectionName` following the pattern in `src/lib/skill-validation.ts`.
 - **`src/components/collections/NewCollectionModal.tsx`** — wire validator; show inline error and disable Create button when invalid.
-- **`src/components/collections/CollectionPicker.tsx`** — gate `canCreate` on slug validity; disable `+ Create 'X'` row when query fails validation. Also apply validation to the offline-fallback write at lines 37-42 so local state cannot drift from backend rules.
+- **`src/components/collections/CollectionPicker.tsx`** — gate `canCreate` on slug validity; disable `+ Create 'X'` row when query fails validation. The existing `persistCollection` offline-fallback helper (lines 35-43) is only reached via `add('__create__')` after `canCreate === true`, so the `canCreate` gate is the single enforcement point — no separate validation needed inside `persistCollection`.
 - **`plugin/skills/skill-push/SKILL.md`** — update Step 4 to instruct the user that new collection names must match `^[a-z0-9_-]+$`. Informational guidance only; the backend `SkillCreate` validator is the actual enforcement point.
 
 ### Migration
@@ -79,9 +79,10 @@ Frontend unit tests for the pure validator are intentionally omitted — `packag
 1. `skillnote-pick` runs pre-`claude`, fetches `GET /v1/collections`.
 2. Computes `folder_raw = basename(cwd)` and `folder_slug = slugify(folder_raw)` (same algorithm as the migration).
 3. Classifies into one of three recommendation states:
-   - **Match:** `folder_raw.lower()` equals an existing collection name (case-insensitive) → that row gets `(Recommended)` label and sorts to top.
-   - **Create-suggestion:** no match, but `folder_slug` is non-empty → top row becomes `+ Create '{folder_slug}' (Recommended)`. Display uses the slugified form so the suggested name is always valid.
-   - **None:** no match and `folder_slug` is empty → no recommendation; list shows existing collections only.
+   - **Match:** `folder_slug` equals an existing collection name (after migration, existing names are all lowercase slugs, so this is a direct equality check) → that row gets `(Recommended)` label and sorts to top.
+   - **Create-suggestion:** no match, but `folder_slug` is non-empty → top row becomes `+ Create '{folder_slug}' (Recommended)`. Display uses the slugified form so the suggested name is always valid. Example: folder `My App` → `folder_slug = my-app`; if `my-app` exists → Match; if not → Create-suggestion.
+   - **None:** `folder_slug` is empty (e.g., folder was all symbols like `~~~`) → no recommendation; list shows existing collections only.
+4. **During search typing:** the startup recommendation row is replaced by standard search-filter behavior. If the typed query doesn't match any existing name and `slugify(query)` is non-empty, a dynamic `+ Create '{slugify(query)}'` row appears at the bottom of the (empty) filtered list. Clearing the search box restores the startup recommendation view.
 
 ### Interactions
 
@@ -143,7 +144,7 @@ Single shared rule across backend, frontend, and picker:
 
 | Site | Behavior |
 |---|---|
-| `backend/app/validators/collection_validator.py` | Return error list; POST `/v1/collections` returns 400 with message when rule fails. |
+| `backend/app/validators/collection_validator.py` | Return error list; the Pydantic `check_name` field_validator in `schemas/collection.py:19-25` raises `ValueError`, which FastAPI surfaces as **422 Unprocessable Entity** (same pattern `skill-push/SKILL.md:106` documents). |
 | `src/lib/collection-validation.ts` (new) | Pure function, mirror of backend. |
 | `NewCollectionModal.tsx` | Inline error below input (`AlertCircle` + red text matching the existing `nameError` pattern at `NewCollectionModal.tsx:91-96`); Create button disabled while invalid. |
 | `CollectionPicker.tsx` (inline web picker) | `canCreate` memo gated on slug validity; `+ Create 'X'` option hidden when invalid. |
@@ -200,7 +201,7 @@ Example: `[Frontend, "frontend-", frontend_]` (created in that order) → `[fron
 | `.skillnote.json` write fails (EACCES) | Preserve current `PermissionError` branch in both Skip and normal-pick paths. |
 | Sync script failure | Preserve current silent exit. Next `claude` launch retries. |
 | Migration interrupted mid-run | Single transaction ensures rollback; no partial rename state. |
-| Migration produces empty slug | Fallback `collection-{id}`, WARN-level log entry during migration for operator audit. |
+| Migration produces empty slug | Fallback `collection-{hash8}` (first 8 hex chars of `sha1(original_name)`), WARN-level log entry during migration for operator audit. |
 | Skip when already on empty collection | Confirm modal still shown; confirm is a no-op exit. No special branch. |
 | Concurrent pickers on same project | Last-writer-wins on `.skillnote.json`. No locking. |
 
@@ -251,8 +252,9 @@ None. All UX and implementation questions resolved during brainstorming.
 
 ## Success Criteria
 
-- User can start `claude` in a new project directory, see a `+ Create '{folder}' (Recommended)` row at the top of the picker, press Enter, and have a matching collection created and activated without leaving the terminal.
+- User can start `claude` in a new project directory, see a `+ Create '{folder_slug}' (Recommended)` row at the top of the picker, press Enter, and have a matching collection created and activated without leaving the terminal.
 - User can press `Ctrl+K` (or navigate to the pinned Skip row), confirm the modal, and have `.skillnote.json` written with `{"collections": []}` and all local skills cleaned.
-- `POST /v1/collections` with name `Frontend` returns a 400 with a clear validation message; `frontend` succeeds.
+- `POST /v1/collections` with name `Frontend` returns a 422 with a clear validation message; `frontend` succeeds.
+- `POST /v1/skills` with `collections: ["Bad Name"]` returns 422; `collections: ["frontend"]` succeeds.
 - After migration, every collection name in the database matches `^[a-z0-9_-]+$`, and all skill records reference the post-migration names.
 - Running the migration twice is a no-op on the second run.
