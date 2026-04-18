@@ -62,6 +62,26 @@ def _resolve_recommendation(folder_raw, existing):
     return ("create", slug)
 
 
+def _confirm_skip(stdscr):
+    """Draw a centered modal and return True if user confirms."""
+    import curses
+    h, w = stdscr.getmaxyx()
+    box_h, box_w = 5, 40
+    y = (h - box_h) // 2
+    x = (w - box_w) // 2
+    for i in range(box_h):
+        stdscr.addstr(y + i, x, " " * box_w, curses.A_REVERSE)
+    stdscr.addstr(y + 1, x + 2, "Are you sure you want to skip?", curses.A_REVERSE | curses.A_BOLD)
+    stdscr.addstr(y + 3, x + 2, "[Y] Yes       [N] Cancel", curses.A_REVERSE)
+    stdscr.refresh()
+    while True:
+        k = stdscr.getch()
+        if k in (ord("y"), ord("Y"), 10, 13, curses.KEY_ENTER):
+            return True
+        if k in (ord("n"), ord("N"), 27):
+            return False
+
+
 # Constants (from Claude Code's FuzzyPicker study)
 MIN_VISIBLE = 2
 DEFAULT_VISIBLE = 12
@@ -425,10 +445,21 @@ def pick(stdscr, items, recommended=0):
                 s(row, bx + left_w - len(cnt) - 2, cnt, DIM)
                 row += 1
 
-            # Pad remaining left rows
-            while row < h - footer_h - 1:
+            # Pad remaining left rows (reserve one row for the pinned Skip entry)
+            while row < h - footer_h - 2:
                 hline(row)
                 row += 1
+
+            # Pinned Skip row — always visible
+            skip_is_focused = (focus == "left" and cur == len(filtered))  # one past last
+            hline(row)
+            skip_label = "⊘ Skip (Ctrl+K)"
+            if skip_is_focused:
+                s(row, bx + 3, "❯", ACCENT)
+                s(row, bx + 5, skip_label, ACCENT)
+            else:
+                s(row, bx + 5, skip_label, DIM)
+            row += 1
 
             # ═══ RIGHT PANEL: preview ═══
             if not compact and sel_skills:
@@ -523,7 +554,8 @@ def pick(stdscr, items, recommended=0):
                     right_scroll -= 1
         elif key == curses.KEY_DOWN:
             if focus == "left":
-                if filtered and cur < len(filtered) - 1:
+                # Allow navigating onto the pinned Skip row (index == len(filtered))
+                if cur < len(filtered):
                     cur += 1
                     right_scroll = 0
             else:
@@ -534,9 +566,17 @@ def pick(stdscr, items, recommended=0):
         elif key == curses.KEY_RIGHT:
             focus = "right"
         elif key in (ord("\n"), curses.KEY_ENTER, 10, 13):
+            if focus == "left" and cur == len(filtered):
+                # Skip row
+                if _confirm_skip(stdscr):
+                    return "__SKIP__"
+                continue
             if filtered:
                 _, orig_idx, _ = filtered[cur]
                 return [items[orig_idx][0]]
+        elif key == 11:  # Ctrl+K
+            if _confirm_skip(stdscr):
+                return "__SKIP__"
         elif key in (ord("q"), 27):
             return None
         elif key in (curses.KEY_BACKSPACE, 127, 8):
@@ -660,12 +700,23 @@ def main():
         chosen = curses.wrapper(pick, collections, recommended)
     else:
         chosen = pick_fallback(collections, recommended)
-    if not chosen:
+    if chosen is None:
         current = _get_current_collections()
         if current:
             print(f"  ✦ SkillNote: {', '.join(current)} (active)")
         return
     current = _get_current_collections()
+    if chosen == "__SKIP__":
+        try:
+            with open(CONFIG_PATH, "w") as f:
+                json.dump({"collections": []}, f, indent=2)
+                f.write("\n")
+        except PermissionError:
+            print("  ✦ SkillNote: cannot write .skillnote.json (permission denied)", file=sys.stderr)
+            return
+        _clean_skills_dir()
+        print("  ✦ SkillNote: no collection active (skipped)")
+        return
     changed = current != chosen
     try:
         with open(CONFIG_PATH, "w") as f:
