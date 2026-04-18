@@ -1,10 +1,10 @@
 'use client'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { FolderOpen, Plus, X, Loader2, AlertCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 import { createCollectionApi } from '@/lib/api/collections'
-import { validateCollectionName } from '@/lib/collection-validation'
+import { validateCollectionName, COLLECTION_NAME_MAX } from '@/lib/collection-validation'
 
 type Props = { onClose: () => void; onCreated: (name: string, description: string) => void }
 
@@ -12,8 +12,10 @@ export function NewCollectionModal({ onClose, onCreated }: Props) {
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [saving, setSaving] = useState(false)
-  const [nameError, setNameError] = useState('')
-  const nameRef = useRef<HTMLInputElement>(null)
+  const [touched, setTouched] = useState(false)
+
+  const nameErrors = touched ? validateCollectionName(name) : []
+  const isValid = validateCollectionName(name).length === 0
 
   // Escape to close
   useEffect(() => {
@@ -23,13 +25,9 @@ export function NewCollectionModal({ onClose, onCreated }: Props) {
   }, [onClose])
 
   async function handleCreate() {
+    setTouched(true)
     const errs = validateCollectionName(name)
-    if (errs.length > 0) {
-      setNameError(errs[0].message)
-      nameRef.current?.focus()
-      return
-    }
-    setNameError('')
+    if (errs.length > 0) return
     setSaving(true)
     try {
       const trimmedName = name.trim()
@@ -84,24 +82,21 @@ export function NewCollectionModal({ onClose, onCreated }: Props) {
               Name <span className="text-destructive">*</span>
             </label>
             <input
-              ref={nameRef}
               autoFocus
               value={name}
-              onChange={e => {
-                setName(e.target.value)
-                const errs = validateCollectionName(e.target.value)
-                setNameError(errs[0]?.message ?? '')
-              }}
+              onChange={e => setName(e.target.value)}
+              onBlur={() => setTouched(true)}
               onKeyDown={e => e.key === 'Enter' && handleCreate()}
               placeholder="e.g. Frontend, AI Tools, Utilities"
+              maxLength={COLLECTION_NAME_MAX}
               className={`w-full h-9 px-3 text-[13px] bg-muted/60 border rounded-lg focus:outline-none focus:ring-1 placeholder:text-muted-foreground/50 transition-colors ${
-                nameError ? 'border-destructive focus:ring-destructive' : 'border-border/60 focus:ring-ring'
+                nameErrors.length > 0 ? 'border-destructive focus:ring-destructive' : 'border-border/60 focus:ring-ring'
               }`}
             />
-            {nameError && (
+            {touched && nameErrors[0] && (
               <p className="mt-1 text-[11px] text-destructive flex items-center gap-1">
                 <AlertCircle className="h-3 w-3 shrink-0" />
-                {nameError}
+                {nameErrors[0].message}
               </p>
             )}
           </div>
@@ -129,7 +124,7 @@ export function NewCollectionModal({ onClose, onCreated }: Props) {
           <Button
             size="sm"
             className="h-8 text-[13px] gap-1.5 bg-foreground text-background hover:bg-foreground/90"
-            disabled={!name.trim() || saving || validateCollectionName(name).length > 0}
+            disabled={!name.trim() || saving || !isValid}
             onClick={handleCreate}
           >
             {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
