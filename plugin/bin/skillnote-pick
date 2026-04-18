@@ -198,23 +198,27 @@ def _get_host():
 
 
 def fetch_collections():
+    """Returns (host, cols) on success — cols may be `[]` if API returned an empty list.
+    Returns (host, None) when the API itself was unreachable or errored.
+    Main() uses this to distinguish 'server returned no collections yet' from
+    'can't talk to server'."""
     host = _get_host()
     api = f"http://{host}:8082"
     try:
         data = json.loads(urllib.request.urlopen(f"{api}/v1/collections", timeout=3).read())
-        cols = []
-        for c in data:
-            skills = []
-            try:
-                sd = json.loads(urllib.request.urlopen(
-                    f"{api}/v1/skills?collections={c['name']}", timeout=3).read())
-                skills = [(s["slug"], s.get("description", "")) for s in sd]
-            except Exception:
-                pass
-            cols.append((c["name"], c["count"], skills))
-        return host, cols
     except Exception:
-        return host, []
+        return host, None
+    cols = []
+    for c in data:
+        skills = []
+        try:
+            sd = json.loads(urllib.request.urlopen(
+                f"{api}/v1/skills?collections={c['name']}", timeout=3).read())
+            skills = [(s["slug"], s.get("description", "")) for s in sd]
+        except Exception:
+            pass
+        cols.append((c["name"], c["count"], skills))
+    return host, cols
 
 
 def _get_recommended(items):
@@ -1048,8 +1052,10 @@ def main():
     if not os.isatty(0) or not os.isatty(1):
         return
     host, collections = fetch_collections()
-    if not collections:
+    if collections is None:
+        # API unreachable — distinguish from "API returned empty list"
         print(f"  ✦ SkillNote: could not reach API at http://{host}:8082", file=sys.stderr)
+        print(f"               start the server with ./install.sh or set SKILLNOTE_HOST", file=sys.stderr)
         return
     if len(collections) == 1:
         name, count, _ = collections[0]
