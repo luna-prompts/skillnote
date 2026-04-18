@@ -53,6 +53,8 @@ class GitSubdirPluginSource(BaseModel):
     sha: Optional[str] = None
 
 
+# No explicit discriminator: Pydantic discriminated unions require every variant to be a
+# BaseModel, but `str` (relative path) is a primitive. Smart-union mode resolves it at runtime.
 PluginSource = Union[
     str,  # relative path
     GitHubPluginSource,
@@ -88,6 +90,8 @@ class SkillFrontmatter(BaseModel):
     metadata: Optional[dict] = None
     allowed_tools: Optional[List[str]] = Field(default=None, alias="allowed-tools")
 
+    # Thinner first-pass validation: full business rules (XML-tag rejection, whitespace strip)
+    # live in backend/app/validators/skill_validator.py and run at insert time (Task 27).
     @field_validator("name")
     @classmethod
     def validate_name(cls, v: str) -> str:
