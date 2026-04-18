@@ -24,12 +24,257 @@ except ImportError:
 PROJECT_DIR = os.environ.get("CLAUDE_PROJECT_DIR", os.getcwd())
 CONFIG_PATH = os.path.join(PROJECT_DIR, ".skillnote.json")
 
+import re as _re
+
+RESERVED_WORDS = ("anthropic", "claude")
+SKIP_SENTINEL = "__SKIP__"
+_SLUG_PATTERN = _re.compile(r"^[a-z0-9_-]+$")
+_MAX_NAME = 128
+
+
+def _slugify(name):
+    s = (name or "").lower()
+    s = _re.sub(r"[^a-z0-9_-]+", "-", s)
+    s = _re.sub(r"-+", "-", s)
+    s = s.strip("-")
+    return s[:_MAX_NAME]
+
+
+def _is_valid_slug(s):
+    if not s or len(s) > _MAX_NAME:
+        return False
+    if not _SLUG_PATTERN.match(s):
+        return False
+    if any(w in s for w in RESERVED_WORDS):
+        return False
+    return True
+
+
+def _resolve_recommendation(folder_raw, existing):
+    """Returns ('pick', idx) | ('create', slug) | ('none', None)."""
+    slug = _slugify(folder_raw)
+    if not slug:
+        return ("none", None)
+    for i, (name, _count, _skills) in enumerate(existing):
+        if name == slug:
+            return ("pick", i)
+    if not _is_valid_slug(slug):
+        return ("none", None)
+    return ("create", slug)
+
+
+def _wrap_simple(text, w):
+    """Word-wrap plain text to a list of lines of max width `w`."""
+    out = []
+    for para in text.split("\n"):
+        if not para:
+            out.append("")
+            continue
+        line = ""
+        for word in para.split(" "):
+            if not line:
+                line = word
+            elif len(line) + 1 + len(word) <= w:
+                line = f"{line} {word}"
+            else:
+                out.append(line)
+                line = word
+            # Hard-wrap any word longer than the budget
+            while len(line) > w:
+                out.append(line[:w])
+                line = line[w:]
+        out.append(line)
+    return out
+
+
+def _draw_modal(stdscr, title, body, primary, secondary, accent_color=1):
+    """Render a bordered, centered confirmation modal and return True/False.
+
+    `primary` and `secondary` are (label, keys) tuples where keys is an iterable
+    of int keycodes that resolve to the action. The primary action binds Enter
+    as a safety default so the modal always has a keyboard-only path to commit.
+    The secondary action binds Esc. Returns True if primary was chosen, False
+    for secondary. Resizes and redraws on KEY_RESIZE.
+    """
+    import curses
+    curses.flushinp()
+    p_label, p_keys = primary
+    s_label, s_keys = secondary
+
+    # Target box width: prefer 56 cols but shrink for narrow terminals and
+    # expand (up to 70) if the title alone needs more room. We never exceed
+    # terminal width − 10 so the modal always has visible breathing room.
+    TARGET_W = 56
+    MAX_W = 72
+    MIN_W = 40
+
+    def render():
+        h, w = stdscr.getmaxyx()
+        desired = max(TARGET_W, len(title) + 8)
+        # Account for the right-side keycap hint so it never wraps.
+        p_hint_len = len(p_label) + 4  # " · ↵"
+        s_hint_len = len(s_label) + 5  # " · Esc"
+        action_bar_min = 4 + p_hint_len + s_hint_len + 6  # padding + gap
+        desired = max(desired, action_bar_min)
+        box_w = min(max(desired, MIN_W), MAX_W, max(20, w - 8))
+        body_lines = []
+        for ln in body:
+            body_lines.extend(_wrap_simple(ln, box_w - 6))
+        # Structure: top · title · blank · body[…] · blank · rule · action · bottom
+        # rule = 1 row, action = 1 row
+        box_h = 6 + len(body_lines) + 2
+        # Too-small guard: status line fallback
+        if h < box_h + 2 or w < box_w + 4:
+            try:
+                msg = f" {title}  ({p_label[0]}/{s_label[0]}) "
+                stdscr.addstr(max(0, h - 1), 0,
+                              msg[: max(0, w - 1)], curses.A_REVERSE)
+                stdscr.clrtoeol()
+                stdscr.refresh()
+            except curses.error:
+                pass
+            return
+        y = (h - box_h) // 2
+        x = (w - box_w) // 2
+        BORDER = curses.color_pair(accent_color) | curses.A_DIM
+        TITLE = curses.color_pair(accent_color) | curses.A_BOLD
+        BODY = 0  # plain text (not dim) so the body is legible inside the card
+        DIM = curses.A_DIM
+        try:
+            # Top border with title-tab: ╭─[ Title ]─╮ style — subtle flag that
+            # this is a distinct card, not a raw reverse-video slab.
+            stdscr.addstr(y, x, "╭" + "─" * (box_w - 2) + "╮", BORDER)
+            # Fill interior with opaque spaces (occludes whatever was below).
+            for i in range(1, box_h - 1):
+                stdscr.addstr(y + i, x, "│", BORDER)
+                stdscr.addstr(y + i, x + 1, " " * (box_w - 2))
+                stdscr.addstr(y + i, x + box_w - 1, "│", BORDER)
+            stdscr.addstr(y + box_h - 1, x, "╰" + "─" * (box_w - 2) + "╯", BORDER)
+
+            # Title row: bold, indented 3 cols. Truncate with … if needed.
+            title_max = box_w - 6
+            tline = title if len(title) <= title_max else title[: title_max - 1] + "…"
+            stdscr.addstr(y + 1, x + 3, tline, TITLE)
+
+            # Body rows start after title + blank line
+            row = y + 3
+            for ln in body_lines:
+                stdscr.addstr(row, x + 3, ln[: box_w - 6], BODY)
+                row += 1
+
+            # Horizontal rule separating body from action bar (hairline, dimmed)
+            rule_y = y + box_h - 3
+            stdscr.addstr(rule_y, x + 3, "─" * (box_w - 6), BORDER)
+
+            # Action bar: primary left (accent) with ↵ keycap, secondary right
+            # (dim) with Esc keycap. The keycaps ensure the user always knows
+            # the keyboard shortcuts.
+            action_y = y + box_h - 2
+            bar_left = f"❯ {p_label}"
+            left_hint = " · ↵"
+            right_hint = "Esc · "
+            bar_right = f"{right_hint}{s_label}"
+            # Layout: " {bar_left}{left_hint}  …  {bar_right} "
+            left_total = len(bar_left) + len(left_hint)
+            right_total = len(bar_right)
+            inner_w = box_w - 6  # 3-col padding each side
+            pad = max(2, inner_w - left_total - right_total)
+            # Primary action
+            stdscr.addstr(action_y, x + 3, bar_left, TITLE)
+            stdscr.addstr(action_y, x + 3 + len(bar_left), left_hint, DIM)
+            # Secondary action
+            right_x = x + 3 + left_total + pad
+            stdscr.addstr(action_y, right_x, bar_right, DIM)
+
+            stdscr.refresh()
+        except curses.error:
+            pass
+
+    while True:
+        render()
+        k = stdscr.getch()
+        if k == curses.KEY_RESIZE:
+            stdscr.erase()
+            continue
+        # Primary keys + Enter default
+        if k in p_keys or k in (10, 13, curses.KEY_ENTER):
+            curses.flushinp()
+            return True
+        # Secondary keys + Esc default
+        if k in s_keys or k == 27:
+            curses.flushinp()
+            return False
+
+
+def _confirm_skip(stdscr):
+    """Ask the user to confirm they want to start the session with no
+    SkillNote collection loaded. Returns True on confirm, False on cancel."""
+    return _draw_modal(
+        stdscr,
+        title="Skip SkillNote for this session?",
+        body=[
+            "Claude Code will start with no SkillNote skills loaded.",
+            "",
+            "You can run /skillnote anytime to pick or create a collection later.",
+        ],
+        primary=("Yes, skip", (ord("y"), ord("Y"))),
+        secondary=("Cancel", (ord("n"), ord("N"))),
+    )
+
+
+def _create_collection(name):
+    """Returns ('ok', None) | ('exists', count) | ('error', msg)."""
+    import urllib.error
+    host = _get_host()
+    api = f"http://{host}:8082"
+    payload = json.dumps({"name": name, "description": ""}).encode()
+    req = urllib.request.Request(
+        f"{api}/v1/collections",
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        urllib.request.urlopen(req, timeout=3).read()
+        return ("ok", None)
+    except urllib.error.HTTPError as e:
+        if e.code == 409:
+            try:
+                data = json.loads(urllib.request.urlopen(
+                    f"{api}/v1/skills?collections={name}", timeout=3).read())
+                return ("exists", len(data))
+            except Exception:
+                return ("exists", 0)
+        return ("error", f"HTTP {e.code}")
+    except Exception as e:
+        return ("error", str(e))
+
+
+def _confirm_activate_existing(stdscr, name, count):
+    """Inline confirm dialog when Create hits a 409 collision. Returns True
+    to activate the existing collection, False to return to the picker."""
+    skill_word = "skill" if count == 1 else "skills"
+    return _draw_modal(
+        stdscr,
+        title=f"“{name}” already exists",
+        body=[
+            f"A collection named “{name}” is already on this server "
+            f"with {count} {skill_word}.",
+            "",
+            "Activate it for this project?",
+        ],
+        primary=("Yes, activate", (ord("y"), ord("Y"))),
+        secondary=("Cancel", (ord("n"), ord("N"))),
+    )
+
+
 # Constants (from Claude Code's FuzzyPicker study)
 MIN_VISIBLE = 2
 DEFAULT_VISIBLE = 12
 COMPACT_THRESHOLD = 70
 LEFT_MIN_W = 28
-LEFT_MAX_W = 44
+LEFT_MAX_W = 60  # wider cap so long Create labels and collection names don't
+                 # get needlessly truncated on large terminals
 
 
 def _get_host():
@@ -55,23 +300,27 @@ def _get_host():
 
 
 def fetch_collections():
+    """Returns (host, cols) on success — cols may be `[]` if API returned an empty list.
+    Returns (host, None) when the API itself was unreachable or errored.
+    Main() uses this to distinguish 'server returned no collections yet' from
+    'can't talk to server'."""
     host = _get_host()
     api = f"http://{host}:8082"
     try:
         data = json.loads(urllib.request.urlopen(f"{api}/v1/collections", timeout=3).read())
-        cols = []
-        for c in data:
-            skills = []
-            try:
-                sd = json.loads(urllib.request.urlopen(
-                    f"{api}/v1/skills?collections={c['name']}", timeout=3).read())
-                skills = [(s["slug"], s.get("description", "")) for s in sd]
-            except Exception:
-                pass
-            cols.append((c["name"], c["count"], skills))
-        return host, cols
     except Exception:
-        return host, []
+        return host, None
+    cols = []
+    for c in data:
+        skills = []
+        try:
+            sd = json.loads(urllib.request.urlopen(
+                f"{api}/v1/skills?collections={c['name']}", timeout=3).read())
+            skills = [(s["slug"], s.get("description", "")) for s in sd]
+        except Exception:
+            pass
+        cols.append((c["name"], c["count"], skills))
+    return host, cols
 
 
 def _get_recommended(items):
@@ -170,13 +419,16 @@ def _strip_trigger(desc):
     return desc
 
 
-def pick(stdscr, items, recommended=0):
-    # Sort: recommended first
+def pick(stdscr, items, recommended=0, recommended_kind="pick", recommended_slug=None):
+    # Sort: recommended first (only when recommendation kind is 'pick')
     sorted_items = []
-    if 0 <= recommended < len(items):
+    if recommended_kind == "pick" and 0 <= recommended < len(items):
         sorted_items.append((recommended, items[recommended]))
-    for i, it in enumerate(items):
-        if i != recommended:
+        for i, it in enumerate(items):
+            if i != recommended:
+                sorted_items.append((i, it))
+    else:
+        for i, it in enumerate(items):
             sorted_items.append((i, it))
 
     cur = 0
@@ -195,6 +447,12 @@ def pick(stdscr, items, recommended=0):
         curses.init_pair(5, 208, -1)
     except Exception:
         curses.init_pair(5, curses.COLOR_RED, -1)
+    # curses.wrapper() enables keypad on stdscr by default, but re-assert it
+    # for robustness against stripped-down terminals or third-party harnesses.
+    try:
+        stdscr.keypad(True)
+    except Exception:
+        pass
 
     curses.flushinp()
     stdscr.nodelay(True)
@@ -223,14 +481,76 @@ def pick(stdscr, items, recommended=0):
         stdscr.erase()
         h, w = stdscr.getmaxyx()
 
+        # ═══ TOO-SMALL GUARD ═══
+        # Below this size the layout degrades into garbage (clawd art alone is
+        # 9 cols wide, the branded header is ~24). Show a clean minimal message
+        # instead so the user isn't confused by half-drawn borders.
+        MIN_W = 40
+        MIN_H = 12
+        if w < MIN_W or h < MIN_H:
+            msg = "Terminal too small"
+            sub = f"Need at least {MIN_W}x{MIN_H} (got {w}x{h})"
+            hint = "Resize or press Esc"
+            try:
+                if h >= 3:
+                    y = max(0, h // 2 - 1)
+                    stdscr.addstr(y, max(0, (w - len(msg)) // 2), msg[: max(0, w - 1)],
+                                  curses.A_BOLD)
+                    if h >= 4:
+                        stdscr.addstr(y + 1, max(0, (w - len(sub)) // 2),
+                                      sub[: max(0, w - 1)], curses.A_DIM)
+                    if h >= 6:
+                        stdscr.addstr(y + 3, max(0, (w - len(hint)) // 2),
+                                      hint[: max(0, w - 1)], curses.A_DIM)
+                elif h >= 1:
+                    stdscr.addstr(0, 0, msg[: max(0, w - 1)])
+            except curses.error:
+                pass
+            stdscr.refresh()
+            key = stdscr.getch()
+            if key in (ord("q"), 27):
+                return None
+            if key == curses.KEY_RESIZE:
+                continue
+            continue
+
         # Filter
         if search:
             filtered = [(si, oi, it) for si, (oi, it) in enumerate(sorted_items)
                         if search.lower() in it[0].lower()]
         else:
             filtered = [(si, oi, it) for si, (oi, it) in enumerate(sorted_items)]
+
+        # Determine the create-slug for this frame:
+        #   - with a search query that yields no matches AND produces a valid slug → "+ Create '{slug}'"
+        #   - no query, and the startup recommendation is "create" → "+ Create '{folder_slug}' (Recommended)"
+        create_slug = None
+        if search:
+            qs = _slugify(search)
+            if qs and _is_valid_slug(qs) and not any(n == qs for n, _, _ in items):
+                if not filtered:
+                    create_slug = qs
+        else:
+            if recommended_kind == "create":
+                create_slug = recommended_slug
+
+        # If we're showing a create row, prepend a synthetic entry to filtered.
+        # Use orig_idx = -1 to mark it as synthetic; the list-row renderer and
+        # enter-handler special-case this sentinel. We use the sparkle glyph
+        # ✦ rather than a "+" so the create action reads as a positive creation
+        # event rather than an addition operator.
+        if create_slug is not None:
+            synthetic_label = f"✦ Create '{create_slug}'"
+            if recommended_kind == "create" and not search:
+                synthetic_label += " (Recommended)"
+            synthetic = (-1, -1, (synthetic_label, 0, []))
+            filtered = [synthetic] + filtered
+        # Allow cur == len(filtered) so the pinned Skip row is focusable
         if filtered:
-            cur = _clamp(cur, 0, len(filtered) - 1)
+            cur = _clamp(cur, 0, len(filtered))
+        else:
+            # With no filtered items, cur=0 lands on Skip (only focusable thing)
+            cur = 0
 
         # Layout
         pad = 2
@@ -247,9 +567,14 @@ def pick(stdscr, items, recommended=0):
         # Selected collection for preview
         sel_name, sel_count, sel_skills = "", 0, []
         sel_is_rec = False
-        if filtered:
+        sel_is_synthetic = False
+        if filtered and cur < len(filtered):
             _, orig_idx, (sel_name, sel_count, sel_skills) = filtered[cur]
-            sel_is_rec = (orig_idx == recommended)
+            sel_is_synthetic = (orig_idx == -1)
+            # Only mark as "recommended" for the right-panel suffix when this
+            # is a real matching collection (not a synthetic Create row, whose
+            # label already embeds the suffix).
+            sel_is_rec = (not sel_is_synthetic) and (orig_idx == recommended)
 
         def s(r, c, text, attr=0):
             try:
@@ -300,17 +625,32 @@ def pick(stdscr, items, recommended=0):
             hline_full(row); row += 1
 
             # ═══ SEPARATOR with stats ═══
-            stats = f" ● {total_skills} skills · {len(items)} collections "
-            left_inner = left_w - 1
-            left_part = "├" + (stats + "─" * max(0, left_inner - len(stats)))[:left_inner]
+            # The stats bar uses the top rail of the body border as its
+            # anchor. We reserve space for " <N skills · M collections> "
+            # and then fill the rest with the rail (─). The numbers are drawn
+            # in accent to give the otherwise-dim rail a point of attention.
+            n_skills = f"{total_skills}"
+            n_cols = f"{len(items)}"
+            stats_plain = f" {n_skills} skills · {n_cols} collections "
             if compact:
-                right_part = "─" * (bw - left_w - 1) + "┤"
+                # Compact: no center divider, stats spans the full inner width.
+                inner_w = bw - 2
+                sep = "├" + (stats_plain + "─" * max(0, inner_w - len(stats_plain)))[:inner_w] + "┤"
             else:
+                left_inner = left_w - 1
+                left_part = "├" + (stats_plain + "─" * max(0, left_inner - len(stats_plain)))[:left_inner]
                 right_part = "┬" + "─" * max(0, right_w - 1) + "┤"
-            sep = left_part + right_part
+                sep = left_part + right_part
             s(row, bx, sep[:bw], BORDER)
-            s(row, bx + 2, "●", GREEN)
-            s(row, bx + 4, f"{total_skills} skills · {len(items)} collections", DIM)
+            # Overdraw the stats tokens with accent/dim separation so the
+            # user's eye lands on the numbers first.
+            sx = bx + 2
+            s(row, sx, n_skills, ACCENT)
+            s(row, sx + len(n_skills) + 1, "skills", DIM)
+            s(row, sx + len(n_skills) + 1 + len("skills") + 1, "·", DIM)
+            sx2 = sx + len(n_skills) + 1 + len("skills") + 3
+            s(row, sx2, n_cols, ACCENT)
+            s(row, sx2 + len(n_cols) + 1, "collections", DIM)
             row += 1
 
             content_top = row
@@ -344,20 +684,67 @@ def pick(stdscr, items, recommended=0):
             # Breathing space
             hline(row); row += 1
 
-            # List with Claude Code scroll indicators
+            # List with Claude Code scroll indicators.
+            # Reserve 2 trailing rows: one for the hairline rule, one for the
+            # pinned Skip entry. Without this reservation, a full list would
+            # push the rule+Skip off the bottom border on short terminals.
             list_top = row
-            list_h = h - row - footer_h - 1
+            list_h = h - row - footer_h - 1 - 2  # -2 for rule + skip
             visible_count = _clamp(list_h, MIN_VISIBLE, len(filtered) if filtered else MIN_VISIBLE)
 
             window_start = _clamp(cur - visible_count + 1, 0, max(0, len(filtered) - visible_count))
             visible = filtered[window_start:window_start + visible_count]
 
+            # Empty-state hint when a search yields no rows (and no Create offered).
+            # The hint reads as an inline error rather than a list row: we prefix
+            # it with a dim "·" anchor and word-wrap to stay inside the pane.
+            if not filtered and search:
+                hline(row)
+                # Diagnose why: either invalid slug, reserved word, or just no match.
+                qs = _slugify(search)
+                if not qs:
+                    hint_text = "Type letters, digits, or hyphens to search."
+                    hint_title = "No matching input"
+                elif any(w in qs for w in RESERVED_WORDS):
+                    hint_text = "“anthropic” and “claude” are reserved words."
+                    hint_title = "Invalid name"
+                elif len(qs) > _MAX_NAME:
+                    hint_text = f"Names are limited to {_MAX_NAME} characters."
+                    hint_title = "Name too long"
+                else:
+                    hint_text = "Try a different search term or press Esc."
+                    hint_title = "No matching collection"
+                # Title row (dim bold) + explanation row (dim plain)
+                s(row, bx + 3, "·", DIM)
+                s(row, bx + 5, hint_title[: max(0, left_w - 6)], DIM | BOLD)
+                row += 1
+                if row < h - footer_h - 3:
+                    hline(row)
+                    # Wrap the explanation within the left pane width.
+                    for ln in _wrap(hint_text, max(0, left_w - 8)):
+                        if row >= h - footer_h - 3:
+                            break
+                        hline(row)
+                        s(row, bx + 5, ln, DIM)
+                        row += 1
+
+            # When focus is on the right panel, the left cursor still indicates
+            # which row is "current" but uses a dimmed style so the eye follows
+            # the right panel. This gives Tab a visible state transition.
+            left_has_focus = (focus == "left")
+            cursor_attr = ACCENT if left_has_focus else DIM
             for vi, (sorted_idx, orig_idx, (name, count, skills)) in enumerate(visible):
-                if row >= h - footer_h - 1:
+                # Stop early so the hairline rule + pinned Skip row always fit.
+                if row >= h - footer_h - 3:
                     break
                 fi = window_start + vi
                 is_focused = (fi == cur)
-                is_rec = (orig_idx == recommended)
+                is_synthetic = (orig_idx == -1)  # synthetic "+ Create 'X'" row
+                # Only treat as "recommended" (for the inline suffix) when this is a
+                # real existing-collection row that matches the folder-name recommendation.
+                # Synthetic create rows already embed the suffix in `name`, so we must
+                # NOT double-draw it.
+                is_rec = (not is_synthetic) and (orig_idx == recommended)
                 at_top = (vi == 0 and window_start > 0)
                 at_bot = (vi == len(visible) - 1 and window_start + visible_count < len(filtered))
 
@@ -365,7 +752,7 @@ def pick(stdscr, items, recommended=0):
 
                 # Indicator (Claude Code ListItem pattern)
                 if is_focused:
-                    s(row, bx + 3, "❯", ACCENT)
+                    s(row, bx + 3, "❯", cursor_attr)
                 elif at_top:
                     s(row, bx + 3, "↑", DIM)
                 elif at_bot:
@@ -375,95 +762,283 @@ def pick(stdscr, items, recommended=0):
                 num = f"{fi + 1}."
                 s(row, bx + 5, num, DIM)
                 nx = bx + 5 + len(num) + 1
-                if is_focused:
-                    s(row, nx, name, ACCENT)
-                else:
-                    s(row, nx, name, DIM if not is_rec else 0)
-                if is_rec:
-                    s(row, nx + len(name) + 1, "★", YELLOW | (0 if is_focused else DIM))
 
-                cnt = str(count)
-                s(row, bx + left_w - len(cnt) - 2, cnt, DIM)
+                # Compute the column where the count would draw (or the panel edge
+                # for synthetic rows, which have no count). Reserve 2 cols of padding
+                # before it so the name doesn't butt up against the count / divider.
+                cnt = str(count) if not is_synthetic else ""
+                if is_synthetic:
+                    count_col = bx + left_w - 1  # up to the center divider
+                else:
+                    count_col = bx + left_w - len(cnt) - 2
+                max_name_w = max(0, count_col - nx - 2)
+
+                # If this row will also draw a " (Recommended)" suffix separately,
+                # reserve room for it up front so the name-truncation leaves space.
+                suffix = " (Recommended)" if is_rec else ""
+                name_budget = max(0, max_name_w - len(suffix))
+
+                display_name = name
+                if len(display_name) > name_budget:
+                    display_name = display_name[: max(0, name_budget - 1)] + "…"
+
+                if is_focused:
+                    s(row, nx, display_name, cursor_attr)
+                else:
+                    s(row, nx, display_name, DIM if not is_rec else 0)
+                if suffix:
+                    if is_focused:
+                        s(row, nx + len(display_name), suffix, cursor_attr)
+                    else:
+                        s(row, nx + len(display_name), suffix, DIM)
+
+                # Count only for real collections. Synthetic Create rows have count=0
+                # which is meaningless and collides with a long label.
+                if not is_synthetic:
+                    s(row, bx + left_w - len(cnt) - 2, cnt, DIM)
                 row += 1
 
-            # Pad remaining left rows
-            while row < h - footer_h - 1:
+            # Pad remaining left rows (reserve one row for the hairline divider
+            # above the pinned Skip entry, and one row for Skip itself).
+            while row < h - footer_h - 3:
                 hline(row)
                 row += 1
 
+            # Hairline divider between the list and the pinned Skip — tells the
+            # eye that Skip is a distinct zone, not just the next list item.
+            # We draw a dashed rail inset 3 cols from the left border so it
+            # visually groups with the list content but reads as a rule.
+            hline(row)
+            rail_w = max(0, left_w - 5)
+            s(row, bx + 3, "─" * rail_w, BORDER)
+            row += 1
+
+            # Pinned Skip row — always visible.
+            # The long label only renders when there's enough horizontal room;
+            # otherwise we fall back to the plain "Skip" label. Either way
+            # the row remains focusable and keyboard-discoverable.
+            skip_is_cur = (cur == len(filtered))
+            skip_is_focused = (focus == "left" and skip_is_cur)
+            hline(row)
+            skip_full = "⊘ Skip · start with no skills"
+            skip_plain = "⊘ Skip"
+            skip_hotkey = "Ctrl+K"  # right-aligned keycap hint
+            # Budget: left pane content from column bx+5 to bx+left_w-1 (or to
+            # the right border in compact mode). Keep a 2-col gutter from edge.
+            pane_end = (bx + left_w - 1) if not compact else (bx + bw - 2)
+            budget = max(0, pane_end - (bx + 5) - 2)
+            # Reserve room for the hotkey hint ("Ctrl+K" + one space separator)
+            # so the label gracefully shortens instead of overlapping the hint.
+            hotkey_pad = len(skip_hotkey) + 2  # 1 space before + safety margin
+            label_budget = max(0, budget - hotkey_pad)
+            skip_label = skip_full if len(skip_full) <= label_budget else skip_plain
+            # If even the plain label plus hotkey doesn't fit, drop the hotkey
+            # from the row (the footer still advertises it).
+            show_hotkey = len(skip_plain) + hotkey_pad <= budget
+            if skip_is_focused:
+                attr = ACCENT
+            else:
+                attr = DIM
+            if skip_is_cur:
+                s(row, bx + 3, "❯", ACCENT if skip_is_focused else DIM)
+            s(row, bx + 5, skip_label[: label_budget if label_budget > 0 else len(skip_label)], attr)
+            if show_hotkey:
+                # Right-align the keycap against the pane edge (dim, so it's
+                # legible without competing with the primary label).
+                s(row, pane_end - len(skip_hotkey), skip_hotkey, DIM)
+            row += 1
+
             # ═══ RIGHT PANEL: preview ═══
-            if not compact and sel_skills:
+            if not compact:
                 rr = content_top
 
                 # Empty line
                 rr += 1
 
-                # Header
-                header = sel_name
-                if sel_is_rec:
-                    header += " ★"
-                if focus == "right":
-                    s(rr, bx + left_w + 3, "❯ " + header, ACCENT)
-                else:
-                    s(rr, bx + left_w + 4, header, BOLD)
-                cnt_txt = f"{sel_count} skills"
-                s(rr, bx + bw - len(cnt_txt) - 2, cnt_txt, DIM)
-                rr += 1
+                # Focused on the pinned Skip row — explain what Skip does.
+                skip_focused = (focus == "left" and filtered and cur == len(filtered)) or \
+                               (focus == "left" and not filtered)
+                # Focused on a synthetic Create row — explain what will happen.
+                create_focused = sel_is_synthetic
 
-                # Separator
-                s(rr, bx + left_w + 4, "─" * (right_w - 6), DIM)
-                rr += 1
-
-                rr += 1  # gap
-
-                # Skill list with word-wrapped descriptions
-                desc_w = right_w - 8
-                skills_shown = 0
-                skill_list = sel_skills[right_scroll:]
-                for si, (slug, desc) in enumerate(skill_list):
-                    real_idx = si + right_scroll
-                    if rr >= h - footer_h - 2:
-                        break
-
-                    # Number + skill name
-                    num = f"{real_idx + 1}."
-                    s(rr, bx + left_w + 4, num, DIM)
-                    s(rr, bx + left_w + 4 + len(num) + 1, slug, curses.color_pair(1))
+                if create_focused:
+                    # Extract slug from the synthetic label (between single quotes)
+                    create_name = sel_name.split("'")[1] if "'" in sel_name else ""
+                    # Mirror the real-collection header treatment: bold title on
+                    # the left, a small "new" badge on the right.
+                    s(rr, bx + left_w + 4, f"Create “{create_name}”", BOLD)
+                    badge = "new"
+                    s(rr, bx + bw - len(badge) - 2, badge, DIM)
                     rr += 1
-                    skills_shown += 1
+                    s(rr, bx + left_w + 4, "─" * (right_w - 6), DIM)
+                    rr += 1
+                    rr += 1  # gap
+                    for ln in _wrap(
+                        f"Press Enter to create the “{create_name}” collection "
+                        "and activate it for this project.",
+                        right_w - 8,
+                    ):
+                        if rr >= h - footer_h - 2:
+                            break
+                        s(rr, bx + left_w + 4, ln, 0)  # plain text for readability
+                        rr += 1
+                    rr += 1
+                    for ln in _wrap(
+                        "Or type to search, or pick an existing collection from the list.",
+                        right_w - 8,
+                    ):
+                        if rr >= h - footer_h - 2:
+                            break
+                        s(rr, bx + left_w + 4, ln, DIM)
+                        rr += 1
+                elif skip_focused:
+                    # Skip row focused — explain what skipping does and how to
+                    # come back. We mirror the real-collection header treatment:
+                    # bold title on the left, a subtle keycap on the right.
+                    s(rr, bx + left_w + 4, "Skip SkillNote", BOLD)
+                    kc = "Ctrl+K"
+                    s(rr, bx + bw - len(kc) - 2, kc, DIM)
+                    rr += 1
+                    s(rr, bx + left_w + 4, "─" * (right_w - 6), DIM)
+                    rr += 1
+                    rr += 1  # gap
+                    for ln in _wrap(
+                        "Start this session with no SkillNote skills loaded. "
+                        "Claude Code won't see any skills from SkillNote.",
+                        right_w - 8,
+                    ):
+                        if rr >= h - footer_h - 2:
+                            break
+                        s(rr, bx + left_w + 4, ln, 0)  # plain text for readability
+                        rr += 1
+                    rr += 1
+                    for ln in _wrap(
+                        "You can run /skillnote anytime to pick a collection later.",
+                        right_w - 8,
+                    ):
+                        if rr >= h - footer_h - 2:
+                            break
+                        s(rr, bx + left_w + 4, ln, DIM)
+                        rr += 1
+                elif sel_name:
+                    # Real collection focus
+                    header = sel_name
+                    if sel_is_rec:
+                        header += " (Recommended)"
+                    if focus == "right":
+                        s(rr, bx + left_w + 3, "❯ " + header, ACCENT)
+                    else:
+                        s(rr, bx + left_w + 4, header, BOLD)
+                    cnt_txt = f"{sel_count} skills"
+                    s(rr, bx + bw - len(cnt_txt) - 2, cnt_txt, DIM)
+                    rr += 1
 
-                    # Description (stripped of triggers, word-wrapped)
-                    clean_desc = _strip_trigger(desc)
-                    if clean_desc and rr < h - footer_h - 2:
-                        for dl in _wrap(clean_desc, desc_w):
+                    # Separator
+                    s(rr, bx + left_w + 4, "─" * (right_w - 6), DIM)
+                    rr += 1
+
+                    rr += 1  # gap
+
+                    if not sel_skills:
+                        # Empty collection state
+                        for ln in _wrap(
+                            "No skills in this collection yet. "
+                            "Add skills from the web UI, then select this collection to use them.",
+                            right_w - 8,
+                        ):
                             if rr >= h - footer_h - 2:
                                 break
-                            s(rr, bx + left_w + 8, dl, DIM)
+                            s(rr, bx + left_w + 4, ln, DIM)
                             rr += 1
+                    else:
+                        # Skill list with word-wrapped descriptions
+                        desc_w = right_w - 8
+                        skills_shown = 0
+                        skill_list = sel_skills[right_scroll:]
+                        for si, (slug, desc) in enumerate(skill_list):
+                            real_idx = si + right_scroll
+                            if rr >= h - footer_h - 2:
+                                break
 
-                    # Gap between skills
-                    if rr < h - footer_h - 2:
-                        rr += 1
+                            # Number + skill name
+                            num = f"{real_idx + 1}."
+                            s(rr, bx + left_w + 4, num, DIM)
+                            s(rr, bx + left_w + 4 + len(num) + 1, slug or "(unnamed)",
+                              curses.color_pair(1))
+                            rr += 1
+                            skills_shown += 1
 
-                # Scroll info
-                last = right_scroll + skills_shown
-                if right_scroll > 0 or last < len(sel_skills):
-                    info = f"{right_scroll + 1}-{last} of {len(sel_skills)}"
-                    arrows = ""
-                    if right_scroll > 0:
-                        arrows += "↑ "
-                    if last < len(sel_skills):
-                        arrows += "↓"
-                    s(rr, bx + left_w + 4, info, DIM)
-                    s(rr, bx + bw - len(arrows) - 2, arrows, DIM)
+                            # Description (stripped of triggers, word-wrapped)
+                            clean_desc = _strip_trigger(desc)
+                            if clean_desc and rr < h - footer_h - 2:
+                                for dl in _wrap(clean_desc, desc_w):
+                                    if rr >= h - footer_h - 2:
+                                        break
+                                    s(rr, bx + left_w + 8, dl, DIM)
+                                    rr += 1
+
+                            # Gap between skills
+                            if rr < h - footer_h - 2:
+                                rr += 1
+
+                        # Scroll info
+                        last = right_scroll + skills_shown
+                        if right_scroll > 0 or last < len(sel_skills):
+                            info = f"{right_scroll + 1}-{last} of {len(sel_skills)}"
+                            arrows = ""
+                            if right_scroll > 0:
+                                arrows += "↑ "
+                            if last < len(sel_skills):
+                                arrows += "↓"
+                            s(rr, bx + left_w + 4, info, DIM)
+                            s(rr, bx + bw - len(arrows) - 2, arrows, DIM)
 
             # ═══ BOTTOM BORDER with hints + links ═══
+            # Left-align keyboard shortcuts; right-align web + github links.
+            # Both step down gracefully as the terminal narrows — we try the
+            # richest combo first, then progressively drop the web URL, then
+            # the GitHub link, then the longest hint variant.
             bot_row = h - 1
             s(bot_row, bx, "╰" + "─" * (bw - 2) + "╯", BORDER)
-            hints = " ↑/↓ navigate · Enter select · Tab panel · Esc cancel "
-            s(bot_row, bx + 2, hints, DIM)
-            links = f" {web_url} · {gh_url} ★ "
-            s(bot_row, bx + bw - len(links) - 1, links, DIM | curses.color_pair(1))
+            hints_full = " ↑↓ move · ↵ select · Tab panes · Ctrl+K skip · Esc cancel "
+            hints_mid = " ↑↓ move · ↵ select · Ctrl+K skip · Esc cancel "
+            hints_short = " ↵ select · Ctrl+K skip · Esc cancel "
+            hints_tiny = " ↵ select · Esc cancel "
+            link_both = f" {web_url} · ★ {gh_url} "
+            link_gh = f" ★ {gh_url} "
+            link_web = f" {web_url} "
+            inner = bw - 2  # space between the two border corners
+            gap = 2
+
+            def _place(hint):
+                s(bot_row, bx + 2, hint, DIM)
+
+            def _place_link(link_text):
+                s(bot_row, bx + bw - len(link_text) - 1, link_text,
+                  DIM | curses.color_pair(1))
+
+            # Choose the biggest combo of hint + link that fits. Prefer
+            # keeping both links; fall back to GitHub-only, then web-only,
+            # then no link.
+            link_tiers = [link_both, link_gh, link_web, ""]
+            hint_tiers = [hints_full, hints_mid, hints_short, hints_tiny]
+
+            placed = False
+            for link in link_tiers:
+                for hint in hint_tiers:
+                    # If no link, skip the link arithmetic
+                    needed = len(hint) + (gap + len(link) if link else 0)
+                    if needed <= inner:
+                        _place(hint)
+                        if link:
+                            _place_link(link)
+                        placed = True
+                        break
+                if placed:
+                    break
+            if not placed:
+                # Extremely narrow — truncate tiny hint to fit.
+                _place(hints_tiny[: max(0, inner - 2)])
 
         except curses.error:
             pass
@@ -484,7 +1059,8 @@ def pick(stdscr, items, recommended=0):
                     right_scroll -= 1
         elif key == curses.KEY_DOWN:
             if focus == "left":
-                if filtered and cur < len(filtered) - 1:
+                # Allow navigating onto the pinned Skip row (index == len(filtered))
+                if cur < len(filtered):
                     cur += 1
                     right_scroll = 0
             else:
@@ -495,9 +1071,44 @@ def pick(stdscr, items, recommended=0):
         elif key == curses.KEY_RIGHT:
             focus = "right"
         elif key in (ord("\n"), curses.KEY_ENTER, 10, 13):
-            if filtered:
-                _, orig_idx, _ = filtered[cur]
+            if focus == "left" and cur == len(filtered):
+                # Skip row
+                if _confirm_skip(stdscr):
+                    return SKIP_SENTINEL
+                continue
+            if filtered and cur < len(filtered):
+                _, orig_idx, (sel_label, _, _) = filtered[cur]
+                if orig_idx == -1:
+                    # Synthetic "+ Create 'X'" row
+                    # Extract slug between the single quotes
+                    if "'" in sel_label:
+                        new_name = sel_label.split("'")[1]
+                    else:
+                        new_name = ""
+                    if not new_name:
+                        continue
+                    status, payload = _create_collection(new_name)
+                    if status == "ok":
+                        return [new_name]
+                    if status == "exists":
+                        if _confirm_activate_existing(stdscr, new_name, payload or 0):
+                            return [new_name]
+                        continue
+                    # error case: show brief toast then continue
+                    try:
+                        h, w = stdscr.getmaxyx()
+                        stdscr.addstr(h - 2, 2,
+                                      f"Create failed: {payload}. Press any key."[:max(0, w - 4)],
+                                      curses.A_REVERSE)
+                        stdscr.refresh()
+                        stdscr.getch()
+                    except curses.error:
+                        pass
+                    continue
                 return [items[orig_idx][0]]
+        elif key == 11:  # Ctrl+K
+            if _confirm_skip(stdscr):
+                return SKIP_SENTINEL
         elif key in (ord("q"), 27):
             return None
         elif key in (curses.KEY_BACKSPACE, 127, 8):
@@ -512,22 +1123,73 @@ def pick(stdscr, items, recommended=0):
             focus = "left"
 
 
-def pick_fallback(items, recommended=0):
+def pick_fallback(items, recommended=0, recommended_kind="pick", recommended_slug=None):
+    """Non-curses fallback — plain numbered input, parity with curses options."""
     print("\n ✦ S K I L L N O T E — Pick a collection\n")
-    order = [recommended] + [i for i in range(len(items)) if i != recommended]
+
+    # Optional Create-suggestion row for unmatched folder
+    offset = 0
+    if recommended_kind == "create" and recommended_slug:
+        print(f"  0. + Create '{recommended_slug}' (Recommended)")
+        offset = 1
+
+    if recommended_kind == "pick" and 0 <= recommended < len(items):
+        order = [recommended] + [i for i in range(len(items)) if i != recommended]
+    else:
+        order = list(range(len(items)))
+
     for pos, i in enumerate(order):
         name, count, skills = items[i]
-        rec = " ★" if i == recommended else ""
+        rec = " (Recommended)" if i == recommended and recommended_kind == "pick" else ""
         print(f"  {pos + 1}. {name} ({count} skills){rec}")
-        if skills:
-            print(f"     {', '.join(s for s, _ in skills[:5])}")
+
+    print(f"  C. Create new collection")
+    print(f"  S. Skip (use no collections)")
     print()
     try:
         reply = input("  > ").strip()
     except (EOFError, KeyboardInterrupt):
         return None
-    if reply.lower() == "q" or not reply:
+    if not reply or reply.lower() == "q":
         return None
+
+    if reply.lower() == "s":
+        try:
+            confirm = input("  Are you sure you want to skip? [Y/N] ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            return None
+        return SKIP_SENTINEL if confirm in ("y", "yes") else None
+
+    if reply.lower() == "c":
+        try:
+            new_name = input("  New collection name: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            return None
+        if not _is_valid_slug(new_name):
+            print("  Invalid name. Use only lowercase letters, numbers, hyphens, underscores.")
+            return None
+        status, payload = _create_collection(new_name)
+        if status == "ok":
+            return [new_name]
+        if status == "exists":
+            try:
+                confirm = input(f'  "{new_name}" exists with {payload or 0} skill(s). Activate? [Y/N] ').strip().lower()
+            except (EOFError, KeyboardInterrupt):
+                return None
+            return [new_name] if confirm in ("y", "yes") else None
+        print(f"  Create failed: {payload}")
+        return None
+
+    # "0" → create-suggestion (Recommended path)
+    if offset and reply == "0":
+        status, payload = _create_collection(recommended_slug)
+        if status == "ok":
+            return [recommended_slug]
+        if status == "exists":
+            return [recommended_slug]  # already exists — activate it
+        print(f"  Create failed: {payload}")
+        return None
+
     try:
         n = int(reply)
         if 1 <= n <= len(items):
@@ -601,8 +1263,10 @@ def main():
     if not os.isatty(0) or not os.isatty(1):
         return
     host, collections = fetch_collections()
-    if not collections:
+    if collections is None:
+        # API unreachable — distinguish from "API returned empty list"
         print(f"  ✦ SkillNote: could not reach API at http://{host}:8082", file=sys.stderr)
+        print(f"               start the server with ./install.sh or set SKILLNOTE_HOST", file=sys.stderr)
         return
     if len(collections) == 1:
         name, count, _ = collections[0]
@@ -616,17 +1280,35 @@ def main():
                 pass
         print(f"  ✦ SkillNote: {name} ({count} skills)")
         return
-    recommended = _get_recommended(collections)
-    if HAS_CURSES:
-        chosen = curses.wrapper(pick, collections, recommended)
+    folder_raw = os.path.basename(os.getcwd())
+    rec_kind, rec_payload = _resolve_recommendation(folder_raw, collections)
+    if rec_kind == "pick":
+        recommended_idx = rec_payload
+        recommended_slug = None
     else:
-        chosen = pick_fallback(collections, recommended)
-    if not chosen:
+        recommended_idx = -1
+        recommended_slug = rec_payload if rec_kind == "create" else None
+    if HAS_CURSES:
+        chosen = curses.wrapper(pick, collections, recommended_idx, rec_kind, recommended_slug)
+    else:
+        chosen = pick_fallback(collections, recommended_idx, rec_kind, recommended_slug)
+    if chosen is None:
         current = _get_current_collections()
         if current:
             print(f"  ✦ SkillNote: {', '.join(current)} (active)")
         return
     current = _get_current_collections()
+    if chosen == SKIP_SENTINEL:
+        try:
+            with open(CONFIG_PATH, "w") as f:
+                json.dump({"collections": []}, f, indent=2)
+                f.write("\n")
+        except PermissionError:
+            print("  ✦ SkillNote: cannot write .skillnote.json (permission denied)", file=sys.stderr)
+            return
+        _clean_skills_dir()
+        print("  ✦ SkillNote: no collection active (skipped)")
+        return
     changed = current != chosen
     try:
         with open(CONFIG_PATH, "w") as f:

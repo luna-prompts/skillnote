@@ -99,9 +99,9 @@ def seed_skill(db, slug: str, name: str, description: str, content_md: str, coll
 def seed_collections(db):
     """Explicitly create collection rows. Idempotent — skips existing names."""
     seeds = [
-        ("Official", "Skills curated by the SkillNote team."),
-        ("Conventions", "Team coding conventions and best practices."),
-        ("DevOps", "Deployment, infrastructure, and release workflows."),
+        ("official", "Skills curated by the SkillNote team."),
+        ("conventions", "Team coding conventions and best practices."),
+        ("devops", "Deployment, infrastructure, and release workflows."),
     ]
     for name, description in seeds:
         exists = db.execute(
@@ -139,7 +139,7 @@ def main():
                 name="skill-creator",
                 description=fm.get("description", "Create new skills, modify and improve existing skills, and measure skill performance."),
                 content_md=body,
-                collections=["Official"],
+                collections=["official"],
             )
 
         # 2. Skill Push (from seeds/ file)
@@ -153,7 +153,7 @@ def main():
                 name="skill-push",
                 description=fm.get("description", "Create and push skills to the SkillNote registry."),
                 content_md=body,
-                collections=["Official"],
+                collections=["official"],
             )
 
         # 3. Secure Migrations (existing seed)
@@ -163,7 +163,7 @@ def main():
             name="secure-migrations",
             description="DB migration safety checklist",
             content_md="# Secure Migrations\n\nA checklist for safely deploying database migrations in production.\n\n## Before You Migrate\n\n- Review backwards compatibility\n- Test the migration on staging first\n- Have a rollback plan (down migration or snapshot)\n- Communicate planned downtime if schema locks are expected\n\n## Running the Migration\n\n```bash\n# Always dry-run first\nalembic upgrade head --sql | less\n\n# Apply\nalembic upgrade head\n```\n\n## After Migration\n\n- Verify row counts on critical tables\n- Run smoke tests against the updated schema\n- Monitor error rates for 15 minutes post-deploy",
-            collections=["DevOps"],
+            collections=["devops"],
         )
 
         # 4. Code Review Checklist
@@ -173,7 +173,7 @@ def main():
             name="code-review-checklist",
             description="Structured code review checklist. Trigger when: review, PR, pull request, code review, feedback.",
             content_md="# Code Review Checklist\n\nWhen reviewing a pull request, check:\n\n## Correctness\n- Does the code do what it claims?\n- Are edge cases handled?\n- Are there off-by-one errors?\n\n## Security\n- No hardcoded secrets or API keys\n- Input validation on user data\n- SQL injection / XSS prevention\n\n## Performance\n- No N+1 queries\n- No unnecessary re-renders\n- Pagination for large lists\n\n## Readability\n- Clear variable/function names\n- No overly clever one-liners\n- Comments explain WHY, not WHAT\n\n## Tests\n- New code has tests\n- Edge cases covered\n- Tests actually assert something meaningful",
-            collections=["Conventions"],
+            collections=["conventions"],
         )
 
         # 5. Git Commit Convention
@@ -183,7 +183,7 @@ def main():
             name="git-commit-convention",
             description="Conventional commit message format. Trigger when: commit, git commit, commit message, conventional commits.",
             content_md="# Git Commit Convention\n\nUse Conventional Commits format:\n\n```\n<type>(<scope>): <description>\n\n[optional body]\n[optional footer]\n```\n\n## Types\n- `feat`: New feature\n- `fix`: Bug fix\n- `docs`: Documentation only\n- `style`: Formatting, no code change\n- `refactor`: Code restructuring\n- `test`: Adding tests\n- `chore`: Maintenance\n\n## Rules\n- Subject line max 72 chars\n- Use imperative mood (\"add\" not \"added\")\n- No period at the end\n- Body explains WHY, not WHAT\n- Reference issues: `Fixes #123`",
-            collections=["Conventions"],
+            collections=["conventions"],
         )
 
         # 6. Error Handling Pattern
@@ -193,7 +193,7 @@ def main():
             name="error-handling",
             description="Standard error handling patterns. Trigger when: error, exception, try catch, error handling, error boundary.",
             content_md="# Error Handling\n\n## Backend (Python)\n- Use specific exception types, not bare `except:`\n- Log errors with context (user ID, request ID)\n- Return structured errors: `{\"error\": {\"code\": \"...\", \"message\": \"...\"}}`\n- Never expose stack traces to clients\n\n## Frontend (React)\n- Use Error Boundaries for component trees\n- Handle loading/error/success states explicitly\n- Show user-friendly messages, log technical details\n- Use `toast.error()` for transient errors\n\n## API Calls\n- Always handle network errors\n- Implement retry with exponential backoff for transient failures\n- Set timeouts on all HTTP requests\n- Validate response shape before using",
-            collections=["Conventions"],
+            collections=["conventions"],
         )
 
         # 7. Testing Guide
@@ -203,7 +203,7 @@ def main():
             name="testing-guide",
             description="Testing best practices and patterns. Trigger when: test, testing, unit test, integration test, write tests.",
             content_md="# Testing Guide\n\n## Unit Tests\n- Test one thing per test\n- Name tests: `test_<what>_<condition>_<expected>`\n- Use arrange-act-assert pattern\n- Mock external dependencies, not internal logic\n\n## Integration Tests\n- Test the API contract, not implementation\n- Use a real database (not mocks) for DB tests\n- Clean up test data after each test\n\n## What to Test\n- Happy path\n- Edge cases (empty, null, max length)\n- Error paths (invalid input, network failure)\n- Authorization (can't access other user's data)\n\n## What NOT to Test\n- Framework internals\n- Third-party library behavior\n- Exact UI pixel layout",
-            collections=["Conventions"],
+            collections=["conventions"],
         )
 
         # 8. Docker Deploy
@@ -213,7 +213,7 @@ def main():
             name="docker-deploy",
             description="Docker deployment checklist. Trigger when: deploy, docker, container, production, ship.",
             content_md="# Docker Deploy\n\n## Pre-Deploy\n- [ ] All tests pass locally\n- [ ] Environment variables set in production\n- [ ] Database migrations tested on staging\n- [ ] Health check endpoint responds\n\n## Deploy\n```bash\ndocker compose pull\ndocker compose up -d\n```\n\n## Post-Deploy\n- [ ] Health check passes: `curl /health`\n- [ ] Smoke test critical flows\n- [ ] Monitor error rates for 15 minutes\n- [ ] Check logs: `docker compose logs -f`\n\n## Rollback\n```bash\ndocker compose down\ngit checkout <previous-tag>\ndocker compose up -d\n```",
-            collections=["DevOps"],
+            collections=["devops"],
         )
 
         db.commit()

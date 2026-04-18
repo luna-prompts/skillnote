@@ -1,8 +1,11 @@
 'use client'
 import { useState, useMemo, useRef, useEffect } from 'react'
 import { Plus, X, FolderOpen, Check, Search } from 'lucide-react'
+import { toast } from 'sonner'
 import { getSkills } from '@/lib/skills-store'
 import { createCollectionApi, fetchCollectionsApi } from '@/lib/api/collections'
+import { SkillNoteApiError } from '@/lib/api/client'
+import { isValidCollectionSlug } from '@/lib/collection-validation'
 
 type Props = {
   selected: string[]
@@ -87,6 +90,7 @@ export function CollectionPicker({ selected, onChange, placeholder, compact = fa
   const canCreate = useMemo(() => {
     const v = query.trim()
     if (!v) return false
+    if (!isValidCollectionSlug(v)) return false
     return !allCollections.some(c => c.toLowerCase() === v.toLowerCase()) &&
            !selected.some(c => c.toLowerCase() === v.toLowerCase())
   }, [query, allCollections, selected])
@@ -97,21 +101,32 @@ export function CollectionPicker({ selected, onChange, placeholder, compact = fa
   async function add(item: string) {
     const name = item === '__create__' ? query.trim() : item
     if (!name) return
-    if (!selected.some(c => c.toLowerCase() === name.toLowerCase())) {
-      onChange([...selected, name])
-      if (item === '__create__') {
-        try {
-          await createCollectionApi(name, '')
-        } catch {
-          // Offline fallback: store locally
-          persistCollection(name)
-        }
-        try {
-          const fresh = await getAllCollectionsAsync()
-          setAllCollections(fresh)
-        } catch {}
-      }
+    if (selected.some(c => c.toLowerCase() === name.toLowerCase())) {
+      setOpen(false)
+      return
     }
+
+    if (item === '__create__') {
+      // Call API first — only add chip on success or offline fallback.
+      try {
+        await createCollectionApi(name, '')
+      } catch (err) {
+        if (err instanceof SkillNoteApiError && err.status >= 400 && err.status < 500) {
+          // Backend rejected — surface, don't add chip.
+          toast.error(err.message)
+          return  // keep dropdown open so user can fix the query
+        }
+        // Network / 5xx — persist locally so user doesn't lose work.
+        persistCollection(name)
+        toast.error(err instanceof Error ? err.message : 'Saved locally — server unreachable')
+      }
+      try {
+        const fresh = await getAllCollectionsAsync()
+        setAllCollections(fresh)
+      } catch {}
+    }
+
+    onChange([...selected, name])
     setOpen(false)
   }
 

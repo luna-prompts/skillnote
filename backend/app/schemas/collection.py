@@ -3,7 +3,7 @@ from typing import Optional
 
 from pydantic import BaseModel, field_validator
 
-from app.validators.collection_validator import validate_collection_name
+from app.validators.collection_validator import XML_TAG_RE, validate_collection_name
 
 
 class CollectionListItem(BaseModel):
@@ -31,6 +31,8 @@ class CollectionCreate(BaseModel):
             return ""
         if len(v) > 1024:
             raise ValueError("Description must be 1024 characters or fewer")
+        if XML_TAG_RE.search(v):
+            raise ValueError("Description cannot contain XML tags")
         return v.strip()
 
 
@@ -44,6 +46,8 @@ class CollectionUpdate(BaseModel):
             return ""
         if len(v) > 1024:
             raise ValueError("Description must be 1024 characters or fewer")
+        if XML_TAG_RE.search(v):
+            raise ValueError("Description cannot contain XML tags")
         return v.strip()
 
 

@@ -149,17 +149,16 @@ def test_delete_409_when_skills_reference(unique_name):
 
 # ── Case-insensitive uniqueness ──────────────────────────────────────────────
 
-def test_duplicate_case_variant_rejected(unique_name):
-    """POSTing two case-variant names must fail with 409."""
-    mixed_case = unique_name.upper()
-    status, _ = _request("POST", "/v1/collections", {"name": unique_name, "description": ""})
-    assert status == 201
+def test_post_rejects_uppercase_name(unique_name):
+    """POST with an uppercase name must fail validation with 422.
 
-    status, body = _request("POST", "/v1/collections", {"name": mixed_case, "description": ""})
-    assert status == 409
-    assert body["error"]["code"] == "COLLECTION_EXISTS"
-
-    _request("DELETE", f"/v1/collections/{unique_name}")
+    The stricter name rule (`^[a-z0-9_-]+$`) means uppercase variants can no
+    longer be created at all; case-insensitive dedup only applies on lookup.
+    """
+    status, body = _request(
+        "POST", "/v1/collections", {"name": unique_name.upper(), "description": ""}
+    )
+    assert status == 422, f"expected 422, got {status}: {body}"
 
 
 def test_get_single_collection_case_insensitive(unique_name):
@@ -280,3 +279,28 @@ def test_get_single_collection_not_found():
     status, body = _request("GET", "/v1/collections/does-not-exist-xyz-12345")
     assert status == 404
     assert body["error"]["code"] == "COLLECTION_NOT_FOUND"
+
+
+# ── XML/XSS rejection in description ─────────────────────────────────────────
+
+def test_post_rejects_xml_in_description(unique_name):
+    status, body = _request("POST", "/v1/collections", {"name": unique_name, "description": "<script>alert(1)</script>"})
+    assert status == 422, f"Expected 422, got {status}: {body}"
+    assert body["error"]["code"] == "VALIDATION_ERROR"
+    assert "xml" in body["error"]["message"].lower() or "tag" in body["error"]["message"].lower()
+
+
+def test_post_accepts_plain_description(unique_name):
+    status, body = _request("POST", "/v1/collections", {"name": unique_name, "description": "A plain description"})
+    assert status == 201, f"Expected 201, got {status}: {body}"
+    assert body["description"] == "A plain description"
+    _request("DELETE", f"/v1/collections/{unique_name}")
+
+
+def test_put_rejects_xml_in_description(unique_name):
+    # Create first
+    _request("POST", "/v1/collections", {"name": unique_name, "description": "ok"})
+    status, body = _request("PUT", f"/v1/collections/{unique_name}", {"description": "<img src=x onerror=alert(1)>"})
+    assert status == 422, f"Expected 422, got {status}: {body}"
+    assert body["error"]["code"] == "VALIDATION_ERROR"
+    _request("DELETE", f"/v1/collections/{unique_name}")

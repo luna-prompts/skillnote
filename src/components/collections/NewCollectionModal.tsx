@@ -4,6 +4,8 @@ import { FolderOpen, Plus, X, Loader2, AlertCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 import { createCollectionApi } from '@/lib/api/collections'
+import { SkillNoteApiError } from '@/lib/api/client'
+import { validateCollectionName, COLLECTION_NAME_MAX } from '@/lib/collection-validation'
 
 type Props = { onClose: () => void; onCreated: (name: string, description: string) => void }
 
@@ -11,8 +13,12 @@ export function NewCollectionModal({ onClose, onCreated }: Props) {
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [saving, setSaving] = useState(false)
-  const [nameError, setNameError] = useState('')
+  const [touched, setTouched] = useState(false)
+  const [apiError, setApiError] = useState<string | null>(null)
   const nameRef = useRef<HTMLInputElement>(null)
+
+  const nameErrors = touched ? validateCollectionName(name) : []
+  const isValid = validateCollectionName(name).length === 0
 
   // Escape to close
   useEffect(() => {
@@ -22,8 +28,9 @@ export function NewCollectionModal({ onClose, onCreated }: Props) {
   }, [onClose])
 
   async function handleCreate() {
-    if (!name.trim()) { setNameError('Name is required'); nameRef.current?.focus(); return }
-    setNameError('')
+    setTouched(true)
+    const errs = validateCollectionName(name)
+    if (errs.length > 0) return
     setSaving(true)
     try {
       const trimmedName = name.trim()
@@ -31,7 +38,15 @@ export function NewCollectionModal({ onClose, onCreated }: Props) {
       try {
         await createCollectionApi(trimmedName, trimmedDesc)
       } catch (err) {
-        // Fallback: keep local-only entry so user doesn't lose their work if offline
+        // Distinguish 4xx (backend rejected — user should fix input) from
+        // network errors (server unreachable — offline fallback).
+        if (err instanceof SkillNoteApiError && err.status >= 400 && err.status < 500) {
+          // Backend rejected. Keep modal open, surface the error inline.
+          setApiError(err.message)
+          nameRef.current?.focus()
+          return
+        }
+        // Network / 5xx — treat as offline. Persist locally so work isn't lost.
         try {
           const meta = JSON.parse(localStorage.getItem('skillnote:collections-meta') || '{}')
           meta[trimmedName] = { description: trimmedDesc, created_at: new Date().toISOString() }
@@ -81,17 +96,19 @@ export function NewCollectionModal({ onClose, onCreated }: Props) {
               ref={nameRef}
               autoFocus
               value={name}
-              onChange={e => { setName(e.target.value); if (nameError) setNameError('') }}
+              onChange={e => { setName(e.target.value); if (apiError) setApiError(null) }}
+              onBlur={() => setTouched(true)}
               onKeyDown={e => e.key === 'Enter' && handleCreate()}
               placeholder="e.g. Frontend, AI Tools, Utilities"
+              maxLength={COLLECTION_NAME_MAX}
               className={`w-full h-9 px-3 text-[13px] bg-muted/60 border rounded-lg focus:outline-none focus:ring-1 placeholder:text-muted-foreground/50 transition-colors ${
-                nameError ? 'border-destructive focus:ring-destructive' : 'border-border/60 focus:ring-ring'
+                apiError || nameErrors.length > 0 ? 'border-destructive focus:ring-destructive' : 'border-border/60 focus:ring-ring'
               }`}
             />
-            {nameError && (
+            {(apiError || (touched && nameErrors[0])) && (
               <p className="mt-1 text-[11px] text-destructive flex items-center gap-1">
                 <AlertCircle className="h-3 w-3 shrink-0" />
-                {nameError}
+                {apiError || nameErrors[0]?.message}
               </p>
             )}
           </div>
@@ -119,7 +136,7 @@ export function NewCollectionModal({ onClose, onCreated }: Props) {
           <Button
             size="sm"
             className="h-8 text-[13px] gap-1.5 bg-foreground text-background hover:bg-foreground/90"
-            disabled={!name.trim() || saving}
+            disabled={!name.trim() || saving || !isValid}
             onClick={handleCreate}
           >
             {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}

@@ -65,9 +65,11 @@ except Exception as e: print(f"Could not fetch: {e}")
 
 Every skill must belong to at least one collection. Use **AskUserQuestion** to let the user pick:
 - Show existing collections from the list above as options
-- Include an option to type a new collection name
+- Include an option to type a new collection name — names must match `^[a-z0-9_-]+$` (lowercase letters, numbers, hyphens, underscores), 1–128 chars, and cannot contain reserved words `anthropic` or `claude`
 - Recommend the collection that best fits the skill's domain
 - A skill cannot be pushed without a collection
+
+If the user types an invalid name, the POST /v1/skills call will return 422 `COLLECTION_NAME_INVALID`. Surface the error, explain the rule, and ask them to type a valid name before retrying.
 
 ## Step 5: Final Review
 
