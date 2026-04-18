@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { listSources, type SourceListItem } from '@/lib/api/imports'
 import { BrowseEmptyState } from '@/components/browse/BrowseEmptyState'
 import { BrowseSourcesList } from '@/components/browse/BrowseSourcesList'
+import { ImportSheet } from '@/components/browse/ImportSheet'
 
 export default function BrowsePage() {
   const [sources, setSources] = useState<SourceListItem[] | null>(null)
@@ -32,11 +33,11 @@ export default function BrowsePage() {
         : <BrowseSourcesList sources={sources} />
       }
 
-      {/* Placeholder — Task 15 replaces this with ImportSheet */}
       {sheetOpen && (
-        <div className="fixed inset-0 z-50 bg-black/30" onClick={() => setSheetOpen(false)}>
-          <div className="absolute right-0 top-0 h-full w-[600px] bg-card p-6">ImportSheet (Task 15)</div>
-        </div>
+        <ImportSheet
+          onClose={() => setSheetOpen(false)}
+          onImported={() => { listSources().then(setSources).catch(() => {}) }}
+        />
       )}
     </div>
   )
