@@ -26,11 +26,30 @@ SkillNote users need to import skills from public git repos (Claude Code marketp
 ## Non-Goals
 
 - Scheduled background sync (deferred to v2; v1 uses visit-triggered HEAD probes).
-- Private-repo import with server-stored tokens (v1 uses localStorage PATs only).
+- Private-repo import with server-stored tokens (v1 uses localStorage PATs sent per-request — see "Private repos in v1" below for scope).
 - Shell-block / prompt-injection content scanning (deferred to v1.1).
 - Featured/curated registry (deferred to v2 — "Browse library" button stays disabled with "Coming soon" tooltip).
 - Publish-back for user-authored skills (v1 only round-trips imported skills; user-authored skills get a `⊙ local only` chip).
 - Terminal picker Browse tab (deferred to v1.1).
+- Automatic drift detection for non-GitHub hosts (see "Drift detection scope" below).
+
+### Private repos in v1 — scope clarified
+
+The frontend sends a user-supplied PAT from `localStorage['skillnote:github-token']` as a request header on every inspect/apply/refresh. The backend uses it for the git clone + API calls but **does not persist it**. Consequences:
+
+- **Initial import works** — token supplied with the request.
+- **User-initiated refresh (Resync button)** works — token re-sent on the refresh request.
+- **Automatic drift checks do NOT run for private repos** — the backend has no token when the user merely visits `/browse`. Affected sources show a one-time info chip: *"Private repo — click Resync to check for updates."* No drift badge until user clicks.
+
+This is the cleanest privacy posture for v1; server-stored PATs move to v2 when we introduce per-user auth.
+
+### Drift detection scope
+
+Drift checks (the cheap HEAD probe on `/browse` visits) only run for:
+- `source_type = 'github'` — via `GET /repos/{owner}/{repo}/commits/{ref}` (returns HEAD SHA in one API call)
+- `source_type = 'git'` with hostname `github.com` — same API call after extracting `owner/repo` from URL
+
+For all other source types (`url`, `file`, `directory`, non-GitHub `git`) we do **not** run automatic drift checks in v1. Sources are marked with a small info chip: *"Manual refresh only (non-GitHub host)."* User can still click Resync to fetch and diff. v2 will add `git ls-remote` support for generic hosts when we bundle git into the backend image.
 
 ## Architecture
 
@@ -97,7 +116,7 @@ class ImportSource(Base):
         Enum("up_to_date", "drift", "unreachable", "error",
              name="import_source_status"),
         nullable=False, default="up_to_date")
-    last_error: Mapped[Optional[str]] = mapped_column(Text)
+    last_error: Mapped[Optional[str]] = mapped_column(String(1024))  # bounded to prevent pathological-error DB growth
 
     created_at, updated_at  # server-side defaults
 
@@ -242,7 +261,8 @@ Toast: `✓ Imported 11 skills from wshobson/agents — View collection →`
 
 Navigation to `/collections/{slug}` shows:
 - Top banner: `Imported from github.com/wshobson/agents · Tracking main · abc1234 · [Manage source]`
-- Skills listed with small `Imported` chip per row
+- Drift indicator on the banner when status is not `up_to_date` — amber `3 new · 1 changed · Resync` pill, clicking opens the same `DiffDrawer` as on `/browse` (so users on the collection page see drift without navigating away)
+- Skills listed with small `Imported` chip per row; forked skills get `⊙ forked` instead
 - All existing collection actions (move, remove, rename) work normally
 
 ### `/browse` page (sources list)
@@ -259,7 +279,7 @@ After first import:
 │                                                                 │
 │  ┌─────────────────────────────────────────────────────────┐   │
 │  │ [GH]  wshobson/agents                      18 skills    │   │
-│  │       main · synced 2m ago · abc1234              🔴 3  │   │
+│  │       main · synced 2m ago · abc1234              🟡 3  │   │
 │  │                                            Resync   ⋯   │   │
 │  └─────────────────────────────────────────────────────────┘   │
 │                                                                 │
@@ -298,11 +318,21 @@ Card `⋯` menu: `Pin to this commit` / `Unpin` / `Change tracked ref` / `Unlink
 
 ### Drift / refresh flow
 
-On `/browse` page load:
-- For each source where `last_checked_at` is > 10 min old AND `pinned=false`, backend issues one GitHub `GET /repos/{owner}/{repo}/commits/{ref}` (returns HEAD SHA in one round-trip).
-- If SHA differs from `upstream_sha` → `status='drift'`, `upstream_sha` updated.
-- In-memory LRU cache keyed on `(url, ref)` with 10-min TTL.
-- User never waits on these — runs async as they land on page.
+On `/browse` page load (`GET /v1/import/sources`):
+- Handler returns the **last-known** status/SHA immediately — user never waits.
+- In parallel, a FastAPI `BackgroundTasks` job probes eligible sources. Eligible = GitHub host, `pinned=false`, not private (no token in localStorage), `last_checked_at` > 10 min old.
+- Each eligible source gets one `GET /repos/{owner}/{repo}/commits/{ref}` API call (returns HEAD SHA without cloning).
+- If the returned SHA differs from stored `upstream_sha` → UPDATE row: `status='drift'`, `upstream_sha`, `last_checked_at`.
+- In-memory LRU cache keyed on `(url, ref)` with 10-min TTL prevents repeat probes.
+- Results become visible on the user's next page load (eventual consistency). Acceptable because: (a) first visit has no drift indicator, (b) subsequent visits show updated state, (c) the user can also click `Resync` to force immediate probe + diff.
+
+For sources where auto-probe is **skipped** (private repo without session token, non-GitHub host, pinned), the card shows a small info chip explaining why and how to check (click Resync).
+
+**State transitions:**
+- `up_to_date` → `drift` when probe detects SHA mismatch
+- `up_to_date` / `drift` → `unreachable` when probe fails (network, 404, auth)
+- `unreachable` → `up_to_date` on next successful probe (SHA matches) OR `drift` (SHA differs)
+- `error` only set on apply-time failure; cleared on next successful apply
 
 Click amber pill → `DiffDrawer`:
 
@@ -427,6 +457,10 @@ class ImportErrorCode:
     IMPORT_TOO_LARGE = "IMPORT_TOO_LARGE"
     SKILL_CONFLICT = "SKILL_CONFLICT"
     COLLECTION_NAME_INVALID = "COLLECTION_NAME_INVALID"  # reused from 0.3.2
+    AUTH_EXPIRED = "AUTH_EXPIRED"                        # private-repo token invalid
+    REF_NOT_FOUND = "REF_NOT_FOUND"                      # repo exists, ref doesn't
+    SUBPATH_NOT_FOUND = "SUBPATH_NOT_FOUND"              # repo+ref exist, subpath doesn't
+    UNSUPPORTED_SOURCE_TYPE = "UNSUPPORTED_SOURCE_TYPE"  # e.g., npm source in v1
 ```
 
 ## UI Surface (new files)
@@ -474,16 +508,16 @@ Existing-file touches:
 | Scheme allowlist | http, https, git, SSH-form only | `URL_SCHEME_FORBIDDEN` |
 | Host allowlist | Optional env `SKILLNOTE_IMPORT_ALLOWED_HOSTS`; unset = all public | `HOST_NOT_ALLOWED` |
 | Rate limit | 10 req/min per client IP | `RATE_LIMITED` |
-| Private IP / metadata endpoint block | No 169.254.169.254, 10.x, 192.168.x, localhost | `URL_SCHEME_FORBIDDEN` |
-| Redirect chain check | Each hop revalidated against private-IP block | `URL_SCHEME_FORBIDDEN` |
+| Private IP / metadata endpoint block | Reject resolution targeting private ranges. IPv4: `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `127.0.0.0/8`, `169.254.0.0/16` (link-local + AWS metadata `169.254.169.254`), `100.64.0.0/10` (CGNAT). IPv6: `::1/128` (loopback), `fe80::/10` (link-local), `fc00::/7` (unique-local). | `URL_SCHEME_FORBIDDEN` |
+| Redirect chain check | Each HTTP hop re-resolved and re-checked against the private-IP blocklist above | `URL_SCHEME_FORBIDDEN` |
 
 ### Clone / fetch checks
 
 - Shallow: `--depth=1 --single-branch`
 - No submodules: `--no-recurse-submodules`
-- Size cap: 50 MB — abort clone if exceeded
+- Size cap: 50 MB — abort clone if exceeded (streamed byte count during fetch)
 - Timeout: 30s inspect / 60s apply
-- Pinned-IP: resolve once, reuse for clone duration (DNS rebinding protection)
+- **DNS rebinding defense (pragmatic):** resolve the hostname to an IP before clone; re-check the IP against the private-IP blocklist; fail if private. We do NOT attempt to force git to use a pinned IP (not straightforward with `git clone`). The short 30-60s timeout and the fact that a rebinding attack would need to flip DNS mid-clone (rare) make this acceptable for v1. True pinned-IP clone moves to v2 with a custom git transport or a pre-clone HTTP HEAD check pattern.
 
 ### Manifest validation (Pydantic ports of Claude Code schemas)
 
@@ -502,7 +536,7 @@ Existing-file touches:
 | SKILL.md size | ≤ 256 KB |
 | Per-asset size | ≤ 4 MB |
 | Total bundle size | ≤ 20 MB across all skills |
-| File-type allowlist | `.md`, `.txt`, `.json`, `.yaml`, `.yml`, `.png`, `.jpg`, `.jpeg`, `.svg`, `.webp` |
+| File-type allowlist | `.md`, `.txt`, `.json`, `.yaml`, `.yml`, `.png`, `.jpg`, `.jpeg`, `.webp`. **`.svg` deliberately excluded** — SVG can embed `<script>` and is an XSS vector when served from the SkillNote web UI. v2 may add SVG with server-side sanitization + strict CSP. |
 | Path traversal | Reject `..`, absolute paths, symlinks (reuses `bundle_validator.py`) |
 
 ### Deferred to v1.1
@@ -533,13 +567,18 @@ Specific copy mapping:
 
 ### Apply transaction atomicity
 
-`importer.apply()` is one SQLAlchemy transaction:
-1. UPSERT `import_sources` by `(url, ref, subpath)`
-2. Create / find collection by target slug
-3. For each skill: resolve final name, INSERT with source FK
-4. Commit
+`importer.apply()` is one SQLAlchemy transaction with explicit UPSERT semantics:
 
-Any failure → full rollback. Retry safe via UNIQUE + ON CONFLICT DO NOTHING.
+1. **`import_sources` UPSERT** — `ON CONFLICT (url, ref, subpath) DO UPDATE SET imported_at_sha = EXCLUDED.imported_at_sha, last_synced_at = NOW(), status = 'up_to_date', upstream_sha = EXCLUDED.imported_at_sha, last_error = NULL` — refreshes the row for re-imports.
+2. **Collection** — `INSERT ... ON CONFLICT (name) DO NOTHING` for auto-create; plain SELECT if user chose existing.
+3. **Per-skill** — three explicit paths depending on state:
+   - **New skill (no existing with matching name+collection)** → plain INSERT with source FK, `source_content_hash` set, `forked_from_source = FALSE`
+   - **Existing skill with same name+collection, `import_source_id` matches this source, `forked_from_source = FALSE`** → UPDATE content if `source_content_hash` differs; no-op if unchanged (idempotent)
+   - **Existing skill with same name+collection, `import_source_id` matches, `forked_from_source = TRUE`** → SKIP unless user explicitly opted to replace; log in `skipped[]` result
+   - **Existing skill with same name+collection, `import_source_id` is NULL or different source** → this is the conflict case; resolution per the per-row dropdown (`rename` default / `skip` / `replace`)
+4. Commit; all-or-nothing rollback on any failure.
+
+Retry safety: UNIQUE + idempotent UPSERT means retries always converge. The UI's "Import 11 skills" click is safe to click twice if the network drops — the second call no-ops any skills that succeeded the first time.
 
 ### Publish-back security
 
@@ -585,7 +624,9 @@ All hit a live backend (urllib pattern from 0.3.2). Skip if unreachable.
 - Happy: first import, re-import (idempotent merge), different refs (separate sources), subset selection, custom collection target
 - Conflicts: rename default, rename collision chain (`-2`, `-3`), skip, replace, all-conflicts no-op
 - Rollback: injected failure mid-apply, connection drop, concurrent apply (row locking)
-- Size limits: 21 MB bundle → 413, 1000-skill stress test
+- UPSERT paths: re-import with unchanged content (no-op UPDATE), re-import with changed content (UPDATE content), re-import of forked skill (SKIP unless explicit replace)
+- Size limits: bundle at exactly 20 MB succeeds, 20 MB + 1 byte → 413; skill at exactly 256 KB succeeds, 256 KB + 1 byte → skipped with warning
+- At-the-limit skill count: ~80 skills at 256 KB each = ~20 MB total bundle (the practical max given size limits); verify import completes + all skills present
 
 **`test_imports_sources.py`** — lifecycle:
 - Drift detection with mocked HEAD SHA changes, cache behavior, pin/unpin
@@ -598,7 +639,7 @@ All hit a live backend (urllib pattern from 0.3.2). Skip if unreachable.
 - ETag + 304 behavior
 - Rate limiting
 - Cross-schema validation via Python port of Claude Code's Zod schemas
-- Round-trip: import → publish → re-import into fresh SkillNote → identical skill set
+- Round-trip: import → publish → re-import into fresh SkillNote. Assertion: SKILL.md bodies and skill names match bit-for-bit; SkillNote-internal metadata (ids, timestamps, `import_source_id`) naturally differs across instances — verify only the user-facing skill content round-trips cleanly.
 
 **`test_migration_0013_imports.py`** — schema safety:
 - Apply + idempotency
@@ -614,7 +655,7 @@ All hit a live backend (urllib pattern from 0.3.2). Skip if unreachable.
 |---|---|
 | Path traversal (`../../../etc/passwd`) | Rejected before FS touch |
 | Symlink attack (repo contains `evil -> /etc/passwd`) | Detected, import aborted |
-| Zip bomb (10k nested dirs) | Aborted at 50 MB size limit |
+| Giant repo (10k files, 1 GB total) | Aborted at 50 MB size limit during streamed clone |
 | Recursive submodules (5 levels) | `--no-recurse-submodules` prevents |
 | Malicious git hooks | Never executed (shallow clone, disabled) |
 | 500 MB SKILL.md (streaming) | Rejected at 256 KB without reading full file |
