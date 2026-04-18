@@ -3,6 +3,38 @@
 All notable changes to SkillNote will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.3.2] - 2026-04-18
+
+### Added
+- **Terminal picker: Create new collection inline.** Typing a name that doesn't match any existing collection surfaces a `✦ Create 'X'` row; Enter creates via `POST /v1/collections` and activates it. A 409 conflict triggers an activate-existing prompt.
+- **Terminal picker: Skip option.** Pinned `⊘ Skip` row (always visible) and `Ctrl+K` hotkey, both gated by a confirmation card. Skipping writes `{"collections": []}` so the session starts with no SkillNote skills.
+- **Folder-name recommendation.** If `basename(cwd)` matches an existing collection, it gets a `(Recommended)` label and sorts to top. If not, and the folder slug is valid, a `✦ Create 'folder' (Recommended)` row appears at the top.
+- **Slash-command `/skillnote:collection`** parity — Create / Skip / Recommended options via AskUserQuestion.
+- **Migration `0012_slugify_collection_names`** — renames any pre-existing collection whose name violates the new rule, with two-pass collision-safe ordering + updates to every referenced skill's `collections[]` array.
+- **Frontend validator `src/lib/collection-validation.ts`** (mirrors backend) — powers inline error display in `NewCollectionModal` and the inline `CollectionPicker`.
+- **Auto-promote implicit collections.** `POST /v1/skills` now auto-inserts any referenced collection into the `collections` table, so every listed name is editable via detail/PUT/DELETE endpoints (previously 404).
+- **Standard 422 error envelope.** Added `RequestValidationError` handler that wraps Pydantic 422s as `{"error":{"code":"VALIDATION_ERROR","message":...}}`, matching the rest of the API contract and fixing `[object Object]` toasts in the web UI.
+
+### Changed
+- **Collection names locked to `^[a-z0-9_-]+$`** (1-128 chars, no `anthropic`/`claude` reserved-word substrings). Enforced at the backend validator, in the `POST/PATCH /v1/skills` handlers (after `canonicalize_collection_names`), and mirrored in the frontend modals + picker.
+- **Collection description rejects XML tags** — closes a stored-XSS vector. `POST` and `PUT` both refuse `<script>`-style payloads with 422.
+- **Picker layout polish.** Replaced `★` marker with bracketed `(Recommended)` label (Claude Code native style). Bumped `LEFT_MAX_W` to 60 so long names and Create labels breathe on wide terminals. Clipped long labels with `…` to prevent bleed into the right panel.
+- **Premium modal redesign.** Skip + activate-existing modals are now bordered cards with title, body, hairline rule, and action bar (`❯ Primary · ↵   Esc · Cancel`) — no more reverse-video slabs.
+- **Footer hints tier down gracefully** across terminal widths, keeping the web URL + GitHub link when room permits.
+- **Right-panel preview** shows contextual helper cards when Create or Skip rows are focused (was blank).
+- **Empty-state error** on search (reserved word, invalid slug) shows a structured inline hint instead of an empty list.
+- **Empty-DB path** — picker now opens with the Create row and Skip option so a fresh install can bootstrap from the terminal. Previously the picker exited with "could not reach API" even when the server was fine and just had no collections yet.
+
+### Fixed
+- **`NewCollectionModal` and inline `CollectionPicker`** no longer swallow 4xx API errors as "offline" — they surface the real message, keep the modal/dropdown open, and skip the localStorage ghost write that would otherwise pollute the meta cache forever.
+- **`install.sh` surfaces port conflicts** with the holding PID + process name + two copy-paste fixes, pre-flight (before the 2-3 min build). Previously the script silently exited after "Images built" if a port was busy.
+- **`install.sh` captures compose output** on failure with heuristic hints (bind-address, daemon unreachable).
+- **Picker rendering collision bug** — the synthetic Create row no longer double-draws the `(Recommended)` suffix, no longer renders a stray `0` count, and no longer bleeds text into the right panel.
+- **Skip row focus clamp** — the cursor can now actually land on the pinned Skip row (was being snapped back to the last list item on every render tick).
+
+### Migrated
+- Alembic `0012_slugify_collection_names` runs automatically on API startup; no operator intervention required. Existing seed collections (`Conventions`, `DevOps`, `Official`) aligned to lowercase slugs in `seed_data.py`.
+
 ## [0.3.1] - 2026-04-15
 
 ### Fixed
