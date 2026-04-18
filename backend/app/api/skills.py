@@ -428,6 +428,24 @@ def update_skill(
         skill_row.extra_frontmatter = payload.extra_frontmatter
     skill_row.updated_at = datetime.now(timezone.utc)
 
+    # Auto-flag: any edit of an imported skill marks it as forked from its
+    # upstream source. Drift refreshes can then respect user changes.
+    # We flip the flag on any content-changing field (name, description,
+    # content_md, collections, extra_frontmatter) since any of those alter
+    # the SKILL.md bytes that would ship back upstream.
+    if (
+        skill_row.import_source_id is not None
+        and not skill_row.forked_from_source
+        and (
+            payload.name is not None
+            or payload.description is not None
+            or payload.content_md is not None
+            or payload.collections is not None
+            or payload.extra_frontmatter is not None
+        )
+    ):
+        skill_row.forked_from_source = True
+
     # Auto-create a new content version on every save
     _create_content_version(db, skill_row)
 

@@ -49,7 +49,13 @@ export default function BrowsePage() {
       {sources.length === 0 ? (
         <BrowseEmptyState onPasteUrl={() => setSheetOpen(true)} />
       ) : (
-        <BrowseSourcesList sources={sources} onDriftClick={openDrift} />
+        <BrowseSourcesList
+          sources={sources}
+          onDriftClick={openDrift}
+          onChanged={() => {
+            listSources().then(setSources).catch(() => {})
+          }}
+        />
       )}
 
       {sheetOpen && (
