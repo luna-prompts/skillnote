@@ -1,5 +1,6 @@
 """Tests for the input parser — mirrors Claude Code's parseMarketplaceInput.ts behavior."""
 import pytest
+from hypothesis import given, settings, strategies as st
 
 from app.services.imports.input_parser import parse_input
 
@@ -73,8 +74,6 @@ def test_very_long_ref():
 
 
 # Fuzzing — never crashes
-from hypothesis import given, strategies as st, settings
-
 @given(st.text(min_size=0, max_size=500))
 @settings(max_examples=300, deadline=None)
 def test_parser_never_crashes(s):

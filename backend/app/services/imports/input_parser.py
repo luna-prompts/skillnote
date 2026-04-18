@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import os
 import re
-from typing import Optional, Union
+from typing import Optional
 
 
 ParsedSource = dict  # shape: {source_type, url?, repo?, ref?, path?}
@@ -22,11 +22,13 @@ _WINDOWS_PATH_RE = re.compile(r"^[a-zA-Z]:[/\\]")
 _REPO_RE = re.compile(r"^[^\s/@#:]+/[^\s/@#:]+$")
 # Refs: alphanumerics, dot, dash, underscore, slash. No "..", no whitespace, no shell chars.
 _REF_SHAPE_RE = re.compile(r"^[A-Za-z0-9._/-]+$")
+# GitHub HTTPS URL: https://github.com/owner/repo (with optional www, trailing slash, or .git)
+_GH_HTTPS_RE = re.compile(r"^https?://(?:www\.)?github\.com/([^/]+/[^/]+?)(?:/|\.git)?/?$")
 
 
-def parse_input(raw: str) -> Optional[Union[ParsedSource, dict]]:
-    """Parse a user input string. Return a ParsedSource dict, an {"error": ...}
-    dict, or None if the input is not recognized.
+def parse_input(raw: str) -> Optional[dict]:
+    """Parse a user input string. Return a ParsedSource dict on success, or
+    None if the input is not recognized.
 
     This is a pure function: no filesystem I/O. Existence checks for local
     paths happen later in the pipeline (fetchers/validators)."""
@@ -77,10 +79,7 @@ def parse_input(raw: str) -> Optional[Union[ParsedSource, dict]]:
             return r
 
         # GitHub URLs → git with .git suffix
-        gh = re.match(
-            r"^https?://(?:www\.)?github\.com/([^/]+/[^/]+?)(?:/|\.git)?/?$",
-            url,
-        )
+        gh = _GH_HTTPS_RE.match(url)
         if gh:
             git_url = url if url.endswith(".git") else url + ".git"
             r = {"source_type": "git", "url": git_url}
@@ -97,6 +96,7 @@ def parse_input(raw: str) -> Optional[Union[ParsedSource, dict]]:
         trimmed.startswith(".\\") or trimmed.startswith("..\\")
         or bool(_WINDOWS_PATH_RE.match(trimmed))
     )
+    # Bare "~" resolves to $HOME as a directory — intentional TS parity (homedir() + resolve()).
     if (
         trimmed.startswith("./")
         or trimmed.startswith("../")
