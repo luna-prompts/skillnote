@@ -103,13 +103,84 @@ compose() {
   $COMPOSE -f "$PROJECT_DIR/docker-compose.yml" "$@"
 }
 
+# ── Port availability check ──────────────────────────────────────
+# Returns: 0 if free, 1 if in use.
+# Sets PORT_HOLDER_PID and PORT_HOLDER_NAME when in use.
+check_port() {
+  local port="$1"
+  PORT_HOLDER_PID=""
+  PORT_HOLDER_NAME=""
+  # Try lsof first (macOS + most Linuxes)
+  if command -v lsof &>/dev/null; then
+    PORT_HOLDER_PID=$(lsof -iTCP:"$port" -sTCP:LISTEN -t 2>/dev/null | head -1)
+    if [ -n "$PORT_HOLDER_PID" ]; then
+      PORT_HOLDER_NAME=$(ps -p "$PORT_HOLDER_PID" -o comm= 2>/dev/null | awk '{print $1}')
+      return 1
+    fi
+    return 0
+  fi
+  # Fallback: ss (Linux)
+  if command -v ss &>/dev/null; then
+    if ss -ltn "sport = :$port" 2>/dev/null | grep -q LISTEN; then
+      PORT_HOLDER_NAME="unknown"
+      return 1
+    fi
+    return 0
+  fi
+  # No port-checker available — assume free so we don't block install.
+  return 0
+}
+
+# Prints a guided error for a port that's already in use and exits.
+port_conflict_hint() {
+  local name="$1" port="$2"
+  echo ""
+  echo -e "  ${RED}✗ Port ${port} (${name}) is already in use${NC}"
+  echo ""
+  if [ -n "${PORT_HOLDER_PID:-}" ]; then
+    echo -e "  ${DIM}Held by:${NC}  PID ${PORT_HOLDER_PID} (${PORT_HOLDER_NAME:-?})"
+    echo ""
+    echo -e "  ${BOLD}Fix options:${NC}"
+    echo -e "    ${DIM}1.${NC} Kill the running process:"
+    echo -e "       ${CYAN}kill ${PORT_HOLDER_PID}${NC}"
+    echo -e "    ${DIM}2.${NC} Or move SkillNote to a different port:"
+    case "$name" in
+      Web) echo -e "       ${CYAN}SKILLNOTE_WEB_PORT=3001 ./install.sh${NC}" ;;
+      API) echo -e "       ${CYAN}SKILLNOTE_API_PORT=8182 ./install.sh${NC}" ;;
+      MCP) echo -e "       ${CYAN}SKILLNOTE_MCP_PORT=8183 ./install.sh${NC}" ;;
+    esac
+  else
+    echo -e "  ${DIM}Install lsof or ss to see which process is holding it.${NC}"
+  fi
+  echo ""
+  exit 1
+}
+
 # ── Header ────────────────────────────────────────────────────────
 echo ""
 echo -e "  ${BOLD}S K I L L N O T E${NC}"
 echo ""
 
+# ── 0. Pre-flight: check ports are free ──────────────────────────
+# Catches the common "npm run dev still running" / "old container orphan" /
+# "another service on 8082" cases BEFORE we waste time building images.
+for port_spec in "Web:${WEB_PORT}" "API:${API_PORT}" "MCP:${MCP_PORT}"; do
+  name="${port_spec%%:*}"
+  port="${port_spec##*:}"
+  if ! check_port "$port"; then
+    # Stop any existing SkillNote containers first — they legitimately own these ports
+    # and will be recreated by compose up. Re-check after compose-down.
+    compose down 2>/dev/null || true
+    if ! check_port "$port"; then
+      port_conflict_hint "$name" "$port"
+    fi
+  fi
+done
+
 # ── 1. Stop previous SkillNote containers ─────────────────────────
-# Only stops SkillNote containers, not other Docker apps
+# Only stops SkillNote containers, not other Docker apps.
+# (Also runs during pre-flight when a port is busy, but re-run here so the
+#  "stopped" confirmation is visible on a clean install too.)
 compose down 2>/dev/null || true
 ok "Stopped previous SkillNote containers"
 
@@ -144,11 +215,36 @@ rm -f "$BUILD_LOG"
 ok "Images built"
 
 # ── 3. Start ──────────────────────────────────────────────────────
+# Capture both stdout and stderr so a bind-address-in-use or similar failure
+# gets surfaced to the user instead of the script silently exiting.
+UP_LOG=$(mktemp)
 SKILLNOTE_HOST="$SKILLNOTE_HOST" \
 SKILLNOTE_API_PORT="$API_PORT" \
 SKILLNOTE_MCP_PORT="$MCP_PORT" \
 SKILLNOTE_WEB_PORT="$WEB_PORT" \
-  compose up -d > /dev/null 2>&1
+  compose up -d > "$UP_LOG" 2>&1 || {
+  echo ""
+  echo -e "  ${RED}✗ Failed to start containers${NC}"
+  echo ""
+  echo -e "  ${DIM}Last 12 lines of output:${NC}"
+  tail -12 "$UP_LOG" | sed 's/^/    /'
+  echo ""
+  # Heuristics for the most common failures
+  if grep -qi "address already in use\|port is already allocated" "$UP_LOG"; then
+    echo -e "  ${BOLD}Likely cause:${NC} a port (${WEB_PORT}, ${API_PORT}, or ${MCP_PORT}) was freed"
+    echo -e "  between the pre-flight check and now. Re-run ${CYAN}./install.sh${NC}."
+  elif grep -qi "permission denied\|cannot connect to the docker daemon" "$UP_LOG"; then
+    echo -e "  ${BOLD}Likely cause:${NC} the container runtime needs attention."
+    echo -e "  Ensure ${CYAN}${COMPOSE%% *}${NC} daemon/machine is running."
+  else
+    echo -e "  ${BOLD}To inspect:${NC}"
+    echo -e "    ${CYAN}$COMPOSE -f docker-compose.yml logs${NC}"
+  fi
+  echo ""
+  rm -f "$UP_LOG"
+  exit 1
+}
+rm -f "$UP_LOG"
 ok "Containers started"
 
 # ── 4. Health checks ─────────────────────────────────────────────
@@ -161,7 +257,22 @@ for i in $(seq 1 60); do
     ok "API ready"
     break
   fi
-  [ "$i" -eq 60 ] && err "API failed to start. Run: $COMPOSE logs api"
+  if [ "$i" -eq 60 ]; then
+    echo ""
+    echo -e "  ${RED}✗ API didn't become healthy within 120s${NC}"
+    echo ""
+    echo -e "  ${DIM}Last 20 lines of API logs:${NC}"
+    compose logs --tail 20 api 2>/dev/null | sed 's/^/    /' || true
+    echo ""
+    echo -e "  ${BOLD}Common causes:${NC}"
+    echo -e "    ${DIM}•${NC} Database still migrating (wait + retry)"
+    echo -e "    ${DIM}•${NC} Alembic migration error — check logs above"
+    echo -e "    ${DIM}•${NC} Port ${API_PORT} bound by another process on the container-side"
+    echo ""
+    echo -e "  ${BOLD}To inspect:${NC}  ${CYAN}$COMPOSE -f docker-compose.yml logs api${NC}"
+    echo ""
+    exit 1
+  fi
   sleep 2
 done
 
