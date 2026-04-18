@@ -273,7 +273,8 @@ MIN_VISIBLE = 2
 DEFAULT_VISIBLE = 12
 COMPACT_THRESHOLD = 70
 LEFT_MIN_W = 28
-LEFT_MAX_W = 44
+LEFT_MAX_W = 60  # wider cap so long Create labels and collection names don't
+                 # get needlessly truncated on large terminals
 
 
 def _get_host():
@@ -821,20 +822,30 @@ def pick(stdscr, items, recommended=0, recommended_kind="pick", recommended_slug
             hline(row)
             skip_full = "⊘ Skip — start with no skills"
             skip_plain = "⊘ Skip"
+            skip_hotkey = "Ctrl+K"  # right-aligned keycap hint
             # Budget: left pane content from column bx+5 to bx+left_w-1 (or to
             # the right border in compact mode). Keep a 2-col gutter from edge.
             pane_end = (bx + left_w - 1) if not compact else (bx + bw - 2)
             budget = max(0, pane_end - (bx + 5) - 2)
-            skip_label = skip_full if len(skip_full) <= budget else skip_plain
+            # Reserve room for the hotkey hint ("Ctrl+K" + one space separator)
+            # so the label gracefully shortens instead of overlapping the hint.
+            hotkey_pad = len(skip_hotkey) + 2  # 1 space before + safety margin
+            label_budget = max(0, budget - hotkey_pad)
+            skip_label = skip_full if len(skip_full) <= label_budget else skip_plain
+            # If even the plain label plus hotkey doesn't fit, drop the hotkey
+            # from the row (the footer still advertises it).
+            show_hotkey = len(skip_plain) + hotkey_pad <= budget
             if skip_is_focused:
                 attr = ACCENT
-            elif skip_is_cur:  # focused-on-right case
-                attr = DIM
             else:
                 attr = DIM
             if skip_is_cur:
                 s(row, bx + 3, "❯", ACCENT if skip_is_focused else DIM)
-            s(row, bx + 5, skip_label[: budget if budget > 0 else len(skip_label)], attr)
+            s(row, bx + 5, skip_label[: label_budget if label_budget > 0 else len(skip_label)], attr)
+            if show_hotkey:
+                # Right-align the keycap against the pane edge (dim, so it's
+                # legible without competing with the primary label).
+                s(row, pane_end - len(skip_hotkey), skip_hotkey, DIM)
             row += 1
 
             # ═══ RIGHT PANEL: preview ═══
