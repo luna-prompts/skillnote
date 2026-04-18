@@ -28,10 +28,19 @@ def serialize_collection(db: Session, collection_name: str) -> dict:
         .filter(Skill.import_source_id.is_not(None))
         .all()
     )
+    source_ids = {s.import_source_id for s in skills}
+    sources_by_id: dict = {}
+    if source_ids:
+        sources = (
+            db.query(ImportSource)
+            .filter(ImportSource.id.in_(source_ids))
+            .all()
+        )
+        sources_by_id = {s.id: s for s in sources}
 
     plugins = []
     for skill in skills:
-        src = db.get(ImportSource, skill.import_source_id)
+        src = sources_by_id.get(skill.import_source_id)
         if src is None:
             continue
         plugin_entry = {
@@ -60,29 +69,39 @@ def _build_source_entry(src: ImportSource, skill: Skill) -> dict:
     """Convert an ImportSource + skill to a plugin source entry.
 
     Emits git-subdir when a subpath is known; falls back to github otherwise.
+    Omits ``ref`` when unknown rather than fabricating ``"main"``, since a
+    synthetic ref may not contain the recorded SHA; consumers can still
+    ``git fetch <sha>`` without a ref.
     """
+    sha = skill.source_sha or src.imported_at_sha
     if src.source_type == "github" and skill.source_path:
-        return {
+        entry = {
             "source": "git-subdir",
             "url": f"https://github.com/{src.owner}/{src.repo}",
             "path": skill.source_path,
-            "ref": src.ref or "main",
-            "sha": skill.source_sha or src.imported_at_sha,
         }
+        if src.ref:
+            entry["ref"] = src.ref
+        if sha:
+            entry["sha"] = sha
+        return entry
     if src.source_type == "github":
-        return {
+        entry = {
             "source": "github",
             "repo": f"{src.owner}/{src.repo}",
-            "ref": src.ref or "main",
-            "sha": skill.source_sha or src.imported_at_sha,
         }
+        if src.ref:
+            entry["ref"] = src.ref
+        if sha:
+            entry["sha"] = sha
+        return entry
     # Fallback: url source
-    return {
-        "source": "url",
-        "url": src.url,
-        "ref": src.ref,
-        "sha": skill.source_sha or src.imported_at_sha,
-    }
+    entry = {"source": "url", "url": src.url}
+    if src.ref:
+        entry["ref"] = src.ref
+    if sha:
+        entry["sha"] = sha
+    return entry
 
 
 def compute_etag(manifest: dict) -> str:

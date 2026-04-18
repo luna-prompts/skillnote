@@ -138,3 +138,24 @@ def test_etag_stable_for_same_content():
     from app.services.imports.publisher import compute_etag
     m = {"name": "x", "plugins": [{"name": "y"}]}
     assert compute_etag(m) == compute_etag(m)
+
+
+def test_source_entry_omits_ref_when_none():
+    from app.services.imports.publisher import _build_source_entry
+
+    class FakeSrc:
+        source_type = "github"
+        owner = "a"
+        repo = "b"
+        ref = None
+        imported_at_sha = None
+        url = "github.com/a/b"
+
+    class FakeSkill:
+        source_path = "skills/x"
+        source_sha = "deadbeef"
+
+    entry = _build_source_entry(FakeSrc(), FakeSkill())
+    assert entry["source"] == "git-subdir"
+    assert "ref" not in entry
+    assert entry["sha"] == "deadbeef"
