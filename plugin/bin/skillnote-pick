@@ -101,6 +101,72 @@ def _confirm_skip(stdscr):
             return False
 
 
+def _create_collection(name):
+    """Returns ('ok', None) | ('exists', count) | ('error', msg)."""
+    import urllib.error
+    host = _get_host()
+    api = f"http://{host}:8082"
+    payload = json.dumps({"name": name, "description": ""}).encode()
+    req = urllib.request.Request(
+        f"{api}/v1/collections",
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        urllib.request.urlopen(req, timeout=3).read()
+        return ("ok", None)
+    except urllib.error.HTTPError as e:
+        if e.code == 409:
+            try:
+                data = json.loads(urllib.request.urlopen(
+                    f"{api}/v1/skills?collections={name}", timeout=3).read())
+                return ("exists", len(data))
+            except Exception:
+                return ("exists", 0)
+        return ("error", f"HTTP {e.code}")
+    except Exception as e:
+        return ("error", str(e))
+
+
+def _confirm_activate_existing(stdscr, name, count):
+    """Inline Y/N prompt when Create hits a 409. Returns True to activate."""
+    import curses
+    curses.flushinp()
+    h, w = stdscr.getmaxyx()
+    box_h, box_w = 5, min(w - 4, 60)
+    if h < box_h + 2 or w < box_w + 2:
+        try:
+            stdscr.addstr(max(0, h - 1), 0, f" '{name}' exists. Activate? [y/N] "[:w - 1], curses.A_REVERSE)
+            stdscr.clrtoeol()
+            stdscr.refresh()
+        except curses.error:
+            pass
+    else:
+        y = (h - box_h) // 2
+        x = (w - box_w) // 2
+        try:
+            for i in range(box_h):
+                stdscr.addstr(y + i, x, " " * box_w, curses.A_REVERSE)
+            msg = f'"{name}" already exists with {count} skill(s).'
+            stdscr.addstr(y + 1, x + 2, msg[:box_w - 4], curses.A_REVERSE | curses.A_BOLD)
+            stdscr.addstr(y + 3, x + 2, "Activate it? [Y] Yes  [N] No", curses.A_REVERSE)
+            stdscr.refresh()
+        except curses.error:
+            pass
+    while True:
+        k = stdscr.getch()
+        if k == curses.KEY_RESIZE:
+            stdscr.erase()
+            return _confirm_activate_existing(stdscr, name, count)  # re-render
+        if k in (ord("y"), ord("Y"), 10, 13, curses.KEY_ENTER):
+            curses.flushinp()
+            return True
+        if k in (ord("n"), ord("N"), 27):
+            curses.flushinp()
+            return False
+
+
 # Constants (from Claude Code's FuzzyPicker study)
 MIN_VISIBLE = 2
 DEFAULT_VISIBLE = 12
@@ -247,13 +313,16 @@ def _strip_trigger(desc):
     return desc
 
 
-def pick(stdscr, items, recommended=0):
-    # Sort: recommended first
+def pick(stdscr, items, recommended=0, recommended_kind="pick", recommended_slug=None):
+    # Sort: recommended first (only when recommendation kind is 'pick')
     sorted_items = []
-    if 0 <= recommended < len(items):
+    if recommended_kind == "pick" and 0 <= recommended < len(items):
         sorted_items.append((recommended, items[recommended]))
-    for i, it in enumerate(items):
-        if i != recommended:
+        for i, it in enumerate(items):
+            if i != recommended:
+                sorted_items.append((i, it))
+    else:
+        for i, it in enumerate(items):
             sorted_items.append((i, it))
 
     cur = 0
@@ -306,6 +375,29 @@ def pick(stdscr, items, recommended=0):
                         if search.lower() in it[0].lower()]
         else:
             filtered = [(si, oi, it) for si, (oi, it) in enumerate(sorted_items)]
+
+        # Determine the create-slug for this frame:
+        #   - with a search query that yields no matches AND produces a valid slug → "+ Create '{slug}'"
+        #   - no query, and the startup recommendation is "create" → "+ Create '{folder_slug}' (Recommended)"
+        create_slug = None
+        if search:
+            qs = _slugify(search)
+            if qs and _is_valid_slug(qs) and not any(n == qs for n, _, _ in items):
+                if not filtered:
+                    create_slug = qs
+        else:
+            if recommended_kind == "create":
+                create_slug = recommended_slug
+
+        # If we're showing a create row, prepend a synthetic entry to filtered.
+        # Use orig_idx = -1 to mark it as synthetic; the list-row renderer and
+        # enter-handler special-case this sentinel.
+        if create_slug is not None:
+            synthetic_label = f"+ Create '{create_slug}'"
+            if recommended_kind == "create" and not search:
+                synthetic_label += " (Recommended)"
+            synthetic = (-1, -1, (synthetic_label, 0, []))
+            filtered = [synthetic] + filtered
         # Allow cur == len(filtered) so the pinned Skip row is focusable
         if filtered:
             cur = _clamp(cur, 0, len(filtered))
@@ -594,8 +686,35 @@ def pick(stdscr, items, recommended=0):
                 if _confirm_skip(stdscr):
                     return SKIP_SENTINEL
                 continue
-            if filtered:
-                _, orig_idx, _ = filtered[cur]
+            if filtered and cur < len(filtered):
+                _, orig_idx, (sel_label, _, _) = filtered[cur]
+                if orig_idx == -1:
+                    # Synthetic "+ Create 'X'" row
+                    # Extract slug between the single quotes
+                    if "'" in sel_label:
+                        new_name = sel_label.split("'")[1]
+                    else:
+                        new_name = ""
+                    if not new_name:
+                        continue
+                    status, payload = _create_collection(new_name)
+                    if status == "ok":
+                        return [new_name]
+                    if status == "exists":
+                        if _confirm_activate_existing(stdscr, new_name, payload or 0):
+                            return [new_name]
+                        continue
+                    # error case: show brief toast then continue
+                    try:
+                        h, w = stdscr.getmaxyx()
+                        stdscr.addstr(h - 2, 2,
+                                      f"Create failed: {payload}. Press any key."[:max(0, w - 4)],
+                                      curses.A_REVERSE)
+                        stdscr.refresh()
+                        stdscr.getch()
+                    except curses.error:
+                        pass
+                    continue
                 return [items[orig_idx][0]]
         elif key == 11:  # Ctrl+K
             if _confirm_skip(stdscr):
@@ -614,7 +733,7 @@ def pick(stdscr, items, recommended=0):
             focus = "left"
 
 
-def pick_fallback(items, recommended=0):
+def pick_fallback(items, recommended=0, recommended_kind="pick", recommended_slug=None):
     print("\n ✦ S K I L L N O T E — Pick a collection\n")
     order = [recommended] + [i for i in range(len(items)) if i != recommended]
     for pos, i in enumerate(order):
@@ -718,11 +837,18 @@ def main():
                 pass
         print(f"  ✦ SkillNote: {name} ({count} skills)")
         return
-    recommended = _get_recommended(collections)
-    if HAS_CURSES:
-        chosen = curses.wrapper(pick, collections, recommended)
+    folder_raw = os.path.basename(os.getcwd())
+    rec_kind, rec_payload = _resolve_recommendation(folder_raw, collections)
+    if rec_kind == "pick":
+        recommended_idx = rec_payload
+        recommended_slug = None
     else:
-        chosen = pick_fallback(collections, recommended)
+        recommended_idx = -1
+        recommended_slug = rec_payload if rec_kind == "create" else None
+    if HAS_CURSES:
+        chosen = curses.wrapper(pick, collections, recommended_idx, rec_kind, recommended_slug)
+    else:
+        chosen = pick_fallback(collections, recommended_idx, rec_kind, recommended_slug)
     if chosen is None:
         current = _get_current_collections()
         if current:
