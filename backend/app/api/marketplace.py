@@ -18,6 +18,7 @@ from app.core.errors import api_error
 from app.db.models import Collection
 from app.db.session import get_db
 from app.services.imports.publisher import compute_etag, serialize_collection
+from app.services.imports.rate_limit import check_marketplace_rate
 
 
 router = APIRouter(prefix="/marketplace", tags=["marketplace"])
@@ -27,7 +28,7 @@ router = APIRouter(prefix="/marketplace", tags=["marketplace"])
 _SLUG_RE = re.compile(r"^[a-z0-9_-]+$")
 
 
-@router.get("/{slug}.json")
+@router.get("/{slug}.json", dependencies=[Depends(check_marketplace_rate)])
 def publish(
     slug: str,
     response: Response,

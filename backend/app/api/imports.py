@@ -33,6 +33,7 @@ from app.services.imports.security import validate_import_url, SecurityError
 from app.services.imports.inspector import inspect_source
 from app.services.imports.importer import apply_import, ImportError as ImportErr
 from app.services.imports.refresher import probe_head_sha
+from app.services.imports.rate_limit import check_imports_rate
 
 
 router = APIRouter(prefix="/v1/import", tags=["imports"])
@@ -49,7 +50,7 @@ _INSPECT_ERROR_STATUS = {
 }
 
 
-@router.post("/inspect", response_model=InspectResponse)
+@router.post("/inspect", response_model=InspectResponse, dependencies=[Depends(check_imports_rate)])
 def inspect_endpoint(body: InspectRequest) -> InspectResponse:
     parsed = parse_input(body.input)
     if parsed is None:
@@ -104,7 +105,7 @@ def inspect_endpoint(body: InspectRequest) -> InspectResponse:
     )
 
 
-@router.post("/apply", response_model=ApplyResponse, status_code=201)
+@router.post("/apply", response_model=ApplyResponse, status_code=201, dependencies=[Depends(check_imports_rate)])
 def apply_endpoint(body: ApplyRequest, db: Session = Depends(get_db)):
     parsed = parse_input(body.input)
     if parsed is None or "error" in parsed:
@@ -193,7 +194,7 @@ def _coerce_source_id(source_id: str) -> uuid.UUID:
         raise api_error(404, "SOURCE_NOT_FOUND", "Import source not found")
 
 
-@router.post("/sources/{source_id}/refresh")
+@router.post("/sources/{source_id}/refresh", dependencies=[Depends(check_imports_rate)])
 def refresh_endpoint(source_id: str, body: RefreshRequest, db: Session = Depends(get_db)):
     sid = _coerce_source_id(source_id)
     src = db.get(ImportSource, sid)
