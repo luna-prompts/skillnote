@@ -820,7 +820,7 @@ def pick(stdscr, items, recommended=0, recommended_kind="pick", recommended_slug
             skip_is_cur = (cur == len(filtered))
             skip_is_focused = (focus == "left" and skip_is_cur)
             hline(row)
-            skip_full = "⊘ Skip — start with no skills"
+            skip_full = "⊘ Skip · start with no skills"
             skip_plain = "⊘ Skip"
             skip_hotkey = "Ctrl+K"  # right-aligned keycap hint
             # Budget: left pane content from column bx+5 to bx+left_w-1 (or to
@@ -993,45 +993,51 @@ def pick(stdscr, items, recommended=0, recommended_kind="pick", recommended_slug
                             s(rr, bx + left_w + 4, info, DIM)
                             s(rr, bx + bw - len(arrows) - 2, arrows, DIM)
 
-            # ═══ BOTTOM BORDER with hints + link ═══
-            # We right-align a single GitHub star link and left-align keyboard
-            # shortcuts that step down gracefully as the terminal narrows.
-            # The web URL is dropped from the footer (it's already reported by
-            # the post-selection confirmation line, and the footer is for
-            # shortcuts, not marketing).
+            # ═══ BOTTOM BORDER with hints + links ═══
+            # Left-align keyboard shortcuts; right-align web + github links.
+            # Both step down gracefully as the terminal narrows — we try the
+            # richest combo first, then progressively drop the web URL, then
+            # the GitHub link, then the longest hint variant.
             bot_row = h - 1
             s(bot_row, bx, "╰" + "─" * (bw - 2) + "╯", BORDER)
             hints_full = " ↑↓ move · ↵ select · Tab panes · Ctrl+K skip · Esc cancel "
             hints_mid = " ↑↓ move · ↵ select · Ctrl+K skip · Esc cancel "
             hints_short = " ↵ select · Ctrl+K skip · Esc cancel "
             hints_tiny = " ↵ select · Esc cancel "
-            link = f" ★ {gh_url} "
+            link_both = f" {web_url} · ★ {gh_url} "
+            link_gh = f" ★ {gh_url} "
+            link_web = f" {web_url} "
             inner = bw - 2  # space between the two border corners
             gap = 2
 
             def _place(hint):
                 s(bot_row, bx + 2, hint, DIM)
 
-            def _place_link():
-                s(bot_row, bx + bw - len(link) - 1, link, DIM | curses.color_pair(1))
+            def _place_link(link_text):
+                s(bot_row, bx + bw - len(link_text) - 1, link_text,
+                  DIM | curses.color_pair(1))
 
-            # Pick the largest hint that fits with the link; if none fit, drop
-            # the link and pick the largest hint that fits alone.
-            if len(hints_full) + gap + len(link) <= inner:
-                _place(hints_full); _place_link()
-            elif len(hints_mid) + gap + len(link) <= inner:
-                _place(hints_mid); _place_link()
-            elif len(hints_short) + gap + len(link) <= inner:
-                _place(hints_short); _place_link()
-            elif len(hints_tiny) + gap + len(link) <= inner:
-                _place(hints_tiny); _place_link()
-            elif len(hints_full) + 2 <= inner:
-                _place(hints_full)
-            elif len(hints_mid) + 2 <= inner:
-                _place(hints_mid)
-            elif len(hints_short) + 2 <= inner:
-                _place(hints_short)
-            else:
+            # Choose the biggest combo of hint + link that fits. Prefer
+            # keeping both links; fall back to GitHub-only, then web-only,
+            # then no link.
+            link_tiers = [link_both, link_gh, link_web, ""]
+            hint_tiers = [hints_full, hints_mid, hints_short, hints_tiny]
+
+            placed = False
+            for link in link_tiers:
+                for hint in hint_tiers:
+                    # If no link, skip the link arithmetic
+                    needed = len(hint) + (gap + len(link) if link else 0)
+                    if needed <= inner:
+                        _place(hint)
+                        if link:
+                            _place_link(link)
+                        placed = True
+                        break
+                if placed:
+                    break
+            if not placed:
+                # Extremely narrow — truncate tiny hint to fit.
                 _place(hints_tiny[: max(0, inner - 2)])
 
         except curses.error:
