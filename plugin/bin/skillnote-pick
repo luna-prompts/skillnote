@@ -369,6 +369,39 @@ def pick(stdscr, items, recommended=0, recommended_kind="pick", recommended_slug
         stdscr.erase()
         h, w = stdscr.getmaxyx()
 
+        # ═══ TOO-SMALL GUARD ═══
+        # Below this size the layout degrades into garbage (clawd art alone is
+        # 9 cols wide, the branded header is ~24). Show a clean minimal message
+        # instead so the user isn't confused by half-drawn borders.
+        MIN_W = 40
+        MIN_H = 12
+        if w < MIN_W or h < MIN_H:
+            msg = "Terminal too small"
+            sub = f"Need at least {MIN_W}x{MIN_H} (got {w}x{h})"
+            hint = "Resize or press Esc"
+            try:
+                if h >= 3:
+                    y = max(0, h // 2 - 1)
+                    stdscr.addstr(y, max(0, (w - len(msg)) // 2), msg[: max(0, w - 1)],
+                                  curses.A_BOLD)
+                    if h >= 4:
+                        stdscr.addstr(y + 1, max(0, (w - len(sub)) // 2),
+                                      sub[: max(0, w - 1)], curses.A_DIM)
+                    if h >= 6:
+                        stdscr.addstr(y + 3, max(0, (w - len(hint)) // 2),
+                                      hint[: max(0, w - 1)], curses.A_DIM)
+                elif h >= 1:
+                    stdscr.addstr(0, 0, msg[: max(0, w - 1)])
+            except curses.error:
+                pass
+            stdscr.refresh()
+            key = stdscr.getch()
+            if key in (ord("q"), 27):
+                return None
+            if key == curses.KEY_RESIZE:
+                continue
+            continue
+
         # Filter
         if search:
             filtered = [(si, oi, it) for si, (oi, it) in enumerate(sorted_items)
@@ -479,13 +512,15 @@ def pick(stdscr, items, recommended=0, recommended_kind="pick", recommended_slug
 
             # ═══ SEPARATOR with stats ═══
             stats = f" ● {total_skills} skills · {len(items)} collections "
-            left_inner = left_w - 1
-            left_part = "├" + (stats + "─" * max(0, left_inner - len(stats)))[:left_inner]
             if compact:
-                right_part = "─" * (bw - left_w - 1) + "┤"
+                # Compact: no center divider, so stats spans the full inner width.
+                inner_w = bw - 2
+                sep = "├" + (stats + "─" * max(0, inner_w - len(stats)))[:inner_w] + "┤"
             else:
+                left_inner = left_w - 1
+                left_part = "├" + (stats + "─" * max(0, left_inner - len(stats)))[:left_inner]
                 right_part = "┬" + "─" * max(0, right_w - 1) + "┤"
-            sep = left_part + right_part
+                sep = left_part + right_part
             s(row, bx, sep[:bw], BORDER)
             s(row, bx + 2, "●", GREEN)
             s(row, bx + 4, f"{total_skills} skills · {len(items)} collections", DIM)
@@ -529,6 +564,22 @@ def pick(stdscr, items, recommended=0, recommended_kind="pick", recommended_slug
 
             window_start = _clamp(cur - visible_count + 1, 0, max(0, len(filtered) - visible_count))
             visible = filtered[window_start:window_start + visible_count]
+
+            # Empty-state hint when a search yields no rows (and no Create offered)
+            if not filtered and search:
+                hline(row)
+                # Diagnose why: either invalid slug, reserved word, or just no match.
+                qs = _slugify(search)
+                if not qs:
+                    hint = "No match. Type letters/digits to search."
+                elif any(w in qs for w in RESERVED_WORDS):
+                    hint = "No match. Reserved word in name."
+                elif len(qs) > _MAX_NAME:
+                    hint = f"No match. Names are limited to {_MAX_NAME} chars."
+                else:
+                    hint = "No matching collection."
+                s(row, bx + 5, hint[: max(0, left_w - 6)], DIM)
+                row += 1
 
             for vi, (sorted_idx, orig_idx, (name, count, skills)) in enumerate(visible):
                 if row >= h - footer_h - 1:
@@ -609,78 +660,170 @@ def pick(stdscr, items, recommended=0, recommended_kind="pick", recommended_slug
             row += 1
 
             # ═══ RIGHT PANEL: preview ═══
-            if not compact and sel_skills:
+            if not compact:
                 rr = content_top
 
                 # Empty line
                 rr += 1
 
-                # Header
-                header = sel_name
-                if sel_is_rec:
-                    header += " (Recommended)"
-                if focus == "right":
-                    s(rr, bx + left_w + 3, "❯ " + header, ACCENT)
-                else:
+                # Focused on the pinned Skip row — explain what Skip does.
+                skip_focused = (focus == "left" and filtered and cur == len(filtered)) or \
+                               (focus == "left" and not filtered)
+                # Focused on a synthetic Create row — explain what will happen.
+                create_focused = sel_is_synthetic
+
+                if create_focused:
+                    # Header
+                    header = "Create new collection"
                     s(rr, bx + left_w + 4, header, BOLD)
-                cnt_txt = f"{sel_count} skills"
-                s(rr, bx + bw - len(cnt_txt) - 2, cnt_txt, DIM)
-                rr += 1
-
-                # Separator
-                s(rr, bx + left_w + 4, "─" * (right_w - 6), DIM)
-                rr += 1
-
-                rr += 1  # gap
-
-                # Skill list with word-wrapped descriptions
-                desc_w = right_w - 8
-                skills_shown = 0
-                skill_list = sel_skills[right_scroll:]
-                for si, (slug, desc) in enumerate(skill_list):
-                    real_idx = si + right_scroll
-                    if rr >= h - footer_h - 2:
-                        break
-
-                    # Number + skill name
-                    num = f"{real_idx + 1}."
-                    s(rr, bx + left_w + 4, num, DIM)
-                    s(rr, bx + left_w + 4 + len(num) + 1, slug, curses.color_pair(1))
                     rr += 1
-                    skills_shown += 1
+                    s(rr, bx + left_w + 4, "─" * (right_w - 6), DIM)
+                    rr += 1
+                    rr += 1  # gap
+                    # Extract slug from the synthetic label (between single quotes)
+                    create_name = sel_name.split("'")[1] if "'" in sel_name else ""
+                    for ln in _wrap(
+                        f"Press Enter to create '{create_name}' and activate it for this project.",
+                        right_w - 8,
+                    ):
+                        if rr >= h - footer_h - 2:
+                            break
+                        s(rr, bx + left_w + 4, ln, DIM)
+                        rr += 1
+                    rr += 1
+                    for ln in _wrap(
+                        "You can also type to search, or pick an existing collection from the list.",
+                        right_w - 8,
+                    ):
+                        if rr >= h - footer_h - 2:
+                            break
+                        s(rr, bx + left_w + 4, ln, DIM)
+                        rr += 1
+                elif skip_focused:
+                    # Skip row focused — explain the skip action.
+                    s(rr, bx + left_w + 4, "Skip", BOLD)
+                    rr += 1
+                    s(rr, bx + left_w + 4, "─" * (right_w - 6), DIM)
+                    rr += 1
+                    rr += 1  # gap
+                    for ln in _wrap(
+                        "Start the session without any SkillNote collection active. "
+                        "Claude Code will see no skills from SkillNote.",
+                        right_w - 8,
+                    ):
+                        if rr >= h - footer_h - 2:
+                            break
+                        s(rr, bx + left_w + 4, ln, DIM)
+                        rr += 1
+                    rr += 1
+                    for ln in _wrap(
+                        "You can run /skillnote anytime to switch collections later.",
+                        right_w - 8,
+                    ):
+                        if rr >= h - footer_h - 2:
+                            break
+                        s(rr, bx + left_w + 4, ln, DIM)
+                        rr += 1
+                elif sel_name:
+                    # Real collection focus
+                    header = sel_name
+                    if sel_is_rec:
+                        header += " (Recommended)"
+                    if focus == "right":
+                        s(rr, bx + left_w + 3, "❯ " + header, ACCENT)
+                    else:
+                        s(rr, bx + left_w + 4, header, BOLD)
+                    cnt_txt = f"{sel_count} skills"
+                    s(rr, bx + bw - len(cnt_txt) - 2, cnt_txt, DIM)
+                    rr += 1
 
-                    # Description (stripped of triggers, word-wrapped)
-                    clean_desc = _strip_trigger(desc)
-                    if clean_desc and rr < h - footer_h - 2:
-                        for dl in _wrap(clean_desc, desc_w):
+                    # Separator
+                    s(rr, bx + left_w + 4, "─" * (right_w - 6), DIM)
+                    rr += 1
+
+                    rr += 1  # gap
+
+                    if not sel_skills:
+                        # Empty collection state
+                        for ln in _wrap(
+                            "No skills in this collection yet. "
+                            "Add skills from the web UI, then select this collection to use them.",
+                            right_w - 8,
+                        ):
                             if rr >= h - footer_h - 2:
                                 break
-                            s(rr, bx + left_w + 8, dl, DIM)
+                            s(rr, bx + left_w + 4, ln, DIM)
                             rr += 1
+                    else:
+                        # Skill list with word-wrapped descriptions
+                        desc_w = right_w - 8
+                        skills_shown = 0
+                        skill_list = sel_skills[right_scroll:]
+                        for si, (slug, desc) in enumerate(skill_list):
+                            real_idx = si + right_scroll
+                            if rr >= h - footer_h - 2:
+                                break
 
-                    # Gap between skills
-                    if rr < h - footer_h - 2:
-                        rr += 1
+                            # Number + skill name
+                            num = f"{real_idx + 1}."
+                            s(rr, bx + left_w + 4, num, DIM)
+                            s(rr, bx + left_w + 4 + len(num) + 1, slug or "(unnamed)",
+                              curses.color_pair(1))
+                            rr += 1
+                            skills_shown += 1
 
-                # Scroll info
-                last = right_scroll + skills_shown
-                if right_scroll > 0 or last < len(sel_skills):
-                    info = f"{right_scroll + 1}-{last} of {len(sel_skills)}"
-                    arrows = ""
-                    if right_scroll > 0:
-                        arrows += "↑ "
-                    if last < len(sel_skills):
-                        arrows += "↓"
-                    s(rr, bx + left_w + 4, info, DIM)
-                    s(rr, bx + bw - len(arrows) - 2, arrows, DIM)
+                            # Description (stripped of triggers, word-wrapped)
+                            clean_desc = _strip_trigger(desc)
+                            if clean_desc and rr < h - footer_h - 2:
+                                for dl in _wrap(clean_desc, desc_w):
+                                    if rr >= h - footer_h - 2:
+                                        break
+                                    s(rr, bx + left_w + 8, dl, DIM)
+                                    rr += 1
+
+                            # Gap between skills
+                            if rr < h - footer_h - 2:
+                                rr += 1
+
+                        # Scroll info
+                        last = right_scroll + skills_shown
+                        if right_scroll > 0 or last < len(sel_skills):
+                            info = f"{right_scroll + 1}-{last} of {len(sel_skills)}"
+                            arrows = ""
+                            if right_scroll > 0:
+                                arrows += "↑ "
+                            if last < len(sel_skills):
+                                arrows += "↓"
+                            s(rr, bx + left_w + 4, info, DIM)
+                            s(rr, bx + bw - len(arrows) - 2, arrows, DIM)
 
             # ═══ BOTTOM BORDER with hints + links ═══
             bot_row = h - 1
             s(bot_row, bx, "╰" + "─" * (bw - 2) + "╯", BORDER)
-            hints = " ↑/↓ navigate · ↵ select · Ctrl+K skip · Esc cancel "
-            s(bot_row, bx + 2, hints, DIM)
+            hints_full = " ↑/↓ navigate · ↵ select · Ctrl+K skip · Esc cancel "
+            hints_short = " ↑/↓ · ↵ select · Ctrl+K skip · Esc cancel "
+            hints_tiny = " ↵ select · Esc cancel "
             links = f" {web_url} · {gh_url} ★ "
-            s(bot_row, bx + bw - len(links) - 1, links, DIM | curses.color_pair(1))
+            # Width budgeting: fit hints + at least one space + links without overlap.
+            # Skip links first if they won't fit even with the tiny hints; otherwise
+            # drop to progressively shorter hints.
+            inner = bw - 2  # space between the two border corners
+            gap = 2
+            if len(hints_full) + gap + len(links) <= inner:
+                s(bot_row, bx + 2, hints_full, DIM)
+                s(bot_row, bx + bw - len(links) - 1, links, DIM | curses.color_pair(1))
+            elif len(hints_short) + gap + len(links) <= inner:
+                s(bot_row, bx + 2, hints_short, DIM)
+                s(bot_row, bx + bw - len(links) - 1, links, DIM | curses.color_pair(1))
+            elif len(hints_tiny) + gap + len(links) <= inner:
+                s(bot_row, bx + 2, hints_tiny, DIM)
+                s(bot_row, bx + bw - len(links) - 1, links, DIM | curses.color_pair(1))
+            elif len(hints_full) + 2 <= inner:
+                s(bot_row, bx + 2, hints_full, DIM)
+            elif len(hints_short) + 2 <= inner:
+                s(bot_row, bx + 2, hints_short, DIM)
+            else:
+                s(bot_row, bx + 2, hints_tiny[: max(0, inner - 2)], DIM)
 
         except curses.error:
             pass
