@@ -7,8 +7,11 @@ import time
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
+from typing import List
 
-from app.db.models import ImportSource
+from sqlalchemy.orm import Session
+
+from app.db.models import ImportSource, Skill
 
 
 _cache = {}  # (url, ref) -> (timestamp, sha)
@@ -52,3 +55,39 @@ def probe_head_sha(source: ImportSource, token: str = None, timeout_s: int = 3) 
         source.status = "drift"
     else:
         source.status = "up_to_date"
+
+
+def compute_diff(src: ImportSource, db: Session, upstream_skills: List[dict]) -> dict:
+    """Compare current DB skills (from src) against upstream_skills (from clone).
+
+    Returns: {"new": [...], "changed": [...], "removed": [...]}
+    Each item includes name + optionally forked_from_source flag for UI warning.
+    """
+    current = {
+        s.slug: s for s in db.query(Skill).filter(Skill.import_source_id == src.id).all()
+    }
+    upstream_by_name = {s["name"]: s for s in upstream_skills}
+
+    new_items = []
+    changed_items = []
+    removed_items = []
+
+    for name, meta in upstream_by_name.items():
+        if name not in current:
+            new_items.append({"name": name, "description": meta.get("description")})
+        else:
+            existing = current[name]
+            if existing.source_content_hash != meta.get("content_hash"):
+                changed_items.append({
+                    "name": name,
+                    "description": meta.get("description"),
+                    "forked_from_source": existing.forked_from_source or False,
+                })
+    for slug, existing in current.items():
+        if slug not in upstream_by_name:
+            removed_items.append({
+                "name": slug,
+                "forked_from_source": existing.forked_from_source or False,
+            })
+
+    return {"new": new_items, "changed": changed_items, "removed": removed_items}

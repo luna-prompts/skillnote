@@ -202,16 +202,38 @@ def refresh_endpoint(source_id: str, body: RefreshRequest, db: Session = Depends
         raise api_error(404, "SOURCE_NOT_FOUND", "Import source not found")
 
     if body.mode == "preview":
+        # Probe SHA to refresh drift status.
         probe_head_sha(src)
         db.commit()
+
+        # Clone + scan to enumerate upstream skills.
+        from app.services.imports.cloner import clone_and_scan
+        from app.services.imports.refresher import compute_diff
+
+        clone_parsed = {
+            "source_type": src.source_type,
+            "url": src.url if "://" in src.url else f"https://{src.url}.git",
+            "ref": src.ref,
+            "subpath": src.subpath,
+        }
+        clone_result = clone_and_scan(clone_parsed, timeout_s=30)
+        if clone_result.error_code:
+            return {
+                "source_id": str(src.id),
+                "from_sha": src.imported_at_sha,
+                "to_sha": src.upstream_sha,
+                "new": [],
+                "changed": [],
+                "removed": [],
+                "error": clone_result.error_code,
+            }
+
+        diff = compute_diff(src, db, clone_result.skills)
         return {
             "source_id": str(src.id),
             "from_sha": src.imported_at_sha,
-            "to_sha": src.upstream_sha,
-            # v1 stub — full diff materialization arrives in v1.1.
-            "new": [],
-            "changed": [],
-            "removed": [],
+            "to_sha": clone_result.resolved_sha or src.upstream_sha,
+            **diff,
         }
     # "apply" — Literal validation guarantees mode is preview or apply.
     # v1 stub — full diff-apply arrives in v1.1.
