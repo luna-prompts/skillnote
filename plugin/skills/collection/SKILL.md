@@ -23,10 +23,12 @@ You MUST call the AskUserQuestion tool. Do NOT print a table or ask a text quest
 Call AskUserQuestion with these EXACT parameters:
 - `header`: "SkillNote"
 - `question`: "Pick a collection for this project:"
-- Build `options` from the collections fetched in Step 1. Each option:
-  - `label`: the collection name (e.g. "Conventions")
-  - `description`: "{count} skills" (e.g. "4 skills")
-- If `.skillnote.json` exists, add "(current)" to that collection's label
+- Build `options` in this order:
+  1. **Recommended first:** if `basename(cwd)` (lowercase, non-alphanumeric replaced with `-`) matches an existing collection name, put that option first and append ` · Recommended` to its description. Example description: `"12 skills · Recommended"`.
+  2. All other existing collections, each with `label` = name, `description` = `"{count} skills"`.
+  3. **If `.skillnote.json` exists**, add "(current)" to the currently-active collection's label.
+  4. `{"label": "Create new collection…", "description": "type a name next"}`
+  5. `{"label": "Skip (use no collections)", "description": "no skills synced"}`
 
 Example AskUserQuestion call:
 ```json
@@ -34,25 +36,57 @@ Example AskUserQuestion call:
   "header": "SkillNote",
   "question": "Pick a collection for this project:",
   "options": [
-    {"label": "Conventions (current)", "description": "4 skills"},
-    {"label": "DevOps", "description": "2 skills"},
-    {"label": "Official", "description": "2 skills"}
+    {"label": "frontend (current)", "description": "12 skills · Recommended"},
+    {"label": "backend", "description": "8 skills"},
+    {"label": "devops", "description": "3 skills"},
+    {"label": "Create new collection…", "description": "type a name next"},
+    {"label": "Skip (use no collections)", "description": "no skills synced"}
   ]
 }
 ```
 
 ## Step 3: Apply selection
 
-After the user picks, write `.skillnote.json` and sync:
+Branch based on what the user picked:
+
+### 3a. Existing collection or "(current)" option
+Strip any ` (current)` suffix. Then run:
 
 ```bash
 echo '{"collections": ["<SELECTED_NAME>"]}' > .skillnote.json
 skillnote-sync --force 2>/dev/null || true
 ```
 
-Replace `<SELECTED_NAME>` with the actual collection name the user chose (without the "(current)" suffix).
+Tell the user: "Switched to {name}. Skills will refresh."
 
-Then tell the user: "Switched to {name}. Skills will refresh."
+### 3b. "Create new collection…"
+Ask the user for a name in a plain text turn:
+
+> What should the new collection be called? (lowercase letters, numbers, hyphens, underscores — example: `my-project`)
+
+Wait for their reply. Validate: name must match `^[a-z0-9_-]+$`, be 1–128 chars, and not contain `anthropic` or `claude`. If invalid, explain and re-prompt once.
+
+Create the collection:
+
+```bash
+curl -sf -X POST "http://${CLAUDE_PLUGIN_OPTION_HOST:-localhost}:8082/v1/collections" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "<NAME>", "description": ""}'
+```
+
+If curl returns a 409 conflict, the collection already exists — tell the user and offer to activate it instead (one-question AskUserQuestion: `Yes, activate / No, pick a different name`).
+
+On success, write the name to `.skillnote.json` and run sync the same way as 3a.
+
+### 3c. "Skip (use no collections)"
+Write an empty collections list:
+
+```bash
+echo '{"collections": []}' > .skillnote.json
+skillnote-sync --force 2>/dev/null || true
+```
+
+Tell the user: "Skipped. No skills will be synced to this project."
 
 ## Rules
 
