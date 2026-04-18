@@ -24,6 +24,44 @@ except ImportError:
 PROJECT_DIR = os.environ.get("CLAUDE_PROJECT_DIR", os.getcwd())
 CONFIG_PATH = os.path.join(PROJECT_DIR, ".skillnote.json")
 
+import re as _re
+
+RESERVED_WORDS = ("anthropic", "claude")
+_SLUG_PATTERN = _re.compile(r"^[a-z0-9_-]+$")
+_MAX_NAME = 128
+
+
+def _slugify(name):
+    s = (name or "").lower()
+    s = _re.sub(r"[^a-z0-9_-]+", "-", s)
+    s = _re.sub(r"-+", "-", s)
+    s = s.strip("-")
+    return s[:_MAX_NAME]
+
+
+def _is_valid_slug(s):
+    if not s or len(s) > _MAX_NAME:
+        return False
+    if not _SLUG_PATTERN.match(s):
+        return False
+    if any(w in s for w in RESERVED_WORDS):
+        return False
+    return True
+
+
+def _resolve_recommendation(folder_raw, existing):
+    """Returns ('pick', idx) | ('create', slug) | ('none', None)."""
+    slug = _slugify(folder_raw)
+    if not slug:
+        return ("none", None)
+    for i, (name, _count, _skills) in enumerate(existing):
+        if name == slug:
+            return ("pick", i)
+    if not _is_valid_slug(slug):
+        return ("none", None)
+    return ("create", slug)
+
+
 # Constants (from Claude Code's FuzzyPicker study)
 MIN_VISIBLE = 2
 DEFAULT_VISIBLE = 12
