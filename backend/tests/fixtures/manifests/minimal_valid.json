@@ -1,0 +1,9 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "minimal",
+  "owner": {"name": "Test"},
+  "metadata": {"description": "Minimal valid"},
+  "plugins": [
+    {"name": "hello-world", "source": "./plugins/hello-world"}
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "name": "github-mp",
+  "owner": {"name": "GH"},
+  "plugins": [
+    {
+      "name": "python-expert",
+      "source": {"source": "github", "repo": "wshobson/agents", "ref": "main"}
+    }
+  ]
+}
