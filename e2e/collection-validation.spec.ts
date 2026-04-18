@@ -158,4 +158,61 @@ test.describe('Collection name validation', () => {
     expect(meta).not.toBeNull()
     expect(JSON.parse(meta as string)['offline-save']).toBeTruthy()
   })
+
+  test('CollectionPicker inline create — 409 duplicate shows toast, no chip', async ({ page }) => {
+    // Mock /v1/collections: GET returns an existing collection, POST always 409s
+    await page.route('**/v1/collections', async route => {
+      if (route.request().method() === 'POST') {
+        await route.fulfill({
+          status: 409,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            error: { code: 'COLLECTION_EXISTS', message: 'Collection "dup-inline" already exists' },
+          }),
+        })
+      } else {
+        await route.fulfill({
+          status: 200, contentType: 'application/json',
+          body: JSON.stringify([{ name: 'existing-col', count: 0, description: '' }]),
+        })
+      }
+    })
+    // Skills list is empty so the "new skill" route renders cleanly
+    await page.route('**/v1/skills*', route => route.fulfill({
+      status: 200, contentType: 'application/json', body: '[]',
+    }))
+
+    // /skills/new renders SkillEditTab in create mode, which embeds CollectionPicker
+    await page.goto('/skills/new')
+
+    // Inline CollectionPicker's trigger reads "Add collection" when no chips selected
+    const addBtn = page.getByRole('button', { name: /^add collection$/i }).first()
+    await expect(addBtn).toBeVisible({ timeout: 5000 })
+    await addBtn.click()
+
+    // Type a name that will 409 on create
+    const search = page.getByPlaceholder(/search or create/i)
+    await search.fill('dup-inline')
+
+    // The "+ Create" row should appear — click it
+    const createRow = page.getByRole('button', { name: /create ["\u201c]dup-inline["\u201d]/i })
+    await expect(createRow).toBeVisible({ timeout: 2000 })
+    await createRow.click()
+
+    // Toast should appear with "already exists" content
+    await expect(page.getByText(/already exists/i).first()).toBeVisible({ timeout: 5000 })
+
+    // The chip "dup-inline" must NOT be rendered, because the API rejected.
+    // Look specifically within the selected-chips row (the CollectionPicker root)
+    // — the dropdown itself may still contain the text in the create-row button.
+    // After rejection, dropdown stays open, so assert there is no chip with a
+    // Remove button labelled for "dup-inline".
+    await expect(
+      page.getByRole('button', { name: /remove dup-inline/i })
+    ).toHaveCount(0)
+
+    // localStorage should NOT contain a ghost entry for dup-inline
+    const meta = await page.evaluate(() => localStorage.getItem('skillnote:collections-meta'))
+    expect(meta === null || !JSON.parse(meta)['dup-inline']).toBe(true)
+  })
 })
