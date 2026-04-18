@@ -2,9 +2,8 @@ import uuid
 from datetime import datetime
 from typing import List, Optional
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, false as sa_false, func
 from sqlalchemy.dialects.postgresql import UUID, ARRAY
-from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -22,14 +21,16 @@ class Skill(Base):
     current_version: Mapped[int] = mapped_column(Integer, nullable=True, default=0)
     extra_frontmatter: Mapped[Optional[str]] = mapped_column(Text, nullable=True, default=None)
     import_source_id: Mapped[Optional[uuid.UUID]] = mapped_column(
-        PG_UUID(as_uuid=True),
+        UUID(as_uuid=True),
         ForeignKey("import_sources.id", ondelete="SET NULL"),
         nullable=True,
     )
     source_path: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     source_sha: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
     source_content_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
-    forked_from_source: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    forked_from_source: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=sa_false()
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 

@@ -6,6 +6,7 @@ from typing import Optional
 
 from sqlalchemy import (
     Boolean, DateTime, Enum, ForeignKey, Index, String, Text, UniqueConstraint,
+    false as sa_false,
 )
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -38,7 +39,9 @@ class ImportSource(Base):
         Text, ForeignKey("collections.name", ondelete="CASCADE"), nullable=False
     )
 
-    pinned: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    pinned: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=sa_false()
+    )
 
     imported_at_sha: Mapped[Optional[str]] = mapped_column(String(40))
     upstream_sha: Mapped[Optional[str]] = mapped_column(String(40))
@@ -46,7 +49,7 @@ class ImportSource(Base):
     last_synced_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     status: Mapped[str] = mapped_column(
         Enum(*IMPORT_STATUSES, name="import_source_status"),
-        nullable=False, default="up_to_date",
+        nullable=False, default="up_to_date", server_default="up_to_date",
     )
     last_error: Mapped[Optional[str]] = mapped_column(String(1024))
 
