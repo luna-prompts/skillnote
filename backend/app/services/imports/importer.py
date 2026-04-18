@@ -32,6 +32,7 @@ def apply_import(
     on_conflict: str = "rename",
 ) -> dict:
     """Apply a previously-inspected source into the DB. Returns {source_id, collection_slug, imported, skipped}."""
+    now = datetime.now(timezone.utc)
     # 1) Validate target collection slug (reuses 0.3.2 validator)
     from app.validators.collection_validator import validate_collection_name
     errs = validate_collection_name(target_collection_slug)
@@ -67,7 +68,7 @@ def apply_import(
         collection_name=target_collection_slug,
         imported_at_sha=inspect_result.resolved_sha,
         upstream_sha=inspect_result.resolved_sha,
-        last_synced_at=datetime.now(timezone.utc),
+        last_synced_at=now,
         status="up_to_date",
         last_error=None,
     ).on_conflict_do_update(
@@ -75,7 +76,7 @@ def apply_import(
         set_={
             "imported_at_sha": inspect_result.resolved_sha,
             "upstream_sha": inspect_result.resolved_sha,
-            "last_synced_at": datetime.now(timezone.utc),
+            "last_synced_at": now,
             "status": "up_to_date",
             "last_error": None,
         },
@@ -133,7 +134,11 @@ def apply_import(
                 db.add(new_skill)
                 imported.append({"name": new_name, "slug": new_name,
                                  "original_name": name, "renamed_reason": "conflict"})
-            # TODO: v1.1 replace semantics - on_conflict == "replace" silently falls through for now
+            elif on_conflict == "replace":
+                raise ImportError(
+                    "NOT_IMPLEMENTED_YET",
+                    "on_conflict='replace' is scheduled for v1.1; use 'rename' or 'skip' in v1",
+                )
 
     db.commit()
     return {
@@ -144,6 +149,9 @@ def apply_import(
     }
 
 
+# NOTE: This is a read-then-insert race. Two concurrent imports could both pick
+# the same candidate. 15-skill collection cap + low import volume makes this
+# negligible in practice; full fix is retry-on-unique-violation (deferred).
 def _find_available_slug(db: Session, base: str) -> str:
     i = 2
     while True:

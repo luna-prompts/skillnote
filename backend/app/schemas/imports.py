@@ -1,7 +1,7 @@
 """Pydantic request/response schemas for /v1/import/* endpoints."""
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import List, Literal, Optional
 from pydantic import BaseModel, Field
 
 
@@ -47,7 +47,7 @@ class ApplyRequest(BaseModel):
     subpath: Optional[str] = None
     target_collection_slug: Optional[str] = None
     skill_selection: Optional[List[str]] = None  # None = all
-    on_conflict: str = "rename"  # "rename" | "skip" | "replace"
+    on_conflict: Literal["rename", "skip", "replace"] = "rename"
 
 
 class ApplyResponseSkill(BaseModel):

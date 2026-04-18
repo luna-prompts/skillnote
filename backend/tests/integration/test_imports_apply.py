@@ -53,7 +53,14 @@ def test_apply_happy_path_against_mock(monkeypatch, unique_slug):
         # With stub inspector (Task 6) skills will be [] until Task 21 clones.
         # Still, the source row must exist.
         assert isinstance(body["imported"], list)
-        client.delete(f"/v1/import/sources/{body['source_id']}?remove_skills=true")
+        # Cleanup via direct DB call (DELETE endpoint not available until Task 11)
+        from app.db.session import SessionLocal
+        from app.db.models import ImportSource, Collection, Skill
+        with SessionLocal() as cleanup_db:
+            cleanup_db.query(Skill).filter(Skill.import_source_id == body["source_id"]).delete()
+            cleanup_db.query(ImportSource).filter(ImportSource.id == body["source_id"]).delete()
+            cleanup_db.query(Collection).filter(Collection.name == unique_slug).delete()
+            cleanup_db.commit()
 
 
 def test_apply_rejects_invalid_collection_slug():
@@ -62,6 +69,7 @@ def test_apply_rejects_invalid_collection_slug():
         "target_collection_slug": "Bad Name",
     })
     assert status == 422
+    assert body["error"]["code"] in ("VALIDATION_ERROR", "COLLECTION_NAME_INVALID")
 
 
 def test_apply_oversize_selection_rejected():
