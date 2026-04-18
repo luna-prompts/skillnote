@@ -312,6 +312,23 @@ def create_skill(
             raise api_error(422, "COLLECTION_NAME_INVALID",
                             f'Collection "{col_name}": {"; ".join(name_errs)}')
 
+    # Auto-promote: ensure every referenced collection has a row in the
+    # `collections` table so detail/PUT/DELETE endpoints can reach it.
+    # (Without this, a skill can implicitly create a name that is listed via
+    #  GET /v1/collections but 404s on GET /v1/collections/{name}.)
+    if canonical_collections:
+        db.execute(
+            text(
+                "INSERT INTO collections (name, description, created_at, updated_at) "
+                "SELECT n.name, '', now(), now() "
+                "FROM unnest(CAST(:names AS text[])) AS n(name) "
+                "WHERE NOT EXISTS ("
+                "    SELECT 1 FROM collections c WHERE lower(c.name) = lower(n.name)"
+                ")"
+            ),
+            {"names": canonical_collections},
+        )
+
     # Check collection skill-count limits
     for col_name in canonical_collections:
         err = validate_collection_skill_count(db, col_name)
@@ -383,6 +400,22 @@ def update_skill(
             if name_errs:
                 raise api_error(422, "COLLECTION_NAME_INVALID",
                                 f'Collection "{col_name}": {"; ".join(name_errs)}')
+        # Auto-promote: ensure every referenced collection has a row in the
+        # `collections` table so detail/PUT/DELETE endpoints can reach it.
+        # (Without this, a skill can implicitly create a name that is listed via
+        #  GET /v1/collections but 404s on GET /v1/collections/{name}.)
+        if canonical_collections:
+            db.execute(
+                text(
+                    "INSERT INTO collections (name, description, created_at, updated_at) "
+                    "SELECT n.name, '', now(), now() "
+                    "FROM unnest(CAST(:names AS text[])) AS n(name) "
+                    "WHERE NOT EXISTS ("
+                    "    SELECT 1 FROM collections c WHERE lower(c.name) = lower(n.name)"
+                    ")"
+                ),
+                {"names": canonical_collections},
+            )
         # Check skill-count limits for any newly added collections (case-insensitive)
         current_lower = {c.lower() for c in (skill_row.collections or [])}
         for col_name in canonical_collections:

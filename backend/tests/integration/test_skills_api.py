@@ -78,3 +78,77 @@ def test_update_skill_rejects_invalid_collection_name(seed_collection, unique_sk
     )
     assert status == 422
     assert body["error"]["code"] == "COLLECTION_NAME_INVALID"
+
+
+def test_create_skill_auto_promotes_new_collection(unique_skill_slug):
+    """A skill created with a collection name that doesn't have a row
+    should trigger an INSERT into collections so the collection is
+    reachable via GET /v1/collections/{name}."""
+    new_col = f"autopromote-{uuid.uuid4().hex[:8]}"
+
+    # Verify collection doesn't exist yet
+    status, _ = _request("GET", f"/v1/collections/{new_col}")
+    assert status == 404, f"Precondition failed: {new_col} should not exist"
+
+    # Create skill referencing it
+    status, _ = _request("POST", "/v1/skills", _skill_payload(unique_skill_slug, [new_col]))
+    assert status == 201
+
+    # Collection should now be editable
+    status, body = _request("GET", f"/v1/collections/{new_col}")
+    assert status == 200, f"Expected 200 after auto-promote, got {status}: {body}"
+    assert body["name"] == new_col
+
+    # Cleanup
+    _request("DELETE", f"/v1/skills/{unique_skill_slug}")
+    _request("DELETE", f"/v1/collections/{new_col}")
+
+
+def test_patch_skill_auto_promotes_new_collection(seed_collection, unique_skill_slug):
+    """Adding a collection via PATCH also auto-promotes."""
+    # Create skill with seeded collection
+    status, _ = _request("POST", "/v1/skills", _skill_payload(unique_skill_slug, [seed_collection]))
+    assert status == 201
+
+    # PATCH to add a new collection
+    new_col = f"patch-autopromote-{uuid.uuid4().hex[:8]}"
+    status, _ = _request("GET", f"/v1/collections/{new_col}")
+    assert status == 404
+
+    status, _ = _request("PATCH", f"/v1/skills/{unique_skill_slug}",
+                         {"collections": [seed_collection, new_col]})
+    assert status == 200
+
+    status, body = _request("GET", f"/v1/collections/{new_col}")
+    assert status == 200, f"Expected 200 after auto-promote on PATCH, got {status}: {body}"
+
+    # Cleanup
+    _request("DELETE", f"/v1/skills/{unique_skill_slug}")
+    _request("DELETE", f"/v1/collections/{new_col}")
+
+
+def test_auto_promoted_collection_has_empty_description(unique_skill_slug):
+    """An auto-promoted collection should have empty description (not NULL)."""
+    new_col = f"desc-test-{uuid.uuid4().hex[:8]}"
+    status, _ = _request("POST", "/v1/skills", _skill_payload(unique_skill_slug, [new_col]))
+    assert status == 201
+
+    status, body = _request("GET", f"/v1/collections/{new_col}")
+    assert status == 200
+    assert body["description"] == ""
+
+    _request("DELETE", f"/v1/skills/{unique_skill_slug}")
+    _request("DELETE", f"/v1/collections/{new_col}")
+
+
+def test_auto_promote_idempotent_on_existing_collection(seed_collection, unique_skill_slug):
+    """If the collection already exists, skill creation shouldn't fail or duplicate."""
+    status, body = _request("POST", "/v1/skills", _skill_payload(unique_skill_slug, [seed_collection]))
+    assert status == 201
+
+    # Listing should show the collection only once
+    status, cols = _request("GET", "/v1/collections")
+    names = [c["name"] for c in cols]
+    assert names.count(seed_collection) == 1, f"Duplicate entries for {seed_collection}: {names}"
+
+    _request("DELETE", f"/v1/skills/{unique_skill_slug}")
