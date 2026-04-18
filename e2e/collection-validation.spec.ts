@@ -30,16 +30,19 @@ test.describe('Collection name validation', () => {
   test('NewCollectionModal rejects uppercase names', async ({ page }) => {
     await page.goto('/collections')
     await page.getByRole('button', { name: /new collection/i }).first().click()
-    const name = page.getByPlaceholder(/e\.g\./i)
+    const dialog = page.getByRole('dialog')
+    const name = dialog.getByPlaceholder(/e\.g\./i)
     await name.fill('Frontend')
     await name.blur()
-    await expect(page.getByText(/lowercase/i)).toBeVisible()
-    await expect(page.getByRole('button', { name: /^create$/i })).toBeDisabled()
+    await expect(dialog.getByText(/lowercase/i)).toBeVisible()
+    await expect(dialog.getByRole('button', { name: /^create$/i })).toBeDisabled()
   })
 
-  test('NewCollectionModal accepts lowercase slug', async ({ page }) => {
+  test('NewCollectionModal accepts lowercase slug and submits', async ({ page }) => {
+    let postedBody: unknown = null
     await page.route('**/v1/collections', async route => {
       if (route.request().method() === 'POST') {
+        postedBody = JSON.parse(route.request().postData() ?? '{}')
         await route.fulfill({
           status: 201,
           contentType: 'application/json',
@@ -58,18 +61,35 @@ test.describe('Collection name validation', () => {
 
     await page.goto('/collections')
     await page.getByRole('button', { name: /new collection/i }).first().click()
-    const name = page.getByPlaceholder(/e\.g\./i)
+    const dialog = page.getByRole('dialog')
+    const name = dialog.getByPlaceholder(/e\.g\./i)
     await name.fill('devops')
-    await expect(page.getByRole('button', { name: /^create$/i })).toBeEnabled()
+    const createBtn = dialog.getByRole('button', { name: /^create$/i })
+    await expect(createBtn).toBeEnabled()
+    await createBtn.click()
+    await expect(dialog).not.toBeVisible()
+    expect(postedBody).toEqual({ name: 'devops', description: '' })
   })
 
   test('NewCollectionModal rejects reserved word', async ({ page }) => {
     await page.goto('/collections')
     await page.getByRole('button', { name: /new collection/i }).first().click()
-    const name = page.getByPlaceholder(/e\.g\./i)
+    const dialog = page.getByRole('dialog')
+    const name = dialog.getByPlaceholder(/e\.g\./i)
     await name.fill('claude-stuff')
     await name.blur()
-    await expect(page.getByText(/reserved word/i)).toBeVisible()
-    await expect(page.getByRole('button', { name: /^create$/i })).toBeDisabled()
+    await expect(dialog.getByText(/reserved word/i)).toBeVisible()
+    await expect(dialog.getByRole('button', { name: /^create$/i })).toBeDisabled()
+  })
+
+  test('NewCollectionModal rejects XML tags', async ({ page }) => {
+    await page.goto('/collections')
+    await page.getByRole('button', { name: /new collection/i }).first().click()
+    const dialog = page.getByRole('dialog')
+    const name = dialog.getByPlaceholder(/e\.g\./i)
+    await name.fill('<script>')
+    await name.blur()
+    // The regex error fires first (uppercase S and <) — that's OK, still rejected
+    await expect(dialog.getByRole('button', { name: /^create$/i })).toBeDisabled()
   })
 })
