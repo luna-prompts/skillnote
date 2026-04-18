@@ -377,6 +377,12 @@ def update_skill(
     if payload.collections is not None:
         # Canonicalize incoming names to stored case + de-duplicate variants
         canonical_collections = canonicalize_collection_names(db, payload.collections)
+        # Validate each canonical name against the shared rule
+        for col_name in canonical_collections:
+            name_errs = validate_collection_name(col_name)
+            if name_errs:
+                raise api_error(422, "COLLECTION_NAME_INVALID",
+                                f'Collection "{col_name}": {"; ".join(name_errs)}')
         # Check skill-count limits for any newly added collections (case-insensitive)
         current_lower = {c.lower() for c in (skill_row.collections or [])}
         for col_name in canonical_collections:
