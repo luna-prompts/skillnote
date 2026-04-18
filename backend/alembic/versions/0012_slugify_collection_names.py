@@ -48,6 +48,42 @@ def _clamp_with_suffix(base: str, suffix: str) -> str:
     return truncated + suffix
 
 
+def _build_rename_map(rows):
+    """Given a list of (name, created_at) tuples (ordered deterministically by
+    the caller), return dict[old_name -> new_name] for rows that need renaming.
+
+    Invariant: every already-valid name is reserved in `used` BEFORE collision
+    resolution runs, so a collision-resolved `-N` suffix can never clobber a
+    pre-existing valid slug.
+    """
+    # First pass: reserve EVERY already-valid name
+    used: set[str] = {
+        name for name, _created in rows
+        if NAME_PATTERN.match(name) and len(name) <= MAX_LEN
+    }
+
+    # Second pass: slugify + collision-resolve the invalid names only
+    rename: dict[str, str] = {}
+    for name, _created in rows:
+        if name in used:
+            continue  # already a valid slug
+        candidate = _slugify(name) or _fallback(name)
+        # Clamp candidate so the stored name and every `-N` variant fits in MAX_LEN chars.
+        candidate = _clamp_with_suffix(candidate, "")
+        if candidate in used:
+            base = candidate
+            i = 2
+            while True:
+                suffixed = _clamp_with_suffix(base, f"-{i}")
+                if suffixed not in used:
+                    candidate = suffixed
+                    break
+                i += 1
+        rename[name] = candidate
+        used.add(candidate)
+    return rename
+
+
 def upgrade() -> None:
     conn = op.get_bind()
 
@@ -65,34 +101,8 @@ def upgrade() -> None:
         """
     )).all()
 
-    # 2. Build the rename map with collision resolution.
-    # First pass: reserve EVERY already-valid name so later collision resolution
-    # cannot clobber a pre-existing valid slug.
-    used: set[str] = {
-        name for name, _created in rows
-        if NAME_PATTERN.match(name) and len(name) <= MAX_LEN
-    }
-
-    # Second pass: slugify + collision-resolve the invalid names only.
-    rename: dict[str, str] = {}
-    for name, _created in rows:
-        if name in used:
-            continue  # already a valid slug — no rename needed
-        candidate = _slugify(name) or _fallback(name)
-        # Clamp candidate to MAX_LEN before collision check (see I1)
-        candidate = _clamp_with_suffix(candidate, "")
-        if candidate in used:
-            base = candidate
-            i = 2
-            while True:
-                suffixed = _clamp_with_suffix(base, f"-{i}")
-                if suffixed not in used:
-                    candidate = suffixed
-                    break
-                i += 1
-        rename[name] = candidate
-        used.add(candidate)
-
+    # 2. Build the rename map (see _build_rename_map docstring for invariants)
+    rename = _build_rename_map(rows)
     if not rename:
         return  # idempotent no-op
 

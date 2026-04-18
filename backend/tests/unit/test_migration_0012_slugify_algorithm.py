@@ -49,3 +49,47 @@ def test_clamp_with_suffix_never_exceeds_max():
     assert m._clamp_with_suffix("foo", "-2") == "foo-2"
     # Base shorter than allowance — suffix appended as-is
     assert m._clamp_with_suffix("x", "-5") == "x-5"
+
+
+def test_c1_preexisting_valid_slug_not_clobbered():
+    """Regression test: an invalid name whose collision-resolved slug would
+    match a pre-existing valid slug must NOT clobber it."""
+    from datetime import datetime, timedelta, timezone
+    m = _load()
+    t0 = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    rows = [
+        ("Foo!", t0),                         # invalid → slug 'foo'
+        ("bar", t0 + timedelta(days=1)),      # valid, reserved
+        ("Foo@", t0 + timedelta(days=2)),     # invalid → slug 'foo' collides
+        ("foo-2", t0 + timedelta(days=3)),    # valid, MUST be preserved
+    ]
+    rename = m._build_rename_map(rows)
+    assert rename["Foo!"] == "foo"
+    assert rename["Foo@"] == "foo-3"           # skipped 'foo-2' because it's reserved
+    assert "foo-2" not in rename               # pre-existing valid slug not touched
+    assert "bar" not in rename
+
+
+def test_idempotent_on_all_valid():
+    """When every name is already a valid slug, rename map is empty."""
+    from datetime import datetime, timezone
+    m = _load()
+    t0 = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    rows = [("frontend", t0), ("backend", t0), ("devops", t0)]
+    assert m._build_rename_map(rows) == {}
+
+
+def test_clamp_with_suffix_rstrips_trailing_hyphen():
+    m = _load()
+    # Base ending in hyphen after truncation — rstrip leaves 125 chars, plus '-2' = 127
+    assert m._clamp_with_suffix("a" * 125 + "-", "-2") == "a" * 125 + "-2"
+    # Multiple trailing hyphens
+    assert m._clamp_with_suffix("a" * 124 + "---", "-2") == "a" * 124 + "-2"
+
+
+def test_clamp_with_suffix_empty_suffix():
+    m = _load()
+    # Empty suffix — caps base at MAX_LEN
+    assert m._clamp_with_suffix("a" * 150, "") == "a" * 128
+    # Empty suffix with trailing hyphen after truncation — rstrip
+    assert m._clamp_with_suffix("a" * 127 + "-", "") == "a" * 127
