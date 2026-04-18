@@ -4,6 +4,7 @@ import { FolderOpen, Plus, X, Loader2, AlertCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 import { createCollectionApi } from '@/lib/api/collections'
+import { validateCollectionName } from '@/lib/collection-validation'
 
 type Props = { onClose: () => void; onCreated: (name: string, description: string) => void }
 
@@ -22,7 +23,12 @@ export function NewCollectionModal({ onClose, onCreated }: Props) {
   }, [onClose])
 
   async function handleCreate() {
-    if (!name.trim()) { setNameError('Name is required'); nameRef.current?.focus(); return }
+    const errs = validateCollectionName(name)
+    if (errs.length > 0) {
+      setNameError(errs[0].message)
+      nameRef.current?.focus()
+      return
+    }
     setNameError('')
     setSaving(true)
     try {
@@ -81,7 +87,11 @@ export function NewCollectionModal({ onClose, onCreated }: Props) {
               ref={nameRef}
               autoFocus
               value={name}
-              onChange={e => { setName(e.target.value); if (nameError) setNameError('') }}
+              onChange={e => {
+                setName(e.target.value)
+                const errs = validateCollectionName(e.target.value)
+                setNameError(errs[0]?.message ?? '')
+              }}
               onKeyDown={e => e.key === 'Enter' && handleCreate()}
               placeholder="e.g. Frontend, AI Tools, Utilities"
               className={`w-full h-9 px-3 text-[13px] bg-muted/60 border rounded-lg focus:outline-none focus:ring-1 placeholder:text-muted-foreground/50 transition-colors ${
@@ -119,7 +129,7 @@ export function NewCollectionModal({ onClose, onCreated }: Props) {
           <Button
             size="sm"
             className="h-8 text-[13px] gap-1.5 bg-foreground text-background hover:bg-foreground/90"
-            disabled={!name.trim() || saving}
+            disabled={!name.trim() || saving || validateCollectionName(name).length > 0}
             onClick={handleCreate}
           >
             {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
