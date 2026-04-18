@@ -17,6 +17,7 @@ from app.validators.skill_validator import (
     canonicalize_collection_names,
     validate_collection_skill_count,
 )
+from app.validators.collection_validator import validate_collection_name
 
 router = APIRouter(prefix="/v1/skills", tags=["skills"])
 
@@ -303,6 +304,13 @@ def create_skill(
 
     # Canonicalize: map case variants to existing stored forms, de-duplicate
     canonical_collections = canonicalize_collection_names(db, payload.collections or [])
+
+    # Validate each canonical name against the shared collection-name rule
+    for col_name in canonical_collections:
+        name_errs = validate_collection_name(col_name)
+        if name_errs:
+            raise api_error(422, "COLLECTION_NAME_INVALID",
+                            f'Collection "{col_name}": {"; ".join(name_errs)}')
 
     # Check collection skill-count limits
     for col_name in canonical_collections:
