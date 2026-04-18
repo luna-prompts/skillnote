@@ -44,7 +44,15 @@ export function SkillSelectionList({
             <div
               key={s.name}
               role="button"
+              tabIndex={0}
+              aria-pressed={isFocused}
               onClick={() => onFocus(s.name)}
+              onKeyDown={e => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  onFocus(s.name)
+                }
+              }}
               className={`flex items-start gap-2 border-b border-border/20 p-2 last:border-b-0 cursor-pointer ${
                 isFocused ? 'bg-muted/60' : 'hover:bg-muted/30'
               }`}
@@ -54,6 +62,7 @@ export function SkillSelectionList({
                 checked={selection.has(s.name)}
                 onChange={() => onToggle(s.name)}
                 onClick={e => e.stopPropagation()}
+                aria-label={`Select ${s.name}`}
                 className="mt-0.5"
               />
               <div className="min-w-0 flex-1">
@@ -66,7 +75,7 @@ export function SkillSelectionList({
                   onChange={e => { e.stopPropagation(); onConflictChange(s.name, e.target.value as Conflict) }}
                   onClick={e => e.stopPropagation()}
                   className="text-[10px] h-6 rounded border border-border/60 bg-background px-1"
-                  aria-label="Conflict resolution"
+                  aria-label={`Conflict resolution for ${s.name}`}
                 >
                   <option value="rename">Rename</option>
                   <option value="skip">Skip</option>
