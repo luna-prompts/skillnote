@@ -418,7 +418,8 @@ def pick(stdscr, items, recommended=0):
                 else:
                     s(row, nx, name, DIM if not is_rec else 0)
                 if is_rec:
-                    s(row, nx + len(name) + 1, "★", YELLOW | (0 if is_focused else DIM))
+                    rec_label = " (Recommended)"
+                    s(row, nx + len(name), rec_label, DIM if not is_focused else ACCENT)
 
                 cnt = str(count)
                 s(row, bx + left_w - len(cnt) - 2, cnt, DIM)
@@ -439,7 +440,7 @@ def pick(stdscr, items, recommended=0):
                 # Header
                 header = sel_name
                 if sel_is_rec:
-                    header += " ★"
+                    header += " (Recommended)"
                 if focus == "right":
                     s(rr, bx + left_w + 3, "❯ " + header, ACCENT)
                 else:
