@@ -246,6 +246,7 @@ export default function CollectionsPage() {
           </div>
         ) : (
           /* ── Collection grid ── */
+          <>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pb-24 lg:pb-6">
             {filteredCollections.map(col => {
               const slug = collectionSlug(col.name)
@@ -323,6 +324,13 @@ export default function CollectionsPage() {
               )
             })}
           </div>
+          <div className="mt-8 text-center text-[13px] text-muted-foreground pb-8 lg:pb-0">
+            Looking for more?{' '}
+            <Link className="text-foreground hover:underline" href="/browse">
+              Browse the community →
+            </Link>
+          </div>
+          </>
         )}
       </main>
 

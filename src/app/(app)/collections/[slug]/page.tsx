@@ -8,6 +8,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { getSkills, syncSkillsFromApi, saveSkillEdit } from '@/lib/skills-store'
 import { fetchCollectionApi, fetchCollectionsApi, updateCollectionApi, deleteCollectionApi, createCollectionApi, type CollectionListItem } from '@/lib/api/collections'
+import { listSources, type SourceListItem } from '@/lib/api/imports'
 import { collectionSlug, decodeCollectionSlug } from '@/lib/derived'
 import { type Skill } from '@/lib/mock-data'
 import { toast } from 'sonner'
@@ -40,6 +41,15 @@ export default function CollectionDetailPage() {
 
   // Delete state
   const [confirmDelete, setConfirmDelete] = useState(false)
+
+  // Import source backing this collection (if any) — drives the "Imported from …" banner
+  const [source, setSource] = useState<SourceListItem | null>(null)
+
+  useEffect(() => {
+    listSources()
+      .then((all) => setSource(all.find(s => s.collection_slug === slug) ?? null))
+      .catch(() => setSource(null))
+  }, [slug])
 
   useEffect(() => {
     syncSkillsFromApi().then(setSkills).catch(() => {})
@@ -374,6 +384,15 @@ export default function CollectionDetailPage() {
             </div>
           )}
         </div>
+
+        {/* ── Imported-from banner ── */}
+        {source && (
+          <div className="mx-6 mt-4 rounded-md border border-border/40 bg-muted/40 px-4 py-2 text-[12px] text-muted-foreground">
+            Imported from {source.host}/{source.owner}/{source.repo} · Tracking {source.ref ?? 'main'}
+            {source.imported_at_sha ? ` · ${source.imported_at_sha.slice(0, 7)}` : ''} ·{' '}
+            <Link className="ml-1 text-foreground hover:underline" href="/browse">Manage source</Link>
+          </div>
+        )}
 
         {/* ── Skill list ── */}
         {filtered.length === 0 ? (
