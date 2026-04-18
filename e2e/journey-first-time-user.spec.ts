@@ -55,8 +55,8 @@ test('first-time user imports wshobson/agents', async ({ page }) => {
   await input.blur()
 
   await expect(page.getByText(/github.com\/wshobson\/agents/i)).toBeVisible()
-  await expect(page.getByText('python-expert')).toBeVisible()
-  await expect(page.getByText('react-tuner')).toBeVisible()
+  await expect(page.getByRole('button', { name: /python-expert/i })).toBeVisible()
+  await expect(page.getByRole('button', { name: /react-tuner/i })).toBeVisible()
 
   await page.getByRole('button', { name: /Import 2 skills/i }).click()
   await expect(page.getByText(/Imported 2 skills from wshobson\/agents/i)).toBeVisible({ timeout: 5000 })
