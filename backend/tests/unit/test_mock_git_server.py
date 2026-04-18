@@ -22,3 +22,12 @@ def test_mock_nonexistent_repo_returns_404():
     with MockServer() as srv:
         r = requests.get(f"{srv.api_base}/repos/no/such/commits/main")
         assert r.status_code == 404
+
+
+def test_mock_reset_mode():
+    import requests
+    with MockServer() as srv:
+        srv.serve_repo("a/b", ref="main", sha="deadbeef")
+        srv.set_failure_mode("reset")
+        r = requests.get(f"{srv.api_base}/repos/a/b/commits/main")
+        assert r.status_code == 502

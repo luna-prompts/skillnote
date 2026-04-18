@@ -13,11 +13,9 @@ Usage in a test:
 """
 from __future__ import annotations
 
-import tempfile
 import threading
 import time
 from contextlib import contextmanager
-from pathlib import Path
 from typing import Iterable, Optional
 
 from flask import Flask, Response, abort, jsonify
@@ -31,7 +29,6 @@ class MockServer:
     def __init__(self):
         self.app = Flask(__name__)
         self._setup_routes()
-        self.tmp = Path(tempfile.mkdtemp(prefix="mockgit-"))
         self.server = None
         self.thread = None
         self.port = None
@@ -49,6 +46,8 @@ class MockServer:
                 abort(403)
             if self._failure_mode == "timeout":
                 time.sleep(35)
+            if self._failure_mode == "reset":
+                abort(502)
             entry = self._repos.get((owner, repo, ref))
             if not entry:
                 abort(404)
@@ -59,9 +58,16 @@ class MockServer:
             # Return a minimal git smart-HTTP response for shallow clone
             # (In practice tests may shell out to a real git CLI; this stub
             # is sufficient for tests that don't actually clone.)
-            entry = self._repos.get((owner, repo, "main"))
-            if not entry:
+            matching = [
+                (o, r, ref)
+                for (o, r, ref) in self._repos.keys()
+                if o == owner and r == repo
+            ]
+            if not matching:
                 abort(404)
+            # Use the first configured ref for this repo
+            _, _, ref = matching[0]
+            entry = self._repos[(owner, repo, ref)]
             return Response(
                 f"# service=git-upload-pack\n0000{entry['sha']}\n",
                 mimetype="application/x-git-upload-pack-advertisement",
