@@ -159,3 +159,45 @@ def test_source_entry_omits_ref_when_none():
     assert entry["source"] == "git-subdir"
     assert "ref" not in entry
     assert entry["sha"] == "deadbeef"
+
+
+def test_publisher_output_validates_against_claude_schema(db_session):
+    """Publisher output must round-trip through Claude Code's schema port."""
+    import uuid
+    from tests.fixtures.claude_schemas import ClaudeMarketplace
+
+    slug = f"cross-{uuid.uuid4().hex[:8]}"
+    col = Collection(name=slug, description="x")
+    db_session.add(col)
+    db_session.commit()
+
+    src = ImportSource(
+        source_type="github", url=f"github.com/o/r-{uuid.uuid4().hex[:6]}",
+        host="github.com", owner="o", repo="r", ref="main", kind="plugin",
+        collection_name=slug, imported_at_sha="abc1234",
+    )
+    db_session.add(src)
+    db_session.commit()
+
+    imported = Skill(
+        id=uuid.uuid4(), name=f"imp-{slug}", slug=f"imp-{slug}",
+        description="imported", collections=[slug],
+        import_source_id=src.id, source_path="skills/imp",
+        source_sha="abc1234", source_content_hash="hash",
+    )
+    db_session.add(imported)
+    db_session.commit()
+
+    from app.services.imports.publisher import serialize_collection
+    manifest = serialize_collection(db_session, slug)
+
+    # Must parse cleanly via the Claude Code schema
+    parsed = ClaudeMarketplace.model_validate(manifest)
+    assert parsed.name == slug
+    assert len(parsed.plugins) == 1
+
+    # Cleanup
+    db_session.delete(imported)
+    db_session.delete(src)
+    db_session.delete(col)
+    db_session.commit()
