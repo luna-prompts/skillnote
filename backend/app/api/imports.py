@@ -7,10 +7,11 @@ the global HTTPException handler in app/main.py.
 """
 from __future__ import annotations
 
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import List
 
-from fastapi import APIRouter, BackgroundTasks, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.core.errors import api_error
@@ -24,6 +25,7 @@ from app.schemas.imports import (
     InspectResponse,
     InspectResponseSource,
     InspectSkill,
+    RefreshRequest,
     SourceListItem,
 )
 from app.services.imports.input_parser import parse_input
@@ -181,3 +183,61 @@ def _probe_in_bg(src_id):
         if src:
             probe_head_sha(src)
             db.commit()
+
+
+def _coerce_source_id(source_id: str) -> uuid.UUID:
+    """Coerce a path-param string into a UUID. Invalid → 404 (same as not-found)."""
+    try:
+        return uuid.UUID(source_id)
+    except (ValueError, AttributeError, TypeError):
+        raise api_error(404, "SOURCE_NOT_FOUND", "Import source not found")
+
+
+@router.post("/sources/{source_id}/refresh")
+def refresh_endpoint(source_id: str, body: RefreshRequest, db: Session = Depends(get_db)):
+    sid = _coerce_source_id(source_id)
+    src = db.get(ImportSource, sid)
+    if not src:
+        raise api_error(404, "SOURCE_NOT_FOUND", "Import source not found")
+
+    if body.mode == "preview":
+        probe_head_sha(src)
+        db.commit()
+        return {
+            "source_id": str(src.id),
+            "from_sha": src.imported_at_sha,
+            "to_sha": src.upstream_sha,
+            # v1 stub — full diff materialization arrives in v1.1.
+            "new": [],
+            "changed": [],
+            "removed": [],
+        }
+    # "apply" — Literal validation guarantees mode is preview or apply.
+    # v1 stub — full diff-apply arrives in v1.1.
+    return {"applied": 0}
+
+
+@router.delete("/sources/{source_id}", status_code=204)
+def delete_source(
+    source_id: str,
+    remove_skills: bool = Query(False),
+    db: Session = Depends(get_db),
+):
+    sid = _coerce_source_id(source_id)
+    src = db.get(ImportSource, sid)
+    if not src:
+        raise api_error(404, "SOURCE_NOT_FOUND", "Import source not found")
+
+    if remove_skills:
+        db.query(Skill).filter(Skill.import_source_id == src.id).delete(
+            synchronize_session=False
+        )
+    else:
+        # Keep the skills but unlink: SET NULL + mark forked per spec.
+        for skill in db.query(Skill).filter(Skill.import_source_id == src.id).all():
+            skill.import_source_id = None
+            skill.forked_from_source = True
+
+    db.delete(src)
+    db.commit()
+    return None

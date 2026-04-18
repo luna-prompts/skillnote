@@ -82,3 +82,10 @@ class SourceListItem(BaseModel):
     status: str
     skill_count: int
     drift_summary: Optional[dict] = None
+
+
+class RefreshRequest(BaseModel):
+    mode: Literal["preview", "apply"] = "preview"
+    new_skills: Optional[List[str]] = None
+    changed_skills: Optional[List[str]] = None
+    removed_skills: Optional[List[str]] = None
