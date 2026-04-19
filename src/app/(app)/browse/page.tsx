@@ -46,7 +46,7 @@ export default function BrowsePage() {
   const sourceCount = sources?.length ?? 0
 
   return (
-    <div className="mx-auto w-full max-w-5xl px-6 py-8">
+    <div className="mx-auto w-full max-w-6xl px-6 py-8">
       <header className="mb-6 flex items-start justify-between gap-4">
         <div>
           <h1 className="text-xl font-semibold">Browse</h1>
