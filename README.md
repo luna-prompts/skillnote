@@ -29,6 +29,7 @@
   <a href="#the-problem">The Problem</a> &middot;
   <a href="#quick-start">Quick Start</a> &middot;
   <a href="#why-collections">Collections</a> &middot;
+  <a href="#marketplace">Marketplace</a> &middot;
   <a href="#agent-reviews">Reviews</a> &middot;
   <a href="#live-sync">Live Sync</a> &middot;
   <a href="#the-web-ui">Web UI</a> &middot;
@@ -97,6 +98,48 @@ Your frontend project gets React hooks and testing patterns. Your API project ge
 - If your folder name matches a collection, the plugin recommends it automatically
 
 > Read more about Claude Code's skill description budget in the [official documentation](https://docs.anthropic.com/en/docs/claude-code/skills).
+
+---
+
+## Marketplace
+
+The Claude Code community has already curated hundreds of `SKILL.md` files in public GitHub repos. SkillNote's **Marketplace** tab pulls them straight into your self-hosted registry with full provenance, per-skill selection, and safe upsert on re-install.
+
+<p align="center">
+  <img src="docs/screenshots/marketplace-empty.png" width="100%" alt="SkillNote marketplace import page with three example marketplaces" />
+</p>
+
+**Paste anything GitHub understands:**
+
+- Shorthand: `wshobson/agents`, `anthropics/skills`
+- Full repo URL: `https://github.com/wshobson/agents`
+- Tree URL to a subfolder: `https://github.com/affaan-m/everything-claude-code/tree/main/.agents/skills`
+- Claude Code marketplace manifest (`anthropic.json`)
+
+The inspector shallow-clones with sparse checkout (scoped to a subfolder if given), scans every `SKILL.md`, validates YAML frontmatter, and opens a full-page workspace before anything lands in your library.
+
+<p align="center">
+  <img src="docs/screenshots/marketplace-workspace-v2.png" width="100%" alt="Marketplace workspace: sidebar with numbered skill selection and the algorithmic-art skill rendered in the preview pane on the right, with collection picker and Add button in the footer" />
+</p>
+
+**In the workspace you can:**
+
+- Filter and pick exactly which skills to install (sidebar search, numbered rows, select-all / none)
+- Preview each `SKILL.md` rendered exactly as it will appear post-install (right pane, drag to resize)
+- Choose an **existing** collection from a Jira-style combobox with fuzzy match, or create a new one inline; the inferred slug is tagged **Recommended**
+- See an amber warning if you've selected more than the 15-skill cap, with a one-click suggestion to split into themed collections
+
+**Upsert on re-install.** Re-importing from the same source is idempotent: unchanged skills are a no-op, and any skill you've edited locally gets cleanly overwritten with the upstream version when you hit the button again (`on_conflict: 'replace'`). No duplicates, no rename suffixes, no forked-state drift.
+
+### Endpoints powering the flow
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /v1/import/inspect` | Shallow-clone + scan; returns skills, suggested slug, resolved SHA. |
+| `POST /v1/import/apply` | Upsert selected skills. Supports `on_conflict: 'rename' \| 'skip' \| 'replace'`. |
+| `GET  /v1/sources` | List of all import sources (for drift tracking). |
+| `POST /v1/sources/{id}/refresh` | Re-inspect an existing source for drift. |
+| `GET  /v1/skills/{slug}` | Returns a new `origin` field: `{owner, repo, ref, subpath, path, sha, url, forked}`. |
 
 ---
 

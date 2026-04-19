@@ -1,9 +1,27 @@
+import logging
+
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
+
+# Ensure our application loggers (skillnote.*) propagate to uvicorn's stdout
+# handler. Uvicorn only configures its own loggers by default, so named app
+# loggers stay silent unless we attach a handler or enable the root logger.
+# We attach uvicorn's handler to "skillnote" — all child loggers inherit.
+_skillnote_logger = logging.getLogger("skillnote")
+if _skillnote_logger.level == logging.NOTSET:
+    _skillnote_logger.setLevel(logging.INFO)
+if not _skillnote_logger.handlers:
+    _handler = logging.StreamHandler()
+    _handler.setFormatter(logging.Formatter(
+        "%(levelname)s:     %(name)s: %(message)s"
+    ))
+    _skillnote_logger.addHandler(_handler)
+# Don't propagate up to root (avoids double-logging if root is configured).
+_skillnote_logger.propagate = False
 from app.api.analytics import router as analytics_router
 from app.api.skills import router as skills_router
 from app.api.downloads import router as downloads_router
@@ -14,6 +32,8 @@ from app.api.collections import router as collections_router
 from app.api.hooks import router as hooks_router
 from app.api.setup import router as setup_router
 from app.api.sessions import router as sessions_router
+from app.api.imports import router as imports_router
+from app.api.marketplace import router as marketplace_router
 
 app = FastAPI(title="SkillNote Backend", version="0.1.0")
 
@@ -99,6 +119,8 @@ app.include_router(collections_router)
 app.include_router(hooks_router)
 app.include_router(setup_router)
 app.include_router(sessions_router)
+app.include_router(imports_router)
+app.include_router(marketplace_router)
 
 
 @app.get("/health")

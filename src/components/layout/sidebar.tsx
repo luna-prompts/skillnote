@@ -1,7 +1,7 @@
 'use client'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { BookOpen, FolderOpen, Settings, HelpCircle, X, Plug2, BarChart2 } from 'lucide-react'
+import { BookOpen, FolderOpen, Settings, HelpCircle, X, Plug2, BarChart2, Store } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useEffect, useMemo, useState } from 'react'
 import { getSkills, syncSkillsFromApi, getConnectionStatus, onConnectionStatusChange } from '@/lib/skills-store'
@@ -71,6 +71,27 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
             </Link>
           )
         })}
+
+        {/* Marketplace — install skills from Claude Code plugin marketplaces */}
+        <div className="pt-3 mt-1.5 border-t border-[var(--sidebar-border)]/40">
+          {(() => {
+            const isActive = pathname.startsWith('/marketplace')
+            return (
+              <Link
+                href="/marketplace"
+                className={cn(
+                  'flex items-center gap-2.5 px-2.5 py-2 rounded-md text-[13px] font-medium transition-all duration-150',
+                  isActive
+                    ? 'bg-accent/12 text-accent border-l-2 border-accent -ml-px'
+                    : 'text-[var(--muted-foreground)] hover:text-[var(--sidebar-foreground)] hover:bg-[var(--sidebar-accent)]'
+                )}
+              >
+                <Store className={cn('h-[15px] w-[15px] shrink-0', isActive ? 'text-accent' : '')} />
+                Marketplace
+              </Link>
+            )
+          })()}
+        </div>
 
         {/* Connect section */}
         <div className="pt-3 mt-1.5 border-t border-[var(--sidebar-border)]/40">

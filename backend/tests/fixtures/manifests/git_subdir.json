@@ -1,0 +1,10 @@
+{
+  "name": "subdir-mp",
+  "owner": {"name": "S"},
+  "plugins": [
+    {
+      "name": "from-subdir",
+      "source": {"source": "git-subdir", "url": "https://github.com/example/repo.git", "path": "plugins/foo", "ref": "main"}
+    }
+  ]
+}

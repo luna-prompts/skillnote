@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
-import { RotateCcw, Save, Loader2, X, AlertCircle, ArrowRight, ChevronDown } from 'lucide-react'
+import { RotateCcw, Save, Loader2, X, AlertCircle, ArrowRight, ChevronDown, GitFork } from 'lucide-react'
 import { NAME_MAX, DESC_MAX, slugFromName, normalizeSkillName, validateSkillName, validateDescription, validateCollections } from '@/lib/skill-validation'
 import { Button } from '@/components/ui/button'
 import { WysiwygEditor, type EditorMode } from '@/components/skills/WysiwygEditor'
@@ -34,6 +34,12 @@ type SkillEditTabProps = {
   currentVersion?: number
   /** Total versions created (used for next version counter) */
   latestVersion?: number
+  /** Import source ID (set when skill was imported from a marketplace/upstream). */
+  importSourceId?: string | null
+  /** Whether this imported skill has already been forked (content diverged from upstream). */
+  forkedFromSource?: boolean
+  /** Human-readable upstream path, shown in the fork-confirm modal. */
+  sourcePath?: string | null
 }
 
 export function SkillEditTab({
@@ -42,12 +48,16 @@ export function SkillEditTab({
   skillSlug, skillCollections = [], setSkillCollections,
   extraFrontmatter, setExtraFrontmatter,
   openFullscreen, mode = 'edit', saving = false, currentVersion, latestVersion,
+  importSourceId, forkedFromSource, sourcePath,
 }: SkillEditTabProps) {
   const [fullscreen, setFullscreen] = useState(false)
   const [touched, setTouched] = useState<Record<string, boolean>>({})
   const [showSaveConfirm, setShowSaveConfirm] = useState(false)
+  const [showForkConfirm, setShowForkConfirm] = useState(false)
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [editorMode, setEditorMode] = useState<EditorMode>('wysiwyg')
+  /** True when this edit is operating on an imported, not-yet-forked skill. */
+  const needsForkConfirm = mode === 'edit' && !!importSourceId && !forkedFromSource
   const nameRef = useRef<HTMLInputElement>(null)
   const descRef = useRef<HTMLTextAreaElement>(null)
 
@@ -136,17 +146,34 @@ export function SkillEditTab({
     if (cErrs.length > 0) {
       return
     }
+    // Imported skills that have not yet been forked need user confirmation
+    // before the first edit is persisted. The backend auto-flips forked_from_source
+    // on PATCH when content diverges from source_content_hash.
+    if (needsForkConfirm) {
+      setShowForkConfirm(true)
+      return
+    }
     if (mode === 'edit' && currentVersion) {
       setShowSaveConfirm(true)
     } else {
       onSave()
     }
-  }, [skillTitle, skillDescription, skillCollections, mode, currentVersion, onSave])
+  }, [skillTitle, skillDescription, skillCollections, mode, currentVersion, onSave, needsForkConfirm])
 
   const confirmSave = useCallback(() => {
     setShowSaveConfirm(false)
     onSave()
   }, [onSave])
+
+  /** User confirmed the fork. Dismiss the fork modal and continue the normal save flow. */
+  const confirmFork = useCallback(() => {
+    setShowForkConfirm(false)
+    if (mode === 'edit' && currentVersion) {
+      setShowSaveConfirm(true)
+    } else {
+      onSave()
+    }
+  }, [mode, currentVersion, onSave])
 
   const saveButtonLabel = mode === 'create'
     ? 'Create Skill'
@@ -187,6 +214,58 @@ export function SkillEditTab({
         </Button>
       </div>
     </>
+  )
+
+  /* Fork confirmation popup — fires on first edit of an imported, not-yet-forked skill */
+  const forkConfirmDialog = showForkConfirm && (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 animate-in fade-in duration-150"
+      onClick={() => setShowForkConfirm(false)}
+    >
+      <div
+        className="w-full max-w-md bg-card border border-border rounded-xl shadow-2xl p-6 animate-in zoom-in-95 duration-150"
+        onClick={e => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="fork-confirm-title"
+      >
+        <div className="flex items-center justify-center mb-4">
+          <div className="h-12 w-12 rounded-full bg-accent/10 flex items-center justify-center">
+            <GitFork className="h-5 w-5 text-accent" />
+          </div>
+        </div>
+        <h2 id="fork-confirm-title" className="text-base font-semibold text-foreground text-center mb-2">
+          Fork this skill?
+        </h2>
+        <p className="text-[13px] text-muted-foreground text-center leading-relaxed mb-1">
+          This skill is imported from
+        </p>
+        <p className="text-[12px] font-mono text-foreground/80 text-center mb-4 break-all">
+          {sourcePath || 'an upstream source'}
+        </p>
+        <p className="text-[12px] text-muted-foreground text-center leading-relaxed mb-5">
+          Editing creates a local fork. Your changes will be preserved, but future upstream updates won&apos;t flow in automatically &mdash; you&apos;ll need to pull them manually.
+        </p>
+        <div className="flex justify-end gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 min-h-[44px] sm:min-h-0 text-[13px]"
+            onClick={() => setShowForkConfirm(false)}
+          >
+            Cancel
+          </Button>
+          <Button
+            size="sm"
+            className="h-8 min-h-[44px] sm:min-h-0 gap-1.5 text-[13px] bg-foreground text-background hover:bg-foreground/90"
+            onClick={confirmFork}
+          >
+            <GitFork className="h-3.5 w-3.5" />
+            Fork and save
+          </Button>
+        </div>
+      </div>
+    </div>
   )
 
   /* Save confirmation popup — edit mode only */
@@ -389,6 +468,7 @@ export function SkillEditTab({
             />
           </div>
         </div>
+        {forkConfirmDialog}
         {saveConfirmDialog}
       </>
     )
@@ -408,6 +488,7 @@ export function SkillEditTab({
           {footerContent}
         </div>
       </div>
+      {forkConfirmDialog}
       {saveConfirmDialog}
     </>
   )

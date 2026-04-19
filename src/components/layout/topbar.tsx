@@ -17,6 +17,13 @@ type TopBarProps = {
   searchQuery?: string
   onSearchChange?: (query: string) => void
   showFab?: boolean
+  /**
+   * 'skills' (default) renders the skills search + Upload + New Skill.
+   * 'collections' renders a collections search + New Collection; callers pass
+   *   onNewCollection and use the shared searchQuery/onSearchChange wiring.
+   */
+  variant?: 'skills' | 'collections'
+  onNewCollection?: () => void
 }
 
 function Breadcrumbs() {
@@ -60,7 +67,9 @@ function Breadcrumbs() {
   )
 }
 
-export function TopBar({ view = 'list', onViewChange, showViewToggle = false, searchQuery = '', onSearchChange, showFab = true }: TopBarProps) {
+export function TopBar({ view = 'list', onViewChange, showViewToggle = false, searchQuery = '', onSearchChange, showFab = true, variant = 'skills', onNewCollection }: TopBarProps) {
+  const isCollectionsVariant = variant === 'collections'
+  const searchPlaceholder = isCollectionsVariant ? 'Search collections...' : 'Search skills...'
   const { theme, setTheme } = useTheme()
   const { setOpen: setSidebarOpen } = useSidebar()
   const searchRef = useRef<HTMLInputElement>(null)
@@ -80,14 +89,14 @@ export function TopBar({ view = 'list', onViewChange, showViewToggle = false, se
       }
       const inInput = ['INPUT', 'TEXTAREA'].includes((e.target as Element).tagName) ||
         (e.target as Element).hasAttribute('contenteditable')
-      if (e.key === 'n' && !inInput && !e.metaKey && !e.ctrlKey) {
+      if (e.key === 'n' && !inInput && !e.metaKey && !e.ctrlKey && !isCollectionsVariant) {
         e.preventDefault()
         router.push('/skills/new')
       }
     }
     document.addEventListener('keydown', handler)
     return () => document.removeEventListener('keydown', handler)
-  }, [])
+  }, [isCollectionsVariant, router])
 
   return (
     <>
@@ -111,7 +120,7 @@ export function TopBar({ view = 'list', onViewChange, showViewToggle = false, se
                 value={searchQuery}
                 onChange={e => onSearchChange?.(e.target.value)}
                 className="w-full pl-8 pr-4 py-1.5 text-[13px] bg-muted/60 rounded-lg border border-border/60 focus:outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/70 transition-all"
-                placeholder="Search skills..."
+                placeholder={searchPlaceholder}
                 autoFocus
               />
             </div>
@@ -131,7 +140,7 @@ export function TopBar({ view = 'list', onViewChange, showViewToggle = false, se
                 value={searchQuery}
                 onChange={e => onSearchChange?.(e.target.value)}
                 className="w-full pl-8 pr-10 py-1.5 text-[13px] bg-muted/60 rounded-lg border border-border/60 focus:outline-none focus:ring-1 focus:ring-ring focus:border-ring placeholder:text-muted-foreground/70 transition-all"
-                placeholder="Search skills..."
+                placeholder={searchPlaceholder}
               />
               <kbd className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground/50 font-mono hidden sm:block">⌘K</kbd>
             </div>
@@ -167,17 +176,26 @@ export function TopBar({ view = 'list', onViewChange, showViewToggle = false, se
                 </div>
               )}
 
-              {/* Import - hidden on mobile */}
-              <Button variant="outline" size="sm" className="h-8 gap-1.5 text-[13px] font-medium border-border/60 hidden lg:flex" onClick={() => setImportOpen(true)}>
-                <Upload className="h-3.5 w-3.5" />
-                Import
-              </Button>
+              {isCollectionsVariant ? (
+                <Button size="sm" className="h-8 gap-1.5 text-[13px] font-medium bg-foreground text-background hover:bg-foreground/90 border-0" onClick={() => onNewCollection?.()}>
+                  <Plus className="h-3.5 w-3.5" />
+                  New Collection
+                </Button>
+              ) : (
+                <>
+                  {/* Upload a local SKILL.md, hidden on mobile */}
+                  <Button variant="outline" size="sm" className="h-8 gap-1.5 text-[13px] font-medium border-border/60 hidden lg:flex" onClick={() => setImportOpen(true)}>
+                    <Upload className="h-3.5 w-3.5" />
+                    Upload
+                  </Button>
 
-              {/* New Skill - hidden on mobile (becomes FAB) */}
-              <Button size="sm" className="h-8 gap-1.5 text-[13px] font-medium bg-foreground text-background hover:bg-foreground/90 border-0 hidden lg:flex" onClick={() => router.push('/skills/new')}>
-                <Plus className="h-3.5 w-3.5" />
-                New Skill
-              </Button>
+                  {/* New Skill, hidden on mobile (becomes FAB) */}
+                  <Button size="sm" className="h-8 gap-1.5 text-[13px] font-medium bg-foreground text-background hover:bg-foreground/90 border-0 hidden lg:flex" onClick={() => router.push('/skills/new')}>
+                    <Plus className="h-3.5 w-3.5" />
+                    New Skill
+                  </Button>
+                </>
+              )}
 
               <button
                 className="h-8 w-8 flex items-center justify-center rounded-lg border border-border/60 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
@@ -192,8 +210,8 @@ export function TopBar({ view = 'list', onViewChange, showViewToggle = false, se
         )}
       </header>
 
-      {/* Mobile FAB — New Skill */}
-      {showFab && (
+      {/* Mobile FAB for New Skill; suppressed on collections pages */}
+      {showFab && !isCollectionsVariant && (
         <button
           className="fixed bottom-[calc(4rem+env(safe-area-inset-bottom)+0.75rem)] right-6 z-40 w-14 h-14 rounded-full bg-accent text-white shadow-lg hover:bg-accent/90 active:scale-95 flex items-center justify-center transition-all lg:hidden"
           aria-label="New Skill"

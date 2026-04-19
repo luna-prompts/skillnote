@@ -1,0 +1,10 @@
+{
+  "name": "url-mp",
+  "owner": {"name": "U"},
+  "plugins": [
+    {
+      "name": "from-url",
+      "source": {"source": "url", "url": "https://example.com/skill.zip"}
+    }
+  ]
+}

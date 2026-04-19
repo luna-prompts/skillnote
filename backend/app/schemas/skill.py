@@ -6,6 +6,21 @@ import uuid
 from app.validators.skill_validator import validate_skill_name, validate_skill_description, validate_collections
 
 
+class SkillOrigin(BaseModel):
+    """Where a skill came from — attached when the skill was imported from an upstream."""
+
+    source_type: str                      # "github" | "git" | "url" | ...
+    host: Optional[str] = None            # e.g. "github.com"
+    owner: Optional[str] = None           # e.g. "wshobson"
+    repo: Optional[str] = None            # e.g. "agents"
+    subpath: Optional[str] = None         # folder within the repo
+    ref: Optional[str] = None             # branch/tag at import time
+    path: Optional[str] = None            # path to the SKILL.md in-repo
+    sha: Optional[str] = None             # commit SHA at import time
+    url: Optional[str] = None             # deep link to the file on GitHub (when derivable)
+    forked: bool = False                  # user has edited since import
+
+
 class SkillListItem(BaseModel):
     model_config = {"from_attributes": True}
 
@@ -19,6 +34,7 @@ class SkillListItem(BaseModel):
     currentVersion: int = 0
     content_md: Optional[str] = ""
     extra_frontmatter: Optional[str] = None
+    origin: Optional[SkillOrigin] = None
 
 
 class SkillDetail(BaseModel):
@@ -31,6 +47,7 @@ class SkillDetail(BaseModel):
     current_version: int = 0
     total_versions: int = 0
     extra_frontmatter: Optional[str] = None
+    origin: Optional[SkillOrigin] = None
     created_at: datetime
     updated_at: datetime
 
