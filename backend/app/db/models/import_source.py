@@ -30,7 +30,7 @@ class ImportSource(Base):
     host: Mapped[Optional[str]] = mapped_column(Text)
     owner: Mapped[Optional[str]] = mapped_column(Text)
     repo: Mapped[Optional[str]] = mapped_column(Text)
-    subpath: Mapped[Optional[str]] = mapped_column(Text)
+    subpath: Mapped[str] = mapped_column(Text, nullable=False, server_default="", default="")
     ref: Mapped[Optional[str]] = mapped_column(Text)
 
     kind: Mapped[str] = mapped_column(Enum(*IMPORT_KINDS, name="import_source_kind"), nullable=False)

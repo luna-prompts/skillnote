@@ -56,10 +56,24 @@ def inspect_source(parsed: Optional[dict], *, token: Optional[str] = None, timeo
 
     repo = parsed["repo"]
     owner_str, repo_str = repo.split("/", 1)
-    ref = parsed.get("ref", "main")
-
+    # If no ref given, fetch the default branch from /repos/{o}/{r} first.
+    # Hardcoding "main" breaks for repos still on "master" (Bug #1).
+    ref = parsed.get("ref")
     api_base = GITHUB_API_BASE().rstrip("/")
-    api_url = f"{api_base}/repos/{owner_str}/{repo_str}/commits/{ref}"
+    if not ref:
+        try:
+            probe_req = urllib.request.Request(
+                f"{api_base}/repos/{owner_str}/{repo_str}",
+                headers={"User-Agent": "skillnote-import/0.3.3",
+                         **({"Authorization": f"token {token}"} if token else {})},
+            )
+            with urllib.request.urlopen(probe_req, timeout=timeout_s) as resp:
+                meta = json.loads(resp.read())
+            ref = meta.get("default_branch") or "main"
+        except Exception:
+            # Fall back — git clone (no --branch) will pick HEAD
+            ref = None
+    api_url = f"{api_base}/repos/{owner_str}/{repo_str}/commits/{ref or 'HEAD'}"
     headers = {"User-Agent": "skillnote-import/0.3.3"}
     if token:
         headers["Authorization"] = f"token {token}"

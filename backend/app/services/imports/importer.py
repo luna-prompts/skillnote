@@ -64,7 +64,7 @@ def apply_import(
         owner=inspect_result.owner,
         repo=inspect_result.repo,
         ref=inspect_result.ref,
-        subpath=inspect_result.subpath,
+        subpath=inspect_result.subpath or "",  # NOT NULL since 0014; '' means "whole repo"
         kind=inspect_result.kind or "plugin",
         collection_name=target_collection_slug,
         imported_at_sha=inspect_result.resolved_sha,

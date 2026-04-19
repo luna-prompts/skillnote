@@ -201,8 +201,8 @@ function StatusPill({
       </span>
     )
   }
-  if (status === 'drift' && summary) {
-    const label = `${summary.new} new · ${summary.changed} changed`
+  if (status === 'drift') {
+    const label = summary ? `${summary.new} new · ${summary.changed} changed` : 'drift'
     if (onDriftClick) {
       return (
         <button

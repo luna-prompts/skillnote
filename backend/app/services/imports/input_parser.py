@@ -78,11 +78,15 @@ def parse_input(raw: str) -> Optional[dict]:
                 r["ref"] = ref
             return r
 
-        # GitHub URLs → git with .git suffix
+        # GitHub URLs → classify as "github" source_type (same flow as shorthand)
+        # so the inspector's API-probe + clone path handles them. Previously
+        # classified as "git" which the inspector rejects with UNSUPPORTED_SOURCE_TYPE.
         gh = _GH_HTTPS_RE.match(url)
         if gh:
-            git_url = url if url.endswith(".git") else url + ".git"
-            r = {"source_type": "git", "url": git_url}
+            repo_slug = gh.group(1).removesuffix(".git")
+            if ref and not _is_safe_ref(ref):
+                return None
+            r = {"source_type": "github", "repo": repo_slug}
             if ref:
                 r["ref"] = ref
             return r
