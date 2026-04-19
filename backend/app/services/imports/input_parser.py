@@ -24,6 +24,11 @@ _REPO_RE = re.compile(r"^[^\s/@#:]+/[^\s/@#:]+$")
 _REF_SHAPE_RE = re.compile(r"^[A-Za-z0-9._/-]+$")
 # GitHub HTTPS URL: https://github.com/owner/repo (with optional www, trailing slash, or .git)
 _GH_HTTPS_RE = re.compile(r"^https?://(?:www\.)?github\.com/([^/]+/[^/]+?)(?:/|\.git)?/?$")
+# GitHub tree/blob URL: https://github.com/owner/repo/tree/<ref>[/subpath]
+# Captures owner/repo (group 1), ref (group 2), optional subpath (group 3).
+_GH_TREE_RE = re.compile(
+    r"^https?://(?:www\.)?github\.com/([^/]+/[^/]+?)/(?:tree|blob)/([^/]+)(?:/(.*?))?/?$"
+)
 
 
 def parse_input(raw: str) -> Optional[dict]:
@@ -76,6 +81,25 @@ def parse_input(raw: str) -> Optional[dict]:
             r: ParsedSource = {"source_type": "git", "url": url}
             if ref:
                 r["ref"] = ref
+            return r
+
+        # GitHub tree/blob URLs with explicit ref + subpath:
+        #   https://github.com/owner/repo/tree/main/.agents/skills/brand-voice
+        # Captures the subpath so the inspector can scope the clone's skill
+        # walk — critical for large monorepos that would otherwise trip the
+        # 50 MB clone cap.
+        gh_tree = _GH_TREE_RE.match(url)
+        if gh_tree:
+            repo_slug = gh_tree.group(1).removesuffix(".git")
+            tree_ref = gh_tree.group(2)
+            tree_subpath = gh_tree.group(3) or None
+            if not _is_safe_ref(tree_ref):
+                return None
+            if tree_subpath and (".." in tree_subpath.split("/") or tree_subpath.startswith("/")):
+                return None
+            r = {"source_type": "github", "repo": repo_slug, "ref": tree_ref}
+            if tree_subpath:
+                r["subpath"] = tree_subpath
             return r
 
         # GitHub URLs → classify as "github" source_type (same flow as shorthand)

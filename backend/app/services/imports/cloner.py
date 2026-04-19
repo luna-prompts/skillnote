@@ -15,7 +15,8 @@ import yaml
 from app.services.imports.manifest_schema import SkillFrontmatter
 
 
-MAX_CLONE_BYTES = 50 * 1024 * 1024  # 50 MB
+MAX_CLONE_BYTES = 250 * 1024 * 1024  # 250 MB — generous for real monorepos;
+# sparse-checkout is used when a subpath is specified so the clone stays small
 MAX_SKILL_MD_BYTES = 256 * 1024
 
 
@@ -49,19 +50,41 @@ def clone_and_scan(parsed: dict, *, token: Optional[str] = None, timeout_s: int 
 
     tmp = tempfile.mkdtemp(prefix="skillnote-import-")
     try:
-        cmd = ["git", "clone", "--depth=1", "--single-branch",
-               "--no-recurse-submodules"]
-        if ref:
-            cmd += ["--branch", ref]
         clone_url = url
         if token and clone_url.startswith("https://github.com"):
             # Inject token for private repos via URL-embedded creds (one-shot; not persisted)
             clone_url = clone_url.replace("https://", f"https://{token}@", 1)
-        cmd += [clone_url, tmp]
+
+        # When a subpath is specified, use sparse-checkout to only fetch that
+        # directory — avoids pulling in multi-GB monorepos and keeps large
+        # repos well under the size cap.
+        if subpath:
+            cmd = ["git", "clone", "--depth=1", "--single-branch",
+                   "--no-recurse-submodules", "--filter=blob:none",
+                   "--sparse", "--no-checkout"]
+            if ref:
+                cmd += ["--branch", ref]
+            cmd += [clone_url, tmp]
+        else:
+            cmd = ["git", "clone", "--depth=1", "--single-branch",
+                   "--no-recurse-submodules"]
+            if ref:
+                cmd += ["--branch", ref]
+            cmd += [clone_url, tmp]
 
         try:
             subprocess.run(cmd, check=True, timeout=timeout_s,
                            capture_output=True, text=True)
+            if subpath:
+                # Configure sparse-checkout for just the requested subpath
+                subprocess.run(
+                    ["git", "-C", tmp, "sparse-checkout", "set", "--no-cone", subpath],
+                    check=True, timeout=timeout_s, capture_output=True, text=True,
+                )
+                subprocess.run(
+                    ["git", "-C", tmp, "checkout"],
+                    check=True, timeout=timeout_s, capture_output=True, text=True,
+                )
         except subprocess.TimeoutExpired:
             return CloneResult(error_code="UPSTREAM_TIMEOUT",
                                error_message=f"Clone exceeded {timeout_s}s")

@@ -27,10 +27,17 @@ export function parseMarketplaceInput(raw: string): ParsedSource {
     if (url.endsWith('.git') || url.includes('/_git/')) {
       return ref ? { source_type: 'git', url, ref } : { source_type: 'git', url }
     }
+    // GitHub tree/blob URL — captures explicit ref + optional subpath.
+    // Backend extracts the subpath; frontend just shows the github chip.
+    const ghTree = url.match(
+      /^https?:\/\/(?:www\.)?github\.com\/([^/]+\/[^/]+?)\/(?:tree|blob)\/([^/]+)(?:\/(.*?))?\/?$/,
+    )
+    if (ghTree) {
+      return { source_type: 'github', repo: ghTree[1].replace(/\.git$/, ''), ref: ghTree[2] }
+    }
     const gh = url.match(/^https?:\/\/(?:www\.)?github\.com\/([^/]+\/[^/]+?)(?:\/|\.git)?\/?$/)
     if (gh) {
-      const gitUrl = url.endsWith('.git') ? url : `${url}.git`
-      return ref ? { source_type: 'git', url: gitUrl, ref } : { source_type: 'git', url: gitUrl }
+      return { source_type: 'github', repo: gh[1].replace(/\.git$/, ''), ...(ref ? { ref } : {}) }
     }
     return { source_type: 'url', url }
   }
