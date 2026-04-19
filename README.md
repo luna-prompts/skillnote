@@ -105,10 +105,6 @@ Your frontend project gets React hooks and testing patterns. Your API project ge
 
 The Claude Code community has already curated hundreds of `SKILL.md` files in public GitHub repos. SkillNote's **Marketplace** tab pulls them straight into your self-hosted registry with full provenance, per-skill selection, and safe upsert on re-install.
 
-<p align="center">
-  <img src="docs/screenshots/marketplace-empty.png" width="100%" alt="SkillNote marketplace import page with three example marketplaces" />
-</p>
-
 **Paste anything GitHub understands:**
 
 - Shorthand: `wshobson/agents`, `anthropics/skills`
@@ -122,12 +118,7 @@ The inspector shallow-clones with sparse checkout (scoped to a subfolder if give
   <img src="docs/screenshots/marketplace-workspace-v2.png" width="100%" alt="Marketplace workspace: sidebar with numbered skill selection and the algorithmic-art skill rendered in the preview pane on the right, with collection picker and Add button in the footer" />
 </p>
 
-**In the workspace you can:**
-
-- Filter and pick exactly which skills to install (sidebar search, numbered rows, select-all / none)
-- Preview each `SKILL.md` rendered exactly as it will appear post-install (right pane, drag to resize)
-- Choose an **existing** collection from a Jira-style combobox with fuzzy match, or create a new one inline; the inferred slug is tagged **Recommended**
-- See an amber warning if you've selected more than the 15-skill cap, with a one-click suggestion to split into themed collections
+In the workspace you filter and pick exactly which skills to install, preview each `SKILL.md` rendered exactly as it will appear post-install, and choose an existing collection from a Jira-style combobox with fuzzy match or create a new one inline (the inferred slug is tagged **Recommended**). An amber warning fires if you exceed the 15-skill cap, with a one-click suggestion to split into themed collections.
 
 **Upsert on re-install.** Re-importing from the same source is idempotent: unchanged skills are a no-op, and any skill you've edited locally gets cleanly overwritten with the upstream version when you hit the button again (`on_conflict: 'replace'`). No duplicates, no rename suffixes, no forked-state drift.
 
