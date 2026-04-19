@@ -3,63 +3,35 @@
 All notable changes to SkillNote will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
-## [0.3.4] - 2026-04-19
-
-### Changed
-- **Renamed "Browse" / "Import" surface to "Marketplace"** to match the vocabulary Claude Code itself uses (`/plugin marketplace add`, Discover tab). New route `/marketplace`; sidebar label "Marketplace" with Store icon; page H1 "Install from a marketplace"; old `/browse` route retired.
-- **Skills-page top-bar** action "Import" renamed to **"Upload"** so the two primary entry points (Marketplace = pull from a repo, Upload = push a local SKILL.md) are unambiguous. Three clean paths into the registry now: Marketplace / Upload / New Skill.
-- **Collections-page top-bar becomes context-aware** via a new `variant="collections"` prop on `<TopBar>`: Upload + New Skill are swapped for a collection-search input + **+ New Collection** button. `N` hotkey is suppressed so typing in the search doesn't hijack focus. Page subheader is now a compact count with an `Info` tooltip explaining the 15-cap (replaces the full-width info banner).
-- **Workspace UX redesign** after paste:
-  - Collection-name input moved to the footer, inline with the Add button.
-  - Header is now three visual chips: clickable `owner/repo` (GitHub), branch, and (when present) subpath.
-  - Draggable splitter between the skill-selection sidebar and the preview pane (custom mouse-drag implementation replaces the `react-resizable-panels@4` variant that collapsed on load).
-  - Preview matches `SkillViewTab` exactly: file-header bar, skill meta block, syntax-highlighted code blocks via `react-syntax-highlighter`, styled tables.
-  - Sidebar rows are numbered and show the repo path only on hover or when focused.
-  - Example row under the search input carries three full-URL marketplaces (including `wshobson/agents/tree/main/plugins/agent-teams/skills/parallel-debugging`, `anthropics/skills`, `affaan-m/everything-claude-code/tree/main/.agents/skills`) so users see exactly what they paste.
-  - Search input stays mounted after a successful import in compact form so the user can paste another URL and re-import without leaving the workspace.
-  - Done state replaced with a proper `DoneCard` offering **Add another** and **View collection** (no more timed auto-redirect).
-- **`on_conflict='replace'` is now implemented** in `apply_import()` (previously raised `NOT_IMPLEMENTED_YET`). Re-importing the same source upserts the existing skill: overwrites `description`, `content_md`, `source_path`, `source_sha`, and `source_content_hash`; re-points `import_source_id` to the current source; merges the target collection into `collections[]`; resets `forked_from_source=FALSE`. UI now defaults to `replace` so mutated local edits get cleanly reset from upstream without creating `-1`-suffixed duplicates.
-- **Jira-style collection combobox** replaces the plain text input:
-  - Dedicated search box inside the popover, independent of the typed value.
-  - Full list of existing collections (fetched via `GET /v1/collections`, not only ones tied to an import source) with in-place substring highlight and alphabetical sort.
-  - `+ Create new {slug}` row at the top when the typed name has no match.
-  - `Sparkle` **Recommended** pin for the collection matching the inferred slug.
-  - Keyboard: `↑↓` navigate, `Enter` select, `Esc` close; active row scrolls into view.
-
-### Added
-- **`origin` field on every skill** returned by the API (`SkillDetail` + `SkillListItem`). Shape:
-  ```
-  origin: { source_type, host, owner, repo, subpath, ref, path, sha, url, forked } | null
-  ```
-  Populated by joining `skills.import_source_id` → `import_sources`. Batch-loaded on the list endpoint (N+1-safe). Composes a direct GitHub blob URL from the stored SHA for github.com sources.
-- **`<SourceCard>`** on the skill detail page (right rail): GitHub-icon clickable `owner/repo`, branch chip, short-sha chip (`GitCommit` icon, full sha on hover), and a path chip that deep-links to the file at the exact SHA. "Diverged from upstream" amber pill when `origin.forked` is true.
-- **15-skill cap surfaces** across three views: cap-aware counter `N / 15 skills` on collection cards (muted → amber → red), identical counter on the collection detail page, and amber over-cap banner in the marketplace workspace footer when selection > 15. One shared explainer string everywhere, delivered via tooltip.
-
-### Removed
-- **Library / Sources tab and all its scaffolding** (`LibraryView`, `BrowseSourceCard`, `BrowseSourcesList`, `DiffDrawer`). With upsert semantics handling re-installs cleanly, a dedicated list of "things I imported" is redundant; provenance lives on the skill itself.
-- **Per-collection "Imported from …" banner** on collection detail pages. The same info is now surfaced per-skill via `<SourceCard>`.
-- Duplicate `<h1>Collections</h1>` on the Collections page (the breadcrumb already says "Collections").
-- Redundant cap-hint chip at the top of the marketplace workspace sidebar (the over-cap banner above the footer is the single point of truth now).
-
-### Fixed
-- JSX whitespace bug where `15 skills` ran into the next word in the cap tooltip ("15 skillsso…"). Replaced inline span adjacency with explicit `{' '}` tokens in all three copies of the explainer.
-- Collection combobox now lists every collection the user owns. Previously only collections tied to an import source surfaced (e.g. 6 total but only 2 showed). Marketplace page now fetches `/v1/collections` in addition to `/v1/sources` and merges the two lists.
-
----
-
 ## [0.3.3] - 2026-04-19
 
 ### Added
-- **Marketplace Import** — paste a GitHub URL (`owner/repo`, full URL, or `.json` marketplace) to import skills into SkillNote. Inspector clones the repo, enumerates `SKILL.md` files, validates frontmatter, and presents a two-pane preview drawer with per-row conflict handling.
-- **Browse page** (`/browse`) — home for imported sources with drift-detection badges (amber `N new · M changed` pill), per-source action menu (Resync / Pin / Change tracked ref / Unlink), and a "Paste a URL" empty-state CTA.
-- **Two-pane ImportSheet** with shadcn `Resizable` divider — left: skill selection list with checkboxes + per-row conflict dropdown; right: focused skill preview. Auto-save split position via `react-resizable-panels`.
-- **DiffDrawer** — click a drift pill to open a three-section drawer (New / Changed / Removed) with per-row checkboxes + forked-skill overwrite warnings.
+- **Marketplace** (`/marketplace`) — one nav entry, one surface. Paste anything GitHub understands (shorthand `owner/repo`, plain URL, tree URL to a subfolder, or an `anthropic.json` marketplace manifest) to pull skills into SkillNote. Vocabulary matches Claude Code's own `/plugin marketplace add` flow.
+- **Marketplace workspace** — full-page surface after paste, not a cramped drawer:
+  - Numbered skill-selection sidebar with filter input, `Select all` / `All` / `None` controls. Per-row path chip appears on hover or focus to keep the list scannable.
+  - Custom mouse-drag splitter between the sidebar and the preview pane (replaces `react-resizable-panels@4` which collapsed on first render).
+  - Preview mirrors `SkillViewTab` exactly: file-header bar, skill meta block, syntax-highlighted code via `react-syntax-highlighter`, styled tables — so the preview is literally what the skill will look like after install.
+  - Header renders the source as three visual chips: clickable `owner/repo` (opens GitHub), branch, and (when present) subpath.
+  - Collection picker is a Jira-style combobox in the footer: dedicated in-popover search independent of the typed value, alphabetical list of **every** collection the user owns (fetched via `/v1/collections`, not just source-linked ones), `+ Create new` row when the typed name doesn't match, `Sparkle` **Recommended** pin for the inferred slug, substring highlight, full keyboard navigation.
+  - Three full-URL example marketplaces shown verbatim under the search input (`wshobson/agents/tree/main/plugins/agent-teams/skills/parallel-debugging`, `anthropics/skills`, `affaan-m/everything-claude-code/tree/main/.agents/skills`) so users see exactly what to paste.
+  - Amber over-cap banner when the selection exceeds 15 skills, with guidance to split into themed collections.
+  - Search input stays mounted after a successful import (compact form) so users can paste another URL and re-import without leaving the workspace.
+  - Done state is an explicit `Add another` / `View collection` card — no timed auto-redirect.
+- **Upsert on re-install (`on_conflict: 'replace'`)** — re-importing the same source is idempotent: unchanged skills are a no-op; any skill the user has edited locally is cleanly overwritten with the upstream version. Overwrites `description` / `content_md` / `source_path` / `source_sha` / `source_content_hash`, re-points `import_source_id` to the current source, merges the target collection into `collections[]`, resets `forked_from_source=FALSE`. No `-1`/`-2` rename suffixes. UI defaults to `replace`.
+- **`origin` on every skill API response** (`SkillDetail` + `SkillListItem`):
+  ```
+  origin: { source_type, host, owner, repo, subpath, ref, path, sha, url, forked } | null
+  ```
+  Populated by joining `skills.import_source_id` → `import_sources`. Batch-loaded on the list endpoint (N+1-safe). Composes a direct GitHub blob URL from the stored SHA for `github.com` sources.
+- **`<SourceCard>`** on the skill detail page (right rail) — GitHub-icon clickable `owner/repo`, branch chip, short-SHA chip with full SHA on hover, path chip that deep-links to the file at the exact imported SHA. Amber "Diverged from upstream" pill when `forked` is true.
+- **15-skill cap surfaces end-to-end** — `N / 15 skills` counter on collection cards and detail pages (muted → amber → red), matching amber over-cap banner in the workspace footer, single shared `Info`-icon tooltip everywhere explaining the reason.
+- **Context-aware TopBar** — new `variant="collections"` swaps Upload / New Skill for a collection-search input + **+ New Collection** button on the Collections page. `N` hotkey suppressed when typing in that search.
+- **Three clean paths into the registry**: **Marketplace** (pull from a repo), **Upload** (push a local `SKILL.md`), **New Skill** (hand-authored). The old `Discover` section wrapper is gone from the sidebar.
 - **Fork-on-edit** — editing an imported skill triggers a confirmation modal. Backend flips `forked_from_source=TRUE` automatically on any content-changing PATCH.
-- **`GET /marketplace/{slug}.json`** publish-back endpoint — every SkillNote collection is exposed as a Claude-Code-compatible manifest with ETag + `Cache-Control: public, max-age=60, must-revalidate`. User-authored skills omitted from the manifest; shown as `⊙ local only` in the UI.
-- **Collection integrations** — import banner on collection detail pages, "Browse the community →" nudge on the collections index, `SourceBadge` + `LocalOnlyChip` components ready for skill cards.
+- **`GET /marketplace/{slug}.json`** publish-back endpoint — every SkillNote collection is exposed as a Claude-Code-compatible manifest with ETag + `Cache-Control: public, max-age=60, must-revalidate`. User-authored skills omitted; shown as `⊙ local only` in the UI.
 - **6 new API endpoints** — `POST /v1/import/inspect`, `POST /v1/import/apply`, `GET /v1/import/sources`, `POST /v1/import/sources/{id}/refresh`, `DELETE /v1/import/sources/{id}`, `GET /marketplace/{slug}.json`.
-- **7 Playwright E2E journey tests** — first-time user, upstream change, conflict rename, fork warning, unlink (keep skills), private repo, publish-back.
-- **axe-core a11y coverage** — 4 tests across ImportSheet empty/preview and Browse empty/populated states.
+- **Playwright E2E journey tests** (first-time user, upstream change, conflict rename, fork warning, private repo, publish-back) + **axe-core a11y coverage** across the marketplace flow.
+- **README Marketplace section** with screenshots of the empty state and the post-paste workspace.
 
 ### Security
 - **URL security layer** — scheme allowlist (`http`, `https`, `git`, `ssh` only), private-IP block covering RFC1918 + CGNAT (100.64.0.0/10) + IPv6 equivalents (`::1`, `fe80::/10`, `fc00::/7`) + AWS metadata endpoint (169.254.169.254) + localhost literal. SSH-form URLs (`user@host:path`) routed through the same gate.
@@ -70,18 +42,26 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 - **Token-bucket rate limiter** — 10 imports/min + 60 marketplace-reads/min per client IP. `X-Forwarded-For` aware.
 
 ### Changed
-- `parse_input` in the input parser supports GitHub shorthand (`owner/repo[@ref]`), full HTTPS/SSH URLs, Azure DevOps (`/_git/`), and generic `.json` marketplace URLs; returns discriminated `ParsedSource` dict or `None` for unrecognized input.
-- `POST /v1/skills/{slug}` PATCH handler flips `forked_from_source=TRUE` on any content-changing edit of an imported skill.
+- **`parse_input`** accepts GitHub shorthand (`owner/repo[@ref]`), plain `https://github.com/owner/repo` URLs (with or without `.git`), full HTTPS/SSH URLs, tree/blob URLs (routed through sparse-checkout scoped to the subpath), Azure DevOps (`/_git/`), and generic `.json` marketplace URLs; returns a discriminated `ParsedSource` dict or `None`.
+- **GitHub default-branch probe** — when no ref is specified, the inspector hits `/repos/{o}/{r}` first, so `master`-default repos resolve cleanly without the user having to type `@master`.
+- **`POST /v1/skills/{slug}`** PATCH handler flips `forked_from_source=TRUE` on any content-changing edit of an imported skill.
+
+### Removed
+- **Library / Sources tab and its scaffolding** (`LibraryView`, `BrowseSourceCard`, `BrowseSourcesList`, `DiffDrawer`). With upsert semantics handling re-installs cleanly, a dedicated list of "things I imported" is redundant; provenance lives on the skill itself.
+- **Per-collection "Imported from …" banner** on collection detail pages. The same info is surfaced per-skill via `<SourceCard>`.
+- **Duplicate `<h1>Collections</h1>`** on the Collections page (the breadcrumb already says "Collections").
+- **Redundant cap-hint chip** at the top of the marketplace workspace sidebar (the over-cap banner above the footer is the single point of truth).
+
+### Fixed
+- **JSX whitespace bug** where `15 skills` ran into the next word in the cap tooltip (`15 skillsso…`). Replaced inline span adjacency with explicit `{' '}` tokens in all three copies of the explainer.
+- **Collection combobox now lists every collection the user owns.** Previously only collections tied to an import source surfaced (e.g. 6 total but only 2 showed). Marketplace page now fetches `/v1/collections` in addition to `/v1/sources` and merges the two lists.
 
 ### Migrated
 - **`0013_import_sources`** — adds `import_sources` table (UUID PK, 19 columns, 3 Postgres enums: `import_source_type`, `import_source_kind`, `import_source_status`) with unique constraint `(url, ref, subpath)` and FK `collection_name → collections.name ON DELETE CASCADE`. Also adds 5 columns to `skills`: `import_source_id` (FK SET NULL), `source_path`, `source_sha`, `source_content_hash`, `forked_from_source`.
+- **`0014_dedupe_import_sources_subpath_null`** — dedupes rows that collided on the legacy NULL subpath, then sets `subpath NOT NULL DEFAULT ''` so the UPSERT on `(url, ref, subpath)` is reliably idempotent.
 
-### Known limitations (scheduled for v1.1)
-- **`on_conflict="replace"`** returns `NOT_IMPLEMENTED_YET` (422); use `rename` or `skip` in v1.
-- **Per-row conflict dropdown in ImportSheet** is UI-only; apply sends a single global conflict mode.
-- **Refresh `mode=apply`** returns stub `{applied: 0}` — the diff drawer updates the UI but changes are recorded via the UPSERT path from re-applying.
-- **GitHub default branch detection** — repos with `master` as default (not `main`) may fail the HEAD-SHA probe until user specifies `@master` explicitly.
-- **Plain `https://github.com/owner/repo` URL** (without `.git` suffix or shorthand form) currently rejected as `UNSUPPORTED_SOURCE_TYPE` — users must paste shorthand `owner/repo` in v1.
+### Known limitations
+- **`Refresh mode=apply`** returns stub `{applied: 0}` — changes are recorded via the UPSERT path from re-applying instead.
 - **Multi-process deployments** — rate limiter is in-memory (single-process). Migrate to Redis for horizontal scaling.
 
 ## [0.3.2] - 2026-04-18
