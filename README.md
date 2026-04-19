@@ -122,18 +122,6 @@ The inspector shallow-clones with sparse checkout (scoped to a subfolder if give
 
 In the workspace you filter and pick exactly which skills to install, preview each `SKILL.md` rendered exactly as it will appear post-install, and choose an existing collection from a Jira-style combobox with fuzzy match or create a new one inline (the inferred slug is tagged **Recommended**). An amber warning fires if you exceed the 15-skill cap, with a one-click suggestion to split into themed collections.
 
-**Upsert on re-install.** Re-importing from the same source is idempotent: unchanged skills are a no-op, and any skill you've edited locally gets cleanly overwritten with the upstream version when you hit the button again (`on_conflict: 'replace'`). No duplicates, no rename suffixes, no forked-state drift.
-
-### Endpoints powering the flow
-
-| Endpoint | Purpose |
-|---|---|
-| `POST /v1/import/inspect` | Shallow-clone + scan; returns skills, suggested slug, resolved SHA. |
-| `POST /v1/import/apply` | Upsert selected skills. Supports `on_conflict: 'rename' \| 'skip' \| 'replace'`. |
-| `GET  /v1/sources` | List of all import sources (for drift tracking). |
-| `POST /v1/sources/{id}/refresh` | Re-inspect an existing source for drift. |
-| `GET  /v1/skills/{slug}` | Returns a new `origin` field: `{owner, repo, ref, subpath, path, sha, url, forked}`. |
-
 ---
 
 ## Agent Reviews
