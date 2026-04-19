@@ -257,7 +257,7 @@ export function ImportWorkspace({
 
           <Splitter onMouseDown={onSplitterDown} />
 
-          <div className="flex min-h-0 flex-1">
+          <div className="flex min-h-0 min-w-0 flex-1">
             <SkillPreview skill={focusedSkill} />
           </div>
         </div>
@@ -512,10 +512,14 @@ function SkillPreview({ skill }: { skill: InspectSkill | null }) {
   const { resolvedTheme } = useTheme()
   const isDark = resolvedTheme === 'dark'
 
-  const strippedContent = useMemo(
-    () => (skill?.body ? stripFrontmatter(skill.body) : ''),
-    [skill?.body],
-  )
+  const strippedContent = useMemo(() => {
+    if (!skill?.body) return ''
+    // react-markdown renders raw HTML as text by default, so literal
+    // <!-- ... --> blocks in the source show up as visible strings.
+    // Strip them before rendering; they're metadata for the upstream
+    // repo's build tooling, not useful to a SkillNote reader.
+    return stripFrontmatter(skill.body).replace(/<!--[\s\S]*?-->/g, '')
+  }, [skill?.body])
 
   if (!skill) {
     return (
@@ -526,7 +530,7 @@ function SkillPreview({ skill }: { skill: InspectSkill | null }) {
   }
 
   return (
-    <div className="flex min-h-0 w-full flex-col">
+    <div className="flex min-h-0 w-full min-w-0 flex-col">
       {/* File-header bar mirrors SkillViewTab */}
       <div className="flex items-center gap-2.5 bg-muted/20 px-6 py-2.5 sm:px-10">
         <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50" />
@@ -540,12 +544,12 @@ function SkillPreview({ skill }: { skill: InspectSkill | null }) {
       <hr className="border-border/30" />
 
       {/* Skill meta */}
-      <div className="border-b border-border/30 px-6 py-5 sm:px-10 lg:px-14">
+      <div className="min-w-0 border-b border-border/30 px-6 py-5 sm:px-10 lg:px-14">
         <h1 className="truncate text-[22px] font-semibold leading-tight text-foreground">
           {skill.name}
         </h1>
         {skill.description && (
-          <p className="mt-1.5 max-w-[52rem] text-[14px] leading-relaxed text-muted-foreground">
+          <p className="mt-1.5 max-w-[52rem] break-words text-[14px] leading-relaxed text-muted-foreground">
             {skill.description}
           </p>
         )}

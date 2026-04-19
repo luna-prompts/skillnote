@@ -107,15 +107,17 @@ The Claude Code community has already curated hundreds of `SKILL.md` files in pu
 
 **Paste anything GitHub understands:**
 
-- Shorthand: `wshobson/agents`, `anthropics/skills`
-- Full repo URL: `https://github.com/wshobson/agents`
-- Tree URL to a subfolder: `https://github.com/affaan-m/everything-claude-code/tree/main/.agents/skills`
+- Shorthand: `garrytan/gstack`, `anthropics/skills`
+- Full repo URL: `https://github.com/obra/superpowers-marketplace`
+- Tree URL to a subfolder: `https://github.com/obra/superpowers/tree/main/skills`
 - Claude Code marketplace manifest (`anthropic.json`)
+
+Try any of these in the app: Garry Tan's 23-skill YC-flavored [`gstack`](https://github.com/garrytan/gstack), Jesse Vincent's [`superpowers`](https://github.com/obra/superpowers) agentic skills framework, or Anthropic's [`anthropics/skills`](https://github.com/anthropics/skills).
 
 The inspector shallow-clones with sparse checkout (scoped to a subfolder if given), scans every `SKILL.md`, validates YAML frontmatter, and opens a full-page workspace before anything lands in your library.
 
 <p align="center">
-  <img src="docs/screenshots/marketplace-workspace-v2.png" width="100%" alt="Marketplace workspace: sidebar with numbered skill selection and the algorithmic-art skill rendered in the preview pane on the right, with collection picker and Add button in the footer" />
+  <img src="docs/screenshots/marketplace-workspace-v3.png" width="100%" alt="Marketplace workspace after pasting garrytan/gstack: left rail shows 44 numbered skills with Select-all and filter, right pane previews the gstack skill with wrapped description and a syntax-highlighted Preamble section, footer picks the garrytan-gstack collection with an amber 44/15 over-cap banner" />
 </p>
 
 In the workspace you filter and pick exactly which skills to install, preview each `SKILL.md` rendered exactly as it will appear post-install, and choose an existing collection from a Jira-style combobox with fuzzy match or create a new one inline (the inferred slug is tagged **Recommended**). An amber warning fires if you exceed the 15-skill cap, with a one-click suggestion to split into themed collections.
