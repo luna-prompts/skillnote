@@ -3,7 +3,7 @@ import { useState, useCallback, useEffect, useRef } from 'react'
 import { TopBar } from '@/components/layout/topbar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Download, Pencil, GitBranch, Check, BookOpen, ArrowLeft, Link2, Star, Command, X, Keyboard, FileText, Search, FolderOpen, Share2, MoreHorizontal, Trash2, Clock, User, Terminal } from 'lucide-react'
+import { Download, Pencil, GitBranch, Check, BookOpen, ArrowLeft, Link2, Star, Command, X, Keyboard, FileText, Search, FolderOpen, Share2, MoreHorizontal, Trash2, Clock, User, Terminal, Github, GitCommit, Folder, ExternalLink } from 'lucide-react'
 import { Skill, type Comment, type SkillRatingDetail, type SkillReview } from '@/lib/mock-data'
 import { getSkills, updateSkill, deleteSkillById, saveSkillEdit } from '@/lib/skills-store'
 import { validateSkillName, validateDescription } from '@/lib/skill-validation'
@@ -107,6 +107,78 @@ function CommandPalette({ actions, onClose }: { actions: PaletteAction[]; onClos
           <span><kbd className="font-mono bg-muted px-1 py-0.5 rounded">↵</kbd> Execute</span>
           <span><kbd className="font-mono bg-muted px-1 py-0.5 rounded">esc</kbd> Close</span>
         </div>
+      </div>
+    </div>
+  )
+}
+
+function SourceCard({ origin }: { origin: NonNullable<Skill['origin']> }) {
+  const repoLabel =
+    origin.owner && origin.repo ? `${origin.owner}/${origin.repo}` : origin.url || 'unknown'
+  const repoUrl =
+    origin.host === 'github.com' && origin.owner && origin.repo
+      ? `https://github.com/${origin.owner}/${origin.repo}`
+      : null
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground/40 font-medium">Source</p>
+        {origin.forked && (
+          <span className="rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[9.5px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400">
+            Edited
+          </span>
+        )}
+      </div>
+      <div className="rounded-lg border border-border/60 bg-card p-3 space-y-2">
+        {repoUrl ? (
+          <a
+            href={repoUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="group/repo flex items-center gap-2 text-[12.5px] text-foreground hover:text-accent min-w-0"
+            title={repoLabel}
+          >
+            <Github className="h-3.5 w-3.5 shrink-0 text-muted-foreground group-hover/repo:text-accent" />
+            <span className="truncate font-mono font-medium">{repoLabel}</span>
+            <ExternalLink className="h-3 w-3 shrink-0 text-muted-foreground/50 opacity-0 transition-opacity group-hover/repo:opacity-100" />
+          </a>
+        ) : (
+          <div className="flex items-center gap-2 text-[12.5px] text-foreground min-w-0">
+            <Github className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            <span className="truncate font-mono">{repoLabel}</span>
+          </div>
+        )}
+
+        {origin.ref && (
+          <div className="flex items-center gap-2 text-[11.5px] text-muted-foreground min-w-0">
+            <GitBranch className="h-3 w-3 shrink-0" />
+            <span className="truncate font-mono">{origin.ref}</span>
+          </div>
+        )}
+
+        {origin.sha && (
+          <div className="flex items-center gap-2 text-[11.5px] text-muted-foreground min-w-0" title={origin.sha}>
+            <GitCommit className="h-3 w-3 shrink-0" />
+            <span className="truncate font-mono">{origin.sha.slice(0, 7)}</span>
+          </div>
+        )}
+
+        {origin.path && (
+          <a
+            href={origin.url ?? undefined}
+            target={origin.url ? '_blank' : undefined}
+            rel={origin.url ? 'noopener noreferrer' : undefined}
+            className={cn(
+              'group/path flex items-start gap-2 text-[11.5px] text-muted-foreground min-w-0',
+              origin.url && 'hover:text-accent',
+            )}
+            title={origin.path}
+          >
+            <Folder className="mt-0.5 h-3 w-3 shrink-0" />
+            <span className="break-all font-mono leading-relaxed">{origin.path}</span>
+          </a>
+        )}
       </div>
     </div>
   )
@@ -499,10 +571,11 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
                   </div>
                 </div>
 
-                {/* Right: version ratings — visible on lg+ */}
-                <div className="hidden lg:block w-64 shrink-0 pt-1 space-y-6">
+                {/* Right rail: Source + version ratings */}
+                <div className="w-full lg:w-64 shrink-0 pt-1 space-y-6 mt-6 lg:mt-0">
+                  {skill.origin && <SourceCard origin={skill.origin} />}
                   {ratingDetail && ratingDetail.versions?.length > 0 && (
-                    <div>
+                    <div className="hidden lg:block">
                       <p className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground/40 font-medium mb-2">Rating by Version</p>
                       <div className="space-y-1.5">
                         {ratingDetail.versions.map(v => (

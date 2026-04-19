@@ -1,8 +1,9 @@
 'use client'
 import Link from 'next/link'
 import { TopBar } from '@/components/layout/topbar'
-import { FolderOpen, Plus, ArrowRight, Info, Search, X } from 'lucide-react'
+import { FolderOpen, Plus, ArrowRight, Info, Search } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { getSkills, syncSkillsFromApi } from '@/lib/skills-store'
 import { deriveCollectionsFromApi, collectionSlug } from '@/lib/derived'
@@ -111,63 +112,43 @@ export default function CollectionsPage() {
 
   return (
     <>
-      <TopBar />
+      <TopBar
+        variant="collections"
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        onNewCollection={() => setNewCollectionOpen(true)}
+      />
       <main className="flex-1 p-4 sm:p-6 overflow-auto">
 
-        {/* Page header */}
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-lg font-semibold text-foreground">Collections</h1>
-            <p className="text-[13px] text-muted-foreground mt-0.5">
-              {collections.length === 0
-                ? 'No collections yet'
-                : `${collections.length} collection${collections.length === 1 ? '' : 's'}`}
-            </p>
-          </div>
-          <Button
-            size="sm"
-            className="h-8 gap-1.5 text-[13px] bg-foreground hover:bg-foreground/90 text-background border-0"
-            onClick={() => setNewCollectionOpen(true)}
-          >
-            <Plus className="h-3.5 w-3.5" />
-            New Collection
-          </Button>
+        {/* Compact subheader: count + cap tooltip. Title + New lives in TopBar. */}
+        <div className="mb-5 flex items-center gap-2 text-[12.5px] text-muted-foreground">
+          <span className="tabular-nums">
+            {collections.length === 0
+              ? 'No collections yet'
+              : `${collections.length} collection${collections.length === 1 ? '' : 's'}`}
+          </span>
+          {collections.length > 0 && (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label="Why 15 skills per collection?"
+                    className="inline-flex h-5 w-5 items-center justify-center rounded-full text-muted-foreground/50 hover:bg-muted hover:text-foreground"
+                  >
+                    <Info className="h-3.5 w-3.5" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="max-w-[300px] text-[11.5px] leading-relaxed">
+                  Collections group skills by purpose. Each is capped at{' '}
+                  <span className="font-semibold">15 skills</span>{' '}
+                  so Claude Code&apos;s context stays efficient and descriptions don&apos;t get
+                  truncated. Split large installs into multiple themed collections.
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
         </div>
-
-        {/* Info banner */}
-        {collections.length > 0 && (
-          <div className="mb-6 flex items-start gap-2.5 px-4 py-3 rounded-lg bg-muted/40 border border-border/40">
-            <Info className="h-4 w-4 text-muted-foreground/60 mt-0.5 shrink-0" />
-            <p className="text-[12px] text-muted-foreground leading-relaxed">
-              Collections group skills by purpose. Each collection is capped at 15 skills. This keeps Claude Code&apos;s context efficient and ensures your skills trigger reliably.
-            </p>
-          </div>
-        )}
-
-        {/* Search bar — shown once there are enough collections to warrant it */}
-        {collections.length >= 5 && (
-          <div className="mb-5">
-            <div className="relative max-w-md">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/40 pointer-events-none" />
-              <input
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                placeholder="Search collections…"
-                className="w-full h-9 pl-9 pr-9 text-[13px] bg-muted/50 border border-border/40 rounded-lg focus:outline-none focus:ring-1 focus:ring-ring focus:border-transparent placeholder:text-muted-foreground/40 transition-all"
-                aria-label="Search collections"
-              />
-              {searchQuery && (
-                <button
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 h-5 w-5 flex items-center justify-center text-muted-foreground/40 hover:text-muted-foreground rounded"
-                  aria-label="Clear search"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              )}
-            </div>
-          </div>
-        )}
 
         {/* Error banner — shown when API fetch fails */}
         {loadError && !loading && (
@@ -326,8 +307,8 @@ export default function CollectionsPage() {
           </div>
           <div className="mt-8 text-center text-[13px] text-muted-foreground pb-8 lg:pb-0">
             Looking for more?{' '}
-            <Link className="text-foreground hover:underline" href="/browse">
-              Browse the community →
+            <Link className="text-foreground hover:underline" href="/marketplace">
+              Install from a marketplace →
             </Link>
           </div>
           </>

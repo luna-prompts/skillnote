@@ -1,5 +1,18 @@
-import { Skill, Comment, ContentVersion, SkillRating, SkillRatingDetail, SkillReview } from '@/lib/mock-data'
+import { Skill, SkillOrigin, Comment, ContentVersion, SkillRating, SkillRatingDetail, SkillReview } from '@/lib/mock-data'
 import { apiRequest } from './client'
+
+type ApiSkillOrigin = {
+  source_type: string
+  host?: string | null
+  owner?: string | null
+  repo?: string | null
+  subpath?: string | null
+  ref?: string | null
+  path?: string | null
+  sha?: string | null
+  url?: string | null
+  forked: boolean
+}
 
 type ApiSkillListItem = {
   name: string
@@ -13,6 +26,7 @@ type ApiSkillListItem = {
   import_source_id?: string | null
   forked_from_source?: boolean
   source_path?: string | null
+  origin?: ApiSkillOrigin | null
 }
 
 type ApiSkillDetail = {
@@ -29,6 +43,23 @@ type ApiSkillDetail = {
   import_source_id?: string | null
   forked_from_source?: boolean
   source_path?: string | null
+  origin?: ApiSkillOrigin | null
+}
+
+function toOrigin(o: ApiSkillOrigin | null | undefined): SkillOrigin | null {
+  if (!o) return null
+  return {
+    source_type: o.source_type,
+    host: o.host ?? null,
+    owner: o.owner ?? null,
+    repo: o.repo ?? null,
+    subpath: o.subpath ?? null,
+    ref: o.ref ?? null,
+    path: o.path ?? null,
+    sha: o.sha ?? null,
+    url: o.url ?? null,
+    forked: !!o.forked,
+  }
 }
 
 type ApiComment = {
@@ -54,6 +85,7 @@ function listItemToSkill(item: ApiSkillListItem): Skill {
     import_source_id: item.import_source_id ?? null,
     forked_from_source: item.forked_from_source ?? false,
     source_path: item.source_path ?? null,
+    origin: toOrigin(item.origin),
   }
 }
 
@@ -72,6 +104,7 @@ function detailToSkill(item: ApiSkillDetail, existingComments?: Comment[]): Skil
     import_source_id: item.import_source_id ?? null,
     forked_from_source: item.forked_from_source ?? false,
     source_path: item.source_path ?? null,
+    origin: toOrigin(item.origin),
   }
 }
 

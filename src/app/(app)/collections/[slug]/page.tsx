@@ -2,13 +2,14 @@
 import { TopBar } from '@/components/layout/topbar'
 import { SkillListItem } from '@/components/skills/skill-list-item'
 import { AddSkillsModal } from '@/components/collections/AddSkillsModal'
-import { ArrowLeft, ChevronLeft, ChevronRight, FolderOpen, Minus, Plus, Loader2, Pencil, Trash2, Check, X } from 'lucide-react'
+import { ArrowLeft, ChevronLeft, ChevronRight, FolderOpen, Info, Minus, Plus, Loader2, Pencil, Trash2, Check, X } from 'lucide-react'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { cn } from '@/lib/utils'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { getSkills, syncSkillsFromApi, saveSkillEdit } from '@/lib/skills-store'
 import { fetchCollectionApi, fetchCollectionsApi, updateCollectionApi, deleteCollectionApi, createCollectionApi, type CollectionListItem } from '@/lib/api/collections'
-import { listSources, type SourceListItem } from '@/lib/api/imports'
 import { collectionSlug, decodeCollectionSlug } from '@/lib/derived'
 import { type Skill } from '@/lib/mock-data'
 import { toast } from 'sonner'
@@ -41,15 +42,6 @@ export default function CollectionDetailPage() {
 
   // Delete state
   const [confirmDelete, setConfirmDelete] = useState(false)
-
-  // Import source backing this collection (if any) — drives the "Imported from …" banner
-  const [source, setSource] = useState<SourceListItem | null>(null)
-
-  useEffect(() => {
-    listSources()
-      .then((all) => setSource(all.find(s => s.collection_slug === slug) ?? null))
-      .catch(() => setSource(null))
-  }, [slug])
 
   useEffect(() => {
     syncSkillsFromApi().then(setSkills).catch(() => {})
@@ -335,9 +327,47 @@ export default function CollectionDetailPage() {
                   {apiDescription ? (
                     <p className="text-[12px] text-muted-foreground/70 mt-0.5 leading-relaxed">{apiDescription}</p>
                   ) : null}
-                  <p className="text-[12px] text-muted-foreground/50 mt-0.5">
-                    {filtered.length} {filtered.length === 1 ? 'skill' : 'skills'}
-                  </p>
+                  <div className="mt-0.5 flex items-center gap-1.5 text-[12px]">
+                    {(() => {
+                      const total = filtered.length
+                      const MAX = 15
+                      const over = total > MAX
+                      const near = !over && total >= 12
+                      return (
+                        <span
+                          className={cn(
+                            'tabular-nums',
+                            over
+                              ? 'font-semibold text-destructive'
+                              : near
+                                ? 'font-medium text-amber-600 dark:text-amber-400'
+                                : 'text-muted-foreground/60',
+                          )}
+                        >
+                          {total} / {MAX} skills
+                        </span>
+                      )
+                    })()}
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            aria-label="Why 15 skills per collection?"
+                            className="inline-flex h-5 w-5 items-center justify-center rounded-full text-muted-foreground/40 hover:bg-muted hover:text-foreground"
+                          >
+                            <Info className="h-3.5 w-3.5" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom" className="max-w-[300px] text-[11.5px] leading-relaxed">
+                          Collections group skills by purpose. Each is capped at{' '}
+                          <span className="font-semibold">15 skills</span>{' '}
+                          so Claude Code&apos;s context stays efficient and descriptions don&apos;t get
+                          truncated. Split large installs into multiple themed collections.
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
                 </div>
               </div>
 
@@ -384,15 +414,6 @@ export default function CollectionDetailPage() {
             </div>
           )}
         </div>
-
-        {/* ── Imported-from banner ── */}
-        {source && (
-          <div className="mx-6 mt-4 rounded-md border border-border/40 bg-muted/40 px-4 py-2 text-[12px] text-muted-foreground">
-            Imported from {source.host}/{source.owner}/{source.repo} · Tracking {source.ref ?? 'main'}
-            {source.imported_at_sha ? ` · ${source.imported_at_sha.slice(0, 7)}` : ''} ·{' '}
-            <Link className="ml-1 text-foreground hover:underline" href="/browse">Manage source</Link>
-          </div>
-        )}
 
         {/* ── Skill list ── */}
         {filtered.length === 0 ? (

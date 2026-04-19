@@ -170,10 +170,20 @@ def apply_import(
                 imported.append({"name": new_name, "slug": new_name,
                                  "original_name": name, "renamed_reason": "conflict"})
             elif on_conflict == "replace":
-                raise ImportError(
-                    "NOT_IMPLEMENTED_YET",
-                    "on_conflict='replace' is scheduled for v1.1; use 'rename' or 'skip' in v1",
-                )
+                # Upsert: rewrite the existing skill with the incoming content, re-point
+                # its origin to this source, and add the target collection if it's missing.
+                existing.description = skill_meta.get("description", existing.description)
+                existing.content_md = skill_meta.get("body") or existing.content_md
+                existing_cols = list(existing.collections or [])
+                if target_collection_slug not in existing_cols:
+                    existing_cols.append(target_collection_slug)
+                existing.collections = existing_cols
+                existing.import_source_id = src.id
+                existing.source_path = skill_meta.get("path") or existing.source_path
+                existing.source_sha = inspect_result.resolved_sha
+                existing.source_content_hash = skill_meta.get("content_hash") or ""
+                existing.forked_from_source = False
+                imported.append({"name": name, "slug": name, "renamed_reason": "replaced"})
 
     # If every candidate skill was rejected BY VALIDATION, abort so the user
     # sees a clear error instead of a silent zero-imported success. We only

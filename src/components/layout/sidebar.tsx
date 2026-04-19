@@ -1,7 +1,7 @@
 'use client'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { BookOpen, FolderOpen, Settings, HelpCircle, X, Plug2, BarChart2, Compass } from 'lucide-react'
+import { BookOpen, FolderOpen, Settings, HelpCircle, X, Plug2, BarChart2, Store } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useEffect, useMemo, useState } from 'react'
 import { getSkills, syncSkillsFromApi, getConnectionStatus, onConnectionStatusChange } from '@/lib/skills-store'
@@ -72,14 +72,13 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
           )
         })}
 
-        {/* Discover section */}
+        {/* Marketplace — install skills from Claude Code plugin marketplaces */}
         <div className="pt-3 mt-1.5 border-t border-[var(--sidebar-border)]/40">
-          <p className="text-[10px] font-semibold text-[var(--muted-foreground)]/50 uppercase tracking-widest px-2 mb-2">Discover</p>
           {(() => {
-            const isActive = pathname.startsWith('/browse')
+            const isActive = pathname.startsWith('/marketplace')
             return (
               <Link
-                href="/browse"
+                href="/marketplace"
                 className={cn(
                   'flex items-center gap-2.5 px-2.5 py-2 rounded-md text-[13px] font-medium transition-all duration-150',
                   isActive
@@ -87,8 +86,8 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
                     : 'text-[var(--muted-foreground)] hover:text-[var(--sidebar-foreground)] hover:bg-[var(--sidebar-accent)]'
                 )}
               >
-                <Compass className={cn('h-[15px] w-[15px] shrink-0', isActive ? 'text-accent' : '')} />
-                Browse
+                <Store className={cn('h-[15px] w-[15px] shrink-0', isActive ? 'text-accent' : '')} />
+                Marketplace
               </Link>
             )
           })()}

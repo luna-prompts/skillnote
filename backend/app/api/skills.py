@@ -10,8 +10,9 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.db.models import Skill, SkillVersion, SkillContentVersion
+from app.db.models.import_source import ImportSource
 from app.db.session import get_db
-from app.schemas.skill import SkillListItem, SkillDetail, SkillCreate, SkillUpdate
+from app.schemas.skill import SkillListItem, SkillDetail, SkillCreate, SkillUpdate, SkillOrigin
 from app.schemas.version import SkillVersionItem, ContentVersionItem
 from app.validators.skill_validator import (
     canonicalize_collection_names,
@@ -42,6 +43,51 @@ def _get_skill(slug: str, db: Session) -> Skill:
     if not skill_row:
         raise api_error(404, "SKILL_NOT_FOUND", "Skill not found")
     return skill_row
+
+
+def _build_origin(skill: Skill, source: Optional[ImportSource]) -> Optional[SkillOrigin]:
+    """Compose a SkillOrigin payload from the import_source row + the per-skill fields.
+
+    Returns None when the skill was created manually (no import_source)."""
+    if source is None:
+        return None
+    # Prefer the per-skill path/sha (actual file at import time) over the source-level
+    # subpath/imported_at_sha (repo-level metadata).
+    path = skill.source_path or None
+    sha = skill.source_sha or source.imported_at_sha
+    url: Optional[str] = None
+    if source.host == "github.com" and source.owner and source.repo and path:
+        ref_segment = sha or source.ref or "HEAD"
+        url = f"https://github.com/{source.owner}/{source.repo}/blob/{ref_segment}/{path}"
+    return SkillOrigin(
+        source_type=source.source_type,
+        host=source.host,
+        owner=source.owner,
+        repo=source.repo,
+        subpath=source.subpath or None,
+        ref=source.ref,
+        path=path,
+        sha=sha,
+        url=url,
+        forked=bool(skill.forked_from_source),
+    )
+
+
+def _load_sources_for_skills(db: Session, skills: list[Skill]) -> dict[uuid_lib.UUID, ImportSource]:
+    """Batch-load the import_sources referenced by a list of skills — avoids N+1."""
+    ids = {s.import_source_id for s in skills if s.import_source_id is not None}
+    if not ids:
+        return {}
+    rows = db.query(ImportSource).filter(ImportSource.id.in_(ids)).all()
+    return {row.id: row for row in rows}
+
+
+def _origin_for_skill(db: Session, skill: Skill) -> Optional[SkillOrigin]:
+    """Single-skill helper — loads one import_source row."""
+    if not skill.import_source_id:
+        return None
+    source = db.query(ImportSource).filter(ImportSource.id == skill.import_source_id).first()
+    return _build_origin(skill, source)
 
 
 def _create_content_version(db: Session, skill: Skill) -> SkillContentVersion:
@@ -89,6 +135,7 @@ def list_skills(
                 ).bindparams(lower_list=lower_list)
             )
     rows = query.order_by(Skill.slug.asc()).all()
+    sources_by_id = _load_sources_for_skills(db, rows)
 
     out: list[SkillListItem] = []
     for skill in rows:
@@ -110,6 +157,7 @@ def list_skills(
                 channel=latest.channel if latest else None,
                 currentVersion=skill.current_version or 0,
                 extra_frontmatter=skill.extra_frontmatter,
+                origin=_build_origin(skill, sources_by_id.get(skill.import_source_id)) if skill.import_source_id else None,
             )
         )
 
@@ -216,6 +264,7 @@ def set_latest_version(
         current_version=skill_row.current_version or 0,
         total_versions=_skill_total_versions(db, skill_row.id),
         extra_frontmatter=skill_row.extra_frontmatter,
+        origin=_origin_for_skill(db, skill_row),
         created_at=skill_row.created_at,
         updated_at=skill_row.updated_at,
     )
@@ -267,6 +316,7 @@ def restore_version(
         current_version=skill_row.current_version or 0,
         total_versions=_skill_total_versions(db, skill_row.id),
         extra_frontmatter=skill_row.extra_frontmatter,
+        origin=_origin_for_skill(db, skill_row),
         created_at=skill_row.created_at,
         updated_at=skill_row.updated_at,
     )
@@ -288,6 +338,7 @@ def get_skill(
         current_version=skill_row.current_version or 0,
         total_versions=_skill_total_versions(db, skill_row.id),
         extra_frontmatter=skill_row.extra_frontmatter,
+        origin=_origin_for_skill(db, skill_row),
         created_at=skill_row.created_at,
         updated_at=skill_row.updated_at,
     )
@@ -463,6 +514,7 @@ def update_skill(
         current_version=skill_row.current_version or 0,
         total_versions=_skill_total_versions(db, skill_row.id),
         extra_frontmatter=skill_row.extra_frontmatter,
+        origin=_origin_for_skill(db, skill_row),
         created_at=skill_row.created_at,
         updated_at=skill_row.updated_at,
     )
