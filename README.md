@@ -131,24 +131,6 @@ The inspector shallow-clones with sparse checkout (scoped to a subfolder if give
 
 **Upsert on re-install.** Re-importing from the same source is idempotent: unchanged skills are a no-op, and any skill you've edited locally gets cleanly overwritten with the upstream version when you hit the button again (`on_conflict: 'replace'`). No duplicates, no rename suffixes, no forked-state drift.
 
-**Provenance stays with the skill.** Every imported skill carries its origin (repo, branch, commit SHA, file path) as first-class metadata. The skill detail page shows a **Source** card in the right rail that deep-links back to the file on GitHub at the exact SHA it was imported from.
-
-<p align="center">
-  <img src="docs/screenshots/skill-source.png" width="100%" alt="Skill detail page with Source card in the right rail showing repo, branch, commit SHA, and file path" />
-</p>
-
-### Collections enforce the 15-skill cap end-to-end
-
-The cap isn't only visible at install time. Every collection view shows its load in the form `N / 15 skills` with a color signal (amber near the cap, red over). Hover the info icon anywhere the count appears to read the reason the cap exists.
-
-<p align="center">
-  <img src="docs/screenshots/collections-list.png" width="100%" alt="Collections list with per-collection N / 15 skill count and color progress bar" />
-</p>
-
-<p align="center">
-  <img src="docs/screenshots/collection-detail.png" width="100%" alt="Collection detail page showing 17 / 15 skills in red — over cap" />
-</p>
-
 ### Endpoints powering the flow
 
 | Endpoint | Purpose |
