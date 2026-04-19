@@ -15,9 +15,9 @@ import { cn } from '@/lib/utils'
 type Stage = 'idle' | 'inspecting' | 'preview' | 'error'
 
 const EXAMPLES = [
-  'https://github.com/wshobson/agents/tree/main/plugins/agent-teams/skills/parallel-debugging',
+  'https://github.com/garrytan/gstack',
   'https://github.com/anthropics/skills',
-  'https://github.com/affaan-m/everything-claude-code/tree/main/.agents/skills',
+  'https://github.com/obra/superpowers/tree/main/skills',
 ]
 
 type Props = {
@@ -148,7 +148,7 @@ export function ImportPanel({ onImported, onViewLibrary, existingCollectionSlugs
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !inspectDisabled) handleInspect()
               }}
-              placeholder="wshobson/agents · https://github.com/owner/repo · /tree/main/skills"
+              placeholder="garrytan/gstack · https://github.com/owner/repo · /tree/main/skills"
               className={cn(
                 'pl-10 text-sm shadow-sm transition-all',
                 isCompact ? 'h-10' : 'h-12 text-[14px]',

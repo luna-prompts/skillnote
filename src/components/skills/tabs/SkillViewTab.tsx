@@ -195,7 +195,12 @@ export function SkillViewTab({ skill, onAddComment, ratingDetail, reviews: initi
   const isDark = resolvedTheme === 'dark'
   const viewContentRef = useRef<HTMLDivElement>(null)
 
-  const strippedContent = useMemo(() => stripFrontmatter(skill.content_md), [skill.content_md])
+  const strippedContent = useMemo(
+    // Also drop HTML comments so build-tool metadata like
+    // "<!-- AUTO-GENERATED from SKILL.md.tmpl -->" doesn't render as text.
+    () => stripFrontmatter(skill.content_md).replace(/<!--[\s\S]*?-->/g, ''),
+    [skill.content_md],
+  )
 
   // Paginated reviews
   const [reviews, setReviews] = useState<SkillReview[]>(initialReviews)
