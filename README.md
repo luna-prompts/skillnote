@@ -119,7 +119,7 @@ The Claude Code community has already curated hundreds of `SKILL.md` files in pu
 The inspector shallow-clones with sparse checkout (scoped to a subfolder if given), scans every `SKILL.md`, validates YAML frontmatter, and opens a full-page workspace before anything lands in your library.
 
 <p align="center">
-  <img src="docs/screenshots/marketplace-workspace.png" width="100%" alt="Marketplace workspace: sidebar with numbered skill selection, markdown preview on the right, collection picker and Add button in the footer" />
+  <img src="docs/screenshots/marketplace-workspace-v2.png" width="100%" alt="Marketplace workspace: sidebar with numbered skill selection and the algorithmic-art skill rendered in the preview pane on the right, with collection picker and Add button in the footer" />
 </p>
 
 **In the workspace you can:**
