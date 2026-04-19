@@ -18,6 +18,7 @@ class InspectSkill(BaseModel):
     path: Optional[str] = None
     content_hash: Optional[str] = None
     license: Optional[str] = None
+    body: Optional[str] = None
 
 
 class InspectResponseSource(BaseModel):

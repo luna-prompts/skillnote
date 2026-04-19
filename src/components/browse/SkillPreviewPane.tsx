@@ -1,4 +1,6 @@
 'use client'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import type { InspectSkill } from '@/lib/api/imports'
 
 type Props = {
@@ -31,9 +33,17 @@ export function SkillPreviewPane({ skill }: Props) {
         {skill.license && <div>License: {skill.license}</div>}
         {skill.content_hash && <div>SHA: <code className="font-mono">{skill.content_hash.slice(0, 12)}</code></div>}
       </div>
-      <div className="rounded-md border border-dashed border-border/40 p-4 text-xs text-muted-foreground">
-        Full SKILL.md content will appear here after import.
-      </div>
+      {skill.body ? (
+        <div className="rounded-md border border-border/40 bg-card p-4">
+          <div className="prose prose-sm dark:prose-invert max-w-none">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{skill.body}</ReactMarkdown>
+          </div>
+        </div>
+      ) : (
+        <div className="rounded-md border border-dashed border-border/40 p-4 text-xs text-muted-foreground">
+          No SKILL.md body available for preview.
+        </div>
+      )}
     </div>
   )
 }

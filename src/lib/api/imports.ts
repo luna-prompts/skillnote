@@ -23,6 +23,7 @@ export type InspectSkill = {
   path?: string
   content_hash?: string
   license?: string
+  body?: string
 }
 
 export type InspectResponse = {

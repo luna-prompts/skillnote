@@ -137,12 +137,17 @@ def clone_and_scan(parsed: dict, *, token: Optional[str] = None, timeout_s: int 
             except Exception:
                 continue  # skip invalid frontmatter
             skill_dir = p.parent.relative_to(Path(tmp))
+            # Full markdown body after the closing `---`. Kept uncapped so the
+            # importer can persist full content_md; the API endpoint truncates
+            # to ~8 KB before returning to the browser.
+            body = text[end + 4:].lstrip("\n")
             skills.append({
                 "name": validated.name,
                 "description": validated.description,
                 "path": str(skill_dir),
                 "content_hash": hashlib.sha256(raw).hexdigest(),
                 "license": validated.license,
+                "body": body,
             })
 
         return CloneResult(skills=skills, resolved_sha=sha_out)

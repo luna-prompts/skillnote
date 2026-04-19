@@ -48,6 +48,18 @@ def _err_code(e: HTTPException) -> str | None:
     return str(e.detail) if e.detail else None
 
 
+_BODY_PREVIEW_MAX = 8192
+
+
+def _truncate_body(body: str | None) -> str | None:
+    """Cap body at ~8 KB for wire response; full body stays in InspectResult."""
+    if not body:
+        return body
+    if len(body) <= _BODY_PREVIEW_MAX:
+        return body
+    return body[:_BODY_PREVIEW_MAX] + "\n\n… (truncated — full content imported)"
+
+
 # Map inspector error codes → HTTP status.
 _INSPECT_ERROR_STATUS = {
     "REPO_NOT_FOUND": 404,
@@ -93,9 +105,27 @@ def inspect_endpoint(body: InspectRequest) -> InspectResponse:
             status = _INSPECT_ERROR_STATUS.get(code, 500)
             raise api_error(status, code, result.error_message or code)
 
+        # Auto-suggest slug from {owner}-{repo}, but drop owner entirely if
+        # owner OR repo contains a reserved-word substring ("anthropic",
+        # "claude") — otherwise the suggestion fails the collection-name
+        # validator. Falls back to repo-only, then strips reserved substrings
+        # from there if needed.
         suggested = None
         if result.owner and result.repo:
-            suggested = f"{result.owner}-{result.repo}".lower()
+            owner_l = result.owner.lower()
+            repo_l = result.repo.lower()
+            reserved = ("anthropic", "claude")
+            owner_ok = not any(w in owner_l for w in reserved)
+            if owner_ok:
+                suggested = f"{owner_l}-{repo_l}"
+            else:
+                suggested = repo_l
+            # Last-resort sanitization on the repo half (rare but possible)
+            for w in reserved:
+                suggested = suggested.replace(w, "")
+            while "--" in suggested:
+                suggested = suggested.replace("--", "-")
+            suggested = suggested.strip("-_") or None
 
         response = InspectResponse(
             source=InspectResponseSource(
@@ -109,7 +139,13 @@ def inspect_endpoint(body: InspectRequest) -> InspectResponse:
                 subpath=result.subpath,
             ),
             kind=result.kind,
-            skills=[InspectSkill(**s) for s in result.skills],
+            # Truncate body for frontend (response payload would balloon to MBs
+            # for large marketplaces otherwise). Full body is consumed by the
+            # importer path via InspectResult directly, not via this response.
+            skills=[
+                InspectSkill(**{**s, "body": _truncate_body(s.get("body"))})
+                for s in result.skills
+            ],
             manifest=result.manifest,
             suggested_collection_slug=suggested,
         )
