@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class ContextBundleRequest(BaseModel):
@@ -11,6 +11,14 @@ class ContextBundleRequest(BaseModel):
     workspace: str | None = None
     recent_skill_ids: list[uuid.UUID] = Field(default_factory=list)
     max_skills: int = Field(default=20, ge=1, le=100)
+
+    @field_validator("task_summary")
+    @classmethod
+    def _strip_and_check(cls, v: str) -> str:
+        s = v.strip()
+        if not s:
+            raise ValueError("must not be empty or whitespace")
+        return s
 
 
 class ContextBundleSkill(BaseModel):
@@ -50,13 +58,22 @@ class UsageEventCreate(BaseModel):
     channel: str | None = Field(default=None, max_length=64)
     metadata_json: dict[str, Any] | None = None
 
+    @field_validator("agent_name", "task_summary")
+    @classmethod
+    def _strip_and_check(cls, v: str) -> str:
+        s = v.strip()
+        if not s:
+            raise ValueError("must not be empty or whitespace")
+        return s
+
 
 class UsageEventOut(BaseModel):
     id: uuid.UUID
     agent_name: str
     task_summary: str
     collection_id: str | None
-    skill_ids: list[uuid.UUID]
+    # stored as JSON strings; raw to avoid coercion 500s on legacy data
+    skill_ids: list[str]
     resolver_confidence: float | None
     risk_level: str | None
     outcome: str | None
