@@ -60,3 +60,38 @@ def test_resolve_recommendation_none():
     m = _load_module()
     existing = [("frontend", 5, [])]
     assert m._resolve_recommendation("!!!", existing) == ("none", None)
+
+
+def test_wrap_strips_embedded_newlines():
+    """Garrytan-gstack regression: descriptions with literal \\n in them
+    were passed straight to curses.addstr(), which moves the cursor to col 0
+    and overwrites the adjacent pane. Wrap output must be control-char free.
+    """
+    m = _load_module()
+    desc = "Performance regression detection.\nBaselines for page loads,\nCore Web Vitals."
+    out = m._wrap(desc, 40)
+    for line in out:
+        assert "\n" not in line
+        assert "\r" not in line
+        assert "\t" not in line
+        # No other ASCII control chars either
+        assert all(c >= " " for c in line), f"control char in {line!r}"
+
+
+def test_wrap_handles_carriage_returns_and_tabs():
+    m = _load_module()
+    out = m._wrap("a\tb\rc\fd\ve", 80)
+    assert out == ["a b c d e"]
+
+
+def test_wrap_collapses_internal_whitespace():
+    m = _load_module()
+    out = m._wrap("a   b  \n\n  c", 80)
+    assert out == ["a b c"]
+
+
+def test_wrap_caps_at_four_lines():
+    m = _load_module()
+    long = " ".join(["word"] * 200)
+    out = m._wrap(long, 20)
+    assert len(out) <= 4

@@ -408,6 +408,12 @@ def _clamp(v, lo, hi):
 
 
 def _wrap(text, w):
+    # Collapse embedded newlines/tabs/CR — curses.addstr() interprets them as
+    # cursor moves and would overwrite the adjacent pane. Strip other control
+    # chars too (some YAML descriptions sneak in NULs).
+    text = "".join(" " if c in "\n\r\t\v\f" else c
+                   for c in text if c >= " " or c in "\n\r\t\v\f")
+    text = " ".join(text.split())  # collapse runs of whitespace
     lines = []
     while text and len(lines) < 4:
         if len(text) <= w:
