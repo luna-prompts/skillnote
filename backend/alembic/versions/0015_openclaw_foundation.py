@@ -10,7 +10,6 @@ Revision ID: 0015_openclaw_foundation
 Revises: 0014_subpath_not_null
 Create Date: 2026-04-26
 """
-import uuid
 
 from alembic import op
 import sqlalchemy as sa
@@ -36,7 +35,7 @@ def upgrade() -> None:
     # c. Create skill_usage_events table
     op.create_table(
         'skill_usage_events',
-        sa.Column('id', UUID(as_uuid=True), primary_key=True, default=uuid.uuid4),
+        sa.Column('id', UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
         sa.Column('agent_name', sa.String(255), nullable=False),
         sa.Column('task_summary', sa.Text, nullable=False),
         sa.Column(
