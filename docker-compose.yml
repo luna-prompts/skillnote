@@ -11,7 +11,7 @@ name: skillnote
 
 services:
   postgres:
-    image: postgres:16
+    image: pgvector/pgvector:pg16
     environment:
       POSTGRES_DB: skillnote
       POSTGRES_USER: skillnote
