@@ -37,6 +37,27 @@ def _slugify(name: str) -> str:
     return s
 
 
+def _refresh_embedding(skill: Skill, *, action: str) -> None:
+    """Compute and assign skill.embedding from name+description.
+
+    Embedding failure NEVER blocks skill CRUD — logs a warning and leaves
+    the existing embedding (None for new skills, stale value for updates).
+    Catches EmbeddingNotConfigured (no API key), EmbeddingError (provider
+    failure), and ValueError (defensive: e.g., empty embedding text).
+    """
+    try:
+        skill.embedding = embedding_service.embed_text(
+            embedding_service.skill_embedding_text(skill.name, skill.description)
+        )
+    except embedding_service.EmbeddingNotConfigured:
+        logger.warning("SKILLNOTE_EMBEDDING_API_KEY unset; skill %r %s embedding skipped",
+                       skill.slug, action)
+    except embedding_service.EmbeddingError as e:
+        logger.warning("Embedding %s failed for skill %r: %s", action, skill.slug, e)
+    except ValueError as e:
+        logger.warning("Embedding %s rejected for skill %r: %s", action, skill.slug, e)
+
+
 def _skill_total_versions(db: Session, skill_id) -> int:
     from app.db.models.skill_content_version import SkillContentVersion as _SCV
     return db.query(_SCV).filter(_SCV.skill_id == skill_id).count()
@@ -311,23 +332,7 @@ def restore_version(
     # Restore can change name/description (the title/description fields on the
     # snapshot), so re-embed. Body (content_md) is excluded per DD11, but
     # title/description ARE part of the embedded text.
-    try:
-        skill_row.embedding = embedding_service.embed_text(
-            embedding_service.skill_embedding_text(
-                skill_row.name, skill_row.description
-            )
-        )
-    except embedding_service.EmbeddingNotConfigured:
-        logger.warning(
-            "SKILLNOTE_EMBEDDING_API_KEY unset; skill %r kept stale embedding after restore",
-            skill_row.slug,
-        )
-    except embedding_service.EmbeddingError as e:
-        logger.warning(
-            "Embedding restore failed for skill %r: %s; kept stale embedding",
-            skill_row.slug,
-            e,
-        )
+    _refresh_embedding(skill_row, action="restore")
 
     db.commit()
     db.refresh(skill_row)
@@ -424,21 +429,7 @@ def create_skill(
 
     # Generate embedding from name + description (body excluded per DD11).
     # Failures here MUST NOT block skill creation — log and proceed with NULL.
-    try:
-        skill.embedding = embedding_service.embed_text(
-            embedding_service.skill_embedding_text(skill.name, skill.description)
-        )
-    except embedding_service.EmbeddingNotConfigured:
-        logger.warning(
-            "SKILLNOTE_EMBEDDING_API_KEY unset; skill %r will have NULL embedding",
-            skill.slug,
-        )
-    except embedding_service.EmbeddingError as e:
-        logger.warning(
-            "Embedding failed for skill %r: %s; will have NULL embedding",
-            skill.slug,
-            e,
-        )
+    _refresh_embedding(skill, action="create")
 
     db.add(skill)
     db.flush()
@@ -547,23 +538,7 @@ def update_skill(
     # Re-embed only if name or description changed (body excluded from embedding per DD11).
     # Failures here MUST NOT block the update — log and keep the prior (stale) embedding.
     if payload.name is not None or payload.description is not None:
-        try:
-            skill_row.embedding = embedding_service.embed_text(
-                embedding_service.skill_embedding_text(
-                    skill_row.name, skill_row.description
-                )
-            )
-        except embedding_service.EmbeddingNotConfigured:
-            logger.warning(
-                "SKILLNOTE_EMBEDDING_API_KEY unset; skill %r kept stale embedding",
-                skill_row.slug,
-            )
-        except embedding_service.EmbeddingError as e:
-            logger.warning(
-                "Embedding update failed for skill %r: %s; kept stale embedding",
-                skill_row.slug,
-                e,
-            )
+        _refresh_embedding(skill_row, action="update")
 
     # Notify MCP server of tool-list change (delivered on commit)
     db.execute(text("SELECT pg_notify('skillnote_skills_changed', 'updated')"))

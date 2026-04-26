@@ -416,3 +416,37 @@ def test_create_skill_succeeds_when_embedding_unconfigured(
     skill_row = db_session.get(Skill, skill_id)
     assert skill_row is not None, "skill must be in DB"
     assert skill_row.embedding is None, "embedding must be NULL when service is unconfigured"
+
+
+def test_restore_version_re_embeds(client, monkeypatch, db_session, cleanup):
+    """Restoring an old SkillContentVersion re-embeds when name/description differ."""
+    call_count = {"n": 0}
+
+    def _fake_embed_text(_text: str) -> list[float]:
+        call_count["n"] += 1
+        return _vec(0.5)
+
+    monkeypatch.setattr(embedding_service, "embed_text", _fake_embed_text)
+
+    # Create skill v1
+    payload = _make_skill_payload()
+    r = client.post("/v1/skills", json=payload)
+    assert r.status_code == 201, r.text
+    slug = r.json()["slug"]
+    cleanup.append(uuid.UUID(r.json()["id"]))
+    create_count = call_count["n"]
+    assert create_count >= 1, "create should embed once"
+
+    # Update to v2 with new description
+    r = client.patch(f"/v1/skills/{slug}", json={"description": "updated desc"})
+    assert r.status_code == 200, r.text
+    update_count = call_count["n"]
+    assert update_count > create_count, "update should re-embed"
+
+    # Restore v1
+    r = client.post(f"/v1/skills/{slug}/content-versions/1/restore")
+    assert r.status_code == 200, r.text
+    restore_count = call_count["n"]
+    assert restore_count > update_count, (
+        "restore should re-embed (name/description restored from snapshot)"
+    )
