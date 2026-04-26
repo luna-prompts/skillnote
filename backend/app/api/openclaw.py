@@ -5,6 +5,7 @@ task summary using pgvector cosine distance and pre-aggregates supporting
 metadata (usage counts, ratings, latest comment, deprecation flag) in a
 constant number of queries regardless of the result-set size.
 """
+import uuid
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends
@@ -45,8 +46,17 @@ def context_bundle(
         )
 
     # 2. Embed the task_summary. Provider failures bubble up as 502.
+    #    Defense-in-depth: even with the is_configured() guard above, a race
+    #    (settings reload, key revoked mid-flight) could surface
+    #    EmbeddingNotConfigured here — map it to the same 503 envelope.
     try:
         query_vec = embedding_service.embed_text(req.task_summary)
+    except embedding_service.EmbeddingNotConfigured:
+        raise api_error(
+            503,
+            "EMBEDDING_NOT_CONFIGURED",
+            "SkillNote is missing SKILLNOTE_EMBEDDING_API_KEY; cannot rank skills semantically",
+        )
     except embedding_service.EmbeddingError as e:
         raise api_error(502, "EMBEDDING_PROVIDER_ERROR", str(e))
 
@@ -61,76 +71,73 @@ def context_bundle(
     rows = db.execute(ranked_stmt).all()
     ranked_skills: list[Skill] = [row[0] for row in rows]
 
-    # 4. Pull all collections — small set, no ranking needed.
+    # 4. Early-return when no skills match. We still pull collections — an
+    #    empty skills list doesn't mean an empty registry of collections.
+    if not ranked_skills:
+        bundle_collections = [
+            ContextBundleCollection(name=c.name, description=c.description)
+            for c in db.query(Collection).all()
+        ]
+        return ContextBundleResponse(collections=bundle_collections, skills=[])
+
+    # 5. Pull all collections — small set, no ranking needed.
     collections = db.query(Collection).all()
 
     skill_id_uuids = [s.id for s in ranked_skills]
     skill_id_strs = [str(s.id) for s in ranked_skills]
 
-    # 5. Pre-aggregate usage_count_30d in ONE query via JSONB array unnesting.
+    # 6. Pre-aggregate usage_count_30d in ONE query via JSONB array unnesting.
     #    Subquery isolates the unnest so we can GROUP BY the resulting sid and
     #    filter with WHERE before grouping (cleaner than HAVING on a SRF).
-    if skill_id_strs:
-        thirty_days_ago = datetime.now(timezone.utc) - timedelta(days=30)
-        unnest_subq = (
-            select(
-                func.jsonb_array_elements_text(SkillUsageEvent.skill_ids).label("sid"),
-            )
-            .where(SkillUsageEvent.created_at > thirty_days_ago)
-            .subquery()
+    thirty_days_ago = datetime.now(timezone.utc) - timedelta(days=30)
+    unnest_subq = (
+        select(
+            func.jsonb_array_elements_text(SkillUsageEvent.skill_ids).label("sid"),
         )
-        usage_stmt = (
-            select(unnest_subq.c.sid, func.count().label("cnt"))
-            .where(unnest_subq.c.sid.in_(skill_id_strs))
-            .group_by(unnest_subq.c.sid)
-        )
-        usage_counts: dict[str, int] = {
-            row.sid: row.cnt for row in db.execute(usage_stmt).all()
-        }
-    else:
-        usage_counts = {}
+        .where(SkillUsageEvent.created_at > thirty_days_ago)
+        .subquery()
+    )
+    usage_stmt = (
+        select(unnest_subq.c.sid, func.count().label("cnt"))
+        .where(unnest_subq.c.sid.in_(skill_id_strs))
+        .group_by(unnest_subq.c.sid)
+    )
+    usage_counts: dict[str, int] = {
+        row.sid: row.cnt for row in db.execute(usage_stmt).all()
+    }
 
-    # 6. Pre-aggregate rating_avg in ONE query.
-    if skill_id_uuids:
-        rating_stmt = (
-            select(Comment.skill_id, func.avg(Comment.rating).label("avg"))
-            .where(Comment.skill_id.in_(skill_id_uuids))
-            .where(Comment.rating.is_not(None))
-            .group_by(Comment.skill_id)
-        )
-        rating_avgs: dict = {
-            row.skill_id: float(row.avg) for row in db.execute(rating_stmt).all()
-        }
-    else:
-        rating_avgs = {}
+    # 7. Pre-aggregate rating_avg in ONE query.
+    rating_stmt = (
+        select(Comment.skill_id, func.avg(Comment.rating).label("avg"))
+        .where(Comment.skill_id.in_(skill_id_uuids))
+        .where(Comment.rating.is_not(None))
+        .group_by(Comment.skill_id)
+    )
+    rating_avgs: dict[uuid.UUID, float] = {
+        row.skill_id: float(row.avg) for row in db.execute(rating_stmt).all()
+    }
 
-    # 7. Pre-aggregate latest comment per skill via DISTINCT ON.
-    if skill_id_uuids:
-        latest_stmt = (
-            select(Comment.skill_id, Comment.body)
-            .where(Comment.skill_id.in_(skill_id_uuids))
-            .order_by(Comment.skill_id, desc(Comment.created_at))
-            .distinct(Comment.skill_id)
-        )
-        latest_comments: dict = {
-            row.skill_id: row.body[:200] for row in db.execute(latest_stmt).all()
-        }
-    else:
-        latest_comments = {}
+    # 8. Pre-aggregate latest comment per skill via DISTINCT ON.
+    latest_stmt = (
+        select(Comment.skill_id, Comment.body)
+        .where(Comment.skill_id.in_(skill_id_uuids))
+        .order_by(Comment.skill_id, desc(Comment.created_at))
+        .distinct(Comment.skill_id)
+    )
+    latest_comments: dict[uuid.UUID, str] = {
+        row.skill_id: row.body[:200] for row in db.execute(latest_stmt).all()
+    }
 
-    # 8. Pre-aggregate deprecation flag in ONE query.
-    if skill_id_uuids:
-        dep_stmt = (
-            select(Comment.skill_id)
-            .where(Comment.skill_id.in_(skill_id_uuids))
-            .where(Comment.comment_type == "agent_deprecation_warning")
-            .distinct()
-        )
-        deprecated: set = {row.skill_id for row in db.execute(dep_stmt).all()}
-    else:
-        deprecated = set()
+    # 9. Pre-aggregate deprecation flag in ONE query.
+    dep_stmt = (
+        select(Comment.skill_id)
+        .where(Comment.skill_id.in_(skill_id_uuids))
+        .where(Comment.comment_type == "agent_deprecation_warning")
+        .distinct()
+    )
+    deprecated: set[uuid.UUID] = {row.skill_id for row in db.execute(dep_stmt).all()}
 
-    # 9. Build the response payload.
+    # 10. Build the response payload.
     def _staleness(skill_id, rating: float | None) -> str:
         if skill_id in deprecated:
             return "needs_review"

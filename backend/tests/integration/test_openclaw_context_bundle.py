@@ -170,8 +170,17 @@ def test_empty_registry_returns_empty_arrays(client, monkeypatch, db_session):
     We don't try to assert the collections list is empty — other tests in this
     DB likely seeded collections — we just assert the call succeeds and the
     skills list is empty when no skill matches the (mocked) query vector.
+
+    NOTE: this test commits an UPDATE that nulls every skill's embedding. The
+    fixture's session.rollback() can't undo a committed change, so we have to
+    snapshot the existing (id, embedding) pairs and restore them in `finally`
+    or subsequent tests in the same DB run inherit a wiped registry.
     """
     _mock_embed_text(monkeypatch, 0)
+    # Snapshot existing embeddings so we can restore them after.
+    saved = db_session.execute(
+        text("SELECT id, embedding FROM skills WHERE embedding IS NOT NULL")
+    ).fetchall()
     # Wipe just the embeddings (don't delete skills — other tests rely on them)
     db_session.execute(text("UPDATE skills SET embedding = NULL"))
     db_session.commit()
@@ -184,7 +193,12 @@ def test_empty_registry_returns_empty_arrays(client, monkeypatch, db_session):
         assert body["skills"] == []
         assert isinstance(body["collections"], list)
     finally:
-        db_session.rollback()
+        for sid, emb in saved:
+            db_session.execute(
+                text("UPDATE skills SET embedding = :emb WHERE id = :sid"),
+                {"emb": emb, "sid": sid},
+            )
+        db_session.commit()
 
 
 def test_5_skills_ranked_by_cosine(client, monkeypatch, db_session, cleanup):
