@@ -1,5 +1,6 @@
 from datetime import datetime
-from pydantic import BaseModel
+from typing import Literal
+from pydantic import BaseModel, Field, model_validator
 import uuid
 
 
@@ -9,6 +10,10 @@ class CommentOut(BaseModel):
     body: str
     created_at: datetime
     updated_at: datetime
+    author_type: str
+    comment_type: str | None
+    rating: int | None
+    linked_usage_id: uuid.UUID | None
 
     model_config = {"from_attributes": True}
 
@@ -16,6 +21,16 @@ class CommentOut(BaseModel):
 class CommentCreate(BaseModel):
     author: str
     body: str
+    author_type: Literal["human", "agent"] = "human"
+    comment_type: str | None = Field(default=None, max_length=64)
+    rating: int | None = Field(default=None, ge=1, le=5)
+    linked_usage_id: uuid.UUID | None = None
+
+    @model_validator(mode="after")
+    def _agent_requires_comment_type(self):
+        if self.author_type == "agent" and not self.comment_type:
+            raise ValueError("agent comments require comment_type")
+        return self
 
 
 class CommentUpdate(BaseModel):
