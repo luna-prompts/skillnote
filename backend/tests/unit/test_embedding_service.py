@@ -90,3 +90,44 @@ def test_unknown_provider_raises(configured):
 def test_skill_embedding_text():
     assert skill_embedding_text("my-skill", "does X") == "my-skill\n\ndoes X"
     assert skill_embedding_text("my-skill", None) == "my-skill"
+
+
+# ── direct provider tests (stub the SDK clients) ──────────────────────
+
+class _FakeEmbeddingResp:
+    def __init__(self, vectors):
+        self.data = [type("D", (), {"embedding": v})() for v in vectors]
+
+
+class _FakeEmbeddings:
+    def __init__(self, vectors):
+        self._v = vectors
+
+    def create(self, model, input):
+        return _FakeEmbeddingResp(self._v)
+
+
+def _make_fake_openai(vectors):
+    class _FakeOpenAI:
+        def __init__(self, api_key):
+            self.embeddings = _FakeEmbeddings(vectors)
+
+    return _FakeOpenAI
+
+
+def test_openai_embed_dimension_guard_raises_on_mismatch(configured, monkeypatch):
+    # Returned vector is 100-dim but settings.embedding_dim is 1536.
+    monkeypatch.setattr("openai.OpenAI", _make_fake_openai([[0.0] * 100]))
+    with pytest.raises(EmbeddingError, match="dimension"):
+        embedding_service._openai_embed(["x"])
+
+
+def test_openai_embed_happy_path_correct_dim(configured, monkeypatch):
+    vectors = [[0.1] * 1536, [0.2] * 1536]
+    monkeypatch.setattr("openai.OpenAI", _make_fake_openai(vectors))
+    result = embedding_service._openai_embed(["a", "b"])
+    assert len(result) == 2
+    assert all(len(v) == 1536 for v in result)
+
+
+# TODO(v2.1): add direct test for _voyage_embed

@@ -1,4 +1,3 @@
-import hashlib
 import logging
 from functools import lru_cache
 
@@ -27,8 +26,8 @@ def _ensure_configured() -> None:
 
 
 @lru_cache(maxsize=1024)
-def _embed_cached(text_hash: str, text: str) -> tuple[float, ...]:
-    """Internal cached embed. Hash key stabilizes lookup; text passed for the actual call.
+def _embed_cached(text: str) -> tuple[float, ...]:
+    """Internal cached embed. Keyed on the text itself (lru_cache hashes args).
 
     Returns a tuple (hashable for lru_cache return value); callers convert to list.
     """
@@ -36,15 +35,14 @@ def _embed_cached(text_hash: str, text: str) -> tuple[float, ...]:
 
 
 def embed_text(text: str) -> list[float]:
-    """Embed a single string. LRU-cached on SHA256 of input.
+    """Embed a single string. LRU-cached on the input text.
 
     Raises EmbeddingNotConfigured if no API key. Raises EmbeddingError on provider failure.
     """
     _ensure_configured()
     if not text:
         raise ValueError("embed_text requires non-empty text")
-    h = hashlib.sha256(text.encode("utf-8")).hexdigest()
-    return list(_embed_cached(h, text))
+    return list(_embed_cached(text))
 
 
 def embed_batch(texts: list[str]) -> list[list[float]]:
@@ -68,10 +66,13 @@ def _embed_one(text: str) -> list[float]:
 
 def _embed_many(texts: list[str]) -> list[list[float]]:
     if settings.embedding_provider == "openai":
-        return _openai_embed(texts)
-    if settings.embedding_provider == "voyage":
-        return _voyage_embed(texts)
-    raise EmbeddingError(f"Unknown embedding provider: {settings.embedding_provider!r}")
+        vectors = _openai_embed(texts)
+    elif settings.embedding_provider == "voyage":
+        vectors = _voyage_embed(texts)
+    else:
+        raise EmbeddingError(f"Unknown embedding provider: {settings.embedding_provider!r}")
+    logger.info("embedded %d text(s) via %s", len(texts), settings.embedding_provider)
+    return vectors
 
 
 def _openai_embed(texts: list[str]) -> list[list[float]]:
@@ -83,6 +84,7 @@ def _openai_embed(texts: list[str]) -> list[list[float]]:
     try:
         resp = client.embeddings.create(model=settings.embedding_model, input=texts)
     except OpenAIError as e:
+        logger.warning("OpenAI embeddings call failed: %s", e)
         raise EmbeddingError(f"OpenAI embeddings call failed: {e}") from e
     vectors = [d.embedding for d in resp.data]
     if any(len(v) != settings.embedding_dim for v in vectors):
@@ -101,6 +103,7 @@ def _voyage_embed(texts: list[str]) -> list[list[float]]:
     try:
         result = client.embed(texts, model=settings.embedding_model)
     except Exception as e:  # voyageai doesn't have a stable error class
+        logger.warning("Voyage embeddings call failed: %s", e)
         raise EmbeddingError(f"Voyage embeddings call failed: {e}") from e
     vectors = result.embeddings
     if any(len(v) != settings.embedding_dim for v in vectors):

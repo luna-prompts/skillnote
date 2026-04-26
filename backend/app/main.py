@@ -34,6 +34,7 @@ from app.api.setup import router as setup_router
 from app.api.sessions import router as sessions_router
 from app.api.imports import router as imports_router
 from app.api.marketplace import router as marketplace_router
+from app.services import embedding_service
 
 app = FastAPI(title="SkillNote Backend", version="0.1.0")
 
@@ -125,7 +126,6 @@ app.include_router(marketplace_router)
 
 @app.on_event("startup")
 async def _check_embedding_config():
-    from app.services import embedding_service
     if not embedding_service.is_configured():
         _skillnote_logger.warning(
             "SKILLNOTE_EMBEDDING_API_KEY is not set; "
