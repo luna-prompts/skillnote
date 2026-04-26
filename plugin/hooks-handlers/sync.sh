@@ -151,12 +151,15 @@ if os.path.isdir(skills_dir):
             stale.add(entry)
 for name in sorted(stale):
     skill_dir = os.path.join(skills_dir, name)
-    if os.path.isdir(skill_dir):
-        try:
+    try:
+        if os.path.islink(skill_dir):
+            os.unlink(skill_dir)
+            deleted += 1
+        elif os.path.isdir(skill_dir):
             shutil.rmtree(skill_dir)
             deleted += 1
-        except Exception:
-            pass  # permission error — skip
+    except OSError:
+        pass  # permission error — skip
 
 # Write updated manifest (uses local_names for directory tracking)
 with open(manifest_path, 'w') as f:

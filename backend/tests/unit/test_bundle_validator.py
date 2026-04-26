@@ -64,6 +64,40 @@ def test_validate_zip_rejects_too_many_entries(tmp_path: Path, monkeypatch: pyte
         validate_zip_and_extract_metadata(str(zpath))
 
 
+def test_validate_zip_rejects_symlink_entry(tmp_path: Path):
+    """A ZIP entry with the symlink mode bit must be rejected.
+
+    Without this guard, unzip(1) honors the bit and creates a symlink on disk,
+    letting a malicious bundle plant pointers to arbitrary files on the
+    consumer's filesystem (info disclosure when the agent reads the skill).
+    """
+    zpath = tmp_path / "evil.zip"
+    with zipfile.ZipFile(zpath, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr(
+            "SKILL.md", "---\nname: x\ndescription: y\n---\n"
+        )
+        info = zipfile.ZipInfo("evil-link")
+        info.create_system = 3  # unix
+        info.external_attr = (0o120777 << 16)  # S_IFLNK | rwxrwxrwx
+        zf.writestr(info, "/etc/passwd")  # symlink target
+    with pytest.raises(ValueError, match="Symbolic links"):
+        validate_zip_and_extract_metadata(str(zpath))
+
+
+def test_validate_zip_rejects_newline_in_entry_name(tmp_path: Path):
+    """Filenames with embedded newlines can fool any consumer that parses
+    listings by line (e.g. CLI's regex over `unzip -l` output).
+    """
+    zpath = tmp_path / "evil.zip"
+    with zipfile.ZipFile(zpath, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr(
+            "SKILL.md", "---\nname: x\ndescription: y\n---\n"
+        )
+        zf.writestr("a\nfake-line.txt", "evil")
+    with pytest.raises(ValueError, match="Unsafe path"):
+        validate_zip_and_extract_metadata(str(zpath))
+
+
 def test_validate_zip_rejects_large_uncompressed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     from app.validators import bundle_validator
 
