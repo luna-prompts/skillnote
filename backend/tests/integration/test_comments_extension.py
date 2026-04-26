@@ -211,6 +211,8 @@ def test_post_agent_comment_without_type_422(client, db_session, cleanup):
     err = r.json()["error"]
     # Schema validator fires first → VALIDATION_ENVELOPE; handler-side guard
     # would fire AGENT_COMMENT_REQUIRES_TYPE if the schema were relaxed.
+    # Today only VALIDATION_ERROR fires (Pydantic catches first); AGENT_COMMENT_REQUIRES_TYPE
+    # is the handler's defense-in-depth path, kept in the assertion for forward compatibility.
     assert err["code"] in {"VALIDATION_ERROR", "AGENT_COMMENT_REQUIRES_TYPE"}
     assert "comment_type" in err["message"]
 
@@ -370,3 +372,44 @@ def test_update_only_body_unchanged_new_fields(client, db_session, cleanup):
     assert body["author_type"] == "agent"
     assert body["comment_type"] == "agent_observation"
     assert body["rating"] == 3
+
+
+def test_patch_silently_ignores_extra_agent_only_fields(client, db_session, cleanup):
+    """PATCH must NOT accept rating/comment_type/etc. — CommentUpdate only declares body.
+
+    Pydantic v2 strips unknown fields by default (extra='ignore' is the default). Verify
+    the saved comment is unchanged on those fields even if a client tries to send them.
+    """
+    skill = _seed_skill(db_session, cleanup)
+    # Seed an agent comment via API so we can compare round-trip
+    create_resp = client.post(
+        f"/v1/skills/{skill.slug}/comments",
+        json={
+            "author": "openclaw",
+            "body": "original",
+            "author_type": "agent",
+            "comment_type": "agent_observation",
+            "rating": 4,
+        },
+    )
+    assert create_resp.status_code == 201
+    comment_id = create_resp.json()["id"]
+    cleanup["comments"].append(uuid.UUID(comment_id))
+
+    # Try to update body AND extra agent-only fields
+    patch_resp = client.patch(
+        f"/v1/skills/{skill.slug}/comments/{comment_id}",
+        json={
+            "body": "updated",
+            "rating": 1,
+            "comment_type": "agent_issue",
+            "author_type": "human",
+        },
+    )
+    assert patch_resp.status_code == 200, patch_resp.text
+    body = patch_resp.json()
+    assert body["body"] == "updated"
+    # The extra agent-only fields must be preserved from the original create
+    assert body["rating"] == 4, "rating must not be patchable via comment update"
+    assert body["comment_type"] == "agent_observation", "comment_type must not be patchable"
+    assert body["author_type"] == "agent", "author_type must not be patchable"
