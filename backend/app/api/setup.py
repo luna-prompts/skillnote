@@ -10,6 +10,7 @@ from fastapi.responses import PlainTextResponse, Response
 router = APIRouter(tags=["setup"])
 
 _PLUGIN_DIR = Path("/plugin") if Path("/plugin/.claude-plugin").is_dir() else Path(__file__).resolve().parent.parent.parent.parent / "plugin"
+_OPENCLAW_DIR = Path("/openclaw") if Path("/openclaw").is_dir() else Path(__file__).resolve().parent.parent.parent.parent / "plugin-openclaw"
 
 
 import re as _re
@@ -341,5 +342,109 @@ def get_setup_script(request: Request):
     script = (_SETUP_SCRIPT
               .replace("__API_URL__", urls["api"])
               .replace("__MCP_URL__", urls["mcp"])
+              .replace("__WEB_URL__", urls["web"]))
+    return PlainTextResponse(script, media_type="text/plain")
+
+
+@router.get("/v1/openclaw-bundle.zip")
+def get_openclaw_bundle_zip(request: Request):
+    """Serve the plugin-openclaw directory as a ZIP with host URLs baked in."""
+    urls = _derive_urls(request)
+    api_url = urls["api"]
+    web_url = urls["web"]
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        if _OPENCLAW_DIR.is_dir():
+            for fpath in _OPENCLAW_DIR.rglob("*"):
+                if fpath.is_file() and "__pycache__" not in str(fpath):
+                    rel = fpath.relative_to(_OPENCLAW_DIR)
+                    content = fpath.read_text(errors="replace")
+                    content = (content
+                               .replace("{{HOST}}", api_url)
+                               .replace("{{WEB_URL}}", web_url))
+                    zf.writestr(str(rel), content)
+    buf.seek(0)
+    return Response(content=buf.read(), media_type="application/zip")
+
+
+_OPENCLAW_SETUP_SCRIPT = r'''#!/bin/bash
+set -euo pipefail
+
+API_URL="__API_URL__"
+WEB_URL="__WEB_URL__"
+OPENCLAW_HOME="$HOME/.openclaw"
+SKILLS_DIR="$OPENCLAW_HOME/skills"
+CONFIG_DIR="$OPENCLAW_HOME/skillnote"
+
+echo ""
+echo "  S K I L L N O T E   →   O P E N C L A W"
+echo ""
+
+# ── prerequisites ────────────────────────────────────────────────────────────
+command -v curl &>/dev/null || { echo "Error: curl required."; exit 1; }
+command -v unzip &>/dev/null || { echo "Error: unzip required."; exit 1; }
+
+# ── consent prompt (interactive only) ─────────────────────────────────────────
+# If we have a TTY, ask the user; if running unattended (CI/automation), proceed.
+if [ -t 0 ]; then
+    echo "  This will install 2 skills into $SKILLS_DIR/:"
+    echo "    skillnote-awareness  (always-injected meta-skill)"
+    echo "    skillnote-resolver   (subagent invoked by name)"
+    echo "  and write config to $CONFIG_DIR/config.json"
+    echo "  pointing at $API_URL"
+    echo ""
+    read -p "  Continue? [y/N] " yn
+    case "$yn" in
+        [Yy]*) ;;
+        *) echo "  Aborted."; exit 0 ;;
+    esac
+else
+    echo "  Non-interactive install (no TTY); proceeding."
+fi
+
+# ── idempotent clean install ─────────────────────────────────────────────────
+rm -rf "$SKILLS_DIR/skillnote-awareness" "$SKILLS_DIR/skillnote-resolver"
+mkdir -p "$SKILLS_DIR" "$CONFIG_DIR"
+
+# ── download bundle ──────────────────────────────────────────────────────────
+TMP_ZIP=$(mktemp -t skillnote-openclaw.XXXXXX.zip) || { echo "Error: mktemp failed."; exit 1; }
+trap 'rm -f "$TMP_ZIP"' EXIT
+curl -sf --connect-timeout 10 --max-time 30 "$API_URL/v1/openclaw-bundle.zip" -o "$TMP_ZIP" || {
+    echo "Error: Could not download $API_URL/v1/openclaw-bundle.zip"
+    exit 1
+}
+
+# ── refuse symlink entries (matches Claude Code installer hardening) ─────────
+if unzip -Z "$TMP_ZIP" 2>/dev/null | awk '{print $1}' | grep -q '^l'; then
+    echo "Error: bundle contains symbolic link entries; refusing to extract."
+    exit 1
+fi
+
+# ── extract ──────────────────────────────────────────────────────────────────
+unzip -qo "$TMP_ZIP" -d "$SKILLS_DIR"
+
+# The bundle includes config.template.json at its root; move it to the config dir.
+if [ -f "$SKILLS_DIR/config.template.json" ]; then
+    mv "$SKILLS_DIR/config.template.json" "$CONFIG_DIR/config.json"
+fi
+
+echo ""
+echo "  Installed:"
+echo "    $SKILLS_DIR/skillnote-awareness/SKILL.md"
+echo "    $SKILLS_DIR/skillnote-resolver/SKILL.md"
+echo "    $CONFIG_DIR/config.json"
+echo ""
+echo "  Restart your OpenClaw session to pick up the new skills."
+echo "  Web: $WEB_URL"
+echo ""
+'''
+
+
+@router.get("/setup/openclaw")
+def get_openclaw_setup_script(request: Request):
+    urls = _derive_urls(request)
+    script = (_OPENCLAW_SETUP_SCRIPT
+              .replace("__API_URL__", urls["api"])
               .replace("__WEB_URL__", urls["web"]))
     return PlainTextResponse(script, media_type="text/plain")
