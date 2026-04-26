@@ -153,13 +153,14 @@ def _draw_modal(stdscr, title, body, primary, secondary, accent_color=1):
 
             # Title row: bold, indented 3 cols. Truncate with … if needed.
             title_max = box_w - 6
-            tline = title if len(title) <= title_max else title[: title_max - 1] + "…"
+            safe_title = _safe_text(title)
+            tline = safe_title if len(safe_title) <= title_max else safe_title[: title_max - 1] + "…"
             stdscr.addstr(y + 1, x + 3, tline, TITLE)
 
             # Body rows start after title + blank line
             row = y + 3
             for ln in body_lines:
-                stdscr.addstr(row, x + 3, ln[: box_w - 6], BODY)
+                stdscr.addstr(row, x + 3, _safe_text(ln)[: box_w - 6], BODY)
                 row += 1
 
             # Horizontal rule separating body from action bar (hairline, dimmed)
@@ -407,12 +408,34 @@ def _clamp(v, lo, hi):
     return max(lo, min(v, hi))
 
 
+def _safe_text(text):
+    """Strip control chars before handing text to curses.addstr().
+
+    curses interprets bytes < 0x20 and 0x7F as cursor moves or escape
+    sequences (\\n moves to col 0, \\r returns to col 0, \\x1b starts an
+    ANSI sequence, \\x00 is treated specially, etc.). Any of these in
+    skill descriptions or collection names would corrupt the layout.
+    Box-drawing chars (U+2500+) and emoji are preserved because they're
+    all >= U+0020.
+    """
+    if text is None:
+        return ""
+    if not isinstance(text, str):
+        try:
+            text = str(text)
+        except Exception:
+            return ""
+    return "".join(c for c in text if c >= " " and c != "\x7f")
+
+
 def _wrap(text, w):
     # Collapse embedded newlines/tabs/CR — curses.addstr() interprets them as
-    # cursor moves and would overwrite the adjacent pane. Strip other control
-    # chars too (some YAML descriptions sneak in NULs).
-    text = "".join(" " if c in "\n\r\t\v\f" else c
-                   for c in text if c >= " " or c in "\n\r\t\v\f")
+    # cursor moves and would overwrite the adjacent pane. Strip every other
+    # control char (NUL, BEL, BS, ESC for ANSI sequences, DEL, etc.).
+    text = "".join(" " if c in "\n\r\t\v\f"
+                   else c if (c >= " " and c != "\x7f")
+                   else ""
+                   for c in text)
     text = " ".join(text.split())  # collapse runs of whitespace
     lines = []
     while text and len(lines) < 4:
@@ -595,7 +618,7 @@ def pick(stdscr, items, recommended=0, recommended_kind="pick", recommended_slug
         def s(r, c, text, attr=0):
             try:
                 if 0 <= r < h and 0 <= c < w:
-                    stdscr.addstr(r, c, text[:max(0, w - c - 1)], attr)
+                    stdscr.addstr(r, c, _safe_text(text)[:max(0, w - c - 1)], attr)
             except curses.error:
                 pass
 
