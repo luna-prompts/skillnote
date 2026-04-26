@@ -123,6 +123,17 @@ app.include_router(imports_router)
 app.include_router(marketplace_router)
 
 
+@app.on_event("startup")
+async def _check_embedding_config():
+    from app.services import embedding_service
+    if not embedding_service.is_configured():
+        _skillnote_logger.warning(
+            "SKILLNOTE_EMBEDDING_API_KEY is not set; "
+            "/v1/openclaw/context-bundle will return 503 EMBEDDING_NOT_CONFIGURED. "
+            "Set the env var to enable semantic skill ranking."
+        )
+
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
