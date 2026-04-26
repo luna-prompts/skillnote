@@ -4,12 +4,16 @@ Provides the /v1/openclaw/context-bundle endpoint that ranks skills against a
 task summary using pgvector cosine distance and pre-aggregates supporting
 metadata (usage counts, ratings, latest comment, deprecation flag) in a
 constant number of queries regardless of the result-set size.
+
+Also provides POST/GET /v1/openclaw/usage for agents to log applied skills
+plus task outcomes (the data that powers the context-bundle aggregations).
 """
-import uuid
+import uuid as uuid_lib
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends
-from sqlalchemy import desc, func, select
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy import and_, cast, desc, func, or_, select
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Session
 
 from app.core.errors import api_error
@@ -20,8 +24,14 @@ from app.schemas.openclaw import (
     ContextBundleRequest,
     ContextBundleResponse,
     ContextBundleSkill,
+    UsageEventCreate,
+    UsageEventOut,
 )
 from app.services import embedding_service
+
+# Keep `uuid` as an alias so the existing context-bundle handler continues to
+# reference the module by its original name.
+uuid = uuid_lib
 
 router = APIRouter(prefix="/v1/openclaw", tags=["openclaw"])
 
@@ -164,3 +174,124 @@ def context_bundle(
         for c in collections
     ]
     return ContextBundleResponse(collections=bundle_collections, skills=bundle_skills)
+
+
+@router.post(
+    "/usage",
+    response_model=UsageEventOut,
+    status_code=201,
+)
+def create_usage_event(
+    payload: UsageEventCreate,
+    db: Session = Depends(get_db),
+) -> SkillUsageEvent:
+    """Record a single skill-usage event from an agent.
+
+    Validation order is intentional: cheap string checks before any DB query.
+
+    NOTE on task_summary length: the Pydantic schema caps it at 2000 chars as
+    an absolute upper bound (defense in depth), but the product policy is
+    >1000 → 422. Agents must summarize, not dump raw user messages. The
+    runtime check below enforces the policy ceiling; the schema cap protects
+    us if the schema or a future migration relaxes the explicit check.
+    """
+    if len(payload.task_summary) > 1000:
+        raise api_error(
+            422,
+            "TASK_SUMMARY_TOO_LONG",
+            "task_summary > 1000 chars; agents must summarize, not dump raw user messages",
+        )
+
+    # Pre-aggregate skill_id existence check in ONE query. Compare set sizes
+    # rather than iterating — cheaper and surfaces the first unknown id below.
+    if payload.skill_ids:
+        found_rows = db.execute(
+            select(Skill.id).where(Skill.id.in_(payload.skill_ids))
+        ).all()
+        found = {row[0] for row in found_rows}
+        for sid in payload.skill_ids:
+            if sid not in found:
+                raise api_error(
+                    422,
+                    "UNKNOWN_SKILL_ID",
+                    f"Skill {sid} not found",
+                )
+
+    event = SkillUsageEvent(
+        id=uuid_lib.uuid4(),
+        agent_name=payload.agent_name,
+        task_summary=payload.task_summary,
+        collection_id=payload.collection_id,
+        # JSONB column stores stringified UUIDs so they round-trip cleanly
+        # to the context-bundle aggregation (which compares against str(s.id)).
+        skill_ids=[str(u) for u in payload.skill_ids],
+        resolver_confidence=payload.resolver_confidence,
+        risk_level=payload.risk_level,
+        outcome=payload.outcome,
+        channel=payload.channel,
+        metadata_json=payload.metadata_json,
+    )
+    db.add(event)
+    db.commit()
+    db.refresh(event)
+    return event
+
+
+@router.get("/usage", response_model=list[UsageEventOut])
+def list_usage_events(
+    limit: int = Query(default=50, ge=1, le=200),
+    skill_id: uuid_lib.UUID | None = None,
+    since: datetime | None = None,
+    before: str | None = None,
+    db: Session = Depends(get_db),
+) -> list[SkillUsageEvent]:
+    """List recent skill-usage events.
+
+    Cursor format for `before`: ``"{created_at_iso}:{event_id}"``. Encode this
+    from the last item of the previous page (e.g. ``f"{e.created_at.isoformat()}:{e.id}"``).
+    Both halves are required — id is the tiebreak when timestamps collide.
+
+    # Used by the Settings → OpenClaw card to detect "connected" status (Task 11 will hit this)
+    """
+    stmt = select(SkillUsageEvent).order_by(
+        SkillUsageEvent.created_at.desc(),
+        SkillUsageEvent.id.desc(),
+    )
+
+    if since is not None:
+        stmt = stmt.where(SkillUsageEvent.created_at > since)
+
+    if skill_id is not None:
+        # JSONB containment: skill_ids @> '["<uuid>"]'::jsonb
+        # cast() over a Python list is the most parameterizable form and
+        # plays nicely with SQLAlchemy 2.x without raw text fragments.
+        stmt = stmt.where(
+            SkillUsageEvent.skill_ids.op("@>")(cast([str(skill_id)], JSONB))
+        )
+
+    if before is not None:
+        # Cursor: split on the LAST ':' since ISO timestamps contain colons.
+        try:
+            sep_idx = before.rfind(":")
+            if sep_idx <= 0:
+                raise ValueError("missing separator")
+            cursor_dt = datetime.fromisoformat(before[:sep_idx])
+            cursor_id = uuid_lib.UUID(before[sep_idx + 1 :])
+        except (ValueError, TypeError):
+            raise api_error(
+                422,
+                "INVALID_CURSOR",
+                "before must be '<created_at_iso>:<uuid>'",
+            )
+        stmt = stmt.where(
+            or_(
+                SkillUsageEvent.created_at < cursor_dt,
+                and_(
+                    SkillUsageEvent.created_at == cursor_dt,
+                    SkillUsageEvent.id < cursor_id,
+                ),
+            )
+        )
+
+    stmt = stmt.limit(limit)
+    return list(db.execute(stmt).scalars().all())
