@@ -237,6 +237,8 @@ def create_usage_event(
     return event
 
 
+# NOTE: Used by the Settings → OpenClaw card to detect "connected" status
+# (Task 11 will hit this).
 @router.get("/usage", response_model=list[UsageEventOut])
 def list_usage_events(
     limit: int = Query(default=50, ge=1, le=200),
@@ -250,8 +252,6 @@ def list_usage_events(
     Cursor format for `before`: ``"{created_at_iso}:{event_id}"``. Encode this
     from the last item of the previous page (e.g. ``f"{e.created_at.isoformat()}:{e.id}"``).
     Both halves are required — id is the tiebreak when timestamps collide.
-
-    # Used by the Settings → OpenClaw card to detect "connected" status (Task 11 will hit this)
     """
     stmt = select(SkillUsageEvent).order_by(
         SkillUsageEvent.created_at.desc(),

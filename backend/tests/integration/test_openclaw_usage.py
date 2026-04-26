@@ -23,7 +23,11 @@ from sqlalchemy.orm import sessionmaker
 from app.api.openclaw import router
 from app.db.models import Skill, SkillUsageEvent
 from app.db.session import get_db
-from app.main import http_exception_handler, validation_exception_handler
+from app.main import (
+    generic_exception_handler,
+    http_exception_handler,
+    validation_exception_handler,
+)
 from app.services import embedding_service
 
 
@@ -63,6 +67,7 @@ def client(engine):
     app = FastAPI()
     app.add_exception_handler(HTTPException, http_exception_handler)
     app.add_exception_handler(RequestValidationError, validation_exception_handler)
+    app.add_exception_handler(Exception, generic_exception_handler)
     app.include_router(router)
 
     S = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
@@ -264,20 +269,28 @@ def test_post_resolver_confidence_out_of_range_422(client, cleanup):
 
 
 def test_get_returns_recent_events_default_50(client, cleanup, db_session):
-    # Seed 75 events. The endpoint is global (no agent filter), so other tests
-    # in the same DB may have left rows. We assert the default limit caps to 50
-    # AND that all our newly inserted ids appear when fetched in pages.
-    for _ in range(75):
-        _seed_event(db_session, cleanup)
+    # Seed 75 events tagged with a unique agent_name AND with future timestamps
+    # so they dominate the descending-by-created_at order. The endpoint is
+    # global (no agent filter), so other suites' inserts could otherwise crowd
+    # us out of the first 50.
+    base = datetime.now(timezone.utc) + timedelta(days=1)
+    unique_agent = f"default50-test-{uuid.uuid4().hex[:12]}"
+    for i in range(75):
+        _seed_event(
+            db_session, cleanup,
+            agent_name=unique_agent,
+            created_at=base + timedelta(seconds=i),
+        )
 
     r = client.get("/v1/openclaw/usage")
     assert r.status_code == 200, r.text
     body = r.json()
-    assert len(body) == 50
+    mine = [e for e in body if e["agent_name"] == unique_agent]
+    assert len(mine) == 50, f"expected default limit 50, got {len(mine)}"
 
-    # Ordered created_at desc.
-    timestamps = [datetime.fromisoformat(e["created_at"]) for e in body]
-    assert timestamps == sorted(timestamps, reverse=True)
+    # Ordered created_at desc among our tagged events.
+    mine_ts = [datetime.fromisoformat(e["created_at"]) for e in mine]
+    assert mine_ts == sorted(mine_ts, reverse=True)
 
 
 def test_get_with_limit_truncates(client, cleanup, db_session):
