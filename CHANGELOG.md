@@ -3,6 +3,31 @@
 All notable changes to SkillNote will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.4.0] - 2026-04-27
+
+### Added
+- **SkillNote × OpenClaw foundation** — semantic skill registry for OpenClaw agents. New endpoints under `/v1/openclaw/`:
+  - `POST /v1/openclaw/context-bundle` — pgvector cosine-ranked skill bundle for the resolver subagent. Embeds the agent's task summary via the configured embedding provider, returns top-N skills + collections + per-skill staleness/rating/recent-comment metadata. Skills with NULL embedding are excluded (forces backfill).
+  - `POST /v1/openclaw/usage` — agents log a usage event after acting. Validates known skill IDs; rejects task summaries > 1000 chars (agents must summarize, not dump raw user messages).
+  - `GET /v1/openclaw/usage` — list events with `?limit`, `?since`, `?skill_id`, `?before` cursor pagination. Used by Settings → OpenClaw card to detect "connected" status.
+- **`skill_usage_events` table** — agent_name, task_summary, collection_id, skill_ids (JSONB), resolver_confidence, risk_level, outcome, channel, metadata_json, created_at. Indexed on created_at + collection_id.
+- **Comments extension** — `author_type` (human/agent), `comment_type` (agent_observation, agent_issue, agent_patch_suggestion, agent_success_note, agent_deprecation_warning, ...), `rating` (1-5), `linked_usage_id` FK to skill_usage_events. Backwards-compatible — legacy `{author, body}` POSTs still work.
+- **Skill embeddings** — `skills.embedding vector(1536)` with HNSW cosine index. Auto-generated on POST /v1/skills and on PATCH (when name or description changes; body excluded). Backfill script (`backend/scripts/backfill_embeddings.py`) runs in the api container's entrypoint after migrations.
+- **Embedding service** (`backend/app/services/embedding_service.py`) — pluggable provider (OpenAI default, Voyage supported). LRU-cached per text hash. Embedding failure NEVER blocks skill CRUD — logs a warning and leaves embedding NULL.
+
+### Changed
+- **Postgres image bumped to `pgvector/pgvector:pg16`** in `docker-compose.yml`. Vanilla `postgres:16` does not include the `vector` extension.
+
+### Operator action required
+- **Set `SKILLNOTE_EMBEDDING_API_KEY`** before upgrading to 0.4.0. Without it, `POST /v1/openclaw/context-bundle` returns 503 `EMBEDDING_NOT_CONFIGURED`. Skill CRUD continues to work (embeddings stay NULL until configured + backfilled). Override provider via `SKILLNOTE_EMBEDDING_PROVIDER=openai|voyage` and model via `SKILLNOTE_EMBEDDING_MODEL=text-embedding-3-small` (default).
+
+### Tests
+- `+11` integration tests for `/v1/openclaw/context-bundle` (semantic ranking, NULL-embedding exclusion, staleness rules, N+1 sentinel, error envelopes).
+- `+13` integration tests for `/v1/openclaw/usage` (POST validation, JSONB containment filter, cursor pagination).
+- `+10` integration tests for embedding wiring + backfill (only-missing, dry-run, restore re-embed, body-only-change skip).
+- `+10` integration tests for comments extension (legacy compat, agent fields, linked_usage_id existence, PATCH ignores extra fields).
+- `+9` unit tests for embedding service (provider dispatch, LRU cache, dimension guard).
+
 ## [0.3.4] - 2026-04-26
 
 ### Fixed
