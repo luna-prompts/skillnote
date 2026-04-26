@@ -1,5 +1,6 @@
 from pathlib import PurePosixPath
 import re
+import stat
 import zipfile
 
 import yaml
@@ -18,6 +19,16 @@ def slugify(value: str) -> str:
     return value
 
 
+def _is_symlink_entry(info: zipfile.ZipInfo) -> bool:
+    # Unix mode lives in the upper 16 bits of external_attr when create_system==3.
+    # A symlink entry has S_IFLNK (0o120000) set; once extracted, unzip honors
+    # the bit and creates a real symlink, letting a malicious bundle plant
+    # pointers to arbitrary paths on the consumer's disk.
+    if info.create_system != 3:
+        return False
+    return stat.S_ISLNK((info.external_attr >> 16) & 0xFFFF)
+
+
 def validate_zip_and_extract_metadata(zip_path: str) -> tuple[str, str, str]:
     with zipfile.ZipFile(zip_path, "r") as zf:
         names = zf.namelist()
@@ -26,8 +37,14 @@ def validate_zip_and_extract_metadata(zip_path: str) -> tuple[str, str, str]:
 
         total_uncompressed = 0
         for info in zf.infolist():
+            if _is_symlink_entry(info):
+                raise ValueError("Symbolic links are not allowed in archives")
             p = PurePosixPath(info.filename)
             if p.is_absolute() or ".." in p.parts:
+                raise ValueError("Unsafe path in archive")
+            # Reject newlines/NULs in entry names — downstream tools that
+            # parse listings line-by-line can be fooled into ignoring entries.
+            if any(c in info.filename for c in ("\n", "\r", "\x00")):
                 raise ValueError("Unsafe path in archive")
             total_uncompressed += info.file_size
             if total_uncompressed > settings.max_uncompressed_bytes:

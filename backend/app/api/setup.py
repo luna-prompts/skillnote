@@ -94,6 +94,13 @@ curl -sf --connect-timeout 10 --max-time 30 "$API_URL/v1/plugin.zip" -o /tmp/ski
     echo "Error: Could not download plugin from $API_URL/v1/plugin.zip"
     exit 1
 }
+# Refuse to extract symlink entries — unzip honors them and would let a
+# compromised registry plant arbitrary symlinks on the operator's disk.
+if unzip -Z /tmp/skillnote-plugin.zip 2>/dev/null | awk '{print $1}' | grep -q '^l'; then
+    echo "Error: plugin bundle contains symbolic link entries; refusing to extract"
+    rm -f /tmp/skillnote-plugin.zip
+    exit 1
+fi
 unzip -qo /tmp/skillnote-plugin.zip -d "$PLUGIN_SRC"
 rm -f /tmp/skillnote-plugin.zip
 chmod +x "$PLUGIN_SRC/hooks-handlers/"*.sh "$PLUGIN_SRC/bin/"* 2>/dev/null || true

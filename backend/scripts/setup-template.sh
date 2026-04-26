@@ -108,7 +108,8 @@ for skill in skills:
     with open(filepath,'w') as f: f.write(content)
 for slug in old_managed-api_slugs:
     d=os.path.join(skills_dir,slug)
-    if os.path.isdir(d): shutil.rmtree(d); deleted+=1
+    if os.path.islink(d): os.unlink(d); deleted+=1
+    elif os.path.isdir(d): shutil.rmtree(d); deleted+=1
 with open(manifest_path,'w') as f: json.dump({'skills':sorted(api_slugs)},f,indent=2)
 parts=[]
 if created: parts.append(str(created)+' new')
@@ -289,7 +290,8 @@ m = json.load(open('$MANIFEST'))
 sd = '$SKILLS_DIR'
 for slug in m.get('skills', []):
     d = os.path.join(sd, slug)
-    if os.path.isdir(d): shutil.rmtree(d)
+    if os.path.islink(d): os.unlink(d)
+    elif os.path.isdir(d): shutil.rmtree(d)
 " 2>/dev/null
     fi
     rm -f "$MANIFEST"

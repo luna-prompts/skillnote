@@ -3,6 +3,25 @@
 All notable changes to SkillNote will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.3.4] - 2026-04-26
+
+### Fixed
+- **Plugin picker no longer crashes on symlinked skill directories** ([#27](https://github.com/luna-prompts/skillnote/issues/27)) — `_clean_skills_dir`, `_clean_stale_global_skills`, `_clean_orphan_project_skills` (in `plugin/bin/skillnote-pick`) and the embedded-Python cleanup loops in `plugin/hooks-handlers/sync.sh` + `backend/scripts/setup-template.sh` now check `os.path.islink` before calling `shutil.rmtree`. Symlinks are unlinked safely; their targets are never touched.
+- **Picker no longer wipes user-authored skills on collection switch** — `_clean_skills_dir`'s project loop used to delete every directory and `.json` file under `<project>/.claude/skills/` regardless of prefix. Now restricted to `skillnote-*` directories and `.skillnote-manifest.json`. Hand-written skills, third-party tools' skills, and foreign config files are preserved.
+- **Picker preview pane no longer corrupts the layout for multi-line skill descriptions** — descriptions containing literal `\n` / `\r` / `\t` (e.g. the entire `garrytan-gstack` collection) used to bleed through `curses.addstr()` and overwrite the left column. The wrap helper now collapses whitespace controls; defense-in-depth `_safe_text` helper strips C0 controls + DEL + ANSI escapes at every render path.
+
+### Security
+- **Bundle validator rejects symbolic-link entries** — the publish endpoint (`/v1/publish`) inspected ZIP entry names for `..` / absolute paths but never checked the `external_attr` mode field. A malicious bundle with `S_IFLNK` entries could plant arbitrary symlinks on the consumer's filesystem after `unzip -o`. Added `_is_symlink_entry` rejection plus a control-character check on entry names (newlines could split CLI listing parsers).
+- **CLI extraction defends against symlink bundles** — `cli/src/util/zip.ts` now parses `unzip -Z` mode column and refuses any entry whose mode begins with `l`, even if the server-side validator was bypassed. Defense in depth.
+- **CLI no longer susceptible to shell injection via `TMPDIR`** — switched from `execSync` template-string commands to `execFileSync` with array arguments, so shell metacharacters in the temporary-directory path can never trigger command execution.
+- **Plugin install script blocks malicious `plugin.zip`** — the bash installer served from `/setup` now runs an `unzip -Z … grep '^l'` pre-flight and aborts with a clear error if the downloaded plugin bundle contains any symlink entries.
+
+### Tests
+- Plugin: `+15` pytest cases (`plugin/tests/test_clean_skills_dir.py`, `plugin/tests/test_skillnote_pick_helpers.py`) covering symlink survival, dangling/looped symlinks, the silent-data-loss bug, broken JSON config, control-character sanitization (ANSI CSI/OSC, full C0 sweep, DEL, real-world payloads).
+- Backend: `+2` validator tests (`backend/tests/unit/test_bundle_validator.py`) for `S_IFLNK` rejection and newline-in-entry-name rejection.
+- CLI: `+3` vitest cases (`cli/src/__tests__/zip.test.ts`) for live malicious-bundle rejection, control-character rejection, and tmpdir-with-spaces shell-safety smoke.
+- E2E verified: `368 / 370` tests pass against the live stack (2 pre-existing failures in `test_input_parser`/`test_inspector` unrelated to this release).
+
 ## [0.3.3] - 2026-04-19
 
 ### Added

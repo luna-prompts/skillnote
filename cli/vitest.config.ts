@@ -4,5 +4,7 @@ export default defineConfig({
   test: {
     globals: true,
     root: '.',
+    css: false,
   },
+  css: { postcss: { plugins: [] } },
 })
