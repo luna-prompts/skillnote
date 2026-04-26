@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.core.errors import api_error
-from app.db.models import Skill
+from app.db.models import Skill, SkillUsageEvent
 from app.db.models.comment import Comment
 from app.db.session import get_db
 from app.schemas.comment import CommentCreate, CommentOut, CommentUpdate
@@ -36,11 +36,39 @@ def create_comment(
     db: Session = Depends(get_db),
 ):
     skill = _get_skill(skill_slug, db)
+
+    # Defense-in-depth: schema's _agent_requires_comment_type validator already
+    # enforces this at parse time, but we re-check at the handler boundary so
+    # the contract is guarded even if the schema is later relaxed.
+    if payload.author_type == "agent" and not payload.comment_type:
+        raise api_error(
+            422,
+            "AGENT_COMMENT_REQUIRES_TYPE",
+            "agent comments require comment_type",
+        )
+
+    if payload.linked_usage_id is not None:
+        exists = (
+            db.query(SkillUsageEvent.id)
+            .filter(SkillUsageEvent.id == payload.linked_usage_id)
+            .first()
+        )
+        if not exists:
+            raise api_error(
+                404,
+                "LINKED_USAGE_NOT_FOUND",
+                f"Usage event {payload.linked_usage_id} not found",
+            )
+
     comment = Comment(
         id=uuid_lib.uuid4(),
         skill_id=skill.id,
         author=payload.author,
         body=payload.body,
+        author_type=payload.author_type,
+        comment_type=payload.comment_type,
+        rating=payload.rating,
+        linked_usage_id=payload.linked_usage_id,
     )
     db.add(comment)
     db.commit()
