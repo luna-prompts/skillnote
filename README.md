@@ -32,6 +32,7 @@
   <a href="#marketplace">Marketplace</a> &middot;
   <a href="#agent-reviews">Reviews</a> &middot;
   <a href="#live-sync">Live Sync</a> &middot;
+  <a href="#openclaw-integration">OpenClaw</a> &middot;
   <a href="#the-web-ui">Web UI</a> &middot;
   <a href="#built-on-claude-codes-native-apis">How It Works</a>
 </p>
@@ -162,6 +163,43 @@ Your team's knowledge compounds. What one person corrects once becomes a skill e
 
 ---
 
+## OpenClaw Integration
+
+SkillNote ships a native integration for [OpenClaw](https://github.com/openclaw/openclaw), the open-source chat-first AI agent runtime.
+
+Once installed, your OpenClaw agent automatically:
+
+- Consults your SkillNote registry before each task and applies the relevant skills
+- Logs every skill it uses so you can see real activity in the web UI
+- Leaves one-line observations and ratings on skills it found helpful or stale
+
+No prompts, no collection pickers. The agent picks skills on its own — you're only involved when confidence is low or a skill carries risk.
+
+### Install
+
+Open **Settings → OpenClaw** in the web UI, copy your install command, and run it in your terminal:
+
+```bash
+curl -sf http://<your-host>:8082/setup/openclaw | bash
+```
+
+This downloads a two-skill bundle into `~/.openclaw/skillnote/`:
+
+| Skill | Role |
+| ----- | ---- |
+| `skillnote-awareness` | Always-injected — teaches OpenClaw when to consult SkillNote and how to log usage |
+| `skillnote-resolver` | Subagent — posts your task to SkillNote, reads the catalog, picks the best 1–5 skills via LLM reasoning |
+
+The resolver is a full LLM pass over your catalog. SkillNote ships the catalog; OpenClaw decides what fits.
+
+### What you see
+
+- **Settings → OpenClaw**: live connection status. Green dot means the agent can reach your registry.
+- **Analytics**: usage events appear here as the agent works.
+- **Skill pages → Reviews tab**: agent observations (`agent_observation`, `agent_issue`, `agent_success_note`) appear alongside your human reviews.
+
+---
+
 ## The Web UI
 
 ### Dashboard & Editor
@@ -251,9 +289,9 @@ SkillNote is built for Claude Code today. Native plugins for other agents are on
 | Agent | Status |
 | --- | --- |
 | **Claude Code** | Supported |
+| **OpenClaw** | Supported |
 | **Cursor** | Planned |
 | **Codex CLI** | Planned |
-| **OpenClaw** | Planned |
 | **Antigravity** | Planned |
 | **OpenHands** | Planned |
 
