@@ -194,6 +194,19 @@ def create_usage_event(
             "task_summary > 1000 chars; agents must summarize, not dump raw user messages",
         )
 
+    # Validate collection_id exists — FK lives on collections.name (Text PK).
+    # Must check before db.add() or the constraint fires as a 500 instead of 422.
+    if payload.collection_id is not None:
+        col_exists = db.execute(
+            select(Collection.name).where(Collection.name == payload.collection_id)
+        ).first()
+        if not col_exists:
+            raise api_error(
+                422,
+                "UNKNOWN_COLLECTION_ID",
+                f"Collection '{payload.collection_id}' not found",
+            )
+
     # Pre-aggregate skill_id existence check in ONE query. Compare set sizes
     # rather than iterating — cheaper and surfaces the first unknown id below.
     if payload.skill_ids:
@@ -209,6 +222,10 @@ def create_usage_event(
                     f"Skill {sid} not found",
                 )
 
+    # Deduplicate skill_ids preserving order — duplicate entries from a single
+    # event would inflate usage_count_30d in the context-bundle aggregation.
+    deduped_skill_ids = list(dict.fromkeys(str(u) for u in payload.skill_ids))
+
     event = SkillUsageEvent(
         id=uuid_lib.uuid4(),
         agent_name=payload.agent_name,
@@ -216,7 +233,7 @@ def create_usage_event(
         collection_id=payload.collection_id,
         # JSONB column stores stringified UUIDs so they round-trip cleanly
         # to the context-bundle aggregation (which compares against str(s.id)).
-        skill_ids=[str(u) for u in payload.skill_ids],
+        skill_ids=deduped_skill_ids,
         resolver_confidence=payload.resolver_confidence,
         risk_level=payload.risk_level,
         outcome=payload.outcome,

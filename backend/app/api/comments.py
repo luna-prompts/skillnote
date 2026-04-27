@@ -48,16 +48,29 @@ def create_comment(
         )
 
     if payload.linked_usage_id is not None:
-        exists = (
-            db.query(SkillUsageEvent.id)
+        usage_event = (
+            db.query(SkillUsageEvent)
             .filter(SkillUsageEvent.id == payload.linked_usage_id)
             .first()
         )
-        if not exists:
+        if not usage_event:
             raise api_error(
                 404,
                 "LINKED_USAGE_NOT_FOUND",
                 f"Usage event {payload.linked_usage_id} not found",
+            )
+        # For agent comments on events that recorded specific skills, enforce
+        # that the commented skill was actually in the event — prevents agents
+        # from accidentally corrupting skill ratings by cross-linking events.
+        if (
+            payload.author_type == "agent"
+            and usage_event.skill_ids  # non-empty list
+            and str(skill.id) not in usage_event.skill_ids
+        ):
+            raise api_error(
+                422,
+                "SKILL_NOT_IN_USAGE_EVENT",
+                f"Skill {skill.id} is not referenced by usage event {payload.linked_usage_id}",
             )
 
     comment = Comment(

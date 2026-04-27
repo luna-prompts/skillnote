@@ -18,7 +18,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
 from app.api.openclaw import router
-from app.db.models import Skill, SkillUsageEvent
+from app.db.models import Collection, Skill, SkillUsageEvent
 from app.db.session import get_db
 from app.main import (
     generic_exception_handler,
@@ -81,14 +81,11 @@ def client(engine):
 
 @pytest.fixture
 def cleanup(db_session):
-    """Track inserted skills + usage events and remove them on teardown.
-
-    We track skill ids and usage-event ids separately because tests may insert
-    usage events that reference no skill at all.
-    """
+    """Track inserted skills, usage events, and collections; remove on teardown."""
     skill_ids: list[uuid.UUID] = []
     event_ids: list[uuid.UUID] = []
-    yield {"skills": skill_ids, "events": event_ids}
+    collection_names: list[str] = []
+    yield {"skills": skill_ids, "events": event_ids, "collections": collection_names}
     if event_ids:
         db_session.execute(
             text("DELETE FROM skill_usage_events WHERE id = ANY(:ids)"),
@@ -103,10 +100,25 @@ def cleanup(db_session):
             text("DELETE FROM skills WHERE id = ANY(:ids)"),
             {"ids": [str(i) for i in skill_ids]},
         )
+    if collection_names:
+        db_session.execute(
+            text("DELETE FROM collections WHERE name = ANY(:names)"),
+            {"names": collection_names},
+        )
     db_session.commit()
 
 
 # ── helpers ─────────────────────────────────────────────────────────────
+
+
+def _seed_collection(db_session, cleanup) -> Collection:
+    name = f"oc-col-{uuid.uuid4().hex[:8]}"
+    col = Collection(name=name, description="test collection")
+    db_session.add(col)
+    db_session.commit()
+    db_session.refresh(col)
+    cleanup["collections"].append(name)
+    return col
 
 
 def _seed_skill(db_session, cleanup, *, name: str | None = None) -> Skill:
@@ -375,3 +387,64 @@ def test_get_with_invalid_cursor_422(client, cleanup):
     r = client.get("/v1/openclaw/usage?before=garbage")
     assert r.status_code == 422, r.text
     assert r.json()["error"]["code"] == "INVALID_CURSOR"
+
+
+# ── Bug fix tests ────────────────────────────────────────────────────────
+
+
+def test_post_unknown_collection_id_422(client, cleanup, db_session):
+    """POST with a collection_id that doesn't exist must return 422, not 500.
+
+    Bug: before the fix, the missing FK check let the INSERT reach Postgres,
+    which raised an IntegrityError that fell through to the generic 500 handler.
+    """
+    r = client.post(
+        "/v1/openclaw/usage",
+        json={
+            "agent_name": "claude",
+            "task_summary": "testing unknown collection",
+            "collection_id": "does-not-exist-at-all",
+        },
+    )
+    assert r.status_code == 422, r.text
+    assert r.json()["error"]["code"] == "UNKNOWN_COLLECTION_ID"
+
+
+def test_post_known_collection_id_succeeds(client, cleanup, db_session):
+    """POST with a real collection_id is accepted and round-trips."""
+    col = _seed_collection(db_session, cleanup)
+    r = client.post(
+        "/v1/openclaw/usage",
+        json={
+            "agent_name": "claude",
+            "task_summary": "real collection",
+            "collection_id": col.name,
+        },
+    )
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert body["collection_id"] == col.name
+    cleanup["events"].append(uuid.UUID(body["id"]))
+
+
+def test_post_deduplicates_skill_ids(client, cleanup, db_session):
+    """Duplicate skill IDs in one event must be stored only once.
+
+    Bug: before the fix, sending the same skill UUID twice in skill_ids stored
+    both entries, inflating usage_count_30d by 2 per event instead of 1.
+    """
+    skill = _seed_skill(db_session, cleanup)
+    r = client.post(
+        "/v1/openclaw/usage",
+        json={
+            "agent_name": "claude",
+            "task_summary": "dedup check",
+            "skill_ids": [str(skill.id), str(skill.id)],
+        },
+    )
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert body["skill_ids"] == [str(skill.id)], (
+        f"expected one entry after dedup, got {body['skill_ids']}"
+    )
+    cleanup["events"].append(uuid.UUID(body["id"]))

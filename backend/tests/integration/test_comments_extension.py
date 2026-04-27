@@ -142,12 +142,17 @@ def _seed_skill(db_session, cleanup) -> Skill:
     return skill
 
 
-def _seed_usage_event(db_session, cleanup) -> SkillUsageEvent:
+def _seed_usage_event(
+    db_session,
+    cleanup,
+    *,
+    skill_ids: list[uuid.UUID] | None = None,
+) -> SkillUsageEvent:
     event = SkillUsageEvent(
         id=uuid.uuid4(),
         agent_name="claude",
         task_summary="reflection target",
-        skill_ids=[],
+        skill_ids=[str(s) for s in (skill_ids or [])],
     )
     db_session.add(event)
     db_session.commit()
@@ -413,3 +418,83 @@ def test_patch_silently_ignores_extra_agent_only_fields(client, db_session, clea
     assert body["rating"] == 4, "rating must not be patchable via comment update"
     assert body["comment_type"] == "agent_observation", "comment_type must not be patchable"
     assert body["author_type"] == "agent", "author_type must not be patchable"
+
+
+# ── Bug fix tests (skill-in-event cross-check) ────────────────────────────
+
+
+def test_post_agent_comment_linked_to_event_with_wrong_skill_422(
+    client, db_session, cleanup
+):
+    """Agent comment on skill X linked to an event that only references skill Y
+    must be rejected with 422 SKILL_NOT_IN_USAGE_EVENT.
+
+    Bug: before the fix, the handler accepted any (skill, event) pair regardless
+    of whether the event actually recorded that skill, allowing agents to
+    accidentally corrupt skill ratings by cross-linking events.
+    """
+    skill_x = _seed_skill(db_session, cleanup)
+    skill_y = _seed_skill(db_session, cleanup)
+    # event only recorded skill_y
+    event = _seed_usage_event(db_session, cleanup, skill_ids=[skill_y.id])
+
+    r = client.post(
+        f"/v1/skills/{skill_x.slug}/comments",
+        json={
+            "author": "claude",
+            "body": "wrong skill link",
+            "author_type": "agent",
+            "comment_type": "agent_reflection",
+            "linked_usage_id": str(event.id),
+        },
+    )
+    assert r.status_code == 422, r.text
+    assert r.json()["error"]["code"] == "SKILL_NOT_IN_USAGE_EVENT"
+
+
+def test_post_agent_comment_linked_to_event_with_empty_skill_ids_allowed(
+    client, db_session, cleanup
+):
+    """When the linked event has an empty skill_ids list, the cross-check is
+    skipped and the comment is accepted — the agent didn't record which skills
+    it used, so we can't enforce membership.
+    """
+    skill = _seed_skill(db_session, cleanup)
+    event = _seed_usage_event(db_session, cleanup, skill_ids=[])  # empty
+
+    r = client.post(
+        f"/v1/skills/{skill.slug}/comments",
+        json={
+            "author": "claude",
+            "body": "no skills recorded in event",
+            "author_type": "agent",
+            "comment_type": "agent_reflection",
+            "linked_usage_id": str(event.id),
+        },
+    )
+    assert r.status_code == 201, r.text
+    cleanup["comments"].append(uuid.UUID(r.json()["id"]))
+
+
+def test_post_agent_comment_linked_to_event_with_matching_skill_allowed(
+    client, db_session, cleanup
+):
+    """Agent comment on skill X linked to an event that actually recorded
+    skill X is accepted (the happy path for the cross-check).
+    """
+    skill = _seed_skill(db_session, cleanup)
+    event = _seed_usage_event(db_session, cleanup, skill_ids=[skill.id])
+
+    r = client.post(
+        f"/v1/skills/{skill.slug}/comments",
+        json={
+            "author": "claude",
+            "body": "skill was used in this event",
+            "author_type": "agent",
+            "comment_type": "agent_success_note",
+            "rating": 5,
+            "linked_usage_id": str(event.id),
+        },
+    )
+    assert r.status_code == 201, r.text
+    cleanup["comments"].append(uuid.UUID(r.json()["id"]))

@@ -48,3 +48,6 @@ target/
 
 # Next.js build output
 .next/
+
+# Vendored reference source (not committed)
+claude-code-source/
