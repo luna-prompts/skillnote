@@ -20,7 +20,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Session
 
 from app.core.errors import api_error
-from app.db.models import Collection, Comment, Skill, SkillUsageEvent
+from app.db.models import AnalyticsEvent, Collection, Comment, Skill, SkillUsageEvent
 from app.db.session import get_db
 from app.schemas.openclaw import (
     ContextBundleCollection,
@@ -241,6 +241,26 @@ def create_usage_event(
         metadata_json=payload.metadata_json,
     )
     db.add(event)
+
+    # Fan-out: one skill_call_event per skill so the analytics dashboard
+    # (which reads skill_call_events) shows OpenClaw activity alongside
+    # Claude Code plugin activity without any frontend changes.
+    if deduped_skill_ids:
+        slugs_by_id: dict[str, str] = {
+            str(row.id): row.slug
+            for row in db.execute(select(Skill.id, Skill.slug).where(
+                Skill.id.in_(payload.skill_ids)
+            )).all()
+        }
+        for sid in deduped_skill_ids:
+            db.add(AnalyticsEvent(
+                id=uuid_lib.uuid4(),
+                skill_slug=slugs_by_id.get(sid),
+                event_type="called",
+                agent_name=payload.agent_name,
+                collection_scope=payload.collection_id,
+            ))
+
     db.commit()
     db.refresh(event)
     return event
