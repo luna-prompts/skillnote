@@ -1,9 +1,14 @@
 ---
 name: skillnote-resolver
-description: Subagent that decides which SkillNote skills/collection are relevant for the current task. Returns structured JSON only.
+description: |
+  Subagent — decides which SkillNote skills and collection are relevant for one
+  specific task. Called by the `skillnote` skill. Returns a single structured
+  JSON object and nothing else. Do not invoke directly.
 metadata:
   openclaw:
     subagent: true
+    version: "2.0.0"
+    parent_skill: skillnote
 ---
 
 # Your one job
