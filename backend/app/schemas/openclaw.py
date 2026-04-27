@@ -13,6 +13,7 @@ class ContextBundleRequest(BaseModel):
     max_skills: int = Field(default=20, ge=1, le=100)
     collection_filter: str | None = Field(
         default=None,
+        min_length=1,
         max_length=128,
         description=(
             "If provided, only return skills that include this collection name "

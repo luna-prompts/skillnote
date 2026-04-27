@@ -59,7 +59,9 @@ def context_bundle(
         # Skill.collections is ARRAY(Text); .any(value) compiles to
         # `value = ANY(skills.collections)` which matches membership.
         stmt = stmt.where(Skill.collections.any(req.collection_filter))
-    stmt = stmt.limit(req.max_skills * 4)
+    # Deterministic ordering ensures LIMIT max_skills*4 always captures the
+    # same candidate window; without ORDER BY the DB can exclude any row.
+    stmt = stmt.order_by(Skill.name).limit(req.max_skills * 4)
     candidate_skills: list[Skill] = list(db.execute(stmt).scalars().all())
 
     # 2. Pull all collections — small set, no ranking needed.

@@ -439,3 +439,49 @@ def test_collection_filter_returns_subset(client, db_session, cleanup):
     assert str(in_a.id) in returned_ids
     assert str(in_b.id) in returned_ids
     assert str(out.id) not in returned_ids
+
+
+# ── Bug fix: empty collection_filter silently bypasses filter (Bug 1) ───
+
+
+def test_context_bundle_empty_collection_filter_422(client):
+    """collection_filter='' must be rejected; it would silently return all skills.
+
+    Before the fix, an empty string bypassed the filter because the WHERE clause
+    was only added when the Python string was truthy, but Pydantic accepted ''.
+    """
+    r = client.post(
+        "/v1/openclaw/context-bundle",
+        json={"task_summary": "find skills", "collection_filter": ""},
+    )
+    assert r.status_code == 422, r.text
+    assert r.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+# ── Bug fix: no ORDER BY on candidate fetch causes non-determinism (Bug 3) ─
+
+
+def test_context_bundle_candidate_fetch_is_deterministic(client, db_session, cleanup):
+    """Repeated calls with the same catalog must return the same skill ordering.
+
+    Before the fix, the LIMIT max_skills*4 candidate fetch had no ORDER BY, so
+    the DB could return different rows on each call depending on internal storage
+    order — skills beyond the window were silently excluded.
+    """
+    col = f"det-col-{uuid.uuid4().hex[:6]}"
+    skills = [_seed_skill(db_session, cleanup, collections=[col]) for _ in range(5)]
+    skill_ids = {str(s.id) for s in skills}
+
+    results = []
+    for _ in range(3):
+        r = client.post(
+            "/v1/openclaw/context-bundle",
+            json={"task_summary": "x", "max_skills": 3, "collection_filter": col},
+        )
+        assert r.status_code == 200, r.text
+        results.append([s["id"] for s in r.json()["skills"]])
+
+    # All three calls must return the exact same ordered list.
+    assert results[0] == results[1] == results[2], (
+        f"non-deterministic ordering: {results}"
+    )

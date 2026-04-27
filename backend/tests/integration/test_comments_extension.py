@@ -498,3 +498,109 @@ def test_post_agent_comment_linked_to_event_with_matching_skill_allowed(
     )
     assert r.status_code == 201, r.text
     cleanup["comments"].append(uuid.UUID(r.json()["id"]))
+
+
+# ── Bug fix: empty / whitespace body (Bug 5) ────────────────────────────
+
+
+def test_post_comment_with_empty_body_422(client, db_session, cleanup):
+    """POST with body='' must be rejected with a validation error."""
+    skill = _seed_skill(db_session, cleanup)
+    r = client.post(
+        f"/v1/skills/{skill.slug}/comments",
+        json={"author": "user", "body": ""},
+    )
+    assert r.status_code == 422, r.text
+    assert r.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+def test_post_comment_with_whitespace_body_422(client, db_session, cleanup):
+    """POST with body='   ' (whitespace only) must be rejected."""
+    skill = _seed_skill(db_session, cleanup)
+    r = client.post(
+        f"/v1/skills/{skill.slug}/comments",
+        json={"author": "user", "body": "   "},
+    )
+    assert r.status_code == 422, r.text
+    assert r.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+def test_patch_comment_with_empty_body_422(client, db_session, cleanup):
+    """PATCH with body='' must be rejected."""
+    skill = _seed_skill(db_session, cleanup)
+    comment = Comment(
+        id=uuid.uuid4(),
+        skill_id=skill.id,
+        author="user",
+        body="original",
+    )
+    db_session.add(comment)
+    db_session.commit()
+    cleanup["comments"].append(comment.id)
+
+    r = client.patch(
+        f"/v1/skills/{skill.slug}/comments/{comment.id}",
+        json={"body": ""},
+    )
+    assert r.status_code == 422, r.text
+    assert r.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+def test_patch_comment_with_whitespace_body_422(client, db_session, cleanup):
+    """PATCH with body='\\t\\n' (whitespace only) must be rejected."""
+    skill = _seed_skill(db_session, cleanup)
+    comment = Comment(
+        id=uuid.uuid4(),
+        skill_id=skill.id,
+        author="user",
+        body="original",
+    )
+    db_session.add(comment)
+    db_session.commit()
+    cleanup["comments"].append(comment.id)
+
+    r = client.patch(
+        f"/v1/skills/{skill.slug}/comments/{comment.id}",
+        json={"body": "\t\n"},
+    )
+    assert r.status_code == 422, r.text
+    assert r.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+# ── Bug fix: human using agent-reserved comment_type (Bug 6) ────────────
+
+
+def test_post_human_comment_with_agent_comment_type_422(client, db_session, cleanup):
+    """Human comments must not be able to use agent_ prefixed comment types.
+
+    Before the fix, a human could post with comment_type='agent_deprecation_warning'
+    which would corrupt the staleness_status logic in context-bundle.
+    """
+    skill = _seed_skill(db_session, cleanup)
+    r = client.post(
+        f"/v1/skills/{skill.slug}/comments",
+        json={
+            "author": "human-user",
+            "body": "looks outdated",
+            "author_type": "human",
+            "comment_type": "agent_deprecation_warning",
+        },
+    )
+    assert r.status_code == 422, r.text
+    assert r.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+def test_post_agent_comment_type_allowed_for_agent_author(client, db_session, cleanup):
+    """agent_ comment types are valid when author_type=agent (happy path)."""
+    skill = _seed_skill(db_session, cleanup)
+    r = client.post(
+        f"/v1/skills/{skill.slug}/comments",
+        json={
+            "author": "claude",
+            "body": "marked for review",
+            "author_type": "agent",
+            "comment_type": "agent_deprecation_warning",
+        },
+    )
+    assert r.status_code == 201, r.text
+    cleanup["comments"].append(uuid.UUID(r.json()["id"]))

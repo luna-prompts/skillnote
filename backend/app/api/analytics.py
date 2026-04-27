@@ -42,7 +42,7 @@ def _build_params(days: int, agent: str | None, collection: str | None) -> dict[
 
 @router.get("/summary")
 def get_summary(
-    days: int = Query(default=7, ge=0),
+    days: int = Query(default=7, ge=1),
     agent: str | None = Query(default=None),
     collection: str | None = Query(default=None),
     db: Session = Depends(get_db),
@@ -104,7 +104,7 @@ def get_summary(
 
 @router.get("/skill-calls")
 def get_skill_calls(
-    days: int = Query(default=7, ge=0),
+    days: int = Query(default=7, ge=1),
     agent: str | None = Query(default=None),
     collection: str | None = Query(default=None),
     db: Session = Depends(get_db),
@@ -142,7 +142,7 @@ def get_skill_calls(
 
 @router.get("/agents")
 def get_agents(
-    days: int = Query(default=7, ge=0),
+    days: int = Query(default=7, ge=1),
     agent: str | None = Query(default=None),
     collection: str | None = Query(default=None),
     db: Session = Depends(get_db),
@@ -355,7 +355,7 @@ def get_rating_detail(
 
 @router.get("/top-skills")
 def get_top_skills(
-    days: int = Query(default=30, ge=0),
+    days: int = Query(default=30, ge=1),
     limit: int = Query(default=10, ge=1, le=50),
     db: Session = Depends(get_db),
 ):
@@ -417,7 +417,7 @@ def get_top_skills(
 
 @router.get("/rating-summary")
 def get_rating_summary(
-    days: int = Query(default=30, ge=0),
+    days: int = Query(default=30, ge=1),
     db: Session = Depends(get_db),
 ):
     """Overall rating stats across all skills."""
@@ -496,7 +496,7 @@ def get_skill_reviews(
 
 @router.get("/collections")
 def get_collections(
-    days: int = Query(default=7, ge=0),
+    days: int = Query(default=7, ge=1),
     agent: str | None = Query(default=None),
     collection: str | None = Query(default=None),
     db: Session = Depends(get_db),
