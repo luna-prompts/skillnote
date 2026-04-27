@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.core.errors import api_error
 from app.db.models import Skill, SkillUsageEvent
 from app.db.models.comment import Comment
+from app.db.models.skill_rating import SkillRating
 from app.db.session import get_db
 from app.schemas.comment import CommentCreate, CommentOut, CommentUpdate
 
@@ -84,6 +85,20 @@ def create_comment(
         linked_usage_id=payload.linked_usage_id,
     )
     db.add(comment)
+
+    # Fan-out: agent comments with a rating also write to skill_ratings so
+    # the analytics completion_rate (which reads skill_ratings) reflects
+    # OpenClaw feedback alongside Claude Code plugin ratings.
+    if payload.author_type == "agent" and payload.rating is not None:
+        db.add(SkillRating(
+            id=uuid_lib.uuid4(),
+            skill_slug=skill.slug,
+            skill_version=skill.current_version or 1,
+            rating=payload.rating,
+            outcome=None,
+            agent_name=payload.author,
+        ))
+
     db.commit()
     db.refresh(comment)
     return comment
