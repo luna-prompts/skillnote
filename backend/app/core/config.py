@@ -1,5 +1,3 @@
-from typing import Literal
-
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -13,11 +11,6 @@ class Settings(BaseSettings):
     max_uncompressed_bytes: int = 25 * 1024 * 1024
     enforce_https_in_prod: bool = True
     cors_origins: str = "http://localhost:3000,http://localhost:3001,http://localhost:4000,http://127.0.0.1:3000,http://127.0.0.1:3001,http://127.0.0.1:4000"
-
-    embedding_provider: Literal["openai", "voyage"] = "openai"
-    embedding_api_key: str | None = None
-    embedding_model: str = "text-embedding-3-small"
-    embedding_dim: int = 1536
 
     model_config = SettingsConfigDict(env_file=".env", env_prefix="SKILLNOTE_")
 

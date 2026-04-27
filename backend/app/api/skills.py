@@ -1,4 +1,3 @@
-import logging
 import re
 import uuid as uuid_lib
 from datetime import datetime, timezone
@@ -15,14 +14,11 @@ from app.db.models.import_source import ImportSource
 from app.db.session import get_db
 from app.schemas.skill import SkillListItem, SkillDetail, SkillCreate, SkillUpdate, SkillOrigin
 from app.schemas.version import SkillVersionItem, ContentVersionItem
-from app.services import embedding_service
 from app.validators.skill_validator import (
     canonicalize_collection_names,
     validate_collection_skill_count,
 )
 from app.validators.collection_validator import validate_collection_name
-
-logger = logging.getLogger("skillnote.skills")
 
 router = APIRouter(prefix="/v1/skills", tags=["skills"])
 
@@ -35,27 +31,6 @@ def _slugify(name: str) -> str:
     s = re.sub(r'-+', '-', s)
     s = s.strip('-')
     return s
-
-
-def _refresh_embedding(skill: Skill, *, action: str) -> None:
-    """Compute and assign skill.embedding from name+description.
-
-    Embedding failure NEVER blocks skill CRUD — logs a warning and leaves
-    the existing embedding (None for new skills, stale value for updates).
-    Catches EmbeddingNotConfigured (no API key), EmbeddingError (provider
-    failure), and ValueError (defensive: e.g., empty embedding text).
-    """
-    try:
-        skill.embedding = embedding_service.embed_text(
-            embedding_service.skill_embedding_text(skill.name, skill.description)
-        )
-    except embedding_service.EmbeddingNotConfigured:
-        logger.warning("SKILLNOTE_EMBEDDING_API_KEY unset; skill %r %s embedding skipped",
-                       skill.slug, action)
-    except embedding_service.EmbeddingError as e:
-        logger.warning("Embedding %s failed for skill %r: %s", action, skill.slug, e)
-    except ValueError as e:
-        logger.warning("Embedding %s rejected for skill %r: %s", action, skill.slug, e)
 
 
 def _skill_total_versions(db: Session, skill_id) -> int:
@@ -329,11 +304,6 @@ def restore_version(
     # Create a new version snapshot for the restore
     _create_content_version(db, skill_row)
 
-    # Restore can change name/description (the title/description fields on the
-    # snapshot), so re-embed. Body (content_md) is excluded per DD11, but
-    # title/description ARE part of the embedded text.
-    _refresh_embedding(skill_row, action="restore")
-
     db.commit()
     db.refresh(skill_row)
     return SkillDetail(
@@ -426,10 +396,6 @@ def create_skill(
         extra_frontmatter=payload.extra_frontmatter,
         current_version=0,
     )
-
-    # Generate embedding from name + description (body excluded per DD11).
-    # Failures here MUST NOT block skill creation — log and proceed with NULL.
-    _refresh_embedding(skill, action="create")
 
     db.add(skill)
     db.flush()
@@ -534,11 +500,6 @@ def update_skill(
 
     # Auto-create a new content version on every save
     _create_content_version(db, skill_row)
-
-    # Re-embed only if name or description changed (body excluded from embedding per DD11).
-    # Failures here MUST NOT block the update — log and keep the prior (stale) embedding.
-    if payload.name is not None or payload.description is not None:
-        _refresh_embedding(skill_row, action="update")
 
     # Notify MCP server of tool-list change (delivered on commit)
     db.execute(text("SELECT pg_notify('skillnote_skills_changed', 'updated')"))

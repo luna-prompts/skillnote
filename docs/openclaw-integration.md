@@ -8,7 +8,8 @@ SkillNote × OpenClaw is a living skill registry for the OpenClaw agent. SkillNo
 
 - A running SkillNote backend on a host you control (`./install.sh` from this repo).
 - An OpenClaw agent installed locally.
-- `SKILLNOTE_EMBEDDING_API_KEY` set on the SkillNote backend before you upgrade to 0.4.0 (or the skill-ranking endpoint will return 503). Default provider is OpenAI; alternative `SKILLNOTE_EMBEDDING_PROVIDER=voyage`.
+
+No additional API keys are required on the SkillNote side. The OpenClaw resolver subagent runs in the agent harness with full LLM reasoning, so SkillNote ships the catalog and the subagent picks.
 
 ## Install
 
@@ -39,7 +40,7 @@ You can also grab the install command from your SkillNote web UI at `Settings �
 
 ## What the agent does after install
 
-- **Picks skills automatically.** When you ask the agent to do something non-trivial, it spawns the resolver, which queries `/v1/openclaw/context-bundle` and gets back semantically-ranked skills. The agent uses 1-5 of them.
+- **Picks skills automatically.** When you ask the agent to do something non-trivial, it spawns the resolver, which queries `/v1/openclaw/context-bundle` and gets back the catalog with usage / rating / staleness metadata. The resolver re-ranks via LLM reasoning over the task and returns 1-5 skills for the main agent to apply.
 - **Logs each task.** After acting, it POSTs a usage event to `/v1/openclaw/usage` with the task summary (paraphrased — never your raw message), the skills used, the resolver's confidence, and the outcome.
 - **Leaves comments.** When the agent notices a skill helped, failed, or seems stale, it POSTs a comment on that skill (`author_type=agent`). Five comment types: agent_observation, agent_issue, agent_patch_suggestion, agent_success_note, agent_deprecation_warning. Rate-limited to one comment per skill per day.
 - **Asks for confirmation only when warranted.** Confidence < 0.6, or risk_level ≥ medium, or two equally-valid collections.
@@ -89,16 +90,8 @@ That's it. SkillNote-side data (your skills, comments, usage events) stays in yo
 - Check the `skillnote_base_url` resolves from the OpenClaw host (a NAT'd container won't reach `localhost`).
 - `curl -sf $SKILLNOTE_BASE_URL/health` from inside the agent's host.
 
-**Context-bundle returns 503 EMBEDDING_NOT_CONFIGURED.**
-
-- The SkillNote backend needs `SKILLNOTE_EMBEDDING_API_KEY` set. Restart the api container after setting it. Existing skills auto-backfill on next start.
-
 **Agent doesn't seem to use skills.**
 
 - Check Settings → OpenClaw Integration in the SkillNote UI; the "Connected" indicator should be green if the agent has logged any usage in the last 7 days.
 - Run `curl -s $API_URL/v1/openclaw/usage?limit=5` to see if usage events are landing.
 - Re-run the install command to refresh the awareness skill (the bundled awareness skill version `1.0.0` is in the SKILL.md frontmatter).
-
-**I want a different embedding model.**
-
-- Set `SKILLNOTE_EMBEDDING_MODEL=text-embedding-3-large` (or any OpenAI embedding model) on the SkillNote backend. Restart and re-run the backfill: `python scripts/backfill_embeddings.py --all` inside the api container.

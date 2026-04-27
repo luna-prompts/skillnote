@@ -11,6 +11,16 @@ class ContextBundleRequest(BaseModel):
     workspace: str | None = None
     recent_skill_ids: list[uuid.UUID] = Field(default_factory=list)
     max_skills: int = Field(default=20, ge=1, le=100)
+    collection_filter: str | None = Field(
+        default=None,
+        max_length=128,
+        description=(
+            "If provided, only return skills that include this collection name "
+            "in their `collections` array. Useful when the agent already has a "
+            "collection hint and wants to narrow the catalog before its own "
+            "LLM-side ranking pass."
+        ),
+    )
 
     @field_validator("task_summary")
     @classmethod

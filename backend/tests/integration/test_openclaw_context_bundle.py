@@ -1,10 +1,10 @@
 """Integration tests for POST /v1/openclaw/context-bundle.
 
 Runs in-process via fastapi.testclient.TestClient with a fresh app that mounts
-only the openclaw router (the router is not yet wired into main.py — that's a
-future task). Real Postgres is required (uses pgvector cosine distance).
-
-Embeddings are mocked — these tests never call the real OpenAI/Voyage API.
+only the openclaw router. Real Postgres is required (uses JSONB aggregations
++ ARRAY membership checks). No embedding service / no OpenAI / no pgvector —
+the OpenClaw resolver subagent does the LLM-side ranking; SkillNote just
+ships the catalog sorted by usage_count_30d desc then rating_avg desc.
 """
 from __future__ import annotations
 
@@ -23,7 +23,6 @@ from app.api.openclaw import router
 from app.db.models import Comment, Skill, SkillUsageEvent
 from app.db.session import get_db
 from app.main import http_exception_handler, validation_exception_handler
-from app.services import embedding_service
 
 
 DB_URL = os.environ.get(
@@ -82,21 +81,6 @@ def client(engine):
     return TestClient(app)
 
 
-@pytest.fixture(autouse=True)
-def _configure_embedding(monkeypatch):
-    """Default: embedding service appears configured. Tests that need the
-    'not configured' branch override this with their own monkeypatch."""
-    monkeypatch.setattr(embedding_service.settings, "embedding_api_key", "test-key")
-    yield
-
-
-def _mock_embed_text(monkeypatch, vector_idx: int = 0):
-    """Replace embedding_service.embed_text with a deterministic stub vector."""
-    monkeypatch.setattr(
-        embedding_service, "embed_text", lambda _t: _vec(vector_idx)
-    )
-
-
 @pytest.fixture
 def cleanup(db_session):
     """Track inserted skills/comments/usage events and remove them on teardown."""
@@ -121,19 +105,11 @@ def cleanup(db_session):
 # ── helpers ─────────────────────────────────────────────────────────────
 
 
-def _vec(idx: int, dim: int = 1536) -> list[float]:
-    """A unit basis vector with 1.0 at position idx and 0.0 elsewhere."""
-    v = [0.0] * dim
-    v[idx] = 1.0
-    return v
-
-
 def _seed_skill(
     db_session,
     cleanup,
     *,
     name: str | None = None,
-    embedding: list[float] | None,
     collections: list[str] | None = None,
 ) -> Skill:
     suffix = uuid.uuid4().hex[:8]
@@ -144,7 +120,6 @@ def _seed_skill(
         slug=name,
         description=f"desc {suffix}",
         collections=collections or [],
-        embedding=embedding,
     )
     db_session.add(skill)
     db_session.commit()
@@ -153,36 +128,45 @@ def _seed_skill(
     return skill
 
 
+def _add_usage_events(db_session, skill_id: uuid.UUID, count: int) -> None:
+    """Insert ``count`` recent usage events that reference ``skill_id``."""
+    for _ in range(count):
+        db_session.add(
+            SkillUsageEvent(
+                id=uuid.uuid4(),
+                agent_name="claude",
+                task_summary="t",
+                skill_ids=[str(skill_id)],
+            )
+        )
+    db_session.commit()
+
+
 # ── tests ───────────────────────────────────────────────────────────────
 
 
-def test_503_when_embedding_not_configured(client, monkeypatch):
-    monkeypatch.setattr(embedding_service.settings, "embedding_api_key", None)
-    r = client.post("/v1/openclaw/context-bundle", json={"task_summary": "anything"})
-    assert r.status_code == 503, r.text
-    body = r.json()
-    assert body["error"]["code"] == "EMBEDDING_NOT_CONFIGURED"
-
-
-def test_empty_registry_returns_empty_arrays(client, monkeypatch, db_session):
-    """When there are zero embedded skills, response.skills should be empty.
+def test_empty_registry_returns_empty_arrays(client, db_session):
+    """When there are zero skills, response.skills should be empty.
 
     We don't try to assert the collections list is empty — other tests in this
     DB likely seeded collections — we just assert the call succeeds and the
-    skills list is empty when no skill matches the (mocked) query vector.
+    skills list is empty when the skills table itself is empty.
 
-    NOTE: this test commits an UPDATE that nulls every skill's embedding. The
-    fixture's session.rollback() can't undo a committed change, so we have to
-    snapshot the existing (id, embedding) pairs and restore them in `finally`
-    or subsequent tests in the same DB run inherit a wiped registry.
+    NOTE: this test commits a DELETE on every skill row. The fixture's
+    session.rollback() can't undo a committed change, so we snapshot every
+    skill row and restore them in `finally` so subsequent tests aren't
+    starved of seeded skills.
     """
-    _mock_embed_text(monkeypatch, 0)
-    # Snapshot existing embeddings so we can restore them after.
     saved = db_session.execute(
-        text("SELECT id, embedding FROM skills WHERE embedding IS NOT NULL")
+        text(
+            "SELECT id, name, slug, description, collections "
+            "FROM skills"
+        )
     ).fetchall()
-    # Wipe just the embeddings (don't delete skills — other tests rely on them)
-    db_session.execute(text("UPDATE skills SET embedding = NULL"))
+    # Wipe every skill — we want the genuinely empty case.
+    db_session.execute(text("DELETE FROM comments"))
+    db_session.execute(text("DELETE FROM skill_usage_events"))
+    db_session.execute(text("DELETE FROM skills"))
     db_session.commit()
     try:
         r = client.post(
@@ -193,61 +177,25 @@ def test_empty_registry_returns_empty_arrays(client, monkeypatch, db_session):
         assert body["skills"] == []
         assert isinstance(body["collections"], list)
     finally:
-        for sid, emb in saved:
+        for row in saved:
             db_session.execute(
-                text("UPDATE skills SET embedding = :emb WHERE id = :sid"),
-                {"emb": emb, "sid": sid},
+                text(
+                    "INSERT INTO skills (id, name, slug, description, collections) "
+                    "VALUES (:id, :name, :slug, :description, :collections)"
+                ),
+                {
+                    "id": row.id,
+                    "name": row.name,
+                    "slug": row.slug,
+                    "description": row.description,
+                    "collections": row.collections,
+                },
             )
         db_session.commit()
 
 
-def test_5_skills_ranked_by_cosine(client, monkeypatch, db_session, cleanup):
-    """Skill whose embedding aligns with the query vector ranks first."""
-    # Seed 5 skills, each with a unit vector pointing in a distinct dimension.
-    skills = [
-        _seed_skill(db_session, cleanup, embedding=_vec(i)) for i in range(5)
-    ]
-    target = skills[2]
-    _mock_embed_text(monkeypatch, 2)
-    r = client.post(
-        "/v1/openclaw/context-bundle",
-        json={"task_summary": "rank test"},
-    )
-    assert r.status_code == 200, r.text
-    body = r.json()
-    # Filter to just our seeded skills (DB may contain others)
-    seeded_ids = {str(s.id) for s in skills}
-    returned_seeded = [s for s in body["skills"] if s["id"] in seeded_ids]
-    assert returned_seeded, body
-    # First seeded skill in ranking order must be the target
-    assert returned_seeded[0]["id"] == str(target.id), [
-        (s["id"], s["slug"]) for s in returned_seeded
-    ]
-
-
-def test_skill_with_null_embedding_excluded(client, monkeypatch, db_session, cleanup):
-    """Skills with NULL embedding are dropped from the ranked list."""
-    embedded = _seed_skill(db_session, cleanup, embedding=_vec(0))
-    _seed_skill(db_session, cleanup, embedding=None)
-    _seed_skill(db_session, cleanup, embedding=None)
-
-    _mock_embed_text(monkeypatch, 0)
-    r = client.post(
-        "/v1/openclaw/context-bundle", json={"task_summary": "hi"}
-    )
-    assert r.status_code == 200, r.text
-    body = r.json()
-    seeded_ids = {str(embedded.id)}  # only the embedded one should appear
-    returned_ids = {s["id"] for s in body["skills"]}
-    # All three of our seeded skills should have been candidates, but only the
-    # embedded one is allowed back.
-    assert str(embedded.id) in returned_ids
-    null_ids = [s["id"] for s in body["skills"] if uuid.UUID(s["id"]) in cleanup and s["id"] != str(embedded.id)]
-    assert null_ids == [], f"NULL-embedding skills leaked through: {null_ids}"
-
-
-def test_staleness_via_deprecation_comment(client, monkeypatch, db_session, cleanup):
-    skill = _seed_skill(db_session, cleanup, embedding=_vec(0))
+def test_staleness_via_deprecation_comment(client, db_session, cleanup):
+    skill = _seed_skill(db_session, cleanup)
     db_session.add(
         Comment(
             id=uuid.uuid4(),
@@ -259,7 +207,6 @@ def test_staleness_via_deprecation_comment(client, monkeypatch, db_session, clea
     )
     db_session.commit()
 
-    _mock_embed_text(monkeypatch, 0)
     r = client.post(
         "/v1/openclaw/context-bundle", json={"task_summary": "x"}
     )
@@ -269,8 +216,8 @@ def test_staleness_via_deprecation_comment(client, monkeypatch, db_session, clea
     assert found["staleness_status"] == "needs_review"
 
 
-def test_staleness_via_low_rating(client, monkeypatch, db_session, cleanup):
-    skill = _seed_skill(db_session, cleanup, embedding=_vec(0))
+def test_staleness_via_low_rating(client, db_session, cleanup):
+    skill = _seed_skill(db_session, cleanup)
     for _ in range(3):
         db_session.add(
             Comment(
@@ -283,7 +230,6 @@ def test_staleness_via_low_rating(client, monkeypatch, db_session, cleanup):
         )
     db_session.commit()
 
-    _mock_embed_text(monkeypatch, 0)
     r = client.post(
         "/v1/openclaw/context-bundle", json={"task_summary": "x"}
     )
@@ -294,12 +240,11 @@ def test_staleness_via_low_rating(client, monkeypatch, db_session, cleanup):
     assert abs(found["rating_avg"] - 2.0) < 0.001
 
 
-def test_max_skills_truncates(client, monkeypatch, db_session, cleanup):
+def test_max_skills_truncates(client, db_session, cleanup):
     """max_skills caps the returned ranked-skills list."""
     for _ in range(10):
-        _seed_skill(db_session, cleanup, embedding=_vec(0))
+        _seed_skill(db_session, cleanup)
 
-    _mock_embed_text(monkeypatch, 0)
     r = client.post(
         "/v1/openclaw/context-bundle",
         json={"task_summary": "x", "max_skills": 3},
@@ -308,12 +253,10 @@ def test_max_skills_truncates(client, monkeypatch, db_session, cleanup):
     assert len(r.json()["skills"]) == 3
 
 
-def test_n_plus_1_sentinel(client, monkeypatch, db_session, cleanup, engine):
+def test_n_plus_1_sentinel(client, db_session, cleanup, engine):
     """Endpoint must execute ≤ 6 queries regardless of skill count."""
     for _ in range(20):
-        _seed_skill(db_session, cleanup, embedding=_vec(0))
-
-    _mock_embed_text(monkeypatch, 0)
+        _seed_skill(db_session, cleanup)
 
     counter = {"n": 0}
 
@@ -339,22 +282,8 @@ def test_n_plus_1_sentinel(client, monkeypatch, db_session, cleanup, engine):
     )
 
 
-def test_502_on_embedding_provider_error(client, monkeypatch):
-    def boom(_text):
-        raise embedding_service.EmbeddingError("rate limited")
-
-    monkeypatch.setattr(embedding_service, "embed_text", boom)
-    r = client.post(
-        "/v1/openclaw/context-bundle", json={"task_summary": "x"}
-    )
-    assert r.status_code == 502, r.text
-    assert r.json()["error"]["code"] == "EMBEDDING_PROVIDER_ERROR"
-
-
-def test_recent_comment_summary_truncated_to_200_chars(
-    client, monkeypatch, db_session, cleanup
-):
-    skill = _seed_skill(db_session, cleanup, embedding=_vec(0))
+def test_recent_comment_summary_truncated_to_200_chars(client, db_session, cleanup):
+    skill = _seed_skill(db_session, cleanup)
     long_body = "x" * 500
     db_session.add(
         Comment(
@@ -367,7 +296,6 @@ def test_recent_comment_summary_truncated_to_200_chars(
     )
     db_session.commit()
 
-    _mock_embed_text(monkeypatch, 0)
     r = client.post(
         "/v1/openclaw/context-bundle", json={"task_summary": "x"}
     )
@@ -377,19 +305,11 @@ def test_recent_comment_summary_truncated_to_200_chars(
     assert found["recent_comments_summary"] == "x" * 200
 
 
-def test_usage_count_30d_aggregation(client, monkeypatch, db_session, cleanup):
+def test_usage_count_30d_aggregation(client, db_session, cleanup):
     """SkillUsageEvent rows in the 30d window are counted; older ones aren't."""
-    skill = _seed_skill(db_session, cleanup, embedding=_vec(0))
+    skill = _seed_skill(db_session, cleanup)
     # 2 recent events referencing this skill
-    for _ in range(2):
-        db_session.add(
-            SkillUsageEvent(
-                id=uuid.uuid4(),
-                agent_name="claude",
-                task_summary="t",
-                skill_ids=[str(skill.id)],
-            )
-        )
+    _add_usage_events(db_session, skill.id, 2)
     # 1 older event — must be excluded
     old = SkillUsageEvent(
         id=uuid.uuid4(),
@@ -408,10 +328,114 @@ def test_usage_count_30d_aggregation(client, monkeypatch, db_session, cleanup):
     )
     db_session.commit()
 
-    _mock_embed_text(monkeypatch, 0)
     r = client.post(
         "/v1/openclaw/context-bundle", json={"task_summary": "x"}
     )
     assert r.status_code == 200, r.text
     found = next(s for s in r.json()["skills"] if s["id"] == str(skill.id))
     assert found["usage_count_30d"] == 2
+
+
+def test_ranking_prefers_high_usage(client, db_session, cleanup):
+    """Of three skills, the one with most recent usage events ranks first."""
+    high = _seed_skill(db_session, cleanup, name=f"oc-high-{uuid.uuid4().hex[:6]}")
+    mid = _seed_skill(db_session, cleanup, name=f"oc-mid-{uuid.uuid4().hex[:6]}")
+    low = _seed_skill(db_session, cleanup, name=f"oc-low-{uuid.uuid4().hex[:6]}")
+    _add_usage_events(db_session, high.id, 10)
+    _add_usage_events(db_session, mid.id, 5)
+    # `low` gets zero usage events.
+
+    r = client.post(
+        "/v1/openclaw/context-bundle",
+        json={"task_summary": "x", "max_skills": 100},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    seeded_ids = {str(high.id), str(mid.id), str(low.id)}
+    returned_seeded = [s for s in body["skills"] if s["id"] in seeded_ids]
+    # Order MUST be high → mid → low.
+    assert [s["id"] for s in returned_seeded] == [
+        str(high.id),
+        str(mid.id),
+        str(low.id),
+    ], returned_seeded
+
+
+def test_ranking_breaks_ties_by_rating(client, db_session, cleanup):
+    """Equal usage_count_30d → higher rating_avg wins the tiebreak."""
+    a = _seed_skill(db_session, cleanup, name=f"oc-a-{uuid.uuid4().hex[:6]}")
+    b = _seed_skill(db_session, cleanup, name=f"oc-b-{uuid.uuid4().hex[:6]}")
+    # Same usage count
+    _add_usage_events(db_session, a.id, 5)
+    _add_usage_events(db_session, b.id, 5)
+    # `a` gets a high rating, `b` gets a low one.
+    db_session.add(
+        Comment(
+            id=uuid.uuid4(),
+            skill_id=a.id,
+            author="rater",
+            body="great",
+            rating=5,
+        )
+    )
+    db_session.add(
+        Comment(
+            id=uuid.uuid4(),
+            skill_id=a.id,
+            author="rater",
+            body="great",
+            rating=4,
+        )
+    )
+    db_session.add(
+        Comment(
+            id=uuid.uuid4(),
+            skill_id=b.id,
+            author="rater",
+            body="meh",
+            rating=2,
+        )
+    )
+    db_session.add(
+        Comment(
+            id=uuid.uuid4(),
+            skill_id=b.id,
+            author="rater",
+            body="meh",
+            rating=3,
+        )
+    )
+    db_session.commit()
+
+    r = client.post(
+        "/v1/openclaw/context-bundle",
+        json={"task_summary": "x", "max_skills": 100},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    seeded = [s for s in body["skills"] if s["id"] in {str(a.id), str(b.id)}]
+    # `a` (higher rating) MUST come before `b`.
+    assert [s["id"] for s in seeded] == [str(a.id), str(b.id)], seeded
+
+
+def test_collection_filter_returns_subset(client, db_session, cleanup):
+    """collection_filter narrows the bundle to skills in that collection."""
+    target_collection = f"col-{uuid.uuid4().hex[:6]}"
+    other_collection = f"col-{uuid.uuid4().hex[:6]}"
+    in_a = _seed_skill(db_session, cleanup, collections=[target_collection])
+    in_b = _seed_skill(db_session, cleanup, collections=[target_collection, "extra"])
+    out = _seed_skill(db_session, cleanup, collections=[other_collection])
+
+    r = client.post(
+        "/v1/openclaw/context-bundle",
+        json={
+            "task_summary": "x",
+            "max_skills": 100,
+            "collection_filter": target_collection,
+        },
+    )
+    assert r.status_code == 200, r.text
+    returned_ids = {s["id"] for s in r.json()["skills"]}
+    assert str(in_a.id) in returned_ids
+    assert str(in_b.id) in returned_ids
+    assert str(out.id) not in returned_ids

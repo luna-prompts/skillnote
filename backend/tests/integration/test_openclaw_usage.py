@@ -1,10 +1,7 @@
 """Integration tests for POST/GET /v1/openclaw/usage.
 
 Mirrors the fixture style of test_openclaw_context_bundle.py: per-test fresh
-FastAPI app mounting only the openclaw router, real Postgres, monkeypatched
-embedding service so the unrelated context-bundle handler never reaches a
-provider (these tests don't exercise it, but the autouse fixture keeps the
-import surface consistent).
+FastAPI app mounting only the openclaw router, real Postgres.
 """
 from __future__ import annotations
 
@@ -28,7 +25,6 @@ from app.main import (
     http_exception_handler,
     validation_exception_handler,
 )
-from app.services import embedding_service
 
 
 DB_URL = os.environ.get(
@@ -81,14 +77,6 @@ def client(engine):
 
     app.dependency_overrides[get_db] = _get_db_override
     return TestClient(app)
-
-
-@pytest.fixture(autouse=True)
-def _configure_embedding(monkeypatch):
-    """Default: embedding service appears configured. Not exercised by these
-    tests, but kept consistent with the context-bundle test module."""
-    monkeypatch.setattr(embedding_service.settings, "embedding_api_key", "test-key")
-    yield
 
 
 @pytest.fixture

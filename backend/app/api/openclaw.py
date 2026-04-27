@@ -1,9 +1,12 @@
 """OpenClaw integration endpoints.
 
-Provides the /v1/openclaw/context-bundle endpoint that ranks skills against a
-task summary using pgvector cosine distance and pre-aggregates supporting
-metadata (usage counts, ratings, latest comment, deprecation flag) in a
-constant number of queries regardless of the result-set size.
+Provides the /v1/openclaw/context-bundle endpoint that ships the SkillNote
+catalog (capped at max_skills, sorted by usage_count_30d desc then
+rating_avg desc) with rich per-skill metadata (usage counts, ratings,
+latest comment, deprecation flag) pre-aggregated in a constant number of
+queries regardless of result-set size. The OpenClaw resolver subagent
+running in the agent harness does the actual relevance picking via LLM
+reasoning over this bundle — SkillNote is intentionally NOT the ranker.
 
 Also provides POST/GET /v1/openclaw/usage for agents to log applied skills
 plus task outcomes (the data that powers the context-bundle aggregations).
@@ -27,7 +30,6 @@ from app.schemas.openclaw import (
     UsageEventCreate,
     UsageEventOut,
 )
-from app.services import embedding_service
 
 # Keep `uuid` as an alias so the existing context-bundle handler continues to
 # reference the module by its original name.
@@ -41,62 +43,41 @@ def context_bundle(
     req: ContextBundleRequest,
     db: Session = Depends(get_db),
 ) -> ContextBundleResponse:
-    """Rank skills by semantic similarity to req.task_summary and return a
-    bundle of metadata an agent can use to choose which skills to apply.
+    """Return the catalog of skills (with usage / rating / comment / staleness
+    metadata) that the OpenClaw resolver subagent ranks via LLM reasoning.
 
-    Skills with NULL embedding are excluded from the ranking — that's
-    deliberate so unbackfilled skills get noticed and re-embedded.
+    SkillNote does NOT do semantic ranking server-side. The subagent reads
+    the bundle, scores skills against the task summary using its own LLM
+    judgment, and picks 1-5. We just over-fetch a bit, sort by a cheap
+    usage+rating proxy, then truncate to ``max_skills``.
     """
-    # 1. Embedding guard — fail fast if no provider key.
-    if not embedding_service.is_configured():
-        raise api_error(
-            503,
-            "EMBEDDING_NOT_CONFIGURED",
-            "SkillNote is missing SKILLNOTE_EMBEDDING_API_KEY; cannot rank skills semantically",
-        )
+    # 1. Pull a generous candidate slice. Over-fetch by 4x so the eventual
+    #    in-memory sort by usage+rating has more to work with than the raw
+    #    insertion order would offer; we still respect req.max_skills below.
+    stmt = select(Skill)
+    if req.collection_filter:
+        # Skill.collections is ARRAY(Text); .any(value) compiles to
+        # `value = ANY(skills.collections)` which matches membership.
+        stmt = stmt.where(Skill.collections.any(req.collection_filter))
+    stmt = stmt.limit(req.max_skills * 4)
+    candidate_skills: list[Skill] = list(db.execute(stmt).scalars().all())
 
-    # 2. Embed the task_summary. Provider failures bubble up as 502.
-    #    Defense-in-depth: even with the is_configured() guard above, a race
-    #    (settings reload, key revoked mid-flight) could surface
-    #    EmbeddingNotConfigured here — map it to the same 503 envelope.
-    try:
-        query_vec = embedding_service.embed_text(req.task_summary)
-    except embedding_service.EmbeddingNotConfigured:
-        raise api_error(
-            503,
-            "EMBEDDING_NOT_CONFIGURED",
-            "SkillNote is missing SKILLNOTE_EMBEDDING_API_KEY; cannot rank skills semantically",
-        )
-    except embedding_service.EmbeddingError as e:
-        raise api_error(502, "EMBEDDING_PROVIDER_ERROR", str(e))
+    # 2. Pull all collections — small set, no ranking needed.
+    collections = db.query(Collection).all()
 
-    # 3. Single ranked skill query via pgvector cosine distance.
-    #    NULL-embedding skills are intentionally excluded — see module docstring.
-    ranked_stmt = (
-        select(Skill, Skill.embedding.cosine_distance(query_vec).label("dist"))
-        .where(Skill.embedding.is_not(None))
-        .order_by("dist")
-        .limit(req.max_skills)
-    )
-    rows = db.execute(ranked_stmt).all()
-    ranked_skills: list[Skill] = [row[0] for row in rows]
-
-    # 4. Early-return when no skills match. We still pull collections — an
+    # 3. Early-return when no skills match. We still ship collections — an
     #    empty skills list doesn't mean an empty registry of collections.
-    if not ranked_skills:
+    if not candidate_skills:
         bundle_collections = [
             ContextBundleCollection(name=c.name, description=c.description)
-            for c in db.query(Collection).all()
+            for c in collections
         ]
         return ContextBundleResponse(collections=bundle_collections, skills=[])
 
-    # 5. Pull all collections — small set, no ranking needed.
-    collections = db.query(Collection).all()
+    skill_id_uuids = [s.id for s in candidate_skills]
+    skill_id_strs = [str(s.id) for s in candidate_skills]
 
-    skill_id_uuids = [s.id for s in ranked_skills]
-    skill_id_strs = [str(s.id) for s in ranked_skills]
-
-    # 6. Pre-aggregate usage_count_30d in ONE query via JSONB array unnesting.
+    # 4. Pre-aggregate usage_count_30d in ONE query via JSONB array unnesting.
     #    Subquery isolates the unnest so we can GROUP BY the resulting sid and
     #    filter with WHERE before grouping (cleaner than HAVING on a SRF).
     thirty_days_ago = datetime.now(timezone.utc) - timedelta(days=30)
@@ -116,7 +97,7 @@ def context_bundle(
         row.sid: row.cnt for row in db.execute(usage_stmt).all()
     }
 
-    # 7. Pre-aggregate rating_avg in ONE query.
+    # 5. Pre-aggregate rating_avg in ONE query.
     rating_stmt = (
         select(Comment.skill_id, func.avg(Comment.rating).label("avg"))
         .where(Comment.skill_id.in_(skill_id_uuids))
@@ -127,7 +108,7 @@ def context_bundle(
         row.skill_id: float(row.avg) for row in db.execute(rating_stmt).all()
     }
 
-    # 8. Pre-aggregate latest comment per skill via DISTINCT ON.
+    # 6. Pre-aggregate latest comment per skill via DISTINCT ON.
     latest_stmt = (
         select(Comment.skill_id, Comment.body)
         .where(Comment.skill_id.in_(skill_id_uuids))
@@ -138,7 +119,7 @@ def context_bundle(
         row.skill_id: row.body[:200] for row in db.execute(latest_stmt).all()
     }
 
-    # 9. Pre-aggregate deprecation flag in ONE query.
+    # 7. Pre-aggregate deprecation flag in ONE query.
     dep_stmt = (
         select(Comment.skill_id)
         .where(Comment.skill_id.in_(skill_id_uuids))
@@ -147,7 +128,18 @@ def context_bundle(
     )
     deprecated: set[uuid.UUID] = {row.skill_id for row in db.execute(dep_stmt).all()}
 
-    # 10. Build the response payload.
+    # 8. Sort by usage+rating proxy and truncate to max_skills. The subagent
+    #    re-ranks via LLM reasoning on top of this — see module docstring.
+    candidate_skills.sort(
+        key=lambda s: (
+            -int(usage_counts.get(str(s.id), 0)),  # higher usage first
+            -(rating_avgs.get(s.id) or 0.0),       # higher rating first
+            s.name,                                 # alphabetical tiebreak
+        )
+    )
+    ranked_skills = candidate_skills[: req.max_skills]
+
+    # 9. Build the response payload.
     def _staleness(skill_id, rating: float | None) -> str:
         if skill_id in deprecated:
             return "needs_review"

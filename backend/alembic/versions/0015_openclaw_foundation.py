@@ -15,9 +15,6 @@ from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 
-# pgvector SQLAlchemy type
-from pgvector.sqlalchemy import Vector
-
 revision = "0015_openclaw_foundation"
 down_revision = "0014_subpath_not_null"
 branch_labels = None
@@ -25,12 +22,39 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # a. Enable pgvector extension
-    op.execute("CREATE EXTENSION IF NOT EXISTS vector")
+    # a. Enable pgvector extension if available.
+    #
+    # This historical migration originally CREATEd the extension + the
+    # `skills.embedding` column unconditionally. Migration 0016 drops both,
+    # and the project no longer ships pgvector or the openai/voyage SDK.
+    # On a fresh DB running on the current `postgres:16` image (which
+    # doesn't bundle pgvector), a hard `CREATE EXTENSION vector` would
+    # crash 0015's replay. To keep this migration sequence replay-safe on
+    # fresh installs while preserving the historical record on dev/staging
+    # databases that already applied it, we now skip the pgvector parts
+    # when the extension is unavailable. The matching tear-down in 0016 is
+    # already guarded with `IF EXISTS`, so this remains symmetric.
+    bind = op.get_bind()
+    has_pgvector = bind.execute(
+        sa.text(
+            "SELECT 1 FROM pg_available_extensions WHERE name = 'vector'"
+        )
+    ).scalar() is not None
 
-    # b. Add embedding column to skills
-    op.add_column('skills', sa.Column('embedding', Vector(1536), nullable=True))
-    op.execute("CREATE INDEX ix_skills_embedding_hnsw ON skills USING hnsw (embedding vector_cosine_ops)")
+    if has_pgvector:
+        # pgvector import is lazy: backend pyproject no longer ships the
+        # package by default. Re-add it (`pip install pgvector`) only if
+        # you intentionally want to replay this migration with the column.
+        from pgvector.sqlalchemy import Vector
+
+        op.execute("CREATE EXTENSION IF NOT EXISTS vector")
+
+        # b. Add embedding column to skills
+        op.add_column('skills', sa.Column('embedding', Vector(1536), nullable=True))
+        op.execute(
+            "CREATE INDEX ix_skills_embedding_hnsw "
+            "ON skills USING hnsw (embedding vector_cosine_ops)"
+        )
 
     # c. Create skill_usage_events table
     op.create_table(

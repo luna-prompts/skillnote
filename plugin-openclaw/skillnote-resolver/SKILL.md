@@ -40,38 +40,26 @@ POST `{{HOST}}/v1/openclaw/context-bundle`:
 }
 ```
 
-The response gives you up to 20 skills already ranked by semantic similarity to your `task_summary`, plus all collections. Each skill carries: `id`, `slug`, `name`, `collections` (membership), `description`, `rating_avg`, `usage_count_30d`, `staleness_status`, `recent_comments_summary`.
+You can optionally narrow the catalog with `"collection_filter": "<collection-name>"` if the input clearly names a domain (e.g. user said "use my customer-support skills"). Leave it unset by default — over-filtering hides the right answer when the user's wording doesn't match a collection name verbatim.
 
-If the response is `503 EMBEDDING_NOT_CONFIGURED` or `502 EMBEDDING_PROVIDER_ERROR`, return:
-
-```json
-{
-  "selected_collection": null,
-  "selected_skill_ids": [],
-  "confidence": 0.0,
-  "risk_level": "low",
-  "needs_user_confirmation": false,
-  "reason": "SkillNote embedding service unavailable; cannot rank skills.",
-  "missing_capability": null,
-  "suggest_marketplace_search": false
-}
-```
+The response gives you up to 20 skills (sorted by recent usage and rating, but NOT semantically ranked — that's your job) plus the full collections list. Each skill carries: `id`, `slug`, `name`, `collections` (membership), `description`, `rating_avg`, `usage_count_30d`, `staleness_status`, `recent_comments_summary`.
 
 # Step 3: Score and pick
 
-For each candidate skill in the bundle:
+**You are the ranker.** SkillNote ships you the catalog; you reason about which skills actually fit the task. Read every `description` against `task_summary` + `task_context`. Don't anchor on the order you received them in — it's a usage/rating proxy, not a relevance signal.
 
+For each candidate, score on:
+
+- **Semantic fit** (the dominant factor) — does the description plausibly cover what the user wants? If the answer is "no, even a little," skip the skill regardless of metadata.
 - **Boost** when `usage_count_30d` is high (proven utility).
-- **Boost** when `recent_comments_summary` mentions success.
+- **Boost** when `recent_comments_summary` mentions success or hard-won fixes.
 - **Penalize** when `staleness_status == "needs_review"`.
 - **Penalize** when `rating_avg < 3.0`.
-- **Skip entirely** if you would never use it for this task, no matter the rank.
+- **Skip entirely** when nothing in the description would apply — never pad the result set just to fill it.
 
-The bundle is already cosine-ranked, so trust the order unless metadata gives you reason to override.
+**Pick ONE collection (or none).** Look at the `collections` field on the skills you ranked highest. If 4+ of them share a collection, pick that one. If split or unclear, set `selected_collection: null` and choose skills directly.
 
-**Pick ONE collection (or none).** Look at the `collections` field on the top-ranked skills. If 4+ of them share a collection, pick that one. If split or unclear, set `selected_collection: null` and choose skills directly.
-
-**Pick 1-5 skills (no more).** Smallest set that covers the task. Prefer high `usage_count_30d` and high `rating_avg`. If nothing fits well, pick zero.
+**Pick 1-5 skills (no more).** Smallest set that covers the task. Prefer high `usage_count_30d` and high `rating_avg` among the semantically relevant candidates. If nothing fits well, pick zero — surfacing junk is worse than surfacing nothing.
 
 # Step 4: Set confidence + risk
 
