@@ -39,6 +39,7 @@ class ContextBundleSkill(BaseModel):
     # Skill.collections is ARRAY(Text); a skill belongs to many collections
     collections: list[str]
     description: str | None
+    content_md: str | None
     rating_avg: float | None
     usage_count_30d: int
     staleness_status: str | None

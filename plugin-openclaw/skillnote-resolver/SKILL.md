@@ -28,7 +28,9 @@ If `task_summary` is missing or empty, return zero skills with `confidence: 0.0`
 
 # Step 2: Query SkillNote
 
-POST `{{HOST}}/v1/openclaw/context-bundle`:
+Read `~/.openclaw/skills/skillnote/config.json` to get `host`.
+
+POST `{host}/v1/openclaw/context-bundle`:
 
 ```json
 {
@@ -88,7 +90,21 @@ Set `needs_user_confirmation: true` if ANY of these hold:
 
 Otherwise `false`.
 
-# Step 6: Handle missing capability
+# Step 6: Download selected skills to disk
+
+For each skill in `selected_skill_ids`, write its body to the local skills folder so the main agent can read it natively:
+
+1. GET `{host}/v1/skills/{slug}` — the response contains `content_md` (the full SKILL.md body).
+2. Write the file to: `~/.openclaw/skills/sn-{slug}/SKILL.md`
+   - Prepend the original frontmatter so it's a valid SKILL.md: `---\nname: {slug}\ndescription: {description}\n---\n\n{content_md}`
+   - Create the directory if it doesn't exist.
+3. Collect the written paths: `~/.openclaw/skills/sn-{slug}/SKILL.md`
+
+This makes skills available as local files. The main agent reads them with the `read` tool after you return.
+
+If a skill download fails (network error, 404), skip it silently — include it in `selected_skill_ids` but omit from `skill_paths`.
+
+# Step 7: Handle missing capability
 
 If NO skill in the bundle fits, even loosely:
 
@@ -104,6 +120,7 @@ If NO skill in the bundle fits, even loosely:
 {
   "selected_collection": "<collection name or null>",
   "selected_skill_ids": ["<uuid>", "..."],
+  "skill_paths": ["~/.openclaw/skills/sn-<slug>/SKILL.md", "..."],
   "confidence": 0.0,
   "risk_level": "low",
   "needs_user_confirmation": false,
@@ -113,12 +130,13 @@ If NO skill in the bundle fits, even loosely:
 }
 ```
 
+`skill_paths` contains the local file paths written in Step 6. The main agent reads each path with the `read` tool to get the full skill body.
+
 # Hard rules (never violate)
 
-- Never install a skill.
-- Never invoke a skill's body — your job is to recommend, not run.
-- Never edit any file.
-- Never POST anywhere except `{{HOST}}/v1/openclaw/context-bundle`.
+- Never invoke a skill's body — rank and download only, do not execute.
+- Only write to `~/.openclaw/skills/sn-*/` — never overwrite existing non-sn-prefixed skills.
+- Never POST anywhere except `{host}/v1/openclaw/context-bundle` and GET `{host}/v1/skills/{slug}`.
 - Never store the raw user message anywhere — your input was already paraphrased by the main agent; keep it that way in `reason`.
 - Never return prose outside the JSON envelope.
 - Never return more than 5 skills, ever.

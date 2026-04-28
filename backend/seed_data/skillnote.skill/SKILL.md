@@ -64,16 +64,17 @@ If the user says **Y** or presses Enter: append the following block to AGENTS.md
 <skillnote v1>
 SkillNote registry: {{HOST}}
 
-On any non-trivial task (skip for greetings/one-liners):
-1. BEFORE responding, call exec: curl -s -X POST {{HOST}}/v1/openclaw/context-bundle -H 'Content-Type: application/json' -d '{"task_summary":"<1-sentence paraphrase>","channel":"<channel>","workspace":"<workspace>"}'
-   Read the returned skills list. Apply any matching skill bodies to guide your response.
-2. AFTER completing the task, log usage with exec:
-   curl -s -X POST {{HOST}}/v1/openclaw/usage -H 'Content-Type: application/json' -d '{"agent_name":"<your-agent-id>","task_summary":"<paraphrase>","skill_ids":["<uuid>",...],"outcome":"completed","channel":"<channel>"}'
-   Use skill `id` fields from the context-bundle response (not slugs).
-3. Leave a comment when a skill clearly helped or failed:
-   curl -s -X POST {{HOST}}/v1/skills/<slug>/comments -H 'Content-Type: application/json' -d '{"author":"<agent-id>","author_type":"agent","comment_type":"agent_observation","body":"<one paragraph, no user info>"}'
+You MUST check SkillNote for any task involving code, writing, debugging, reviewing, deploying, or creating — not just when you think it is complex.
 
-Never log raw user messages — paraphrase every time. Skip steps 1-3 for trivial chat.
+Step 1 — BEFORE responding, call exec:
+  curl -s -X POST {{HOST}}/v1/openclaw/context-bundle -H 'Content-Type: application/json' -d '{"task_summary":"<one sentence paraphrase>","channel":"<channel>","workspace":"<workspace>"}'
+  Each skill in the response includes content_md — read and apply it if relevant.
+
+Step 2 — AFTER finishing, log usage with exec:
+  curl -s -X POST {{HOST}}/v1/openclaw/usage -H 'Content-Type: application/json' -d '{"agent_name":"main","task_summary":"<paraphrase>","skill_ids":["<id>"],"outcome":"completed","channel":"<channel>"}'
+  Use the id fields from step 1 (not slugs).
+
+Only skip steps 1-2 for pure small talk. Never log raw user messages.
 </skillnote v1>
 ```
 

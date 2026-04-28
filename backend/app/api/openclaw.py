@@ -261,6 +261,7 @@ def context_bundle(
             name=s.name,
             collections=s.collections or [],
             description=s.description,
+            content_md=s.content_md or None,
             rating_avg=rating_avgs.get(s.id),
             usage_count_30d=int(usage_counts.get(str(s.id), 0)),
             staleness_status=_staleness(s.id, rating_avgs.get(s.id)),
