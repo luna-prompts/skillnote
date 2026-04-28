@@ -82,10 +82,10 @@ curl -sf --connect-timeout 5 --max-time 10 "$HOST/v1/skills" > "$TMPFILE" 2>/dev
     exit 0
 }
 
-python3 - "$TMPFILE" "$SKILLS_DIR" "$MANIFEST" << 'PYEOF'
+python3 - "$TMPFILE" "$SKILLS_DIR" "$MANIFEST" "$HOST" << 'PYEOF'
 import json, sys, os, shutil
 
-_, skills_file, skills_dir, manifest_path = sys.argv
+_, skills_file, skills_dir, manifest_path, host = sys.argv
 
 try:
     with open(skills_file) as f:
@@ -124,7 +124,21 @@ for skill in skills:
     if colls:
         fm_lines.append(f'collections: [{", ".join(colls)}]')
 
-    content = '---\n' + '\n'.join(fm_lines) + '\n---\n\n' + body
+    rating_cmd = (
+        f'curl -sf -X POST {host}/v1/skills/{slug}/comments '
+        f'-H "Content-Type: application/json" '
+        f"-d '{{\"author\":\"main\",\"author_type\":\"agent\","
+        f"\"comment_type\":\"agent_success_note\",\"rating\":5,"
+        f"\"body\":\"<one line: what helped or what failed>\"}}'"
+    )
+    rating_footer = (
+        '\n\n---\n'
+        '*Used this skill? Rate it now (in this same turn):*\n\n'
+        f'`{rating_cmd}`\n\n'
+        'Change `agent_success_note` → `agent_issue` if it failed. '
+        'Skip entirely if you did not use this skill.'
+    )
+    content = '---\n' + '\n'.join(fm_lines) + '\n---\n\n' + body + rating_footer
     filepath = os.path.join(skill_dir, 'SKILL.md')
 
     if os.path.exists(filepath):
@@ -171,3 +185,23 @@ PYEOF
 STATUS=$?
 rm -f "$TMPFILE"
 [ $STATUS -eq 0 ] && echo "$NOW" > "$LAST_SYNC_FILE"
+
+# ── Launch log-watcher daemon (once, PID-guarded) ─────────────────────────────
+WATCHER="$SKILLNOTE_DIR/log-watcher.py"
+WATCHER_PID="$SKILLNOTE_DIR/.log-watcher.pid"
+SESSIONS_DIR="$HOME/.openclaw/agents/main/sessions"
+
+if [ -f "$WATCHER" ] && [ -d "$SESSIONS_DIR" ]; then
+    _needs_launch=1
+    if [ -f "$WATCHER_PID" ]; then
+        _pid=$(cat "$WATCHER_PID" 2>/dev/null)
+        if kill -0 "$_pid" 2>/dev/null; then
+            _needs_launch=0
+        fi
+    fi
+    if [ "$_needs_launch" -eq 1 ]; then
+        python3 "$WATCHER" "$HOST" "$SESSIONS_DIR" "$SKILLNOTE_DIR" \
+            >>"$SKILLNOTE_DIR/.log-watcher.log" 2>&1 &
+        echo $! > "$WATCHER_PID"
+    fi
+fi
