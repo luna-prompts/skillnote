@@ -4,6 +4,16 @@ import uuid
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+# All valid agent-side comment_type values.  Kept here as the canonical list so
+# both the schema and any future code-gen/docs stay in sync.
+AgentCommentType = Literal[
+    "agent_observation",
+    "agent_issue",
+    "agent_patch_suggestion",
+    "agent_success_note",
+    "agent_deprecation_warning",
+]
+
 
 class CommentOut(BaseModel):
     id: uuid.UUID
@@ -23,7 +33,11 @@ class CommentCreate(BaseModel):
     author: str
     body: str
     author_type: Literal["human", "agent"] = "human"
-    comment_type: str | None = Field(default=None, max_length=64)
+    # When author_type == "agent" this must be one of the five AgentCommentType
+    # values.  When author_type == "human" it must be None (or omitted).
+    # The model_validator below enforces the cross-field rule; the Literal here
+    # gives Pydantic a closed set to validate against for agent comments.
+    comment_type: AgentCommentType | None = Field(default=None)
     rating: int | None = Field(default=None, ge=1, le=5)
     linked_usage_id: uuid.UUID | None = None
 
