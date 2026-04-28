@@ -45,7 +45,17 @@ Write `~/.openclaw/skills/skillnote/config.json` regardless:
 }
 ```
 
-## Step 3 — Graft AGENTS.md
+## Step 3 — Initial sync
+
+Run with exec:
+```
+chmod +x ~/.openclaw/skills/skillnote/sync.sh
+~/.openclaw/skills/skillnote/sync.sh
+```
+
+This populates `~/.openclaw/skills/sn-*/SKILL.md` for every skill in the registry. Runs in a few seconds.
+
+## Step 4 — Graft AGENTS.md
 
 Read `~/.openclaw/workspace/AGENTS.md`. Check for the exact string `<skillnote v1>`.
 
@@ -65,13 +75,13 @@ SkillNote registry: {{HOST}}
 
 You MUST check SkillNote for any task involving code, writing, debugging, reviewing, deploying, or creating.
 
-Step 1 — BEFORE responding, call exec:
-  curl -s -X POST {{HOST}}/v1/openclaw/context-bundle -H 'Content-Type: application/json' -d '{"task_summary":"<one sentence paraphrase>","channel":"<channel>","workspace":"<workspace>"}'
-  The response contains skills with their full content_md bodies. Read and apply any that are relevant.
+Step 1 — BEFORE responding, sync and read skills with exec:
+  ~/.openclaw/skills/skillnote/sync.sh
+  Then read any relevant ~/.openclaw/skills/sn-*/SKILL.md files and apply them.
 
 Step 2 — AFTER finishing, log usage with exec:
-  curl -s -X POST {{HOST}}/v1/openclaw/usage -H 'Content-Type: application/json' -d '{"agent_name":"<your-agent-id>","task_summary":"<paraphrase>","skill_ids":["<id>"],"outcome":"completed","channel":"<channel>"}'
-  Use id fields from step 1. Skip if no skills were relevant.
+  curl -s -X POST {{HOST}}/v1/openclaw/usage -H 'Content-Type: application/json' -d '{"agent_name":"main","task_summary":"<paraphrase>","skill_ids":["<id>"],"outcome":"completed","channel":"<channel>"}'
+  Use the id field from each skill's frontmatter. Skip if no skills were relevant.
 
 Only skip steps 1-2 for pure small talk ("hi", "thanks"). Never log raw user messages.
 </skillnote v1>
@@ -79,11 +89,11 @@ Only skip steps 1-2 for pure small talk ("hi", "thanks"). Never log raw user mes
 
 Verify the marker was written. Retry once on failure.
 
-## Step 4 — Done
+## Step 5 — Done
 
 Say exactly once on first setup:
 
-> SkillNote connected ✓ Registry at `{{HOST}}`. I'll fetch your saved procedures before each task and log what helped.
+> SkillNote connected ✓ Registry at `{{HOST}}`. Skills are synced locally — I'll read them before each task and log what helped.
 >
 > Ask me "what skills have you been using?" to see your activity. If something's broken, run `clawhub install skillnote-doctor`.
 
@@ -95,29 +105,7 @@ On every subsequent load: **complete silence**. Just verify the `<skillnote v1>`
 
 SkillNote is your self-hosted skill registry at `{{HOST}}`. It stores procedures your team has written — name, description, body, ratings, comments, and usage history. Skills are grouped into collections (e.g. `code-review`, `devops`) that scope what's relevant.
 
-The web UI at `{{HOST}}` is where humans curate skills and read your feedback. Treat it as persistent memory that survives across sessions and agents.
-
----
-
-# How to fetch skills for a task
-
-Call `POST {{HOST}}/v1/openclaw/context-bundle` with:
-
-```json
-{
-  "task_summary": "<one-sentence paraphrase>",
-  "channel": "<telegram|slack|cli|web>",
-  "workspace": "<repo, channel, or 'global'>"
-}
-```
-
-The response gives you up to 20 skills ordered by usage and rating. Each skill includes:
-- `id` (UUID — use this for logging)
-- `slug`, `name`, `description`
-- `content_md` — the full skill body, apply it
-- `usage_count_30d`, `rating_avg`, `staleness_status`
-
-Pick the 1-3 most relevant skills. If `staleness_status` is `needs_review`, prefer a healthy alternative. If nothing fits, skip logging entirely.
+Skills are synced to `~/.openclaw/skills/sn-*/SKILL.md` automatically before each task. The web UI at `{{HOST}}` is where humans curate skills and read your feedback. Treat it as persistent memory that survives across sessions and agents.
 
 ---
 
@@ -137,7 +125,7 @@ After completing a task where skills were applied, POST to `{{HOST}}/v1/openclaw
 
 `outcome`: `completed` | `failed` | `abandoned` | `unknown`
 
-Do NOT post if no skills were used.
+Skill IDs come from the `id` field in each `sn-*/SKILL.md` frontmatter. Do NOT post if no skills were used.
 
 ---
 
@@ -197,6 +185,6 @@ When the user says "remove skillnote" or "uninstall skillnote":
 - Do NOT log secrets, tokens, credentials, or PII.
 - Do NOT post usage events when no skills were used.
 - Do NOT comment more than once per skill per day.
-- Do NOT invent skill IDs or slugs — only use values from the API.
+- Do NOT invent skill IDs — only use values from the sn-* SKILL.md frontmatter.
 - Do NOT mention SkillNote on every reply — only when relevant.
 - Do NOT mutate config.json after setup. If wrong, ask user to say "re-setup skillnote".
