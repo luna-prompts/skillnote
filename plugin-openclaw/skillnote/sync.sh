@@ -37,19 +37,21 @@ fi
 SKILLS_DIR="$HOME/.openclaw/skills"
 MANIFEST="$SKILLNOTE_DIR/.skillnote-manifest.json"
 
-SKILLS=$(curl -sf --connect-timeout 5 --max-time 10 "$HOST/v1/skills" 2>/dev/null) || {
+# Write skills JSON to a temp file to avoid quoting issues in the Python script
+TMPFILE=$(mktemp /tmp/skillnote-sync-XXXXXX.json)
+curl -sf --connect-timeout 5 --max-time 10 "$HOST/v1/skills" > "$TMPFILE" 2>/dev/null || {
+    rm -f "$TMPFILE"
     exit 0
 }
 
-python3 << PYEOF
+python3 - "$TMPFILE" "$SKILLS_DIR" "$MANIFEST" << 'PYEOF'
 import json, sys, os, shutil
 
-skills_dir = os.path.expanduser('$SKILLS_DIR')
-manifest_path = os.path.expanduser('$MANIFEST')
-host = '$HOST'
+_, skills_file, skills_dir, manifest_path = sys.argv
 
 try:
-    skills = json.loads('''$SKILLS''')
+    with open(skills_file) as f:
+        skills = json.load(f)
 except Exception:
     sys.exit(0)
 
@@ -77,10 +79,9 @@ for skill in skills:
     skill_id = skill.get('id') or ''
     desc = skill.get('description') or ''
     colls = skill.get('collections') or []
-    name = skill.get('name') or slug
     body = skill.get('content_md') or ''
 
-    # Build frontmatter — id is included so agents can log usage without a separate API call
+    # id in frontmatter so agents can log usage without a separate API call
     fm_lines = [f'name: {local_name}', f'description: {desc}']
     if skill_id:
         fm_lines.append(f'id: {skill_id}')
@@ -101,7 +102,7 @@ for skill in skills:
     with open(filepath, 'w') as f:
         f.write(content)
 
-# Delete stale (removed from SkillNote or no longer returned)
+# Delete skills no longer in SkillNote
 stale = old_managed - local_names
 if os.path.isdir(skills_dir):
     for entry in os.listdir(skills_dir):
@@ -109,18 +110,17 @@ if os.path.isdir(skills_dir):
             stale.add(entry)
 
 for name in sorted(stale):
-    skill_dir = os.path.join(skills_dir, name)
+    d = os.path.join(skills_dir, name)
     try:
-        if os.path.islink(skill_dir):
-            os.unlink(skill_dir)
+        if os.path.islink(d):
+            os.unlink(d)
             deleted += 1
-        elif os.path.isdir(skill_dir):
-            shutil.rmtree(skill_dir)
+        elif os.path.isdir(d):
+            shutil.rmtree(d)
             deleted += 1
     except OSError:
         pass
 
-# Save manifest
 with open(manifest_path, 'w') as f:
     json.dump({'skills': sorted(local_names)}, f, indent=2)
 
@@ -134,6 +134,7 @@ if parts:
 PYEOF
 
 STATUS=$?
+rm -f "$TMPFILE"
 if [ $STATUS -eq 0 ]; then
     echo "$NOW" > "$LAST_SYNC_FILE"
 fi
