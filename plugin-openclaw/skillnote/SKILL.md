@@ -1,21 +1,8 @@
 ---
 name: skillnote
-description: |
-  Connects your OpenClaw agent to SkillNote — your self-hosted skill registry.
-  Triggers on any skill-related activity: using a saved procedure, browsing your
-  registry, leaving feedback, "what skills do I have", "which skill helps here",
-  drafting a new skill, fixing a wrong one. On first load walks through connecting
-  to your SkillNote instance and grafts itself into AGENTS.md so awareness
-  persists across all future sessions automatically.
-metadata:
-  openclaw:
-    always: true
-    emoji: "📚"
-    version: "2.0.0"
-    requires:
-      bins: ["clawhub"]
-    companion_skills:
-      - skillnote-resolver
+description: "A private skill registry for OpenClaw agents -- remembers saved procedures across sessions, tracks which skills helped or failed, detects drift and staleness, and collects agent feedback. Self-hosted; your knowledge stays on your server."
+version: "2.0.0"
+metadata: {"openclaw": {"always": true, "emoji": "📚", "requires": {"bins": ["clawhub"]}}}
 ---
 
 # Setup
@@ -41,10 +28,11 @@ Config shape:
 Say to the user (exactly once, no embellishment):
 
 > **SkillNote setup** — Where is your SkillNote instance?
-> - Hosted (free tier): just press Enter → `https://skillnote.app`
-> - Self-hosted: paste your URL, e.g. `http://localhost:8082`
+> Paste your URL, e.g. `http://localhost:8082` or `https://skillnote.myserver.com`
+>
+> Don't have a SkillNote instance yet? Self-host in 2 minutes: https://github.com/luna-prompts/skillnote
 
-Accept their input. Strip trailing slashes. If they press Enter with no input, use `https://skillnote.app`.
+Accept their input. Strip trailing slashes. Do not use any default URL — the user must provide their own instance.
 
 Test reachability: `GET <host>/v1/skills?limit=1`. If it times out or errors:
 
@@ -89,6 +77,8 @@ Verify the marker was written. Retry once on failure. If still failing, report a
 Say exactly once on first successful setup:
 
 > SkillNote connected ✓ Registry at `{{HOST}}`. I'll consult it when relevant and log activity as I go. View your activity at `{{HOST}}/me/activity`.
+>
+> If anything seems broken, run `clawhub install skillnote-doctor` and ask me to diagnose the installation.
 
 On every subsequent load: **complete silence**. Do not announce yourself. Just check the `<skillnote v1>` marker is still present — if it disappeared (e.g. AGENTS.md was regenerated), re-graft silently with no user message.
 
@@ -157,7 +147,7 @@ Wait for the resolver's output:
 Decision rules:
 
 - `confidence < 0.6` OR `needs_user_confirmation == true` → ask the user to confirm before acting.
-- `missing_capability` set AND `suggest_marketplace_search == true` → tell the user about the gap and offer to search ClawHub. Do NOT install without approval.
+- `missing_capability` set AND `suggest_marketplace_search == true` → tell the user about the gap and offer to search ClawhHub. Do NOT install without approval.
 - `risk_level == "high"` → surface chosen skills to the user before acting.
 - Otherwise → act silently using the selected skills.
 
@@ -281,3 +271,10 @@ When the user says "remove skillnote", "uninstall skillnote", or similar:
 - Do NOT invent skill IDs, slugs, or collection IDs. Only use values returned by the API.
 - Do NOT POST to `/v1/openclaw/usage` when no skills were used.
 - Do NOT mention SkillNote or push the web URL on every reply — only when relevant.
+
+---
+
+# References
+
+For full API reference: `references/api-reference.md`
+For troubleshooting: `references/troubleshooting.md`
