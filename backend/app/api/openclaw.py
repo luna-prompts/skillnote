@@ -13,8 +13,10 @@ plus task outcomes (the data that powers the context-bundle aggregations).
 """
 import uuid as uuid_lib
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import JSONResponse
 from sqlalchemy import and_, cast, desc, func, or_, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Session
@@ -36,6 +38,24 @@ from app.schemas.openclaw import (
 uuid = uuid_lib
 
 router = APIRouter(prefix="/v1/openclaw", tags=["openclaw"])
+
+# Separate router for /v1/openclaw-skill (no /v1/openclaw prefix).
+skill_router = APIRouter(prefix="/v1", tags=["openclaw"])
+
+_SKILL_DIR = Path(__file__).parent.parent.parent / "seed_data" / "skillnote.skill"
+
+
+@skill_router.get("/openclaw-skill")
+def get_openclaw_skill():
+    """Return the canonical skillnote SKILL.md + version for the weekly self-update check."""
+    version_file = _SKILL_DIR / "VERSION"
+    skill_file = _SKILL_DIR / "SKILL.md"
+    if not version_file.exists() or not skill_file.exists():
+        return JSONResponse(status_code=503, content={"error": {"code": "SKILL_NOT_FOUND", "message": "skill seed data not found"}})
+    return {
+        "version": version_file.read_text().strip(),
+        "skill": skill_file.read_text(),
+    }
 
 
 @router.post("/context-bundle", response_model=ContextBundleResponse)
