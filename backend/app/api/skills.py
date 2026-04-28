@@ -147,6 +147,7 @@ def list_skills(
         )
         out.append(
             SkillListItem(
+                id=skill.id,
                 name=skill.name,
                 slug=skill.slug,
                 description=skill.description,

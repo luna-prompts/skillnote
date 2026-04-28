@@ -389,7 +389,7 @@ def get_top_skills(
                 CROSS JOIN LATERAL jsonb_array_elements_text(sue.skill_ids) AS sid
                 JOIN skills sk ON sk.id::text = sid
                 WHERE 1=1
-                {_date_filter_clause(days)}
+                {_date_filter_clause(days, alias="sue.created_at")}
                 GROUP BY sk.slug
             ),
             ratings AS (
