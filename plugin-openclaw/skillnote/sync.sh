@@ -1,12 +1,12 @@
 #!/bin/bash
 # SkillNote Sync for OpenClaw
-# Fetches skills from SkillNote and writes them to ~/.openclaw/skills/sn-{slug}/SKILL.md
-# Handles create/update/delete via manifest. Offline-first (silent fail).
-# Throttled: skips if run within last 60 seconds.
+# 1. Skills sync  — every 60s: fetch all skills → write sn-{slug}/SKILL.md
+# 2. Self-update  — every 24h: compare versions → auto-install if newer
 
 export PYTHONIOENCODING=utf-8
 
 SYNC_INTERVAL=60
+UPDATE_INTERVAL=86400  # 24 hours
 
 SKILLNOTE_DIR="$HOME/.openclaw/skills/skillnote"
 CONFIG="$SKILLNOTE_DIR/config.json"
@@ -14,30 +14,68 @@ CONFIG="$SKILLNOTE_DIR/config.json"
 [ ! -f "$CONFIG" ] && exit 0
 
 HOST=$(python3 -c "
-import json, sys
+import json
 try:
     cfg = json.load(open('$CONFIG'))
-    h = cfg.get('host','').rstrip('/')
-    print(h)
+    print(cfg.get('host','').rstrip('/'))
 except Exception:
     pass
 " 2>/dev/null)
 
 [ -z "$HOST" ] && exit 0
 
-# Throttle
-LAST_SYNC_FILE="$SKILLNOTE_DIR/.last-sync-time"
 NOW=$(date +%s)
+
+# ── Self-update check (daily) ─────────────────────────────────────────────────
+
+VERSION_CHECK_FILE="$SKILLNOTE_DIR/.last-version-check"
+VERSION_FILE="$SKILLNOTE_DIR/VERSION"
+
+_due_for_update=1
+if [ -f "$VERSION_CHECK_FILE" ]; then
+    LAST_CHECK=$(cat "$VERSION_CHECK_FILE" 2>/dev/null || echo 0)
+    [ $(( NOW - LAST_CHECK )) -lt $UPDATE_INTERVAL ] && _due_for_update=0
+fi
+
+if [ "$_due_for_update" -eq 1 ]; then
+    REMOTE=$(curl -sf --connect-timeout 5 --max-time 10 "$HOST/v1/openclaw-skill" 2>/dev/null)
+    if [ -n "$REMOTE" ]; then
+        REMOTE_VER=$(python3 -c "import json,sys; print(json.loads('$REMOTE'.replace(\"'\",\"'\")).get('version',''))" 2>/dev/null || \
+                     echo "$REMOTE" | python3 -c "import json,sys; print(json.load(sys.stdin).get('version',''))" 2>/dev/null)
+        LOCAL_VER=""
+        [ -f "$VERSION_FILE" ] && LOCAL_VER=$(cat "$VERSION_FILE" 2>/dev/null | tr -d '[:space:]')
+
+        if [ -n "$REMOTE_VER" ] && [ "$REMOTE_VER" != "$LOCAL_VER" ]; then
+            # Version mismatch — install latest
+            if command -v clawhub >/dev/null 2>&1; then
+                clawhub install "skillnote@$REMOTE_VER" --yes >/dev/null 2>&1 && \
+                    echo "SkillNote updated to v$REMOTE_VER — restart your session to apply."
+            else
+                # clawhub unavailable — overwrite SKILL.md + sync.sh from server response
+                SKILL_BODY=$(echo "$REMOTE" | python3 -c "import json,sys; print(json.load(sys.stdin).get('skill',''))" 2>/dev/null)
+                if [ -n "$SKILL_BODY" ]; then
+                    echo "$SKILL_BODY" > "$SKILLNOTE_DIR/SKILL.md"
+                    echo "$REMOTE_VER" > "$VERSION_FILE"
+                    echo "SkillNote updated to v$REMOTE_VER"
+                fi
+            fi
+        fi
+
+        echo "$NOW" > "$VERSION_CHECK_FILE"
+    fi
+fi
+
+# ── Skills sync (every 60s) ───────────────────────────────────────────────────
+
+LAST_SYNC_FILE="$SKILLNOTE_DIR/.last-sync-time"
 if [ -f "$LAST_SYNC_FILE" ]; then
     LAST=$(cat "$LAST_SYNC_FILE" 2>/dev/null || echo 0)
-    DIFF=$((NOW - LAST))
-    [ "$DIFF" -lt "$SYNC_INTERVAL" ] && exit 0
+    [ $(( NOW - LAST )) -lt $SYNC_INTERVAL ] && exit 0
 fi
 
 SKILLS_DIR="$HOME/.openclaw/skills"
 MANIFEST="$SKILLNOTE_DIR/.skillnote-manifest.json"
 
-# Write skills JSON to a temp file to avoid quoting issues in the Python script
 TMPFILE=$(mktemp /tmp/skillnote-sync-XXXXXX.json)
 curl -sf --connect-timeout 5 --max-time 10 "$HOST/v1/skills" > "$TMPFILE" 2>/dev/null || {
     rm -f "$TMPFILE"
@@ -55,7 +93,6 @@ try:
 except Exception:
     sys.exit(0)
 
-# Load manifest
 old_managed = set()
 if os.path.exists(manifest_path):
     try:
@@ -81,7 +118,6 @@ for skill in skills:
     colls = skill.get('collections') or []
     body = skill.get('content_md') or ''
 
-    # id in frontmatter so agents can log usage without a separate API call
     fm_lines = [f'name: {local_name}', f'description: {desc}']
     if skill_id:
         fm_lines.append(f'id: {skill_id}')
@@ -102,7 +138,6 @@ for skill in skills:
     with open(filepath, 'w') as f:
         f.write(content)
 
-# Delete skills no longer in SkillNote
 stale = old_managed - local_names
 if os.path.isdir(skills_dir):
     for entry in os.listdir(skills_dir):
@@ -135,6 +170,4 @@ PYEOF
 
 STATUS=$?
 rm -f "$TMPFILE"
-if [ $STATUS -eq 0 ]; then
-    echo "$NOW" > "$LAST_SYNC_FILE"
-fi
+[ $STATUS -eq 0 ] && echo "$NOW" > "$LAST_SYNC_FILE"
