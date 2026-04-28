@@ -302,7 +302,7 @@ def get_ratings(
     return [
         {
             "slug": row["slug"],
-            "avg_rating": float(row["avg_rating"]),
+            "avg_rating": float(row["avg_rating"]) if row["avg_rating"] is not None else None,
             "rating_count": row["rating_count"],
         }
         for row in rows
@@ -323,7 +323,11 @@ def get_rating_detail(
             WHERE skill_slug = :slug
         """),
         {"slug": skill_slug},
-    ).mappings().one()
+    ).mappings().one_or_none()
+
+    if overall is None or overall["rating_count"] == 0:
+        from app.core.errors import api_error
+        raise api_error(404, "SKILL_NOT_RATED", f"No ratings found for skill '{skill_slug}'")
 
     versions = db.execute(
         text("""
@@ -345,7 +349,7 @@ def get_rating_detail(
         "versions": [
             {
                 "version": v["version"],
-                "avg_rating": float(v["avg_rating"]),
+                "avg_rating": float(v["avg_rating"]) if v["avg_rating"] is not None else None,
                 "rating_count": v["rating_count"],
             }
             for v in versions
@@ -361,8 +365,8 @@ def get_top_skills(
 ):
     """Top skills ranked by a composite score: calls + rating quality.
 
-    Returns call count, avg rating, rating count, and completion rate
-    (how often agents rate after using a skill).
+    Returns call count, avg rating, rating count, and success rate
+    (% of agent-logged events where outcome = completed).
     """
     date_clause = _date_filter_clause(days)
 
@@ -376,6 +380,17 @@ def get_top_skills(
                 WHERE skill_slug IS NOT NULL
                 {date_clause}
                 GROUP BY skill_slug
+            ),
+            outcomes AS (
+                SELECT sk.slug,
+                       COUNT(*) AS total,
+                       COUNT(*) FILTER (WHERE sue.outcome = 'completed') AS completed_count
+                FROM skill_usage_events sue
+                CROSS JOIN LATERAL jsonb_array_elements_text(sue.skill_ids) AS sid
+                JOIN skills sk ON sk.id::text = sid
+                WHERE 1=1
+                {_date_filter_clause(days)}
+                GROUP BY sk.slug
             ),
             ratings AS (
                 SELECT skill_slug AS slug,
@@ -391,11 +406,12 @@ def get_top_skills(
                    c.last_called_at,
                    COALESCE(r.avg_rating, 0) AS avg_rating,
                    COALESCE(r.rating_count, 0) AS rating_count,
-                   CASE WHEN c.call_count > 0
-                        THEN ROUND(COALESCE(r.rating_count, 0)::numeric / c.call_count * 100, 1)
-                        ELSE 0 END AS completion_rate
+                   CASE WHEN COALESCE(o.total, 0) > 0
+                        THEN ROUND(o.completed_count::numeric / o.total * 100, 1)
+                        ELSE NULL END AS success_rate
             FROM calls c
             LEFT JOIN ratings r ON c.slug = r.slug
+            LEFT JOIN outcomes o ON c.slug = o.slug
             ORDER BY c.call_count DESC, COALESCE(r.avg_rating, 0) DESC
             LIMIT :limit
         """),
@@ -409,7 +425,7 @@ def get_top_skills(
             "last_called_at": row["last_called_at"].isoformat() if row["last_called_at"] else None,
             "avg_rating": float(row["avg_rating"]) if row["avg_rating"] else None,
             "rating_count": row["rating_count"],
-            "completion_rate": float(row["completion_rate"]),
+            "success_rate": float(row["success_rate"]) if row["success_rate"] is not None else None,
         }
         for row in rows
     ]

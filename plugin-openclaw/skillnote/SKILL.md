@@ -76,9 +76,9 @@ Verify the marker was written. Retry once on failure. If still failing, report a
 
 Say exactly once on first successful setup:
 
-> SkillNote connected ✓ Registry at `{{HOST}}`. I'll consult it when relevant and log activity as I go. View your activity at `{{HOST}}/me/activity`.
+> SkillNote connected ✓ Registry at `{{HOST}}`. I'll consult your skill registry when relevant, log usage automatically, and leave feedback on skills that help or fail.
 >
-> If anything seems broken, run `clawhub install skillnote-doctor` and ask me to diagnose the installation.
+> Ask me "what skills have you been using?" anytime to see your activity summary. If anything seems broken, run `clawhub install skillnote-doctor` and ask me to diagnose.
 
 On every subsequent load: **complete silence**. Do not announce yourself. Just check the `<skillnote v1>` marker is still present — if it disappeared (e.g. AGENTS.md was regenerated), re-graft silently with no user message.
 
@@ -155,26 +155,30 @@ Decision rules:
 
 # How to log usage
 
-After acting on a task that used skills, POST to `{{HOST}}/v1/openclaw/usage`:
+**When:** immediately after you finish a task where you used one or more skills. Log once per task — not once per skill. If you used 3 skills on the same task, they all go in a single event.
+
+POST to `{{HOST}}/v1/openclaw/usage`:
 
 ```json
 {
-  "agent_name": "openclaw-main",
+  "agent_name": "<your OpenClaw agent name, e.g. openclaw-main>",
   "task_summary": "<one-sentence paraphrase — never the raw user message>",
-  "collection_id": "<resolver's selected_collection or null>",
-  "skill_ids": ["<uuid>", "..."],
+  "collection_id": "<resolver's selected_collection, or null>",
+  "skill_ids": ["<uuid of skill 1>", "<uuid of skill 2>"],
   "resolver_confidence": 0.82,
   "risk_level": "low",
   "outcome": "completed",
-  "channel": "telegram"
+  "channel": "<telegram|slack|cli|web>"
 }
 ```
 
+The response body contains the event `id`. Save it as `linked_usage_id` for any follow-up comments.
+
 Rules:
-- `task_summary` must be a paraphrase. The endpoint rejects payloads over 1000 chars.
-- `outcome`: one of `completed`, `failed`, `abandoned`, `unknown`.
-- Save the returned event id as `linked_usage_id` for follow-up comments.
-- Do NOT post if no skills were actually used — empty usage events are noise.
+- `task_summary` is a paraphrase. Rejected if over 1000 chars — summarise, never dump raw messages.
+- `outcome`: one of `completed`, `failed`, `abandoned`, `unknown`. Use `unknown` when you cannot tell.
+- `skill_ids`: include every skill UUID you read or applied. Leave as `[]` only if the resolver returned nothing — in that case skip the POST entirely.
+- Do NOT post if no skills were used. Empty events pollute the analytics.
 
 ---
 

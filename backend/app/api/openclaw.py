@@ -16,7 +16,6 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Query
-from fastapi.responses import JSONResponse
 from sqlalchemy import and_, cast, desc, func, or_, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Session
@@ -50,11 +49,96 @@ def get_openclaw_skill():
     """Return the canonical skillnote SKILL.md + version for the weekly self-update check."""
     version_file = _SKILL_DIR / "VERSION"
     skill_file = _SKILL_DIR / "SKILL.md"
-    if not version_file.exists() or not skill_file.exists():
-        return JSONResponse(status_code=503, content={"error": {"code": "SKILL_NOT_FOUND", "message": "skill seed data not found"}})
+    if not version_file.exists():
+        raise api_error(503, "SKILL_VERSION_NOT_FOUND", "VERSION file missing from seed data")
+    if not skill_file.exists():
+        raise api_error(503, "SKILL_FILE_NOT_FOUND", "SKILL.md missing from seed data")
     return {
         "version": version_file.read_text().strip(),
         "skill": skill_file.read_text(),
+    }
+
+
+@skill_router.get("/me/activity")
+def get_agent_activity(
+    period: str = Query(default="7d", pattern=r"^\d+d$"),
+    db: Session = Depends(get_db),
+):
+    """Agent activity digest — invocation count, top skills, recent agent comments.
+
+    The skillnote SKILL.md instructs agents to call this endpoint when users
+    ask 'what have you been doing?' or 'what skills did you use?'.
+
+    `period` is a duration string like '7d' or '30d'. Defaults to '7d'.
+    """
+    days = int(period[:-1])
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+
+    # Total invocations in the window.
+    total: int = db.execute(
+        select(func.count()).where(SkillUsageEvent.created_at >= since)
+    ).scalar_one()
+
+    # Top 5 skills by usage count, joined to get names.
+    unnest_subq = (
+        select(
+            func.jsonb_array_elements_text(SkillUsageEvent.skill_ids).label("sid"),
+        )
+        .where(SkillUsageEvent.created_at >= since)
+        .subquery()
+    )
+    usage_rows = db.execute(
+        select(unnest_subq.c.sid, func.count().label("cnt"))
+        .group_by(unnest_subq.c.sid)
+        .order_by(desc("cnt"))
+        .limit(5)
+    ).all()
+
+    top_skill_ids = [row.sid for row in usage_rows]
+    skill_names: dict[str, str] = {}
+    if top_skill_ids:
+        name_rows = db.execute(
+            select(Skill.id, Skill.slug, Skill.name).where(
+                Skill.id.in_([uuid_lib.UUID(s) for s in top_skill_ids])
+            )
+        ).all()
+        skill_names = {str(r.id): {"slug": r.slug, "name": r.name} for r in name_rows}
+
+    top_skills = [
+        {
+            "slug": skill_names.get(row.sid, {}).get("slug", row.sid),
+            "name": skill_names.get(row.sid, {}).get("name", row.sid),
+            "count": row.cnt,
+        }
+        for row in usage_rows
+        if row.sid in skill_names
+    ]
+
+    # Recent agent comments (last 10).
+    comment_rows = db.execute(
+        select(Comment.body, Comment.created_at, Skill.name.label("skill_name"))
+        .join(Skill, Skill.id == Comment.skill_id)
+        .where(Comment.author_type == "agent")
+        .where(Comment.created_at >= since)
+        .order_by(desc(Comment.created_at))
+        .limit(10)
+    ).all()
+
+    agent_comments = [
+        {
+            "skill_name": r.skill_name,
+            "body": r.body,
+            "created_at": r.created_at.isoformat(),
+        }
+        for r in comment_rows
+    ]
+
+    return {
+        "invocations": total,
+        "top_skills": top_skills,
+        "agent_comments": agent_comments,
+        "window_start": since.isoformat(),
+        "window_end": datetime.now(timezone.utc).isoformat(),
     }
 
 
@@ -137,8 +221,9 @@ def context_bundle(
         .order_by(Comment.skill_id, desc(Comment.created_at))
         .distinct(Comment.skill_id)
     )
-    latest_comments: dict[uuid.UUID, str] = {
-        row.skill_id: row.body[:200] for row in db.execute(latest_stmt).all()
+    latest_comments: dict[uuid.UUID, str | None] = {
+        row.skill_id: row.body[:200] if row.body else None
+        for row in db.execute(latest_stmt).all()
     }
 
     # 7. Pre-aggregate deprecation flag in ONE query.
