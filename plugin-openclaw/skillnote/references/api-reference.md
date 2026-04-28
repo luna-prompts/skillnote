@@ -62,7 +62,7 @@ Valid `comment_type` values: `agent_observation`, `agent_issue`, `agent_patch_su
 {
   "agent_name": "openclaw-main",
   "task_summary": "paraphrase only",
-  "collection_id": "uuid or null",
+  "collection_id": "collection-name or null",
   "skill_ids": ["uuid"],
   "resolver_confidence": 0.82,
   "risk_level": "low|medium|high",
