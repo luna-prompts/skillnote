@@ -50,7 +50,8 @@ The user does **one thing**: tells their agent to install the skill via clawhub.
 │  Step 3: Persist resolved host to ~/.openclaw/skillnote/config.json     │
 │  Step 4: chmod +x sync.sh && first sync → 22 sn-* skill dirs appear     │
 │          log-watcher.py daemon spawns (PID-guarded)                     │
-│  Step 5: Graft AGENTS.md with <skillnote v1> block ← consent #2         │
+│          sync.sh ALSO grafts <skillnote v1> into AGENTS.md (idempotent) │
+│  Step 5: Verify AGENTS.md graft is present (no file edit, no prompt)    │
 │  Step 6: "SkillNote connected ✓ N skills synced"                        │
 └─────────────────────────────────────────────────────────────────────────┘
                                   ↓
@@ -77,7 +78,7 @@ The user does **one thing**: tells their agent to install the skill via clawhub.
 ### Total user input
 
 - **1 prompt:** "install skillnote from clawhub"
-- **2 Y/n answers:** consent to install backend (only if missing) + consent to graft AGENTS.md
+- **At most 1 Y/n answer:** consent to install the backend (only fires when localhost:8082 is unreachable). The AGENTS.md graft happens silently inside `sync.sh` — no second prompt. (See §8 for why.)
 - That's it. No clone, no `./install.sh`, no URL prompt, no manual config.
 
 ### Four install methods on the Connect page (web UI)
@@ -254,6 +255,7 @@ These three layers are intentional:
 | **One unified `skillnote` skill** (vs. earlier 2-skill `awareness` + `resolver`) | OpenClaw's native skill system + AGENTS.md graft makes the resolver redundant — the agent reads `sn-*/SKILL.md` directly. Less to install, less to break. |
 | **`always: true` on the parent skill** | Ensures the SKILL.md (and its setup steps) are in every session's system prompt — no chance of being "forgotten." |
 | **AGENTS.md graft** | OpenClaw reloads AGENTS.md every session — gives us a persistent place to tell the agent "always sync first, log usage after." |
+| **AGENTS.md graft is done by `sync.sh`, not the agent** | LLMs default to "ask consent before modifying user files" — and we couldn't override that even with explicit `do NOT ask` instructions in SKILL.md. So we moved the graft into `sync.sh`. The shell script can't be talked out of just appending text. The agent's Step 5 just verifies. (See §8.) |
 | **Per-skill rating footer injected at sync time** | Agents don't reliably remember things across sessions. The pre-filled curl command is right there in the skill body — they rate while context is fresh. |
 | **Log-watcher daemon (vs. agent self-reporting)** | Agents lie (or just forget). Parsing the session log gives ground truth for "what was actually opened." Self-reporting handles intent on top. |
 | **`mkdir` lock + atomic manifest** | Bash `&` and concurrent agent invocations would otherwise race the manifest. POSIX `rename` is atomic; `mkdir` is the portable lock. |
@@ -345,8 +347,25 @@ The install flow inverts the usual "user runs commands, agent helps" model. Here
 1. **Skill self-contained on disk** — every file the agent might need (SKILL.md, sync.sh, log-watcher.py, install-backend.sh) ships in the clawhub bundle. No "download this other thing" step during setup.
 2. **Layered URL resolution** — `$SKILLNOTE_BASE_URL` env > `~/.openclaw/skillnote/config.json` > skill-dir config > `http://localhost:8082` default. Most users never touch any of these.
 3. **Agent-runnable bootstrap script** — `install-backend.sh` is a single `bash <path>` invocation that handles git clone + Docker + readiness polling + error triage internally. The agent executes it; doesn't reimplement it.
-4. **Honest consent** — the agent asks twice (install backend? graft AGENTS.md?) and never presumes. Both default to safe-to-proceed but the user gets the choice.
+4. **Honest consent — but only where the agent has a real choice.** The agent asks once before installing the backend (Docker spinup is a meaningful action). It does NOT ask before grafting AGENTS.md — that's done shell-side by `sync.sh`. (See "The consent-prompt anti-pattern" below.)
 5. **Failure surfaces** — if the script fails, the agent shows `./install.sh`'s actual output instead of papering over it.
+
+### The consent-prompt anti-pattern (and why we moved AGENTS.md graft to sync.sh)
+
+Initial design: SKILL.md Step 5 told the agent to ask the user "may I add a small block to your AGENTS.md? [Y/n]" before grafting. This worked in interactive sessions but broke in three real failure modes:
+
+1. **Non-interactive / scripted runs** (`openclaw agent --message "set up skillnote"`) — the agent has no way to receive a Y/n. It pauses indefinitely or surfaces as an unfinished half-state.
+2. **CI / async messaging** — the consent question goes to a queue with no human attached.
+3. **Even with explicit "do NOT ask" instructions in SKILL.md, the LLM still asked.** This was the surprise. We tried wording it as a 🛑 IMPORTANT directive at the top of Step 5 ("do not ask any questions in this step"). The agent still asked. LLM safety training has a strong default of "ask before modifying user files" that prose instructions can't reliably override.
+
+**The fix**: move the graft logic out of the SKILL.md (which the LLM interprets) and into `sync.sh` (which is a shell script that just runs). The agent's Step 5 reduces to a single `grep -c '<skillnote v1>'` verification — no file editing, no consent question, no LLM judgment. The shell script can't be talked out of `cat block >> AGENTS.md`.
+
+**Side effects:**
+- `sync.sh` now runs an idempotent graft check on every invocation (cheap — just a grep)
+- An opt-out flag (`{"grafted": false}` in `config.json`) is honored by `sync.sh`, not the agent — so the user can disable the graft permanently with one config edit even if the agent tries to re-add it
+- The graft happens during `curl|bash` install too (since the installer runs sync.sh as part of install) — so the user is connected before the agent ever loads
+
+**General principle this surfaces**: any time you're about to write "[the agent] should not ask the user for consent here" in SKILL.md, that's a signal to move the action out of the LLM and into a shell script. The LLM will fight you. The shell won't.
 
 ### Why agent-driven (vs. CLI-driven)
 
