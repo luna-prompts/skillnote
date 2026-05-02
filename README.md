@@ -59,22 +59,135 @@ Your skills. Your servers. Your rules.
 
 ## Quick Start
 
+Spin up the registry locally:
+
 ```bash
 git clone https://github.com/luna-prompts/skillnote.git
 cd skillnote
 ./install.sh
 ```
 
-The install script builds and starts all containers, waits for health checks, and prints the Claude Code plugin command when ready.
+The install script builds and starts all containers, waits for health checks, and prints the connect command when ready.
 
-Then connect Claude Code:
+Then wire up your AI agent:
+
+<details>
+<summary><b>Connect Claude Code</b></summary>
+
+#### Recommended — one-liner
 
 ```bash
-curl -sf http://localhost:8082/setup | bash
+curl -sf http://localhost:8082/setup/agent | bash -s -- --agent claude-code
 source ~/.zshrc
 ```
 
-Now run `claude` in any project. SkillNote picks up your skills automatically.
+Same `setup/agent` endpoint works for any harness — pass `--agent claude-code` or `--agent openclaw`. Run `claude` in any project; SkillNote picks up your skills automatically and the collection picker appears on first launch.
+
+#### Or — paste this prompt to Claude Code
+
+If you prefer to let Claude Code install itself (works from a fresh install):
+
+```text
+I want you to install SkillNote on my machine and wire it into this Claude Code session.
+SkillNote is a skill registry I'm running at http://localhost:8082.
+
+Do the full install yourself — don't ask me to run commands.
+
+1. Check if SkillNote is already installed:
+   - Look for ~/.claude/plugins/skillnote/
+   - If it exists, skip to step 3.
+
+2. If not installed, run the official installer:
+   - curl -sf http://localhost:8082/setup | bash
+
+3. Reload the shell so the plugin is picked up:
+   - source ~/.zshrc (or ~/.bashrc)
+
+4. Confirm it works:
+   - Run: claude --version
+   - List the installed plugin: ls ~/.claude/plugins/skillnote/
+   - Tell me what collection picker options you see when running `claude`.
+
+Don't ask for confirmation between steps. Just run the commands and report results.
+```
+
+#### What gets installed
+
+| Path | Role |
+| ---- | ---- |
+| `~/.claude/plugins/skillnote/` | The plugin code: hooks, slash commands, status line, collection picker |
+| `.skillnote.json` (per project) | Pinned active collection — survives across sessions |
+
+</details>
+
+<details>
+<summary><b>Connect OpenClaw</b></summary>
+
+OpenClaw is a chat-first runtime. Four install methods, in order of recommendation:
+
+#### Method 1 — Copy prompt (recommended, zero terminal)
+
+The dominant install UX in the OpenClaw ecosystem. Skip all CLI work — paste a one-prompt setup into your agent and it installs everything itself. The Connect page in your SkillNote web UI generates a personalized prompt with your URL pre-baked. To get yours:
+
+```bash
+curl -sf http://localhost:8082/setup/agent-prompt?agent=openclaw
+```
+
+Or open the web UI's Connect page → OpenClaw tab → "Copy prompt" tab and click copy. Paste the result into a fresh OpenClaw session — the agent verifies the backend is reachable, installs via clawhub, configures the URL, runs the first sync, and reports back.
+
+#### Method 2 — clawhub
+
+For users who already use OpenClaw's plugin manager:
+
+```bash
+export SKILLNOTE_BASE_URL="http://localhost:8082"
+clawhub install skillnote
+
+# Make the env var persistent:
+echo 'export SKILLNOTE_BASE_URL="http://localhost:8082"' >> ~/.zshrc
+```
+
+clawhub doesn't accept a host argument, so set `SKILLNOTE_BASE_URL` first — the skill reads it on first load via the layered host resolution (env → file → fail loudly). Auto-handles plugin updates via the daily version check baked into `sync.sh`.
+
+#### Method 3 — curl one-liner
+
+```bash
+curl -sf http://localhost:8082/setup/agent | bash -s -- --agent openclaw
+```
+
+Same unified installer as Claude Code (just swap the `--agent` flag). Pre-fills config with your URL and kicks off the first sync. Use when `clawhub` isn't available or you want immediate visible "Synced N skills" feedback.
+
+#### Method 4 — manual
+
+```bash
+# 1. Download bundle and extract into ~/.openclaw/skills/
+mkdir -p ~/.openclaw/skills ~/.openclaw/skillnote
+curl -sf http://localhost:8082/v1/openclaw-bundle.zip -o /tmp/skillnote.zip
+unzip -qo /tmp/skillnote.zip -d ~/.openclaw/skills/
+rm /tmp/skillnote.zip
+
+# 2. Write config with your SkillNote URL
+echo '{"host":"http://localhost:8082","user_id":"openclaw-main"}' \
+  > ~/.openclaw/skillnote/config.json
+
+# 3. Make sync.sh executable
+chmod +x ~/.openclaw/skills/skillnote/sync.sh
+
+# 4. Restart OpenClaw to pick up the skill
+```
+
+For air-gapped environments or when you want full control over each step.
+
+#### What gets installed
+
+| Path | Role |
+| ---- | ---- |
+| `~/.openclaw/skills/skillnote/` | The skill itself + `sync.sh` + `log-watcher.py` |
+| `~/.openclaw/skills/sn-*/` | Per-skill mirrors synced from your registry every 60s |
+| `~/.openclaw/skillnote/config.json` | Your registry URL and agent ID |
+| `~/.openclaw/workspace/AGENTS.md` | Persistent `<skillnote v1>` block — keeps the registry active across sessions |
+
+</details>
 
 ---
 
@@ -177,20 +290,15 @@ No prompts, no collection pickers. The agent picks skills on its own — you're 
 
 ### Install
 
-Open **Settings → OpenClaw** in the web UI, copy your install command, and run it in your terminal:
+See the **Connect OpenClaw** section in [Quick Start](#quick-start) above for all four install methods (clawhub, curl, manual, agent prompt).
 
-```bash
-curl -sf http://<your-host>:8082/setup/openclaw | bash
-```
+The single `skillnote` skill includes:
 
-This downloads a two-skill bundle into `~/.openclaw/skillnote/`:
+- **`SKILL.md`** — always-injected instructions teaching OpenClaw when to consult the registry and how to rate skills
+- **`sync.sh`** — fetches the catalog every 60s, writes per-skill mirrors to `~/.openclaw/skills/sn-*/`
+- **`log-watcher.py`** — background daemon that parses session JSONL to track which skills the agent actually read
 
-| Skill | Role |
-| ----- | ---- |
-| `skillnote-awareness` | Always-injected — teaches OpenClaw when to consult SkillNote and how to log usage |
-| `skillnote-resolver` | Subagent — posts your task to SkillNote, reads the catalog, picks the best 1–5 skills via LLM reasoning |
-
-The resolver is a full LLM pass over your catalog. SkillNote ships the catalog; OpenClaw decides what fits.
+No subagent or LLM resolver step — OpenClaw reads the synced `sn-*/SKILL.md` files directly via its native skill system.
 
 ### What you see
 

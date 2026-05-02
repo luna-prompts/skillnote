@@ -303,19 +303,68 @@ done
 # ── Done ──────────────────────────────────────────────────────────
 SKILL_COUNT=$(curl -sf "http://localhost:${API_PORT}/v1/skills" 2>/dev/null | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "?")
 
+# Detect which agents are present on this machine so we can recommend
+# the right Stage-2 command (and skip the ones that aren't applicable).
+HAS_CLAUDE=0
+HAS_OPENCLAW=0
+[ -d "$HOME/.claude" ] && HAS_CLAUDE=1
+[ -d "$HOME/.openclaw" ] && HAS_OPENCLAW=1
+
+ORANGE='\033[38;5;208m'
+
 echo ""
-echo -e "  ${GREEN}${BOLD}SkillNote is running${NC}"
+echo -e "  ${GREEN}${BOLD}✓ Stage 1 complete — SkillNote is running${NC}"
 echo ""
 echo -e "  ${DIM}Web${NC}     ${WEB_URL}"
 echo -e "  ${DIM}API${NC}     ${API_URL}"
 echo -e "  ${DIM}Skills${NC}  ${SKILL_COUNT}"
 echo ""
-ORANGE='\033[38;5;208m'
-echo -e "  ${ORANGE}${BOLD}Connect Claude Code${NC}"
-echo -e "  ${ORANGE}\$${NC} curl -sf ${API_URL}/setup | bash"
+echo -e "  ${BOLD}Next — Stage 2: connect an AI agent${NC}"
+echo -e "  ${DIM}One unified installer; pick your agent with --agent.${NC}"
 echo ""
-echo -e "  ${DIM}Manage:${NC}"
-echo -e "  ${DIM}\$${NC} $COMPOSE logs -f          ${DIM}# logs${NC}"
+
+# ── Tailored Stage-2 hint ────────────────────────────────────────
+if [ "$HAS_CLAUDE" -eq 1 ] && [ "$HAS_OPENCLAW" -eq 1 ]; then
+    # Both agents detected on this host
+    echo -e "  ${DIM}Detected:${NC}  ${GREEN}Claude Code${NC}  +  ${GREEN}OpenClaw${NC}"
+    echo ""
+    echo -e "  ${ORANGE}${BOLD}Claude Code${NC}"
+    echo -e "  ${ORANGE}\$${NC} curl -sf ${API_URL}/setup/agent | bash -s -- --agent claude-code"
+    echo ""
+    echo -e "  ${ORANGE}${BOLD}OpenClaw${NC}"
+    echo -e "  ${ORANGE}\$${NC} curl -sf ${API_URL}/setup/agent | bash -s -- --agent openclaw"
+elif [ "$HAS_CLAUDE" -eq 1 ]; then
+    echo -e "  ${DIM}Detected:${NC}  ${GREEN}Claude Code${NC}  ${DIM}(~/.claude exists)${NC}"
+    echo ""
+    echo -e "  ${ORANGE}${BOLD}Connect Claude Code${NC}"
+    echo -e "  ${ORANGE}\$${NC} curl -sf ${API_URL}/setup/agent | bash -s -- --agent claude-code"
+    echo ""
+    echo -e "  ${DIM}Also using OpenClaw? Swap --agent claude-code → --agent openclaw${NC}"
+elif [ "$HAS_OPENCLAW" -eq 1 ]; then
+    echo -e "  ${DIM}Detected:${NC}  ${GREEN}OpenClaw${NC}  ${DIM}(~/.openclaw exists)${NC}"
+    echo ""
+    echo -e "  ${ORANGE}${BOLD}Connect OpenClaw${NC}"
+    echo -e "  ${ORANGE}\$${NC} curl -sf ${API_URL}/setup/agent | bash -s -- --agent openclaw"
+    echo ""
+    echo -e "  ${DIM}Also using Claude Code? Swap --agent openclaw → --agent claude-code${NC}"
+else
+    # No agent detected — the user is probably setting up the registry
+    # on a server they don't run agents on. Show both, no preference.
+    echo -e "  ${DIM}No agent home directory detected on this machine.${NC}"
+    echo -e "  ${DIM}If you'll use SkillNote from another machine, run one of these there:${NC}"
+    echo ""
+    echo -e "  ${ORANGE}${BOLD}Claude Code${NC}"
+    echo -e "  ${ORANGE}\$${NC} curl -sf ${API_URL}/setup/agent | bash -s -- --agent claude-code"
+    echo ""
+    echo -e "  ${ORANGE}${BOLD}OpenClaw${NC}"
+    echo -e "  ${ORANGE}\$${NC} curl -sf ${API_URL}/setup/agent | bash -s -- --agent openclaw"
+fi
+
+echo ""
+echo -e "  ${DIM}Or use the web UI walkthrough:${NC}  ${CYAN}${WEB_URL}/integrations${NC}"
+echo ""
+echo -e "  ${DIM}Manage this stack:${NC}"
+echo -e "  ${DIM}\$${NC} $COMPOSE logs -f          ${DIM}# tail logs${NC}"
 echo -e "  ${DIM}\$${NC} $COMPOSE down             ${DIM}# stop${NC}"
-echo -e "  ${DIM}\$${NC} $COMPOSE down -v          ${DIM}# reset${NC}"
+echo -e "  ${DIM}\$${NC} $COMPOSE down -v          ${DIM}# reset (drops the database)${NC}"
 echo ""

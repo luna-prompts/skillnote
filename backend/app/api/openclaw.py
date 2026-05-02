@@ -41,7 +41,14 @@ router = APIRouter(prefix="/v1/openclaw", tags=["openclaw"])
 # Separate router for /v1/openclaw-skill (no /v1/openclaw prefix).
 skill_router = APIRouter(prefix="/v1", tags=["openclaw"])
 
-_SKILL_DIR = Path(__file__).parent.parent.parent / "seed_data" / "skillnote.skill"
+# Resolve the canonical SKILL.md location.
+# In Docker the plugin-openclaw repo is bind-mounted at /openclaw; locally fall back to the repo path.
+_OPENCLAW_DIR = (
+    Path("/openclaw")
+    if Path("/openclaw").is_dir()
+    else Path(__file__).resolve().parent.parent.parent.parent / "plugin-openclaw"
+)
+_SKILL_DIR = _OPENCLAW_DIR / "skillnote"
 
 
 @skill_router.get("/openclaw-skill")
@@ -50,9 +57,9 @@ def get_openclaw_skill():
     version_file = _SKILL_DIR / "VERSION"
     skill_file = _SKILL_DIR / "SKILL.md"
     if not version_file.exists():
-        raise api_error(503, "SKILL_VERSION_NOT_FOUND", "VERSION file missing from seed data")
+        raise api_error(503, "SKILL_VERSION_NOT_FOUND", f"VERSION file missing at {version_file}")
     if not skill_file.exists():
-        raise api_error(503, "SKILL_FILE_NOT_FOUND", "SKILL.md missing from seed data")
+        raise api_error(503, "SKILL_FILE_NOT_FOUND", f"SKILL.md missing at {skill_file}")
     return {
         "version": version_file.read_text().strip(),
         "skill": skill_file.read_text(),
