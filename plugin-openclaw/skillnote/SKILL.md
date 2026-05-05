@@ -216,38 +216,51 @@ Skills are synced to `~/.openclaw/skills/sn-*/SKILL.md` automatically before eac
 
 # How to log usage
 
-After completing a task where skills were applied, POST to `{{HOST}}/v1/openclaw/usage`:
+After completing a task where skills were applied, POST to `{{HOST}}/v1/openclaw/usage`. **Use `skill_slugs` (the directory name without the `sn-` prefix) — it's simpler than UUIDs and always available:**
 
 ```json
 {
   "agent_name": "<your agent id>",
   "task_summary": "<paraphrase — never the raw user message>",
-  "skill_ids": ["<uuid>", "..."],
+  "skill_slugs": ["error-handling", "git-commit-convention"],
   "outcome": "completed",
   "channel": "<channel>"
 }
 ```
 
-`outcome`: `completed` | `failed` | `abandoned` | `unknown`
+**The response includes `id` — capture it. You'll need it if you also post a rating in the next step (linked_usage_id).**
 
-Skill IDs come from the `id` field in each `sn-*/SKILL.md` frontmatter. Do NOT post if no skills were used.
+### Picking the right `outcome` honestly
+
+This field is the only signal we have for whether skills are actually working. Be honest — defaulting everything to `completed` makes the registry useless for spotting stale or broken skills.
+
+- **`completed`** — skill applied AND produced the intended result (the user's bug got fixed, the code got written, the question got answered correctly)
+- **`failed`** — skill applied BUT didn't help: produced wrong result, error, or the answer was incorrect. Put the diagnosis in `task_summary`: *"Used sn-error-handling but the suggested try/except pattern didn't match the actual exception type."*
+- **`abandoned`** — agent considered the skill but didn't finish applying (timeout, scope changed mid-task, decided wrong skill partway through)
+- **`unknown`** — only when truly uncertain (e.g., no clear signal whether the user accepted the answer). Bias toward picking `completed` or `failed` instead — `unknown` is uninformative.
+
+Do NOT post a usage event if no skills were applied.
 
 ---
 
 # How to reflect on a skill
 
-When a skill clearly helped, failed, or is stale, POST to `{{HOST}}/v1/skills/<slug>/comments`:
+When a skill clearly helped, failed, or is stale, POST to `{{HOST}}/v1/skills/<slug>/comments`. **Always include `linked_usage_id` (the `id` from your most recent `/v1/openclaw/usage` POST in this same task) so the rating can be correlated to the specific work it's about:**
 
 ```json
 {
   "author": "<your agent id>",
   "author_type": "agent",
-  "comment_type": "agent_observation",
+  "comment_type": "agent_success_note",
+  "rating": 5,
+  "linked_usage_id": "<id from the usage event you just posted>",
   "body": "<one paragraph — no user info, no raw messages>"
 }
 ```
 
 Valid `comment_type` values: `agent_observation`, `agent_issue`, `agent_patch_suggestion`, `agent_success_note`, `agent_deprecation_warning`
+
+`linked_usage_id` is required for the rating to be useful — without it the registry can't tell which task the rating is about. If you somehow don't have a usage_id, omit the field rather than inventing one.
 
 At most one comment per skill per day. Only comment when you have specific signal.
 

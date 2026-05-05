@@ -54,27 +54,54 @@ def post_skill_used(host: str, slug: str, session_id: str) -> None:
 # File processing
 # ---------------------------------------------------------------------------
 
-def process_file(path: str, state: dict, host: str) -> None:
+def process_file(path: str, state: dict, host: str, daemon_start_time: float) -> None:
     """
     Read new lines from a JSONL session file, emit skill-used events for any
     skill reads found, and update state in-place.
+
+    `daemon_start_time` is the wall-clock time (epoch seconds) when the daemon
+    process started — used to distinguish files that pre-existed the daemon
+    (skip to EOF; almost certainly already fired in a previous daemon lifecycle)
+    from files that were created/modified during this daemon's lifetime
+    (process from offset 0).
     """
+    is_new_to_state = path not in state
     file_state = state.get(
         path,
         {"inode": None, "offset": 0, "session_id": "", "seen_slugs": []},
     )
 
     try:
+        current_size = os.path.getsize(path)
         current_inode = os.stat(path).st_ino
+        current_mtime = os.path.getmtime(path)
     except OSError:
         # File disappeared between scan and stat — skip silently.
         return
 
     if current_inode != file_state["inode"]:
-        # File rotated or brand-new — reset all tracking state.
+        # We have no record of this (file, inode) before. Two distinct cases:
+        #
+        #   A. File pre-existed the current daemon process (either we're a
+        #      restart with state wiped, or a state-corruption recovery):
+        #      → skip to current EOF. Don't replay historical events that
+        #        almost certainly already fired in a previous daemon lifecycle.
+        #
+        #   B. File appeared during this daemon's lifetime (new session created
+        #      after we started; "agent crashes mid-session" recovery is
+        #      indistinguishable from this case and should also process):
+        #      → start at offset 0 and read it all.
+        #
+        # Heuristic: file's last-modified time vs daemon-start time. If mtime
+        # predates the daemon, file pre-existed → skip to EOF. Otherwise it
+        # was touched during our lifetime → process normally.
+        if is_new_to_state and current_size > 0 and current_mtime < daemon_start_time:
+            start_offset = current_size
+        else:
+            start_offset = 0
         file_state = {
             "inode": current_inode,
-            "offset": 0,
+            "offset": start_offset,
             "session_id": "",
             "seen_slugs": [],
         }
@@ -226,6 +253,10 @@ def main() -> None:
     signal.signal(signal.SIGTERM, _handle_sigterm)
 
     # --- Main loop ---
+    # Capture wall-clock start time. process_file uses this to distinguish
+    # files that pre-existed our launch (skip to EOF) from files that
+    # appeared/grew during our lifetime (process normally).
+    daemon_start_time = time.time()
     state = load_state(state_file)
     try:
         while True:
@@ -235,7 +266,7 @@ def main() -> None:
                 continue
 
             for path in find_session_files(sessions_dir):
-                process_file(path, state, host)
+                process_file(path, state, host, daemon_start_time)
 
             save_state(state_file, state)
             time.sleep(POLL_INTERVAL)

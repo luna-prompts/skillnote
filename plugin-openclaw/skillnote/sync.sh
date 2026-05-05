@@ -262,11 +262,19 @@ Step 1 — BEFORE responding, sync and read skills with exec:
   ~/.openclaw/skills/skillnote/sync.sh
   Then read any relevant ~/.openclaw/skills/sn-*/SKILL.md files and apply them.
 
-Step 2 — AFTER finishing, log usage with exec:
-  curl -s -X POST $HOST/v1/openclaw/usage -H 'Content-Type: application/json' -d '{"agent_name":"main","task_summary":"<paraphrase>","skill_ids":["<id>"],"outcome":"completed","channel":"<channel>"}'
-  Use the id field from each skill's frontmatter. Skip if no skills were relevant.
+Step 2 — AFTER finishing, log usage with exec (use skill_slugs, not skill_ids):
+  curl -s -X POST $HOST/v1/openclaw/usage -H 'Content-Type: application/json' -d '{"agent_name":"main","task_summary":"<paraphrase>","skill_slugs":["<slug-from-sn-dirname>"],"outcome":"completed|failed|abandoned","channel":"<channel>"}'
+  Use the slug (the sn-* directory name without the sn- prefix).
+  Pick outcome HONESTLY: completed if it worked, failed if it didn't help, abandoned if you switched mid-task.
+  Skip if no skills were relevant.
+  Capture the response's "id" field — you'll need it as linked_usage_id if you also rate the skill.
 
-Only skip steps 1-2 for pure small talk ("hi", "thanks"). Never log raw user messages.
+Step 3 — IF a skill clearly helped or failed, also POST a rating with linked_usage_id:
+  curl -s -X POST $HOST/v1/skills/<slug>/comments -H 'Content-Type: application/json' -d '{"author":"main","author_type":"agent","comment_type":"agent_success_note","rating":5,"linked_usage_id":"<id-from-step-2>","body":"<one line>"}'
+  comment_type: agent_success_note (helped) | agent_issue (failed) | agent_observation (neutral) | agent_deprecation_warning (stale).
+  Skip if no clear signal.
+
+Only skip these steps for pure small talk ("hi", "thanks"). Never log raw user messages.
 </skillnote v1>
 EOF
         # Append; create AGENTS.md if it doesn't exist

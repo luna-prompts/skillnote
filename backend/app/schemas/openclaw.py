@@ -64,7 +64,12 @@ class UsageEventCreate(BaseModel):
     agent_name: str = Field(..., max_length=255, min_length=1)
     task_summary: str = Field(..., max_length=2000, min_length=1)
     collection_id: str | None = None
+    # Either skill_ids (UUIDs) OR skill_slugs may be provided. Slugs are the
+    # preferred API for OpenClaw because synced sn-* skills don't expose UUIDs
+    # by default. The handler resolves slugs → UUIDs server-side and stores
+    # them in skill_ids. Both can be provided; the handler unions them.
     skill_ids: list[uuid.UUID] = Field(default_factory=list)
+    skill_slugs: list[str] = Field(default_factory=list, max_length=50)
     resolver_confidence: float | None = Field(default=None, ge=0.0, le=1.0)
     risk_level: Literal["low", "medium", "high"] | None = None
     outcome: Literal["completed", "failed", "abandoned", "unknown"] | None = None
@@ -78,6 +83,19 @@ class UsageEventCreate(BaseModel):
         if not s:
             raise ValueError("must not be empty or whitespace")
         return s
+
+    @field_validator("skill_slugs")
+    @classmethod
+    def _validate_slugs(cls, v: list[str]) -> list[str]:
+        cleaned = []
+        for s in v:
+            s = s.strip().lower()
+            if not s:
+                continue
+            if not all(c.isalnum() or c in "-_" for c in s):
+                raise ValueError(f"invalid slug character in {s!r}")
+            cleaned.append(s)
+        return cleaned
 
 
 class UsageEventOut(BaseModel):

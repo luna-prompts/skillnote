@@ -337,9 +337,22 @@ def create_usage_event(
                     f"Skill {sid} not found",
                 )
 
-    # Deduplicate skill_ids preserving order — duplicate entries from a single
-    # event would inflate usage_count_30d in the context-bundle aggregation.
-    deduped_skill_ids = list(dict.fromkeys(str(u) for u in payload.skill_ids))
+    # Resolve skill_slugs → UUIDs and merge into skill_ids. Slugs are the
+    # OpenClaw-friendly API since synced sn-* skills don't expose UUIDs by
+    # default (the agent only knows the slug from the directory name).
+    # Unknown slugs are silently dropped rather than rejected — agents may
+    # have stale local catalogs after a server-side delete, and we'd rather
+    # record a partial usage event than reject the whole thing.
+    resolved_from_slugs: list[str] = []
+    if payload.skill_slugs:
+        slug_rows = db.execute(
+            select(Skill.id, Skill.slug).where(Skill.slug.in_(payload.skill_slugs))
+        ).all()
+        resolved_from_slugs = [str(row.id) for row in slug_rows]
+
+    # Deduplicate combined skill_ids preserving insertion order.
+    combined = [str(u) for u in payload.skill_ids] + resolved_from_slugs
+    deduped_skill_ids = list(dict.fromkeys(combined))
 
     event = SkillUsageEvent(
         id=uuid_lib.uuid4(),
@@ -360,11 +373,16 @@ def create_usage_event(
     # Fan-out: one skill_call_event per skill so the analytics dashboard
     # (which reads skill_call_events) shows OpenClaw activity alongside
     # Claude Code plugin activity without any frontend changes.
+    # Resolve against the merged set (skill_ids + slug-resolved ids), not the
+    # original payload.skill_ids — otherwise slug-only events would fan out
+    # with skill_slug=None and disappear from analytics.
     if deduped_skill_ids:
+        from uuid import UUID as _UUID
+        all_ids_uuid = [_UUID(s) for s in deduped_skill_ids]
         slugs_by_id: dict[str, str] = {
             str(row.id): row.slug
             for row in db.execute(select(Skill.id, Skill.slug).where(
-                Skill.id.in_(payload.skill_ids)
+                Skill.id.in_(all_ids_uuid)
             )).all()
         }
         for sid in deduped_skill_ids:
