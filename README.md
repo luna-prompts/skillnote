@@ -140,17 +140,16 @@ Don't ask for confirmation between steps. Just run the commands and report resul
 <details>
 <summary><b>Connect OpenClaw</b></summary>
 
-OpenClaw is a chat-first runtime. The skill is published on clawhub as [`skillnote`](https://clawhub.ai/latentloop07/skillnote). Four install methods, in order of recommendation:
-
-#### Method 1: clawhub (canonical)
+Published on clawhub as [`skillnote`](https://clawhub.ai/latentloop07/skillnote).
 
 ```bash
 clawhub install skillnote
 ```
 
-That's it for the default `localhost:8082` setup. The skill ships an `install-backend.sh` that auto-clones this repo and runs `./install.sh` on first sync if the backend isn't already running, so a fresh-machine install is genuinely one command.
+For the default `localhost:8082` setup, that's the whole install. If the backend isn't running, the skill auto-bootstraps it (clones this repo + runs `./install.sh`) on first sync.
 
-For a non-default host, set the URL once before installing so the first sync points at the right place:
+<details>
+<summary>Non-default host</summary>
 
 ```bash
 export SKILLNOTE_BASE_URL="http://your-server:8082"
@@ -158,51 +157,38 @@ clawhub install skillnote
 echo 'export SKILLNOTE_BASE_URL="http://your-server:8082"' >> ~/.zshrc
 ```
 
-clawhub doesn't accept a host argument, so the env var is how you tell the skill where to look. Layered resolution: env → config file → default `localhost:8082`. Skill updates auto-install via the daily version check baked into `sync.sh`.
+clawhub doesn't accept a host argument; the env var is how you tell the skill where to look (resolution order: env → config file → default `localhost:8082`).
 
-#### Method 2: Copy prompt (zero terminal)
+</details>
 
-The dominant install UX in the OpenClaw ecosystem. Skip CLI work; paste a one-prompt setup into your agent and it installs everything itself, including running `clawhub install skillnote` for you. The Connect page in your SkillNote web UI generates a personalized prompt with your URL pre-baked. To get yours:
+<details>
+<summary>Without clawhub on your PATH</summary>
+
+**Paste this prompt into a fresh OpenClaw session.** The agent installs the skill via clawhub itself, configures the URL, and syncs. Open the Connect page in the web UI → OpenClaw tab → "Copy prompt" to get a version with your host pre-baked. Or fetch from the CLI:
 
 ```bash
 curl -sf http://localhost:8082/setup/agent-prompt?agent=openclaw
 ```
 
-Or open the web UI's Connect page, OpenClaw tab, "Copy prompt" tab and click copy. Paste into a fresh OpenClaw session. The agent verifies the backend is reachable, installs via clawhub, configures the URL, runs the first sync, and reports back.
-
-#### Method 3: curl one-liner (no clawhub)
-
-End-to-end from a fresh machine without clawhub on the path:
+**Or run the curl installer directly** (no clawhub needed at all):
 
 ```bash
-git clone https://github.com/luna-prompts/skillnote.git
-cd skillnote
-./install.sh
+git clone https://github.com/luna-prompts/skillnote.git && cd skillnote && ./install.sh
 curl -sf http://localhost:8082/setup/agent | bash -s -- --agent openclaw
 ```
 
-Same unified installer as Claude Code (just swap the `--agent` flag). Pre-fills config with your URL and kicks off the first sync. Use when `clawhub` isn't available, you want immediate "Synced N skills" feedback, or you'd rather not pull from a third-party registry.
-
-#### Method 4: manual
+**Or install fully manually** (air-gapped):
 
 ```bash
-# 1. Download bundle and extract into ~/.openclaw/skills/
 mkdir -p ~/.openclaw/skills ~/.openclaw/skillnote
 curl -sf http://localhost:8082/v1/openclaw-bundle.zip -o /tmp/skillnote.zip
-unzip -qo /tmp/skillnote.zip -d ~/.openclaw/skills/
-rm /tmp/skillnote.zip
-
-# 2. Write config with your SkillNote URL
-echo '{"host":"http://localhost:8082","user_id":"openclaw-main"}' \
-  > ~/.openclaw/skillnote/config.json
-
-# 3. Make sync.sh executable
+unzip -qo /tmp/skillnote.zip -d ~/.openclaw/skills/ && rm /tmp/skillnote.zip
+echo '{"host":"http://localhost:8082","user_id":"openclaw-main"}' > ~/.openclaw/skillnote/config.json
 chmod +x ~/.openclaw/skills/skillnote/sync.sh
-
-# 4. Restart OpenClaw to pick up the skill
+# Restart OpenClaw to pick up the skill.
 ```
 
-For air-gapped environments or when you want full control over each step.
+</details>
 
 #### What gets installed
 
