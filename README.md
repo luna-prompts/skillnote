@@ -76,12 +76,17 @@ Then wire up your AI agent:
 
 #### Recommended: one-liner
 
+End-to-end from a fresh machine (clone, start backend, connect Claude Code):
+
 ```bash
+git clone https://github.com/luna-prompts/skillnote.git
+cd skillnote
+./install.sh
 curl -sf http://localhost:8082/setup/agent | bash -s -- --agent claude-code
 source ~/.zshrc
 ```
 
-> Assumes the SkillNote backend is running at `localhost:8082`. If you skipped the Quick Start install above, run `git clone https://github.com/luna-prompts/skillnote.git && cd skillnote && ./install.sh` first, then come back.
+`./install.sh` prints which `setup/agent` command to run for each agent home it detects on your machine, so you can also stop after step 3 and follow its instructions instead of pasting the curl line above.
 
 The same `setup/agent` endpoint works for any harness; pass `--agent claude-code` or `--agent openclaw`. Run `claude` in any project; SkillNote picks up your skills automatically and the collection picker appears on first launch.
 
@@ -164,7 +169,12 @@ clawhub doesn't accept a host argument, so set `SKILLNOTE_BASE_URL` first. The s
 
 #### Method 3: curl one-liner
 
+End-to-end from a fresh machine:
+
 ```bash
+git clone https://github.com/luna-prompts/skillnote.git
+cd skillnote
+./install.sh
 curl -sf http://localhost:8082/setup/agent | bash -s -- --agent openclaw
 ```
 
