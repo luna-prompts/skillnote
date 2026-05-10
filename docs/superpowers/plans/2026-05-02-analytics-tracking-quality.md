@@ -311,6 +311,6 @@ Priority is descending: critical bug first, then data-integrity gaps, then visib
 
 ## Sources
 
-- Verified live by parsing `~/.openclaw/skills/skillnote/.log-watcher-state.json` on remote Mac mini (`nightwatch@100.83.206.2`) and cross-referencing with backend `skill_call_events`, `skill_usage_events`, `comments`, `skill_ratings` tables on local Mac (`localhost:8082`).
+- Verified live by parsing `~/.openclaw/skills/skillnote/.log-watcher-state.json` on a remote test machine and cross-referencing with backend `skill_call_events`, `skill_usage_events`, `comments`, `skill_ratings` tables on the local backend (`localhost:8082`).
 - Earlier E2E test script: `/tmp/install_test_suite_v2.sh` (validated happy-path before this audit).
 - Adjacent picking plan: `docs/superpowers/plans/2026-05-02-skill-picking-at-scale.md`.
