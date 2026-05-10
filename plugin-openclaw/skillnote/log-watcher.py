@@ -4,11 +4,15 @@ log-watcher.py — Watch OpenClaw session JSONL files for skill reads and post
 analytics events to SkillNote.
 
 Usage:
-    python3 log-watcher.py <host> <sessions_dir> <state_dir>
+    python3 log-watcher.py <host> <agents_root> <state_dir>
 
 Args:
     host         e.g. http://localhost:8082
-    sessions_dir e.g. ~/.openclaw/agents/main/sessions
+    agents_root  e.g. ~/.openclaw/agents — contains one subdirectory per
+                 OpenClaw agent. Sessions live at
+                 <agents_root>/<agent_name>/sessions/*.jsonl.
+                 The agent name is parsed from the path so multi-agent
+                 OpenClaw setups attribute events to the right identity.
     state_dir    e.g. ~/.openclaw/skills/skillnote
 """
 
@@ -29,12 +33,18 @@ POLL_INTERVAL = 2  # seconds between scans
 # HTTP helpers
 # ---------------------------------------------------------------------------
 
-def post_skill_used(host: str, slug: str, session_id: str) -> None:
-    """Fire-and-forget POST to /v1/hooks/skill-used."""
+def post_skill_used(host: str, slug: str, session_id: str, agent_name: str) -> None:
+    """Fire-and-forget POST to /v1/hooks/skill-used.
+
+    `agent_name` is the OpenClaw agent identity, derived from the session
+    file's path (e.g., "main", "support-bot", "dream-007"). Multi-agent
+    OpenClaw setups produce distinct identities; legacy single-agent
+    installs see "main".
+    """
     payload = json.dumps(
         {
             "skill_slug": slug,
-            "agent_name": "openclaw-main",
+            "agent_name": agent_name or "openclaw-main",
             "session_id": session_id or "",
         }
     ).encode()
@@ -54,10 +64,20 @@ def post_skill_used(host: str, slug: str, session_id: str) -> None:
 # File processing
 # ---------------------------------------------------------------------------
 
-def process_file(path: str, state: dict, host: str, daemon_start_time: float) -> None:
+def process_file(
+    path: str,
+    state: dict,
+    host: str,
+    daemon_start_time: float,
+    agent_name: str,
+) -> None:
     """
     Read new lines from a JSONL session file, emit skill-used events for any
     skill reads found, and update state in-place.
+
+    `agent_name` is the OpenClaw agent that owns this session file (derived
+    by the caller from the file's parent path). Forwarded to the backend so
+    multi-agent setups don't all collapse into one identity.
 
     `daemon_start_time` is the wall-clock time (epoch seconds) when the daemon
     process started — used to distinguish files that pre-existed the daemon
@@ -143,7 +163,7 @@ def process_file(path: str, state: dict, host: str, daemon_start_time: float) ->
                             if slug and slug not in file_state["seen_slugs"]:
                                 file_state["seen_slugs"].append(slug)
                                 post_skill_used(
-                                    host, slug, file_state["session_id"]
+                                    host, slug, file_state["session_id"], agent_name
                                 )
 
             file_state["offset"] = f.tell()
@@ -180,24 +200,41 @@ def save_state(state_file: str, state: dict) -> None:
 # Session file discovery
 # ---------------------------------------------------------------------------
 
-def find_session_files(sessions_dir: str) -> list:
+def find_session_files(agents_root: str) -> list:
     """
-    Return a sorted list of *.jsonl paths inside sessions_dir, excluding
-    trajectory and reset files.
+    Walk <agents_root>/<agent>/sessions/ for every agent and return a
+    sorted list of (path, agent_name) tuples for valid session JSONL files.
+
+    Excludes .trajectory. and .reset. variants, and any agent dir that
+    doesn't have a sessions/ subdirectory yet.
+
+    The agent name comes from the directory layout:
+        agents_root/main/sessions/sess-abc.jsonl    → agent="main"
+        agents_root/support-bot/sessions/xyz.jsonl  → agent="support-bot"
+    Multi-agent OpenClaw setups thus get distinct identities in analytics
+    instead of all collapsing to "main".
     """
     results = []
     try:
-        entries = os.listdir(sessions_dir)
+        agent_dirs = os.listdir(agents_root)
     except OSError:
         return results
 
-    for name in entries:
-        if not name.endswith(".jsonl"):
+    for agent_name in agent_dirs:
+        sessions_dir = os.path.join(agents_root, agent_name, "sessions")
+        if not os.path.isdir(sessions_dir):
             continue
-        # Exclude trajectory and reset variants.
-        if ".trajectory." in name or ".reset." in name:
+        try:
+            entries = os.listdir(sessions_dir)
+        except OSError:
             continue
-        results.append(os.path.join(sessions_dir, name))
+        for name in entries:
+            if not name.endswith(".jsonl"):
+                continue
+            # Exclude trajectory and reset variants.
+            if ".trajectory." in name or ".reset." in name:
+                continue
+            results.append((os.path.join(sessions_dir, name), agent_name))
 
     results.sort()
     return results
@@ -228,13 +265,13 @@ def remove_pid(pid_file: str) -> None:
 def main() -> None:
     if len(sys.argv) != 4:
         print(
-            "Usage: python3 log-watcher.py <host> <sessions_dir> <state_dir>",
+            "Usage: python3 log-watcher.py <host> <agents_root> <state_dir>",
             file=sys.stderr,
         )
         sys.exit(1)
 
     host = sys.argv[1]
-    sessions_dir = os.path.expanduser(sys.argv[2])
+    agents_root = os.path.expanduser(sys.argv[2])
     state_dir = os.path.expanduser(sys.argv[3])
 
     state_file = os.path.join(state_dir, ".log-watcher-state.json")
@@ -260,13 +297,14 @@ def main() -> None:
     state = load_state(state_file)
     try:
         while True:
-            # Gracefully handle a missing sessions_dir (wait and retry).
-            if not os.path.isdir(sessions_dir):
+            # Gracefully handle a missing agents_root (wait and retry).
+            # OpenClaw creates this on first session — until then we noop.
+            if not os.path.isdir(agents_root):
                 time.sleep(POLL_INTERVAL)
                 continue
 
-            for path in find_session_files(sessions_dir):
-                process_file(path, state, host, daemon_start_time)
+            for path, agent_name in find_session_files(agents_root):
+                process_file(path, state, host, daemon_start_time, agent_name)
 
             save_state(state_file, state)
             time.sleep(POLL_INTERVAL)

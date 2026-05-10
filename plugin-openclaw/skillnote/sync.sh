@@ -137,16 +137,20 @@ for skill in skills:
     rating_cmd = (
         f'curl -sf -X POST {host}/v1/skills/{slug}/comments '
         f'-H "Content-Type: application/json" '
-        f"-d '{{\"author\":\"main\",\"author_type\":\"agent\","
+        f"-d '{{\"author\":\"<your-agent-name>\",\"author_type\":\"agent\","
         f"\"comment_type\":\"agent_success_note\",\"rating\":5,"
+        f"\"linked_usage_id\":\"<id-from-recent-/v1/openclaw/usage-POST>\","
         f"\"body\":\"<one line: what helped or what failed>\"}}'"
     )
     rating_footer = (
         '\n\n---\n'
         '*Used this skill? Rate it now (in this same turn):*\n\n'
         f'`{rating_cmd}`\n\n'
-        'Change `agent_success_note` → `agent_issue` if it failed. '
-        'Skip entirely if you did not use this skill.'
+        'Substitute: `<your-agent-name>` with your real OpenClaw agent name; '
+        '`<id-from-recent-/v1/openclaw/usage-POST>` with the `id` from the usage event you just posted '
+        '(omit the field if you genuinely don\'t have one — never invent it). '
+        'Change `agent_success_note` → `agent_issue` if the skill failed, '
+        '`agent_observation` if neutral. Skip entirely if you did not use this skill.'
     )
     content = '---\n' + '\n'.join(fm_lines) + '\n---\n\n' + body + rating_footer
     filepath = os.path.join(skill_dir, 'SKILL.md')
@@ -208,21 +212,39 @@ STATUS=$?
 rm -f "$TMPFILE"
 [ $STATUS -eq 0 ] && echo "$NOW" > "$LAST_SYNC_FILE"
 
-# ── Launch log-watcher daemon (once, PID-guarded) ─────────────────────────────
+# ── Launch log-watcher daemon (once, PID-guarded, args-checked) ───────────────
+# We pass the AGENTS root (not a single agent's sessions dir) so the daemon
+# can attribute each event to the right OpenClaw agent identity (multi-agent
+# setups otherwise collapse into "main"). If a daemon is already running with
+# the OLD per-agent path, we kill+relaunch with the new args.
 WATCHER="$SKILLNOTE_DIR/log-watcher.py"
 WATCHER_PID="$SKILLNOTE_DIR/.log-watcher.pid"
-SESSIONS_DIR="$HOME/.openclaw/agents/main/sessions"
+AGENTS_ROOT="$HOME/.openclaw/agents"
 
-if [ -f "$WATCHER" ] && [ -d "$SESSIONS_DIR" ]; then
+if [ -f "$WATCHER" ] && [ -d "$AGENTS_ROOT" ]; then
     _needs_launch=1
     if [ -f "$WATCHER_PID" ]; then
         _pid=$(cat "$WATCHER_PID" 2>/dev/null)
-        if kill -0 "$_pid" 2>/dev/null; then
-            _needs_launch=0
+        if [ -n "$_pid" ] && kill -0 "$_pid" 2>/dev/null; then
+            # Daemon is running. Check it was launched against the current
+            # AGENTS_ROOT (works for both macOS and Linux ps -o args=).
+            _cmdline=$(ps -p "$_pid" -o args= 2>/dev/null)
+            if echo "$_cmdline" | grep -q -- "$AGENTS_ROOT"; then
+                # Same args — leave it alone.
+                _needs_launch=0
+            else
+                # Stale args (e.g., old per-agent path from pre-update) — kill + relaunch.
+                kill "$_pid" 2>/dev/null
+                # Brief wait so the relaunch sees the PID actually gone.
+                for _i in 1 2 3 4 5; do
+                    kill -0 "$_pid" 2>/dev/null || break
+                    sleep 0.2
+                done
+            fi
         fi
     fi
     if [ "$_needs_launch" -eq 1 ]; then
-        python3 "$WATCHER" "$HOST" "$SESSIONS_DIR" "$SKILLNOTE_DIR" \
+        python3 "$WATCHER" "$HOST" "$AGENTS_ROOT" "$SKILLNOTE_DIR" \
             >>"$SKILLNOTE_DIR/.log-watcher.log" 2>&1 &
         echo $! > "$WATCHER_PID"
     fi

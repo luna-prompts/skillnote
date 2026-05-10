@@ -1,7 +1,7 @@
 ---
 name: skillnote
-description: "A private skill registry for OpenClaw agents -- remembers saved procedures across sessions, tracks which skills helped or failed, detects drift and staleness, and collects agent feedback. Self-hosted; your knowledge stays on your server."
-version: "2.0.0"
+description: "Self-hosted skill registry for OpenClaw. Stores procedures your team writes (name, description, body), syncs them to disk before each task, and collects which-helped/which-failed signals from the agent so the registry improves over time."
+version: "0.4.0"
 homepage: "https://github.com/luna-prompts/skillnote"
 metadata:
   openclaw:
@@ -10,279 +10,304 @@ metadata:
     primaryEnv: SKILLNOTE_BASE_URL
     requires:
       env: [SKILLNOTE_BASE_URL]
-      bins: [curl, python3, unzip]
+      bins: [curl, python3]
     envVars:
       - name: SKILLNOTE_BASE_URL
         required: true
         description: "URL of your self-hosted SkillNote instance, e.g. http://localhost:8082"
 ---
 
-# How this skill is installed
+# Quick orientation
 
-This file (`SKILL.md`) normally arrives in `~/.openclaw/skills/skillnote/` via one of three paths. The setup steps below run regardless of how it got there — but if the skill ever needs to be reinstalled (corrupted install, missing files, recovery), use one of these:
+You are running with the SkillNote skill loaded. Your responsibilities, in order:
 
-1. **clawhub** (recommended — versioned, auto-updates):
+1. **Setup** (Steps 1-6 below) — one-time per machine; ~30s if backend is already running, ~3 min if you need to install it
+2. **Pick + apply** the right skills before responding to user tasks
+3. **Log + rate** what worked after the task is done
+
+Setup is **silent on every load after the first**. If `~/.openclaw/skills/skillnote/config.json` already has a working `host` and the AGENTS.md graft is in place, skip Steps 1-5 and stay quiet.
+
+---
+
+# How this skill got onto disk (recovery info)
+
+This `SKILL.md` lives at `~/.openclaw/skills/skillnote/` and arrived via one of:
+
+1. **clawhub** (recommended):
    ```bash
    clawhub install skillnote
    ```
-2. **curl bundle installer** (when clawhub isn't available, or for fresh installs that should also pre-fill config and run the first sync):
+2. **curl bundle installer** (works against any reachable SkillNote backend):
    ```bash
-   curl -sf <SKILLNOTE_HOST>/setup/agent | bash -s -- --agent openclaw
+   curl -sf $SKILLNOTE_BASE_URL/setup/agent | bash -s -- --agent openclaw
    ```
-   Replace `<SKILLNOTE_HOST>` with the user's SkillNote URL (e.g. `http://localhost:8082`). If you're the agent reading this and `$SKILLNOTE_BASE_URL` is set, use that. Otherwise default to `http://localhost:8082`.
-3. **Manual** — download `<host>/v1/openclaw-bundle.zip` and unzip into `~/.openclaw/skills/`. For air-gapped environments only.
+   If `$SKILLNOTE_BASE_URL` isn't set, default to `http://localhost:8082`.
+3. **Manual ZIP** — download `<host>/v1/openclaw-bundle.zip` and unzip into `~/.openclaw/skills/`. Air-gapped only.
 
-If you (the agent) are running setup and find that critical files are missing from `~/.openclaw/skills/skillnote/` (e.g. `sync.sh` or `log-watcher.py` not present), do a curl reinstall using method 2 above before continuing — don't try to guess what's missing.
+If you find critical files missing from `~/.openclaw/skills/skillnote/` (e.g., `sync.sh`, `log-watcher.py`, `install-backend.sh`), use method 2 to reinstall — don't try to reconstruct missing files.
 
 ---
 
 # Setup
 
-**Runs once on first load. Silent on every subsequent load.**
+## Step 1 — Resolve the backend URL
 
-## Step 1 — Resolve SkillNote host (layered)
+Layered lookup; stop at first match:
+1. `$SKILLNOTE_BASE_URL` env var
+2. `~/.openclaw/skillnote/config.json` → `host`
+3. `~/.openclaw/skills/skillnote/config.json` → `host`
+4. Default: `http://localhost:8082`
 
-Find the SkillNote backend URL in this order. Stop at the first match:
+Reachability check: `GET <host>/v1/skills?limit=1`.
 
-1. **Env var:** `$SKILLNOTE_BASE_URL`
-2. **Config file:** `~/.openclaw/skillnote/config.json` → `host` field
-3. **Skill-dir config:** `~/.openclaw/skills/skillnote/config.json` → `host` field
-4. **Default:** `http://localhost:8082` (the standard local install)
-
-Then test reachability: `GET <host>/v1/skills?limit=1`.
-
-- **Reachable** → host confirmed. Skip to Step 3 (persist + sync).
-- **Unreachable AND host == localhost:8082** → backend probably not running on this machine. Continue to Step 2 to install it.
-- **Unreachable AND host is custom** (env var or config file points somewhere specific) → don't auto-install. The user pointed at a specific server; tell them it's down and stop:
+- **Reachable** → skip to Step 3 (persist).
+- **Unreachable AND host == `http://localhost:8082`** → likely no backend on this machine yet. Continue to Step 2.
+- **Unreachable AND host is custom** → user pointed at a specific server; do NOT auto-install. Tell the user it's down and stop:
   > SkillNote at `<host>` isn't reachable. Either the server is down, or the URL is wrong. I'll retry next session.
 
-## Step 2 — Stand up the SkillNote backend (only when localhost is unreachable)
+## Step 2 — Stand up the backend (only if Step 1 routed here)
 
-You (the agent) are running on the user's machine and have shell access. Install the backend yourself via the bundled bootstrap script — do not ask the user to run any commands.
+Tell the user what's about to happen, then ask once:
 
-**First, ask the user once for permission:**
+> **SkillNote backend isn't running.** I can install it now (clones the repo and runs `docker compose up`; ~3 min for the first build). Proceed? [Y/n]
 
-> **SkillNote backend isn't running.** I can install it now (clones the repo, runs Docker compose; ~3 min for the first build). Proceed? [Y/n]
+**On `n`** — output the manual instructions and STOP setup:
 
-If the user says **n** or anything negative, output this and STOP setup completely:
-
-> No problem. When you're ready, either:
+> No problem. When you're ready, run one of:
 > ```bash
-> # Option A — clone + run the installer
-> git clone https://github.com/luna-prompts/skillnote.git
-> cd skillnote && ./install.sh
-> ```
-> ```bash
-> # Option B — run the bundled bootstrap script
 > bash ~/.openclaw/skills/skillnote/install-backend.sh
+> # or
+> git clone https://github.com/luna-prompts/skillnote.git && cd skillnote && ./install.sh
 > ```
-> Then start a fresh OpenClaw session.
+> Then restart this session.
 
-If the user says **Y** or anything positive, run this single command and stream the output back so the user sees progress:
+**On `Y`** — run this single command and **stream stdout/stderr back to the user** so they see Docker build progress (don't background it; don't silence it; let them see what's happening for the ~3 min build):
 
 ```bash
 bash ~/.openclaw/skills/skillnote/install-backend.sh
 ```
 
-This script ships with the skill (clawhub install skillnote drops it next to SKILL.md) and handles everything atomically:
-1. Verifies prereqs (`git`, `curl`, and either `docker` or `podman`)
-2. Clones the repo to `$HOME/skillnote` (or reuses an existing checkout)
-3. Runs `./install.sh` (Docker build + compose up)
-4. Polls `/health` until the API is ready (60s timeout)
-5. Prints the URLs
+The script handles: prereq check (`git`, `curl`, `docker`-or-`podman`), clone to `$HOME/skillnote`, `./install.sh` (Docker build + compose up), poll `/health` until ready (60s timeout), print URLs.
 
-### If the script is missing (recovery)
-
-If `~/.openclaw/skills/skillnote/install-backend.sh` doesn't exist (corrupted skill install, manual modification, etc.), curl it from GitHub raw — it's the same script that ships in the bundle:
-
+### If install-backend.sh is missing
+Curl the canonical version from GitHub raw:
 ```bash
 curl -sfL https://raw.githubusercontent.com/luna-prompts/skillnote/master/plugin-openclaw/skillnote/install-backend.sh | bash
 ```
-
-If even that fails (no network, etc.), fall back to a full manual clone — don't try to reconstruct the script:
-
+If even that fails (no network), instruct the user to clone the repo manually:
 ```bash
-git clone https://github.com/luna-prompts/skillnote.git ~/skillnote
-cd ~/skillnote && ./install.sh
+git clone https://github.com/luna-prompts/skillnote.git && cd skillnote && ./install.sh
 ```
 
-Then come back to Step 3.
-
-### Customizing the install
-
-If the user has constraints, set env vars BEFORE invoking the script:
+### Customizing
+Set env vars BEFORE invoking install-backend.sh:
 
 | Need | Command |
 | ---- | ------- |
 | Different install dir | `SKILLNOTE_INSTALL_DIR=$HOME/work/skillnote bash ~/.openclaw/skills/skillnote/install-backend.sh` |
-| Port `8082` is busy   | `SKILLNOTE_API_PORT=8182 bash ~/.openclaw/skills/skillnote/install-backend.sh` |
-| Port `3000` is busy   | `SKILLNOTE_WEB_PORT=3001 bash ~/.openclaw/skills/skillnote/install-backend.sh` |
+| Port `8082` busy | `SKILLNOTE_API_PORT=8182 bash ~/.openclaw/skills/skillnote/install-backend.sh` |
+| Port `3000` busy | `SKILLNOTE_WEB_PORT=3001 bash ~/.openclaw/skills/skillnote/install-backend.sh` |
 
-### If it fails
+### If install-backend.sh exits non-zero
+Capture the last 20 lines of output and show them verbatim. Common patterns:
 
-Capture the last 20 lines of output and show them verbatim. Common patterns and what to suggest:
+| Error pattern | What to suggest |
+|---|---|
+| `address already in use` / `port is already allocated` | Set a different port via env var (see customization) |
+| `Cannot connect to the Docker daemon` | Ask the user to start Docker Desktop / Podman machine |
+| `MISSING: <tool>` | The script names the missing tool + install link; relay it to the user |
+| anything else | Show the captured output verbatim; don't try to recover blindly |
 
-- `address already in use` / `port is already allocated` → tell the user which port and offer: `SKILLNOTE_API_PORT=8182 bash ~/.openclaw/skills/skillnote/install-backend.sh`
-- `Cannot connect to the Docker daemon` → Docker Desktop / Podman machine isn't running; ask the user to start it
-- `MISSING: git` / `MISSING: docker` → the script tells you exactly what's missing; relay the install link to the user
-- anything else → show the captured output and stop; don't try to recover blindly
-
-After success, `install-backend.sh` will print the URLs (`http://localhost:3000` and `http://localhost:8082`). Proceed to Step 3.
+After success, the URLs appear (`http://localhost:3000`, `http://localhost:8082`). Continue to Step 3.
 
 ## Step 3 — Persist the resolved host (idempotent)
 
-Once a host is found and reachable:
-- Strip trailing slashes
-- Write to `~/.openclaw/skills/skillnote/config.json` so subsequent loads skip the env-var lookup:
+Strip trailing slashes. Write to `~/.openclaw/skills/skillnote/config.json`:
 
 ```json
 {
-  "host": "<trimmed url>",
-  "user_id": "<agent name or 'openclaw-main'>"
+  "host": "<resolved url>",
+  "user_id": "<see below>"
 }
 ```
 
-## Step 4 — Initial sync
+For `user_id`: use your **real OpenClaw agent name** when known (e.g., `main`, `support-bot`, `dev-helper`). It's the identity that surfaces in analytics — multiple agents collapsing into one user_id loses signal. If you genuinely don't know your agent name, use `openclaw-main` as a fallback only.
 
-Run with exec:
+## Step 4 — First sync (populates skills locally)
+
+```bash
+chmod +x ~/.openclaw/skills/skillnote/sync.sh && ~/.openclaw/skills/skillnote/sync.sh
 ```
-chmod +x ~/.openclaw/skills/skillnote/sync.sh
-~/.openclaw/skills/skillnote/sync.sh
-```
 
-This populates `~/.openclaw/skills/sn-*/SKILL.md` for every skill in the registry. Runs in a few seconds.
+Tell the user "Syncing skills from the registry…" — sync usually takes a couple seconds. The script:
+- Fetches the catalog (`GET <host>/v1/skills`)
+- Writes one `~/.openclaw/skills/sn-<slug>/SKILL.md` per skill (with rating-footer pre-baked)
+- Spawns the `log-watcher.py` daemon (PID-guarded; won't double-launch)
+- Appends the `<skillnote v1>` block to `~/.openclaw/workspace/AGENTS.md` (idempotent; honors `{"grafted": false}` in config)
 
-## Step 5 — Verify AGENTS.md graft (sync.sh did it for you)
+If sync.sh exits non-zero: capture the output, surface to the user, stop. Don't retry blindly.
 
-`sync.sh` (which you just ran in Step 4) automatically appends the `<skillnote v1>` block to `~/.openclaw/workspace/AGENTS.md` if it isn't already there. **You don't have to graft it yourself, and you don't need to ask the user about it.**
-
-Just verify it landed:
+## Step 5 — Verify the AGENTS.md graft (sync.sh did it; you just check)
 
 ```bash
 grep -c '<skillnote v1>' ~/.openclaw/workspace/AGENTS.md
 ```
 
-If the count is `1`: ✅ done, continue to Step 6.
-
-If the count is `0`: something failed during sync. Re-run `~/.openclaw/skills/skillnote/sync.sh` once more; if still `0`, surface the issue to the user (likely a permissions error on `~/.openclaw/workspace/`). Do not try to graft the block manually with your file-edit tool — that's `sync.sh`'s job.
-
-If the count is `≥ 2`: duplicate marker. Tell the user; do not auto-fix (it's safer for them to dedupe by hand).
+| Result | Action |
+|---|---|
+| `1` | ✅ done; continue to Step 6 |
+| `0` | Re-run sync.sh once. If still `0`, surface to user (likely a permissions issue on `~/.openclaw/workspace/`). **Do NOT graft manually with your file-edit tool — that's sync.sh's job.** |
+| `≥2` | Duplicate marker — tell the user; do not auto-fix |
 
 ### Honoring an opt-out
+If the user told you in this session *"don't touch AGENTS.md"* or *"skip the graft"* (and only if they explicitly said so — don't invent the question), write `{"grafted": false}` to `~/.openclaw/skills/skillnote/config.json` BEFORE running sync.sh in Step 4. sync.sh checks that flag and skips the graft.
 
-If the user told you in this session *"don't touch AGENTS.md"* or *"skip the graft"* (and only if they explicitly said so — don't invent the question), write `{"grafted": false}` to `~/.openclaw/skills/skillnote/config.json` BEFORE running sync.sh in Step 4 — sync.sh checks that flag and skips the graft when it's set.
-
-### For reference, the block sync.sh appends (substituting your `{{HOST}}`):
-
-```
-<skillnote v1>
-SkillNote registry: {{HOST}}
-
-You MUST check SkillNote for any task involving code, writing, debugging, reviewing, deploying, or creating.
-
-Step 1 — BEFORE responding, sync and read skills with exec:
-  ~/.openclaw/skills/skillnote/sync.sh
-  Then read any relevant ~/.openclaw/skills/sn-*/SKILL.md files and apply them.
-
-Step 2 — AFTER finishing, log usage with exec:
-  curl -s -X POST {{HOST}}/v1/openclaw/usage -H 'Content-Type: application/json' -d '{"agent_name":"main","task_summary":"<paraphrase>","skill_ids":["<id>"],"outcome":"completed","channel":"<channel>"}'
-  Use the id field from each skill's frontmatter. Skip if no skills were relevant.
-
-Only skip steps 1-2 for pure small talk ("hi", "thanks"). Never log raw user messages.
-</skillnote v1>
-```
-
-Verify the marker was written. Retry once on failure.
+The block sync.sh appends is the source of truth — don't paraphrase or modify it. If you need to inspect it, read `~/.openclaw/skills/skillnote/sync.sh`.
 
 ## Step 6 — Done
 
-Say exactly once on first setup:
+Say once on first setup; never again unless re-installing:
 
-> SkillNote connected ✓ Registry at `{{HOST}}`. Skills are synced locally — I'll read them before each task and log what helped.
+> SkillNote connected ✓ Registry at `<host>`.
+> N skills synced to `~/.openclaw/skills/sn-*/` — I'll pick the relevant ones before each task and log what helped.
 >
-> Ask me "what skills have you been using?" to see your activity. If something's broken, run `clawhub install skillnote-doctor`.
+> Ask me **"what skills have you been using?"** anytime, or visit `<host>` to see analytics in the web UI.
 
-On every subsequent load: **complete silence**. Just verify the `<skillnote v1>` marker is still in AGENTS.md — if it disappeared, re-graft silently.
+(Replace N with `ls ~/.openclaw/skills/ | grep -c "^sn-"`.)
 
----
-
-# What is SkillNote
-
-SkillNote is your self-hosted skill registry at `{{HOST}}`. It stores procedures your team has written — name, description, body, ratings, comments, and usage history. Skills are grouped into collections (e.g. `code-review`, `devops`) that scope what's relevant.
-
-Skills are synced to `~/.openclaw/skills/sn-*/SKILL.md` automatically before each task. The web UI at `{{HOST}}` is where humans curate skills and read your feedback. Treat it as persistent memory that survives across sessions and agents.
+On every subsequent session: **complete silence**. Just check the marker is in AGENTS.md; if not, sync.sh re-grafts on next run.
 
 ---
 
-# How to log usage
+# How to pick which skills to apply (do this BEFORE responding to a task)
 
-After completing a task where skills were applied, POST to `{{HOST}}/v1/openclaw/usage`. **Use `skill_slugs` (the directory name without the `sn-` prefix) — it's simpler than UUIDs and always available:**
+Before responding to any non-trivial task (anything beyond small talk), you have all synced skills available at `~/.openclaw/skills/sn-*/SKILL.md`.
+
+### v1 picking method (works well up to ~15-20 skills)
+
+1. **Read just the frontmatter `description` field** of every `sn-*/SKILL.md` (cheap — ~200 chars each).
+2. **Pick at most 3** whose description language overlaps with the task language. Be conservative: 0 is a valid answer.
+3. **Read the full `SKILL.md`** of those 1-3 selected skills.
+4. **Apply their guidance** to the task.
+5. **Hard cap: never load more than 5 sn-* SKILL.md files into context for a single task.** If 5+ seem relevant, you've over-matched — re-read the task and tighten.
+
+### Edge cases
+
+| Situation | What to do |
+|---|---|
+| 0 relevant skills | Proceed normally; no usage event needed |
+| Two skills give conflicting advice | Apply both lenses; surface the conflict to the user; ask which to follow |
+| User explicitly invokes a skill ("use sn-error-handling") | Read just that one; no further picking |
+| Past 20 skills, picking accuracy degrades | Bias toward skills with high `call_count`/`avg_rating` (visible in `<host>/v1/analytics/top-skills`); a future version offloads picking to a server-side resolver |
+
+---
+
+# How to log usage (after task completion)
+
+POST to `<host>/v1/openclaw/usage`. **Use slugs** (the `sn-*` directory name without the `sn-` prefix), not UUIDs:
 
 ```json
 {
-  "agent_name": "<your agent id>",
+  "agent_name": "<your real agent name>",
   "task_summary": "<paraphrase — never the raw user message>",
   "skill_slugs": ["error-handling", "git-commit-convention"],
-  "outcome": "completed",
-  "channel": "<channel>"
+  "outcome": "completed | failed | abandoned | unknown",
+  "channel": "<see Channel detection below>"
 }
 ```
 
-**The response includes `id` — capture it. You'll need it if you also post a rating in the next step (linked_usage_id).**
+**The response includes `id` — capture it.** You'll need it as `linked_usage_id` when you also rate the skill.
 
 ### Picking the right `outcome` honestly
 
-This field is the only signal we have for whether skills are actually working. Be honest — defaulting everything to `completed` makes the registry useless for spotting stale or broken skills.
+This field is the only signal we have for whether skills are actually working. Be honest — defaulting everything to `completed` makes the registry useless.
 
-- **`completed`** — skill applied AND produced the intended result (the user's bug got fixed, the code got written, the question got answered correctly)
-- **`failed`** — skill applied BUT didn't help: produced wrong result, error, or the answer was incorrect. Put the diagnosis in `task_summary`: *"Used sn-error-handling but the suggested try/except pattern didn't match the actual exception type."*
-- **`abandoned`** — agent considered the skill but didn't finish applying (timeout, scope changed mid-task, decided wrong skill partway through)
-- **`unknown`** — only when truly uncertain (e.g., no clear signal whether the user accepted the answer). Bias toward picking `completed` or `failed` instead — `unknown` is uninformative.
+- **`completed`** — skill applied AND produced the intended result
+- **`failed`** — skill applied BUT didn't help (wrong result, error, or trigger criteria didn't match the actual situation). Diagnose in `task_summary`: *"Tried sn-X for Y but its trigger criteria didn't match the actual exception type."*
+- **`abandoned`** — considered the skill, started applying, didn't finish (timeout, scope changed mid-task, switched skills partway through)
+- **`unknown`** — only when truly uncertain (no clear signal whether the user accepted the answer). Bias toward `completed` or `failed` — `unknown` is uninformative
 
-Do NOT post a usage event if no skills were applied.
+### Channel detection
+
+Infer `channel` from where the task came in. Use these slug-style values (lowercase, slash-separated):
+
+| Source | `channel` value |
+|---|---|
+| Slack DM | `slack/dm/<user_handle>` |
+| Slack channel | `slack/<channel_name>` |
+| Discord | `discord/<channel_name>` |
+| iMessage | `imessage` |
+| Email reply | `email` |
+| Webhook trigger | `webhook` |
+| `openclaw agent` CLI | `cli` |
+| Cron-triggered task | `cron/<job_name>` |
+| Web UI / control panel | `webchat` |
+| Unknown / mixed | `unknown` |
+
+Channel matters for analytics breakdown — the team will eventually want to ask *"which skills do I use most in #support vs #eng?"*.
+
+### Don't post if
+- No skill was applied (don't post empty events — they pollute analytics)
+- Task was pure small talk ("hi", "thanks")
 
 ---
 
-# How to reflect on a skill
+# How to reflect on a skill (rate or comment)
 
-When a skill clearly helped, failed, or is stale, POST to `{{HOST}}/v1/skills/<slug>/comments`. **Always include `linked_usage_id` (the `id` from your most recent `/v1/openclaw/usage` POST in this same task) so the rating can be correlated to the specific work it's about:**
+POST to `<host>/v1/skills/<slug>/comments`. **Always include `linked_usage_id`** (the `id` from the `/v1/openclaw/usage` POST you just made for this same task) so the comment correlates to specific work:
 
 ```json
 {
-  "author": "<your agent id>",
+  "author": "<your real agent name>",
   "author_type": "agent",
   "comment_type": "agent_success_note",
   "rating": 5,
-  "linked_usage_id": "<id from the usage event you just posted>",
+  "linked_usage_id": "<id from /v1/openclaw/usage response>",
   "body": "<one paragraph — no user info, no raw messages>"
 }
 ```
 
-Valid `comment_type` values: `agent_observation`, `agent_issue`, `agent_patch_suggestion`, `agent_success_note`, `agent_deprecation_warning`
+If you genuinely don't have a `linked_usage_id`, omit the field — never invent one.
 
-`linked_usage_id` is required for the rating to be useful — without it the registry can't tell which task the rating is about. If you somehow don't have a usage_id, omit the field rather than inventing one.
+### Picking the right `comment_type`
 
-At most one comment per skill per day. Only comment when you have specific signal.
+| Type | When to use | Rating |
+|---|---|---|
+| `agent_success_note` | Skill clearly helped — produced the right result, saved time | 4-5 |
+| `agent_issue` | Skill applied but produced wrong result, error, or hurt | 1-2 |
+| `agent_observation` | Neutral note: skill behaves a certain way; worth knowing for future picks | omit `rating` |
+| `agent_patch_suggestion` | You have a concrete fix to suggest (include the suggested change in `body`) | 2-3 typically |
+| `agent_deprecation_warning` | Skill references things that don't exist anymore, trigger criteria misleading, or hasn't been useful in many tasks | 1-2 |
+
+### Self-restraint
+- At most **one comment per skill per day** (the backend doesn't enforce this; you do)
+- Only comment when you have **specific signal** — vague "nice skill" or "didn't really use it" comments add noise
 
 ---
 
-# How to show activity
+# How to show activity (when user asks)
 
-When the user asks "what skills have you been using?" or similar:
+When the user asks "what skills have you been using?" or similar, fetch:
 
-GET `{{HOST}}/v1/me/activity?period=7d`
+```
+GET <host>/v1/me/activity?period=7d
+```
 
-Render the result in natural prose — top skills used, any recent feedback left. Don't dump raw JSON.
+Render in natural prose: top skills by usage, ratings you left, any patterns you noticed. **Don't dump raw JSON** — summarize.
 
 ---
 
-# Weekly self-update check
+# Daily self-update check
 
-Once per week (track via `~/.openclaw/skills/skillnote/.last-update-check`):
+`sync.sh` does this automatically every 24 hours (tracked via `~/.openclaw/skills/skillnote/.last-version-check`):
 
-GET `{{HOST}}/v1/openclaw-skill`
+1. `GET <host>/v1/openclaw-skill` → returns `{version, skill}`
+2. Compare to `~/.openclaw/skills/skillnote/VERSION`
+3. If newer:
+   - If `clawhub` is on PATH: `clawhub install skillnote@<ver>`
+   - Otherwise: overwrite `SKILL.md` + `VERSION` inline from the response
 
-Compare the returned `version` to `~/.openclaw/skills/skillnote/VERSION`. If newer, run `clawhub install skillnote@latest` and notify once.
+You don't need to do anything for self-updates. If a notification appears that the skill was updated, prefer to re-read SKILL.md before continuing — the steps may have changed.
 
 ---
 
@@ -290,19 +315,29 @@ Compare the returned `version` to `~/.openclaw/skills/skillnote/VERSION`. If new
 
 When the user says "remove skillnote" or "uninstall skillnote":
 
-1. Remove the `<skillnote v1>…</skillnote v1>` block from `~/.openclaw/workspace/AGENTS.md`.
-2. Run `clawhub uninstall skillnote`.
-3. Delete `~/.openclaw/skills/skillnote/`.
-4. Say: > SkillNote removed. AGENTS.md restored, config deleted.
+1. **Stop the daemon:**
+   ```bash
+   PID=$(cat ~/.openclaw/skills/skillnote/.log-watcher.pid 2>/dev/null) && kill "$PID" 2>/dev/null
+   ```
+2. **Remove the AGENTS.md graft** (the `<skillnote v1>...</skillnote v1>` block) from `~/.openclaw/workspace/AGENTS.md`.
+3. **Remove the skill files:**
+   - If `clawhub` is on PATH: `clawhub uninstall skillnote`
+   - Otherwise: `rm -rf ~/.openclaw/skills/skillnote`
+4. **Optional** (frees disk; loses synced skills): `rm -rf ~/.openclaw/skills/sn-*`
+5. **Confirm to the user:**
+   > SkillNote removed. AGENTS.md restored, daemon stopped, skill files deleted.
+
+The SkillNote backend itself stays running — it's separate from this skill. To stop it too: `cd <skillnote-repo> && docker compose down`.
 
 ---
 
 # Hard rules
 
-- Do NOT log raw user messages. Always paraphrase.
-- Do NOT log secrets, tokens, credentials, or PII.
-- Do NOT post usage events when no skills were used.
-- Do NOT comment more than once per skill per day.
-- Do NOT invent skill IDs — only use values from the sn-* SKILL.md frontmatter.
-- Do NOT mention SkillNote on every reply — only when relevant.
-- Do NOT mutate config.json after setup. If wrong, ask user to say "re-setup skillnote".
+- **Use `skill_slugs`, not `skill_ids`.** Synced skills don't have `id:` in their frontmatter; the slug is the `sn-*` directory name without the `sn-` prefix.
+- **Never log raw user messages or PII.** Always paraphrase task summaries.
+- **Never log secrets, tokens, or credentials** — even if the user pasted them.
+- **Don't post usage events when no skill was applied.** Empty events pollute analytics.
+- **Don't comment more than once per skill per day** (self-enforced — backend doesn't check).
+- **Don't mention SkillNote on every reply.** Only when relevant or when the user asks about activity.
+- **Don't mutate `config.json` after setup.** If the host needs to change, ask the user to say "re-setup skillnote" so they consent explicitly.
+- **Don't graft AGENTS.md yourself.** sync.sh handles it. If you find the marker missing, re-run sync.sh — don't use your file-edit tool.

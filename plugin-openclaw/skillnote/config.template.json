@@ -1,9 +1,4 @@
 {
-  "skillnote_base_url": "{{HOST}}",
-  "skillnote_web_url": "{{WEB_URL}}",
-  "agent_name": "openclaw-main",
-  "auto_resolve_skills": true,
-  "write_reflections": true,
-  "allow_draft_creation": false,
-  "allow_auto_marketplace_install": false
+  "host": "{{HOST}}",
+  "user_id": "openclaw-main"
 }

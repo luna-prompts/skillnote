@@ -3,10 +3,43 @@
 All notable changes to SkillNote will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
-## [0.4.0] - 2026-04-27
+## [0.4.0] - 2026-05-06
 
-### Added
-- **SkillNote × OpenClaw foundation** — living skill registry for OpenClaw agents. The OpenClaw resolver subagent runs in the agent harness with full LLM reasoning over the SkillNote catalog and does the relevance ranking itself; SkillNote ships the universe with rich metadata. New endpoints under `/v1/openclaw/`:
+### Versioning
+- **OpenClaw skill version is now unified with the app version.** The `plugin-openclaw/skillnote/` skill (published to clawhub) was previously versioned independently (`2.0.0` reflected its second-architecture rewrite). Starting this release, the skill ships at the same version as the SkillNote app — single coherent product, single number. Existing 2.x test installs will see one self-update tick on next daily check.
+
+### OpenClaw integration changes since 0.3.4 (foundation work, multiple commits)
+
+#### Install flow
+- **Agent-driven install**: SKILL.md now walks the agent through 6 steps end-to-end. If the SkillNote backend isn't running on localhost, the agent runs `install-backend.sh` (clones the repo + Docker compose + polls /health) on the user's behalf — one consent prompt only.
+- **Unified `/setup/agent` endpoint** with `--agent <name>` flag (claude-code | openclaw); replaces per-agent setup endpoints in user-facing docs.
+- **`install-backend.sh`** ships in the clawhub bundle so the agent never has to fetch from GitHub raw at install time. Recovery URL still points at GitHub raw if the bundled file is missing.
+- **`./install.sh` footer** detects `~/.claude` / `~/.openclaw` on the host and shows the matching curl command for Stage 2.
+- **Personalized agent prompt** (`/setup/agent-prompt?agent=...`) — Connect page serves a markdown prompt with the user's host pre-baked. Pasting it into an OpenClaw session installs the whole stack.
+
+#### Architecture
+- **AGENTS.md graft moved from agent to `sync.sh`** (the consent-prompt anti-pattern fix). LLMs default to "ask consent before modifying user files" and we couldn't override that even with explicit "do NOT ask" instructions in SKILL.md. The shell script can't be talked out of appending text. SKILL.md Step 5 reduced to a `grep -c` verification.
+- **Unified single `skillnote` skill** replaces the legacy two-skill (`skillnote-awareness` + `skillnote-resolver`) bundle.
+- **clawhub-native frontmatter**: `always: true`, `primaryEnv: SKILLNOTE_BASE_URL`, `requires.env`, `envVars` schema, `homepage` field.
+- **Layered host resolution**: env var → `~/.openclaw/skillnote/config.json` → skill-dir config → default `localhost:8082`.
+
+#### Analytics integrity (4 critical bugs fixed)
+- **Daemon dedup-across-restarts**: previously, wiping `.log-watcher-state.json` caused the daemon to re-fire every historical event in every existing session JSONL (one slug seen 25× in production). Fixed via mtime vs daemon-start-time heuristic — files that pre-existed our launch skip to EOF; files created during our lifetime process from offset 0.
+- **Empty `skill_ids[]` (86% of events)**: synced sn-* skills don't have `id:` in frontmatter, so the agent had nothing to put in the array. Backend now accepts `skill_slugs[]` and resolves to UUIDs server-side; SKILL.md tells agents to use slugs.
+- **100% outcomes were "completed"**: SKILL.md now has an explicit "Picking the right outcome honestly" rubric so failed/abandoned/unknown actually get used.
+- **`linked_usage_id` always null**: SKILL.md now requires it in rating posts and explains how to capture from the prior usage event response. Backend join `comments.linked_usage_id = skill_usage_events.id` now returns rows.
+
+#### Sync hardening
+- **mkdir-based sync lock** prevents concurrent sync corruption.
+- **Atomic manifest write** (tempfile + os.replace) so concurrent readers never see a half-written file.
+- **Per-skill rating footer** appended at sync time — agent can rate inline without losing context across sessions.
+
+#### Web UI
+- **Connect page** redesigned with 4 OpenClaw install methods (Copy prompt / clawhub / curl / Manual). Copy-prompt is default — fetches personalized markdown with user's host baked in.
+- Live connection status pills for both Claude Code and OpenClaw.
+
+### Added (foundation from earlier in this release window)
+- **SkillNote × OpenClaw foundation** — living skill registry for OpenClaw agents. New endpoints under `/v1/openclaw/`:
   - `POST /v1/openclaw/context-bundle` — returns up to `max_skills` skills (sorted by `usage_count_30d` desc then `rating_avg` desc) plus the full collections list and per-skill staleness/rating/recent-comment metadata. The subagent re-ranks via LLM. Optional `collection_filter` narrows the catalog when the agent has a hint.
   - `POST /v1/openclaw/usage` — agents log a usage event after acting. Validates known skill IDs; rejects task summaries > 1000 chars (agents must summarize, not dump raw user messages).
   - `GET /v1/openclaw/usage` — list events with `?limit`, `?since`, `?skill_id`, `?before` cursor pagination. Used by Settings → OpenClaw card to detect "connected" status.
