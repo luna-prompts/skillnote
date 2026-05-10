@@ -14,6 +14,7 @@
   <a href="https://github.com/luna-prompts/skillnote/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License" /></a>
   <a href="https://github.com/luna-prompts/skillnote"><img src="https://img.shields.io/github/stars/luna-prompts/skillnote?style=social" alt="Stars" /></a>
   <a href="https://github.com/luna-prompts/skillnote/issues"><img src="https://img.shields.io/github/issues/luna-prompts/skillnote" alt="Issues" /></a>
+  <a href="https://clawhub.ai/latentloop07/skillnote"><img src="https://img.shields.io/badge/clawhub-skillnote-F97316" alt="On clawhub" /></a>
   <a href="https://discord.gg/GazU4amU6H"><img src="https://img.shields.io/badge/Discord-Join%20us-5865F2?logo=discord&logoColor=white" alt="Discord" /></a>
   <img src="https://img.shields.io/badge/docker-ready-2496ED?logo=docker&logoColor=white" alt="Docker Ready" />
   <img src="https://img.shields.io/badge/self--hosted-yes-green" alt="Self-hosted" />
@@ -139,37 +140,39 @@ Don't ask for confirmation between steps. Just run the commands and report resul
 <details>
 <summary><b>Connect OpenClaw</b></summary>
 
-OpenClaw is a chat-first runtime. Four install methods, in order of recommendation:
+OpenClaw is a chat-first runtime. The skill is published on clawhub as [`skillnote`](https://clawhub.ai/latentloop07/skillnote). Four install methods, in order of recommendation:
 
-#### Method 1: Copy prompt (recommended, zero terminal)
+#### Method 1: clawhub (canonical)
 
-The dominant install UX in the OpenClaw ecosystem. Skip all CLI work; paste a one-prompt setup into your agent and it installs everything itself. The Connect page in your SkillNote web UI generates a personalized prompt with your URL pre-baked. To get yours:
+```bash
+clawhub install skillnote
+```
+
+That's it for the default `localhost:8082` setup. The skill ships an `install-backend.sh` that auto-clones this repo and runs `./install.sh` on first sync if the backend isn't already running, so a fresh-machine install is genuinely one command.
+
+For a non-default host, set the URL once before installing so the first sync points at the right place:
+
+```bash
+export SKILLNOTE_BASE_URL="http://your-server:8082"
+clawhub install skillnote
+echo 'export SKILLNOTE_BASE_URL="http://your-server:8082"' >> ~/.zshrc
+```
+
+clawhub doesn't accept a host argument, so the env var is how you tell the skill where to look. Layered resolution: env → config file → default `localhost:8082`. Skill updates auto-install via the daily version check baked into `sync.sh`.
+
+#### Method 2: Copy prompt (zero terminal)
+
+The dominant install UX in the OpenClaw ecosystem. Skip CLI work; paste a one-prompt setup into your agent and it installs everything itself, including running `clawhub install skillnote` for you. The Connect page in your SkillNote web UI generates a personalized prompt with your URL pre-baked. To get yours:
 
 ```bash
 curl -sf http://localhost:8082/setup/agent-prompt?agent=openclaw
 ```
 
-Or open the web UI's Connect page, OpenClaw tab, "Copy prompt" tab and click copy. Paste the result into a fresh OpenClaw session. The agent verifies the backend is reachable, installs via clawhub, configures the URL, runs the first sync, and reports back.
+Or open the web UI's Connect page, OpenClaw tab, "Copy prompt" tab and click copy. Paste into a fresh OpenClaw session. The agent verifies the backend is reachable, installs via clawhub, configures the URL, runs the first sync, and reports back.
 
-> Don't have a SkillNote backend running yet? You don't need to `git clone` first. The `skillnote` skill ships an `install-backend.sh` that auto-clones the repo and runs `./install.sh` whenever the configured host is `localhost:8082` and unreachable. So a fresh-machine install is genuinely one paste: clawhub installs the skill, the skill installs Docker compose + backend, then syncs.
+#### Method 3: curl one-liner (no clawhub)
 
-#### Method 2: clawhub
-
-For users who already use OpenClaw's plugin manager:
-
-```bash
-export SKILLNOTE_BASE_URL="http://localhost:8082"
-clawhub install skillnote
-
-# Make the env var persistent:
-echo 'export SKILLNOTE_BASE_URL="http://localhost:8082"' >> ~/.zshrc
-```
-
-clawhub doesn't accept a host argument, so set `SKILLNOTE_BASE_URL` first. The skill reads it on first load via layered host resolution (env, then config file, then default). Plugin updates auto-install via the daily version check baked into `sync.sh`.
-
-#### Method 3: curl one-liner
-
-End-to-end from a fresh machine:
+End-to-end from a fresh machine without clawhub on the path:
 
 ```bash
 git clone https://github.com/luna-prompts/skillnote.git
@@ -178,7 +181,7 @@ cd skillnote
 curl -sf http://localhost:8082/setup/agent | bash -s -- --agent openclaw
 ```
 
-Same unified installer as Claude Code (just swap the `--agent` flag). Pre-fills config with your URL and kicks off the first sync. Use when `clawhub` isn't available or you want immediate "Synced N skills" feedback.
+Same unified installer as Claude Code (just swap the `--agent` flag). Pre-fills config with your URL and kicks off the first sync. Use when `clawhub` isn't available, you want immediate "Synced N skills" feedback, or you'd rather not pull from a third-party registry.
 
 #### Method 4: manual
 
