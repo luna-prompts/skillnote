@@ -3,6 +3,12 @@
 All notable changes to SkillNote will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased] — slated for 0.4.1
+
+### To bundle in next clawhub publish
+- Pass `--name "SkillNote"` (and `--name "SkillNote Doctor"`) on `clawhub skill publish` so the display name uses the brand's CamelCase. Slug auto-titlecase produced "Skillnote" / "Skillnote Doctor"; published as 0.4.0 / 1.0.0 with that name and it's immutable once published.
+- Address whatever clawhub maintainers surface in https://github.com/openclaw/clawhub/issues/2135 (skillnote@0.4.0 was flagged `scanner.llm.suspicious` on first publish; appeal filed for breakdown).
+
 ## [0.4.0] - 2026-05-06
 
 ### Versioning
