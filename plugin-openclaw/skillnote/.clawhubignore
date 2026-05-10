@@ -1,0 +1,21 @@
+# Python bytecode (regenerated when log-watcher.py runs)
+__pycache__/
+*.pyc
+*.pyo
+
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# Editor swap files
+*.swp
+*.swo
+*~
+
+# clawhub CLI artifacts (auto-generated, never ship by hand)
+.clawhub/
+
+# Local-only state from previous installs of this skill in the dev tree
+.last-version-check
+.log-watcher.pid
+.log-watcher-state.json

@@ -303,19 +303,115 @@ done
 # ── Done ──────────────────────────────────────────────────────────
 SKILL_COUNT=$(curl -sf "http://localhost:${API_PORT}/v1/skills" 2>/dev/null | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "?")
 
+# Detect which agents are present on this machine so we can recommend
+# the right Stage-2 command (and skip the ones that aren't applicable).
+HAS_CLAUDE=0
+HAS_OPENCLAW=0
+[ -d "$HOME/.claude" ] && HAS_CLAUDE=1
+[ -d "$HOME/.openclaw" ] && HAS_OPENCLAW=1
+
+ORANGE='\033[38;5;208m'
+
 echo ""
-echo -e "  ${GREEN}${BOLD}SkillNote is running${NC}"
+echo -e "  ${GREEN}${BOLD}✓ Stage 1 complete — SkillNote is running${NC}"
 echo ""
 echo -e "  ${DIM}Web${NC}     ${WEB_URL}"
 echo -e "  ${DIM}API${NC}     ${API_URL}"
 echo -e "  ${DIM}Skills${NC}  ${SKILL_COUNT}"
 echo ""
-ORANGE='\033[38;5;208m'
-echo -e "  ${ORANGE}${BOLD}Connect Claude Code${NC}"
-echo -e "  ${ORANGE}\$${NC} curl -sf ${API_URL}/setup | bash"
+echo -e "  ${BOLD}Next — Stage 2: connect an AI agent${NC}"
+echo -e "  ${DIM}One unified installer; pick your agent with --agent.${NC}"
 echo ""
-echo -e "  ${DIM}Manage:${NC}"
-echo -e "  ${DIM}\$${NC} $COMPOSE logs -f          ${DIM}# logs${NC}"
+
+# ── Tailored Stage-2 hint ────────────────────────────────────────
+# Each curl-installer command is paired with the clone+install commands
+# above it so the printed output is self-contained when copied/shared
+# (e.g., a user sends the install.sh tail to a teammate). For the user
+# who literally just ran install.sh on this machine the clone+install
+# is redundant — they can ignore those two lines and run only the
+# trailing connect command.
+HAS_CLAWHUB=0
+command -v clawhub >/dev/null 2>&1 && HAS_CLAWHUB=1
+
+# Default vs custom host: clawhub doesn't accept a host argument, so a
+# non-default URL is set via env var read by the skill on first sync.
+if [ "$API_URL" = "http://localhost:8082" ]; then
+    OPENCLAW_CLAWHUB_CMD="clawhub install skillnote"
+else
+    OPENCLAW_CLAWHUB_CMD="SKILLNOTE_BASE_URL=${API_URL} clawhub install skillnote"
+fi
+OPENCLAW_CURL_CMD="curl -sf ${API_URL}/setup/agent | bash -s -- --agent openclaw"
+CLAUDE_CURL_CMD="curl -sf ${API_URL}/setup/agent | bash -s -- --agent claude-code"
+CLONE_INSTALL="git clone https://github.com/luna-prompts/skillnote.git && cd skillnote && ./install.sh"
+
+_print_clone_install() {
+    echo -e "  ${DIM}# fresh machine? run these two first to bring up the backend:${NC}"
+    echo -e "  ${ORANGE}\$${NC} ${CLONE_INSTALL}"
+    echo ""
+}
+
+_print_claude_install() {
+    _print_clone_install
+    echo -e "  ${ORANGE}\$${NC} ${CLAUDE_CURL_CMD}"
+}
+
+# OpenClaw: lead with the canonical clawhub install (auto-bootstraps the
+# backend if unreachable, so it's truly one command on a fresh machine).
+# Curl form is the no-clawhub fallback and gets paired with clone+install.
+_print_openclaw_install() {
+    if [ "$HAS_CLAWHUB" -eq 1 ]; then
+        echo -e "  ${ORANGE}\$${NC} ${OPENCLAW_CLAWHUB_CMD}     ${DIM}# canonical (clawhub detected; auto-installs backend if needed)${NC}"
+    else
+        echo -e "  ${ORANGE}\$${NC} ${OPENCLAW_CLAWHUB_CMD}     ${DIM}# canonical (install clawhub: 'npm i -g clawhub')${NC}"
+    fi
+    echo ""
+    echo -e "  ${DIM}or without clawhub:${NC}"
+    _print_clone_install
+    echo -e "  ${ORANGE}\$${NC} ${OPENCLAW_CURL_CMD}"
+}
+
+if [ "$HAS_CLAUDE" -eq 1 ] && [ "$HAS_OPENCLAW" -eq 1 ]; then
+    # Both agents detected on this host
+    echo -e "  ${DIM}Detected:${NC}  ${GREEN}Claude Code${NC}  +  ${GREEN}OpenClaw${NC}"
+    echo ""
+    echo -e "  ${ORANGE}${BOLD}Claude Code${NC}"
+    _print_claude_install
+    echo ""
+    echo -e "  ${ORANGE}${BOLD}OpenClaw${NC}"
+    _print_openclaw_install
+elif [ "$HAS_CLAUDE" -eq 1 ]; then
+    echo -e "  ${DIM}Detected:${NC}  ${GREEN}Claude Code${NC}  ${DIM}(~/.claude exists)${NC}"
+    echo ""
+    echo -e "  ${ORANGE}${BOLD}Connect Claude Code${NC}"
+    _print_claude_install
+    echo ""
+    echo -e "  ${DIM}Also using OpenClaw? Run:${NC} ${ORANGE}${OPENCLAW_CLAWHUB_CMD}${NC}"
+elif [ "$HAS_OPENCLAW" -eq 1 ]; then
+    echo -e "  ${DIM}Detected:${NC}  ${GREEN}OpenClaw${NC}  ${DIM}(~/.openclaw exists)${NC}"
+    echo ""
+    echo -e "  ${ORANGE}${BOLD}Connect OpenClaw${NC}"
+    _print_openclaw_install
+    echo ""
+    echo -e "  ${DIM}Also using Claude Code? Run:${NC}"
+    _print_claude_install
+else
+    # No agent detected — the user is probably setting up the registry
+    # on a server they don't run agents on. Show both, no preference.
+    echo -e "  ${DIM}No agent home directory detected on this machine.${NC}"
+    echo -e "  ${DIM}If you'll use SkillNote from another machine, run one of these there:${NC}"
+    echo ""
+    echo -e "  ${ORANGE}${BOLD}Claude Code${NC}"
+    _print_claude_install
+    echo ""
+    echo -e "  ${ORANGE}${BOLD}OpenClaw${NC}"
+    _print_openclaw_install
+fi
+
+echo ""
+echo -e "  ${DIM}Or use the web UI walkthrough:${NC}  ${CYAN}${WEB_URL}/integrations${NC}"
+echo ""
+echo -e "  ${DIM}Manage this stack:${NC}"
+echo -e "  ${DIM}\$${NC} $COMPOSE logs -f          ${DIM}# tail logs${NC}"
 echo -e "  ${DIM}\$${NC} $COMPOSE down             ${DIM}# stop${NC}"
-echo -e "  ${DIM}\$${NC} $COMPOSE down -v          ${DIM}# reset${NC}"
+echo -e "  ${DIM}\$${NC} $COMPOSE down -v          ${DIM}# reset (drops the database)${NC}"
 echo ""

@@ -4,12 +4,13 @@ import zipfile
 from pathlib import Path
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse, Response
 
 router = APIRouter(tags=["setup"])
 
 _PLUGIN_DIR = Path("/plugin") if Path("/plugin/.claude-plugin").is_dir() else Path(__file__).resolve().parent.parent.parent.parent / "plugin"
+_OPENCLAW_DIR = Path("/openclaw") if Path("/openclaw").is_dir() else Path(__file__).resolve().parent.parent.parent.parent / "plugin-openclaw"
 
 
 import re as _re
@@ -343,3 +344,383 @@ def get_setup_script(request: Request):
               .replace("__MCP_URL__", urls["mcp"])
               .replace("__WEB_URL__", urls["web"]))
     return PlainTextResponse(script, media_type="text/plain")
+
+
+@router.get("/v1/openclaw-bundle.zip")
+def get_openclaw_bundle_zip(request: Request):
+    """Serve the plugin-openclaw directory as a ZIP with host URLs baked in."""
+    urls = _derive_urls(request)
+    api_url = urls["api"]
+    web_url = urls["web"]
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        if _OPENCLAW_DIR.is_dir():
+            for fpath in _OPENCLAW_DIR.rglob("*"):
+                if fpath.is_file() and "__pycache__" not in str(fpath):
+                    rel = fpath.relative_to(_OPENCLAW_DIR)
+                    content = fpath.read_text(errors="replace")
+                    content = (content
+                               .replace("{{HOST}}", api_url)
+                               .replace("{{WEB_URL}}", web_url))
+                    zf.writestr(str(rel), content)
+    buf.seek(0)
+    return Response(content=buf.read(), media_type="application/zip")
+
+
+_OPENCLAW_SETUP_SCRIPT = r'''#!/bin/bash
+set -euo pipefail
+
+API_URL="__API_URL__"
+WEB_URL="__WEB_URL__"
+OPENCLAW_HOME="$HOME/.openclaw"
+SKILLS_DIR="$OPENCLAW_HOME/skills"
+SKILLNOTE_DIR="$SKILLS_DIR/skillnote"
+
+echo ""
+echo "  S K I L L N O T E   →   O P E N C L A W"
+echo ""
+
+# ── prerequisites ────────────────────────────────────────────────────────────
+command -v curl &>/dev/null || { echo "Error: curl required."; exit 1; }
+command -v unzip &>/dev/null || { echo "Error: unzip required."; exit 1; }
+command -v python3 &>/dev/null || { echo "Error: python3 required."; exit 1; }
+
+# ── consent prompt (interactive only) ─────────────────────────────────────────
+if [ -t 0 ]; then
+    echo "  This will install the SkillNote skill into $SKILLS_DIR/skillnote/"
+    echo "  and configure it to talk to $API_URL"
+    echo ""
+    read -p "  Continue? [y/N] " yn
+    case "$yn" in
+        [Yy]*) ;;
+        *) echo "  Aborted."; exit 0 ;;
+    esac
+else
+    echo "  Non-interactive install (no TTY); proceeding."
+fi
+
+# ── idempotent clean install ─────────────────────────────────────────────────
+# Stop any running watcher from a previous install before we touch its files
+if [ -f "$SKILLNOTE_DIR/.log-watcher.pid" ]; then
+    OLD_PID=$(cat "$SKILLNOTE_DIR/.log-watcher.pid" 2>/dev/null || true)
+    [ -n "$OLD_PID" ] && kill "$OLD_PID" 2>/dev/null || true
+fi
+
+# Clean legacy 2-skill layout if present (skillnote-awareness / skillnote-resolver)
+rm -rf "$SKILLS_DIR/skillnote-awareness" "$SKILLS_DIR/skillnote-resolver" 2>/dev/null || true
+
+# Wipe the skillnote skill dir but preserve the user's existing config.json
+PRESERVED_CONFIG=""
+if [ -f "$SKILLNOTE_DIR/config.json" ]; then
+    PRESERVED_CONFIG=$(mktemp -t skillnote-config.XXXXXX.json)
+    cp "$SKILLNOTE_DIR/config.json" "$PRESERVED_CONFIG"
+fi
+rm -rf "$SKILLNOTE_DIR"
+
+mkdir -p "$SKILLS_DIR"
+
+# ── download bundle ──────────────────────────────────────────────────────────
+TMP_ZIP=$(mktemp -t skillnote-openclaw.XXXXXX.zip) || { echo "Error: mktemp failed."; exit 1; }
+trap 'rm -f "$TMP_ZIP" "$PRESERVED_CONFIG"' EXIT
+curl -sf --connect-timeout 10 --max-time 30 "$API_URL/v1/openclaw-bundle.zip" -o "$TMP_ZIP" || {
+    echo "Error: Could not download $API_URL/v1/openclaw-bundle.zip"
+    exit 1
+}
+
+# ── refuse symlink and path-traversal entries ────────────────────────────────
+if unzip -Z "$TMP_ZIP" 2>/dev/null | awk '{print $1}' | grep -q '^l'; then
+    echo "Error: bundle contains symbolic link entries; refusing to extract."
+    exit 1
+fi
+if unzip -l "$TMP_ZIP" 2>/dev/null | awk 'NR>3 && $1 ~ /^[0-9]+$/ {print $NF}' | grep -qE '^(/|\.\./|.*/\.\./)'; then
+    echo "Error: bundle contains absolute or parent-directory paths; refusing to extract."
+    exit 1
+fi
+
+# ── extract ──────────────────────────────────────────────────────────────────
+unzip -qo "$TMP_ZIP" -d "$SKILLS_DIR"
+
+# ── set up config.json from template (or restore preserved one) ──────────────
+if [ -n "$PRESERVED_CONFIG" ] && [ -f "$PRESERVED_CONFIG" ]; then
+    cp "$PRESERVED_CONFIG" "$SKILLNOTE_DIR/config.json"
+    echo "  Preserved existing config.json"
+else
+    # Bundle ships config.template.json inside the skillnote/ dir.
+    # Materialize it into a real config.json with the host pre-filled.
+    if [ -f "$SKILLNOTE_DIR/config.template.json" ]; then
+        python3 - "$API_URL" "$SKILLNOTE_DIR/config.template.json" "$SKILLNOTE_DIR/config.json" << 'PYEOF'
+import json, sys
+api_url, src, dst = sys.argv[1], sys.argv[2], sys.argv[3]
+try:
+    cfg = json.load(open(src))
+except Exception:
+    cfg = {}
+cfg["host"] = api_url.rstrip("/")
+cfg.setdefault("user_id", "openclaw-main")
+json.dump(cfg, open(dst, "w"), indent=2)
+PYEOF
+    else
+        # Fallback: write a minimal config so sync.sh works on first run
+        cat > "$SKILLNOTE_DIR/config.json" <<EOF
+{"host": "${API_URL%/}", "user_id": "openclaw-main"}
+EOF
+    fi
+fi
+
+# ── make sync.sh executable (CRITICAL — sync.sh needs +x to run) ─────────────
+chmod +x "$SKILLNOTE_DIR/sync.sh"
+
+# ── kick off first sync so user gets immediate feedback ──────────────────────
+echo ""
+echo "  Running first sync..."
+if "$SKILLNOTE_DIR/sync.sh" 2>/dev/null; then
+    SKILL_COUNT=$(ls "$SKILLS_DIR" 2>/dev/null | grep -c "^sn-" || echo 0)
+    echo "  Synced $SKILL_COUNT skills into $SKILLS_DIR/sn-*/"
+else
+    echo "  First sync did not complete (will retry on next OpenClaw session)."
+fi
+
+echo ""
+echo "  Installed:"
+echo "    $SKILLNOTE_DIR/SKILL.md         (always-loaded skill)"
+echo "    $SKILLNOTE_DIR/sync.sh          (runs every 60s)"
+echo "    $SKILLNOTE_DIR/log-watcher.py   (analytics daemon)"
+echo "    $SKILLNOTE_DIR/config.json      (host: ${API_URL%/})"
+echo ""
+echo "  Restart your OpenClaw session to pick up the new skill."
+echo "  Web: $WEB_URL"
+echo ""
+'''
+
+
+@router.get("/setup/openclaw")
+def get_openclaw_setup_script(request: Request):
+    urls = _derive_urls(request)
+    script = (_OPENCLAW_SETUP_SCRIPT
+              .replace("__API_URL__", urls["api"])
+              .replace("__WEB_URL__", urls["web"]))
+    return PlainTextResponse(script, media_type="text/plain")
+
+
+# Unified entry point: parses --agent <name> from $@ and delegates to the
+# right per-agent installer. Keeps each installer's logic isolated (they
+# touch different home dirs, ship different bundles) while giving users one
+# command to remember:
+#
+#   curl -sf <host>/setup/agent | bash -s -- --agent openclaw
+#   curl -sf <host>/setup/agent | bash -s -- --agent claude-code
+_AGENT_DISPATCH_SCRIPT = r'''#!/bin/bash
+set -euo pipefail
+
+API_URL="__API_URL__"
+
+# ── parse --agent flag ───────────────────────────────────────────────────────
+AGENT=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --agent)
+            AGENT="${2:-}"
+            shift 2
+            ;;
+        --agent=*)
+            AGENT="${1#--agent=}"
+            shift
+            ;;
+        -h|--help)
+            cat <<EOF
+SkillNote agent installer
+
+Usage:
+  curl -sf $API_URL/setup/agent | bash -s -- --agent <name>
+
+Supported agents:
+  claude-code   Install the SkillNote plugin for Claude Code
+  openclaw      Install the SkillNote skill for OpenClaw
+
+Example:
+  curl -sf $API_URL/setup/agent | bash -s -- --agent openclaw
+EOF
+            exit 0
+            ;;
+        *)
+            echo "Error: unknown argument '$1'"
+            echo "Run with --help for usage."
+            exit 1
+            ;;
+    esac
+done
+
+# ── validate ─────────────────────────────────────────────────────────────────
+if [ -z "$AGENT" ]; then
+    echo "Error: --agent flag is required."
+    echo ""
+    echo "Usage:"
+    echo "  curl -sf $API_URL/setup/agent | bash -s -- --agent <name>"
+    echo ""
+    echo "Supported agents:"
+    echo "  claude-code   Install the SkillNote plugin for Claude Code"
+    echo "  openclaw      Install the SkillNote skill for OpenClaw"
+    exit 2
+fi
+
+case "$AGENT" in
+    claude-code|claude_code|claude|cc)
+        TARGET_PATH="/setup"
+        AGENT_LABEL="Claude Code"
+        ;;
+    openclaw|open-claw|oc)
+        TARGET_PATH="/setup/openclaw"
+        AGENT_LABEL="OpenClaw"
+        ;;
+    *)
+        echo "Error: unknown agent '$AGENT'."
+        echo ""
+        echo "Supported agents: claude-code, openclaw"
+        exit 2
+        ;;
+esac
+
+# ── delegate ─────────────────────────────────────────────────────────────────
+echo "  Installing SkillNote for $AGENT_LABEL..."
+echo "  Source: $API_URL$TARGET_PATH"
+echo ""
+
+# Download the agent-specific installer to a tempfile and exec it. We avoid
+# `curl ... | bash` here because piping while also redirecting stdin from
+# /dev/null causes curl to abort early (exit 23, broken pipe). The tempfile
+# detour gives the installer a clean stdin (so its TTY check picks the
+# non-interactive branch) without losing any output.
+TMP_INSTALLER=$(mktemp -t skillnote-installer.XXXXXX.sh)
+trap 'rm -f "$TMP_INSTALLER"' EXIT
+
+if ! curl -sf --connect-timeout 10 --max-time 60 \
+        "$API_URL$TARGET_PATH" -o "$TMP_INSTALLER"; then
+    echo "Error: failed to download installer from $API_URL$TARGET_PATH"
+    exit 3
+fi
+
+bash "$TMP_INSTALLER" < /dev/null
+'''
+
+
+@router.get("/setup/agent")
+def get_agent_dispatch_script(request: Request):
+    """Unified curl entry point that delegates to the per-agent installer."""
+    urls = _derive_urls(request)
+    script = _AGENT_DISPATCH_SCRIPT.replace("__API_URL__", urls["api"])
+    return PlainTextResponse(script, media_type="text/plain")
+
+
+# ─── Personalized agent install prompts ──────────────────────────────────────
+# Returns a markdown copy-prompt with the user's actual SkillNote URL baked in.
+# The Connect page renders this with a "Copy as Markdown" button so that the
+# user can paste it into a fresh OpenClaw / Claude Code session and the agent
+# installs everything itself.
+#
+# Modeled on api2cli's "One-Prompt Setup" pattern, which is the dominant
+# install UX in the OpenClaw ecosystem today.
+
+_OPENCLAW_AGENT_PROMPT = """Set up SkillNote for me end-to-end. The skill is published on clawhub and I want you to handle everything: backend, plugin, configuration, verification.
+
+Please do the full install yourself — don't ask me to run commands.
+
+1. **Install the SkillNote skill from clawhub:**
+   ```bash
+   command -v clawhub || npm i -g clawhub
+   clawhub install skillnote
+   ```
+   (If `clawhub install skillnote` fails because the registry isn't reachable, fall back to the bundle installer: `curl -sf __API_URL__/setup/agent | bash -s -- --agent openclaw` — that will take care of installing the skill files locally.)
+
+2. **Read the skill's SKILL.md and follow its setup steps in order:**
+   ```bash
+   cat ~/.openclaw/skills/skillnote/SKILL.md
+   ```
+   The SKILL.md tells you how to:
+   - Resolve the SkillNote host (env var → config file → default `http://localhost:8082`)
+   - **If the backend is not running on localhost, the SKILL.md tells you to clone and `./install.sh` it yourself** — do that, don't ask me. It takes ~3 minutes.
+   - Persist the resolved host to config.json
+   - Run the first sync
+   - Graft `~/.openclaw/workspace/AGENTS.md` with the `<skillnote v1>` block
+
+3. **Verify everything works** and report back to me:
+   - Backend reachable: `curl -sf __API_URL__/health` (or whatever URL you ended up using)
+   - Skills synced: `ls ~/.openclaw/skills/sn-* 2>/dev/null | wc -l`
+   - Daemon running: `cat ~/.openclaw/skills/skillnote/.log-watcher.pid` and `kill -0 $(cat ...)` to confirm the process is alive
+   - AGENTS.md graft present: `grep '<skillnote v1>' ~/.openclaw/workspace/AGENTS.md`
+   - Tell me: how many skills synced, the URL my agent is connected to, and whether I need to do anything else.
+
+Don't ask for confirmation between steps. Just run the commands and report results when you're done.
+"""
+
+_CLAUDE_AGENT_PROMPT = """Set up SkillNote for me. My SkillNote backend is at __API_URL__.
+
+Please do the full install yourself — don't ask me to run commands.
+
+1. **Verify the SkillNote backend is reachable:**
+   ```bash
+   curl -sf __API_URL__/health
+   ```
+   If this fails, tell me to first run:
+   ```bash
+   git clone https://github.com/luna-prompts/skillnote.git
+   cd skillnote
+   ./install.sh
+   ```
+
+2. **Install the Claude Code plugin:**
+   ```bash
+   curl -sf __API_URL__/setup/agent | bash -s -- --agent claude-code
+   ```
+
+3. **Reload my shell** (so the plugin gets picked up):
+   ```bash
+   source ~/.zshrc 2>/dev/null || source ~/.bashrc 2>/dev/null || true
+   ```
+
+4. **Verify everything works** and report back:
+   - List installed plugin: `ls ~/.claude/plugins/skillnote/ 2>/dev/null`
+   - Tell me how many skills the plugin sees and what collection picker options I'd see when I run `claude`.
+
+Don't ask for confirmation between steps. Just run the commands and report results.
+"""
+
+_AGENT_PROMPTS = {
+    "openclaw": _OPENCLAW_AGENT_PROMPT,
+    "claude-code": _CLAUDE_AGENT_PROMPT,
+}
+
+
+@router.get("/setup/agent-prompt")
+def get_agent_prompt(
+    request: Request,
+    agent: str = Query(..., description="Target agent: openclaw or claude-code"),
+):
+    """Returns a personalized install prompt with the user's host baked in.
+
+    The Connect page renders this with a 'Copy as Markdown' button. Users paste
+    it into a fresh OpenClaw or Claude Code session and the agent installs
+    everything itself — no terminal needed.
+
+    Aliases:
+      openclaw, oc, open-claw           → openclaw prompt
+      claude-code, cc, claude, claude_code → claude-code prompt
+    """
+    agent_normalized = agent.lower().strip()
+    alias_map = {
+        "openclaw": "openclaw", "oc": "openclaw", "open-claw": "openclaw",
+        "claude-code": "claude-code", "cc": "claude-code",
+        "claude": "claude-code", "claude_code": "claude-code",
+    }
+    canonical = alias_map.get(agent_normalized)
+    if canonical is None:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown agent '{agent}'. Supported: {', '.join(sorted(set(alias_map.values())))}",
+        )
+
+    urls = _derive_urls(request)
+    prompt = _AGENT_PROMPTS[canonical].replace("__API_URL__", urls["api"])
+    # Return as plain text so it's clipboard-friendly. Connect page reads it
+    # with fetch().then(r => r.text()) and pipes straight into the copy buffer.
+    return PlainTextResponse(prompt, media_type="text/plain; charset=utf-8")

@@ -1144,7 +1144,7 @@ Replace with:
 - [ ] **Step 3: Smoke test**
 
 ```bash
-cd /Users/atharvapatil/friend/repo/skillnote && SKILLNOTE_HOST=localhost plugin/bin/skillnote-pick
+cd ~/path/to/skillnote && SKILLNOTE_HOST=localhost plugin/bin/skillnote-pick
 ```
 
 Expected: the recommended collection shows `(Recommended)` next to its name, not `★`. Press esc to exit.

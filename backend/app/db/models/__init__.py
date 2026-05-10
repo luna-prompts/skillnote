@@ -10,12 +10,14 @@ from app.db.models.import_source import (
 from app.db.models.skill import Skill
 from app.db.models.skill_content_version import SkillContentVersion
 from app.db.models.skill_rating import SkillRating
+from app.db.models.skill_usage_event import SkillUsageEvent
 from app.db.models.skill_version import SkillVersion
 
 __all__ = [
     "Skill",
     "SkillVersion",
     "SkillContentVersion",
+    "SkillUsageEvent",
     "Comment",
     "AnalyticsEvent",
     "SkillRating",

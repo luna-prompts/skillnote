@@ -5,6 +5,7 @@ import { ExternalLink, Info } from 'lucide-react'
 import { toast } from 'sonner'
 import { TopBar } from '@/components/layout/topbar'
 import { fetchSettings, updateSettings } from '@/lib/api/settings'
+import { OpenClawSetupCard } from '@/components/settings/openclaw-setup-card'
 
 function Toggle({ checked, onChange, disabled }: { checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
   return (
@@ -158,6 +159,8 @@ export default function SettingsPage() {
               </div>
             </section>
           )}
+
+          <OpenClawSetupCard />
 
           {/* About */}
           <section className="mb-10">

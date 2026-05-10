@@ -24,6 +24,7 @@ class SkillOrigin(BaseModel):
 class SkillListItem(BaseModel):
     model_config = {"from_attributes": True}
 
+    id: uuid.UUID
     name: str
     slug: str
     description: str

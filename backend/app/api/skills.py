@@ -147,6 +147,7 @@ def list_skills(
         )
         out.append(
             SkillListItem(
+                id=skill.id,
                 name=skill.name,
                 slug=skill.slug,
                 description=skill.description,
@@ -396,6 +397,7 @@ def create_skill(
         extra_frontmatter=payload.extra_frontmatter,
         current_version=0,
     )
+
     db.add(skill)
     db.flush()
 
