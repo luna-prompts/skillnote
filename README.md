@@ -81,29 +81,40 @@ curl -sf http://localhost:8082/setup/agent | bash -s -- --agent claude-code
 source ~/.zshrc
 ```
 
+> Assumes the SkillNote backend is running at `localhost:8082`. If you skipped the Quick Start install above, run `git clone https://github.com/luna-prompts/skillnote.git && cd skillnote && ./install.sh` first, then come back.
+
 The same `setup/agent` endpoint works for any harness; pass `--agent claude-code` or `--agent openclaw`. Run `claude` in any project; SkillNote picks up your skills automatically and the collection picker appears on first launch.
 
 #### Or, paste this prompt to Claude Code
 
-Works from a fresh install (Claude Code does the install itself):
+Works from a totally fresh state (Claude Code installs both the backend and the plugin itself):
 
 ```text
 I want you to install SkillNote on my machine and wire it into this Claude Code session.
-SkillNote is a skill registry I'm running at http://localhost:8082.
+SkillNote is a self-hosted skill registry. I want it running locally at http://localhost:8082.
 
 Do the full install yourself. Don't ask me to run commands.
 
-1. Check if SkillNote is already installed:
-   - Look for ~/.claude/plugins/skillnote/
-   - If it exists, skip to step 3.
+1. Check if the SkillNote backend is already running:
+   - Try: curl -sf http://localhost:8082/health
+   - If it responds, skip to step 2.
+   - If not, clone the repo and start the backend yourself:
+       git clone https://github.com/luna-prompts/skillnote.git ~/skillnote
+       cd ~/skillnote && ./install.sh
+     ./install.sh builds containers, runs migrations, seeds, and waits for health.
+     Don't move on until http://localhost:8082/health responds with ok.
 
-2. If not installed, run the official installer:
+2. Check if the Claude Code plugin is already installed:
+   - Look for ~/.claude/plugins/skillnote/
+   - If it exists, skip to step 4.
+
+3. If not installed, run the official plugin installer:
    - curl -sf http://localhost:8082/setup | bash
 
-3. Reload the shell so the plugin is picked up:
+4. Reload the shell so the plugin is picked up:
    - source ~/.zshrc (or ~/.bashrc)
 
-4. Confirm it works:
+5. Confirm it works:
    - Run: claude --version
    - List the installed plugin: ls ~/.claude/plugins/skillnote/
    - Tell me what collection picker options you see when running `claude`.
@@ -134,6 +145,8 @@ curl -sf http://localhost:8082/setup/agent-prompt?agent=openclaw
 ```
 
 Or open the web UI's Connect page, OpenClaw tab, "Copy prompt" tab and click copy. Paste the result into a fresh OpenClaw session. The agent verifies the backend is reachable, installs via clawhub, configures the URL, runs the first sync, and reports back.
+
+> Don't have a SkillNote backend running yet? You don't need to `git clone` first. The `skillnote` skill ships an `install-backend.sh` that auto-clones the repo and runs `./install.sh` whenever the configured host is `localhost:8082` and unreachable. So a fresh-machine install is genuinely one paste: clawhub installs the skill, the skill installs Docker compose + backend, then syncs.
 
 #### Method 2: clawhub
 
