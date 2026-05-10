@@ -324,14 +324,17 @@ echo -e "  ${DIM}One unified installer; pick your agent with --agent.${NC}"
 echo ""
 
 # ── Tailored Stage-2 hint ────────────────────────────────────────
-# Detect whether `clawhub` is on PATH so we lead with the canonical
-# install for OpenClaw users who have it (and still show the curl
-# fallback for everyone else).
+# Each curl-installer command is paired with the clone+install commands
+# above it so the printed output is self-contained when copied/shared
+# (e.g., a user sends the install.sh tail to a teammate). For the user
+# who literally just ran install.sh on this machine the clone+install
+# is redundant — they can ignore those two lines and run only the
+# trailing connect command.
 HAS_CLAWHUB=0
 command -v clawhub >/dev/null 2>&1 && HAS_CLAWHUB=1
 
-# Pick OpenClaw command lines based on whether the host's URL is the
-# default (clawhub install works as-is) or a custom URL (need env var).
+# Default vs custom host: clawhub doesn't accept a host argument, so a
+# non-default URL is set via env var read by the skill on first sync.
 if [ "$API_URL" = "http://localhost:8082" ]; then
     OPENCLAW_CLAWHUB_CMD="clawhub install skillnote"
 else
@@ -339,19 +342,32 @@ else
 fi
 OPENCLAW_CURL_CMD="curl -sf ${API_URL}/setup/agent | bash -s -- --agent openclaw"
 CLAUDE_CURL_CMD="curl -sf ${API_URL}/setup/agent | bash -s -- --agent claude-code"
+CLONE_INSTALL="git clone https://github.com/luna-prompts/skillnote.git && cd skillnote && ./install.sh"
 
-# Helper: print OpenClaw install lines. Prefers clawhub if available,
-# falls back to curl. Always shows curl as the no-prereq alternative.
+_print_clone_install() {
+    echo -e "  ${DIM}# fresh machine? run these two first to bring up the backend:${NC}"
+    echo -e "  ${ORANGE}\$${NC} ${CLONE_INSTALL}"
+    echo ""
+}
+
+_print_claude_install() {
+    _print_clone_install
+    echo -e "  ${ORANGE}\$${NC} ${CLAUDE_CURL_CMD}"
+}
+
+# OpenClaw: lead with the canonical clawhub install (auto-bootstraps the
+# backend if unreachable, so it's truly one command on a fresh machine).
+# Curl form is the no-clawhub fallback and gets paired with clone+install.
 _print_openclaw_install() {
     if [ "$HAS_CLAWHUB" -eq 1 ]; then
-        echo -e "  ${ORANGE}\$${NC} ${OPENCLAW_CLAWHUB_CMD}     ${DIM}# canonical (clawhub detected)${NC}"
-        echo -e "  ${DIM}or${NC}"
-        echo -e "  ${ORANGE}\$${NC} ${OPENCLAW_CURL_CMD}"
+        echo -e "  ${ORANGE}\$${NC} ${OPENCLAW_CLAWHUB_CMD}     ${DIM}# canonical (clawhub detected; auto-installs backend if needed)${NC}"
     else
-        echo -e "  ${ORANGE}\$${NC} ${OPENCLAW_CLAWHUB_CMD}     ${DIM}# canonical (install clawhub via 'npm i -g clawhub')${NC}"
-        echo -e "  ${DIM}or${NC}"
-        echo -e "  ${ORANGE}\$${NC} ${OPENCLAW_CURL_CMD}     ${DIM}# no clawhub needed${NC}"
+        echo -e "  ${ORANGE}\$${NC} ${OPENCLAW_CLAWHUB_CMD}     ${DIM}# canonical (install clawhub: 'npm i -g clawhub')${NC}"
     fi
+    echo ""
+    echo -e "  ${DIM}or without clawhub:${NC}"
+    _print_clone_install
+    echo -e "  ${ORANGE}\$${NC} ${OPENCLAW_CURL_CMD}"
 }
 
 if [ "$HAS_CLAUDE" -eq 1 ] && [ "$HAS_OPENCLAW" -eq 1 ]; then
@@ -359,7 +375,7 @@ if [ "$HAS_CLAUDE" -eq 1 ] && [ "$HAS_OPENCLAW" -eq 1 ]; then
     echo -e "  ${DIM}Detected:${NC}  ${GREEN}Claude Code${NC}  +  ${GREEN}OpenClaw${NC}"
     echo ""
     echo -e "  ${ORANGE}${BOLD}Claude Code${NC}"
-    echo -e "  ${ORANGE}\$${NC} ${CLAUDE_CURL_CMD}"
+    _print_claude_install
     echo ""
     echo -e "  ${ORANGE}${BOLD}OpenClaw${NC}"
     _print_openclaw_install
@@ -367,7 +383,7 @@ elif [ "$HAS_CLAUDE" -eq 1 ]; then
     echo -e "  ${DIM}Detected:${NC}  ${GREEN}Claude Code${NC}  ${DIM}(~/.claude exists)${NC}"
     echo ""
     echo -e "  ${ORANGE}${BOLD}Connect Claude Code${NC}"
-    echo -e "  ${ORANGE}\$${NC} ${CLAUDE_CURL_CMD}"
+    _print_claude_install
     echo ""
     echo -e "  ${DIM}Also using OpenClaw? Run:${NC} ${ORANGE}${OPENCLAW_CLAWHUB_CMD}${NC}"
 elif [ "$HAS_OPENCLAW" -eq 1 ]; then
@@ -376,7 +392,8 @@ elif [ "$HAS_OPENCLAW" -eq 1 ]; then
     echo -e "  ${ORANGE}${BOLD}Connect OpenClaw${NC}"
     _print_openclaw_install
     echo ""
-    echo -e "  ${DIM}Also using Claude Code? Run:${NC} ${ORANGE}${CLAUDE_CURL_CMD}${NC}"
+    echo -e "  ${DIM}Also using Claude Code? Run:${NC}"
+    _print_claude_install
 else
     # No agent detected — the user is probably setting up the registry
     # on a server they don't run agents on. Show both, no preference.
@@ -384,7 +401,7 @@ else
     echo -e "  ${DIM}If you'll use SkillNote from another machine, run one of these there:${NC}"
     echo ""
     echo -e "  ${ORANGE}${BOLD}Claude Code${NC}"
-    echo -e "  ${ORANGE}\$${NC} ${CLAUDE_CURL_CMD}"
+    _print_claude_install
     echo ""
     echo -e "  ${ORANGE}${BOLD}OpenClaw${NC}"
     _print_openclaw_install
