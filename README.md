@@ -164,32 +164,34 @@ clawhub doesn't accept a host argument; the env var is how you tell the skill wh
 <details>
 <summary>Other ways to install</summary>
 
-Three alternatives to `clawhub install skillnote`. Each is for a specific situation; pick the one that matches yours.
+**1. Copy this prompt into a fresh OpenClaw session.** The agent installs everything itself, no terminal work for you.
 
-**1. Paste-prompt install (when you'd rather not use the terminal)**
+```text
+Set up SkillNote for me end-to-end. The skill is published on clawhub and I want you to handle everything: backend, plugin, configuration, verification.
 
-Open the Connect page in your SkillNote web UI → OpenClaw tab → "Copy prompt", then paste the result into a fresh OpenClaw session. The agent runs the install itself (calls `clawhub install skillnote` under the hood, configures the URL, runs the first sync). You still need clawhub available; this just means you don't have to type the command.
+Please do the full install yourself, don't ask me to run commands.
 
-**2. Curl installer (when you don't want clawhub at all)**
+1. Install the SkillNote skill from clawhub:
+   command -v clawhub || npm i -g clawhub
+   clawhub install skillnote
+   (If clawhub install fails because the registry isn't reachable, fall back to: curl -sf http://localhost:8082/setup/agent | bash -s -- --agent openclaw)
 
-Pulls the bundle directly from your SkillNote backend, no clawhub required. Use this for CI, scripted installs, or if you'd rather not pull from a third-party registry.
+2. Read the skill's SKILL.md and follow its setup steps in order:
+   cat ~/.openclaw/skills/skillnote/SKILL.md
+   The SKILL.md walks you through: resolve the host, install the backend if needed (it tells you to clone https://github.com/luna-prompts/skillnote.git and run ./install.sh; do that yourself, takes ~3 min), persist the resolved host to config.json, run the first sync, graft ~/.openclaw/workspace/AGENTS.md with the <skillnote v1> block.
+
+3. Verify and report back: backend reachable, skills synced count, daemon running (~/.openclaw/skills/skillnote/.log-watcher.pid alive), AGENTS.md graft present. Tell me how many skills synced and the URL you connected to.
+
+Don't ask for confirmation between steps. Just run the commands and report when done.
+```
+
+For a host other than `http://localhost:8082`, swap the URL in step 1's fallback before pasting. Or use the Connect page in your SkillNote web UI (OpenClaw tab → "Copy prompt") for a version with your host pre-baked.
+
+**2. Manual install (no clawhub, fully scripted).** Use for CI, scripted installs, or if you'd rather not pull from a third-party registry.
 
 ```bash
 git clone https://github.com/luna-prompts/skillnote.git && cd skillnote && ./install.sh
 curl -sf http://localhost:8082/setup/agent | bash -s -- --agent openclaw
-```
-
-**3. Manual install (when you want full step-by-step control: air-gapped, custom layout, debugging)**
-
-Backend must already be reachable.
-
-```bash
-mkdir -p ~/.openclaw/skills ~/.openclaw/skillnote
-curl -sf http://localhost:8082/v1/openclaw-bundle.zip -o /tmp/skillnote.zip
-unzip -qo /tmp/skillnote.zip -d ~/.openclaw/skills/ && rm /tmp/skillnote.zip
-echo '{"host":"http://localhost:8082","user_id":"openclaw-main"}' > ~/.openclaw/skillnote/config.json
-chmod +x ~/.openclaw/skills/skillnote/sync.sh
-# Restart OpenClaw to pick up the skill.
 ```
 
 </details>
