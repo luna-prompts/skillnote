@@ -51,7 +51,7 @@ Claude Code skills are powerful but managing them breaks down fast.
 
 **Private skills have nowhere to go.** Internal deploy procedures, proprietary API patterns, compliance workflows, infra runbooks. These encode institutional knowledge that can't live in a public repo or third-party registry. They need to stay on your infrastructure.
 
-**SkillNote** is a self-hosted registry that solves all of this. A private registry for skills that can't leave your network. Collections to load only the skills you need for each session. A plugin that syncs the selected collection to Claude Code at launch and keeps it updated throughout the session. And a feedback loop where agents rate skills after use.
+**SkillNote** is a self-hosted registry that solves all of this. A private registry for skills that can't leave your network. Collections to scope what loads when context is tight (relevant for Claude Code and other harnesses that pre-load skill metadata). Native plugins that sync to your agent at launch and keep skills hot-reloading throughout the session. And a feedback loop where agents rate skills after use.
 
 Your skills. Your servers. Your rules.
 
@@ -193,9 +193,9 @@ For air-gapped environments or when you want full control over each step.
 
 ## Why Collections
 
-Claude Code has a hard context budget for skills. With 15+ skills loaded, descriptions get truncated and [skills stop triggering reliably](https://github.com/anthropics/claude-code/issues/13343). You can't use all your skills at once. You have to pick.
+Some agents load every available skill's description into context at session start. Claude Code is the canonical case: when you launch `claude`, every active skill's name and description gets baked into the system prompt so the model can decide what to invoke. Past [~8,000 characters](https://docs.anthropic.com/en/docs/claude-code/skills) (roughly 15 skills), descriptions silently truncate, and [skills stop triggering reliably](https://github.com/anthropics/claude-code/issues/13343). You can't keep everything active at once. You have to pre-select.
 
-Collections solve this for Claude Code. Instead of cluttering the context with 30+ skills (half truncated), you scope 10 to 15 relevant skills per project. The picker appears when you run `claude`:
+Collections are SkillNote's answer. Instead of cluttering the context with 30+ skills (half truncated), you scope 10 to 15 relevant skills per project. The picker appears when you run `claude`:
 
 <p align="center">
   <img src="docs/terminal/picker4.png" width="680" alt="SkillNote collection picker in Claude Code terminal" />
@@ -209,15 +209,15 @@ Your frontend project gets React hooks and testing patterns. Your API project ge
 
 **How it works:**
 
-- Create collections in the web UI (e.g. `Conventions`, `DevOps`, `Frontend`)
+- Create collections in the web UI (e.g., `Conventions`, `DevOps`, `Frontend`)
 - Each collection holds up to **15 skills** (the sweet spot before truncation kicks in)
 - When you run `claude`, the plugin shows a picker. Select a collection for this project
 - Saved in `.skillnote.json` so it persists across sessions
 - If your folder name matches a collection, the plugin recommends it automatically
 
-> OpenClaw doesn't use collection-scoped sync today (it pulls the full catalog and the agent picks per-task). Collection-aware sync for OpenClaw is on the roadmap. See `docs/superpowers/plans/2026-05-02-skill-picking-at-scale.md`.
+> Long-running agents that pick skills at runtime instead of preloading them (OpenClaw, for example) sync the full catalog and choose per task. The 15-skill ceiling doesn't apply, and collection scoping is a no-op for them. The trade-off shifts from "fit everything in the system prompt" to "search the right thing per task", which is its own scaling problem; see [`docs/superpowers/plans/2026-05-02-skill-picking-at-scale.md`](docs/superpowers/plans/2026-05-02-skill-picking-at-scale.md) for how that picking-at-scale work is tracked.
 
-> Read more about Claude Code's skill description budget in the [official documentation](https://docs.anthropic.com/en/docs/claude-code/skills).
+> Background on Claude Code's skill description budget is in the [official documentation](https://docs.anthropic.com/en/docs/claude-code/skills).
 
 ---
 
