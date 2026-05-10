@@ -162,22 +162,26 @@ clawhub doesn't accept a host argument; the env var is how you tell the skill wh
 </details>
 
 <details>
-<summary>Without clawhub on your PATH</summary>
+<summary>Other ways to install</summary>
 
-**Paste this prompt into a fresh OpenClaw session.** The agent installs the skill via clawhub itself, configures the URL, and syncs. Open the Connect page in the web UI → OpenClaw tab → "Copy prompt" to get a version with your host pre-baked. Or fetch from the CLI:
+Three alternatives to `clawhub install skillnote`. Each is for a specific situation; pick the one that matches yours.
 
-```bash
-curl -sf http://localhost:8082/setup/agent-prompt?agent=openclaw
-```
+**1. Paste-prompt install — when you'd rather not use the terminal.**
 
-**Or run the curl installer directly** (no clawhub needed at all):
+Open the Connect page in your SkillNote web UI → OpenClaw tab → "Copy prompt", then paste the result into a fresh OpenClaw session. The agent runs the install itself (calls `clawhub install skillnote` under the hood, configures the URL, runs the first sync). You still need clawhub available; this just means you don't have to type the command.
+
+**2. Curl installer — when you don't want clawhub at all.**
+
+Pulls the bundle directly from your SkillNote backend, no clawhub required. Use this for CI, scripted installs, or if you'd rather not pull from a third-party registry.
 
 ```bash
 git clone https://github.com/luna-prompts/skillnote.git && cd skillnote && ./install.sh
 curl -sf http://localhost:8082/setup/agent | bash -s -- --agent openclaw
 ```
 
-**Or install fully manually** (air-gapped):
+**3. Manual install — when you want full step-by-step control (air-gapped, custom layout, debugging).**
+
+Backend must already be reachable.
 
 ```bash
 mkdir -p ~/.openclaw/skills ~/.openclaw/skillnote
