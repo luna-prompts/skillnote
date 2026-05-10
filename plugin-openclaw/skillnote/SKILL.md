@@ -7,6 +7,7 @@ metadata:
   openclaw:
     always: true
     emoji: "📚"
+    os: ["macos", "linux"]
     primaryEnv: SKILLNOTE_BASE_URL
     requires:
       env: [SKILLNOTE_BASE_URL]
