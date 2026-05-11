@@ -41,10 +41,12 @@ describe('v0.4 → v0.5 config migration (implicit)', () => {
     expect(c.telemetry).toBe(defaultConfig.telemetry)
   })
 
-  it('preserves a v0.4 LAN host (custom IP) through the migration', async () => {
-    await writeFile(file, JSON.stringify({ host: 'http://192.168.1.50:8082' }))
+  it('preserves a v0.4 custom host through the migration', async () => {
+    // Uses 192.0.2.50 (RFC 5737 TEST-NET-1) — reserved for documentation,
+    // never routable on real networks.
+    await writeFile(file, JSON.stringify({ host: 'http://192.0.2.50:8082' }))
     const c = await loadConfig(file)
-    expect(c.host).toBe('http://192.168.1.50:8082')
+    expect(c.host).toBe('http://192.0.2.50:8082')
     // And the new fields fall through to defaults.
     expect(c.webPort).toBe(3000)
     expect(c.apiPort).toBe(8082)
