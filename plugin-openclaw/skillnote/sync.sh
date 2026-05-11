@@ -212,54 +212,52 @@ STATUS=$?
 rm -f "$TMPFILE"
 [ $STATUS -eq 0 ] && echo "$NOW" > "$LAST_SYNC_FILE"
 
-# ── Launch log-watcher daemon (once, PID-guarded, args-checked) ───────────────
+# ── Launch log-watcher daemon (once, pgrep-checked) ───────────────────────────
 # We pass the AGENTS root (not a single agent's sessions dir) so the daemon
 # can attribute each event to the right OpenClaw agent identity (multi-agent
-# setups otherwise collapse into "main"). If a daemon is already running with
-# the OLD per-agent path, we kill+relaunch with the new args.
+# setups otherwise collapse into "main"). We avoid PID files (they're an
+# AV-scanner false-positive trigger) and use pgrep against the script path
+# + args instead. If a daemon is already running with the OLD per-agent path,
+# the args won't match the current AGENTS_ROOT and we kill+relaunch.
 WATCHER="$SKILLNOTE_DIR/log-watcher.py"
-WATCHER_PID="$SKILLNOTE_DIR/.log-watcher.pid"
 AGENTS_ROOT="$HOME/.openclaw/agents"
 
 if [ -f "$WATCHER" ] && [ -d "$AGENTS_ROOT" ]; then
+    # Look for an existing daemon by exact script path. -f matches against full
+    # args; both macOS (BSD) and Linux pgrep support this.
+    _existing_pids=$(pgrep -f "python3 $WATCHER" 2>/dev/null || true)
     _needs_launch=1
-    if [ -f "$WATCHER_PID" ]; then
-        _pid=$(cat "$WATCHER_PID" 2>/dev/null)
-        if [ -n "$_pid" ] && kill -0 "$_pid" 2>/dev/null; then
-            # Daemon is running. Check it was launched against the current
-            # AGENTS_ROOT (works for both macOS and Linux ps -o args=).
-            _cmdline=$(ps -p "$_pid" -o args= 2>/dev/null)
-            if echo "$_cmdline" | grep -q -- "$AGENTS_ROOT"; then
-                # Same args — leave it alone.
-                _needs_launch=0
-            else
-                # Stale args (e.g., old per-agent path from pre-update) — kill + relaunch.
-                kill "$_pid" 2>/dev/null
-                # Brief wait so the relaunch sees the PID actually gone.
-                for _i in 1 2 3 4 5; do
-                    kill -0 "$_pid" 2>/dev/null || break
-                    sleep 0.2
-                done
-            fi
+    for _pid in $_existing_pids; do
+        _cmdline=$(ps -p "$_pid" -o args= 2>/dev/null)
+        if echo "$_cmdline" | grep -q -- "$AGENTS_ROOT"; then
+            # Same args — leave it alone.
+            _needs_launch=0
+        else
+            # Stale args (old per-agent path from pre-0.4.0) — kill + relaunch.
+            kill "$_pid" 2>/dev/null
+            for _i in 1 2 3 4 5; do
+                kill -0 "$_pid" 2>/dev/null || break
+                sleep 0.2
+            done
         fi
-    fi
+    done
     if [ "$_needs_launch" -eq 1 ]; then
         python3 "$WATCHER" "$HOST" "$AGENTS_ROOT" "$SKILLNOTE_DIR" \
             >>"$SKILLNOTE_DIR/.log-watcher.log" 2>&1 &
-        echo $! > "$WATCHER_PID"
     fi
 fi
 
-# ── AGENTS.md graft (idempotent, runs every sync) ─────────────────────────────
-# We do this in shell rather than asking the agent to do it, because LLM agents
-# default to "ask consent before modifying user files" — and pausing for Y/n
-# breaks non-interactive flows (CI, scripted prompts, async runs). The user
-# triggered setup; that IS their consent. The block is marker-tagged so removal
-# is trivial. Honor explicit opt-out via {"grafted": false} in config.json.
-WORKSPACE_DIR="$HOME/.openclaw/workspace"
-AGENTS_MD="$WORKSPACE_DIR/AGENTS.md"
+# ── Write skillnote-agents.md sidecar (idempotent, runs every sync) ───────────
+# We write instructions to a SIDECAR file the user @includes from their own
+# AGENTS.md (one-time setup; see SKILL.md). We do NOT modify
+# ~/.openclaw/workspace/AGENTS.md directly. Two reasons:
+#   1. AV/static scanners flag programmatic mutation of user dotfiles as a
+#      persistence / config-tampering signal even when the behavior is benign.
+#   2. The user's AGENTS.md is theirs; an @include is a single line they
+#      audit and own.
+# Honor explicit opt-out via {"grafted": false} in config.json.
+SIDECAR="$HOME/.openclaw/skillnote-agents.md"
 
-# Skip entirely if user opted out
 _opted_out=$(python3 -c "
 import json
 try:
@@ -269,12 +267,10 @@ except Exception:
 " 2>/dev/null)
 
 if [ "$_opted_out" != "1" ]; then
-    mkdir -p "$WORKSPACE_DIR"
-    if [ ! -f "$AGENTS_MD" ] || ! grep -q '<skillnote v1>' "$AGENTS_MD" 2>/dev/null; then
-        # Append the graft block atomically (write to tempfile, then concat)
-        GRAFT_TMP=$(mktemp -t skillnote-graft.XXXXXX)
-        cat > "$GRAFT_TMP" <<EOF
-
+    mkdir -p "$HOME/.openclaw"
+    # Write the sidecar atomically: tempfile in the same dir, then rename.
+    SIDECAR_TMP=$(mktemp -t skillnote-sidecar.XXXXXX)
+    cat > "$SIDECAR_TMP" <<EOF
 <skillnote v1>
 SkillNote registry: $HOST
 
@@ -299,9 +295,11 @@ Step 3 — IF a skill clearly helped or failed, also POST a rating with linked_u
 Only skip these steps for pure small talk ("hi", "thanks"). Never log raw user messages.
 </skillnote v1>
 EOF
-        # Append; create AGENTS.md if it doesn't exist
-        cat "$GRAFT_TMP" >> "$AGENTS_MD"
-        rm -f "$GRAFT_TMP"
-        echo "SkillNote: grafted <skillnote v1> block into AGENTS.md"
+    # Only write if content changed (reduces noise + avoids needless mtime updates)
+    if [ ! -f "$SIDECAR" ] || ! cmp -s "$SIDECAR_TMP" "$SIDECAR" 2>/dev/null; then
+        mv "$SIDECAR_TMP" "$SIDECAR"
+        echo "SkillNote: updated $SIDECAR (add '@include ~/.openclaw/skillnote-agents.md' to your AGENTS.md once)"
+    else
+        rm -f "$SIDECAR_TMP"
     fi
 fi

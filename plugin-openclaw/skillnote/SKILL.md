@@ -1,7 +1,7 @@
 ---
 name: skillnote
 description: "Self-hosted skill registry for OpenClaw. Stores procedures your team writes (name, description, body), syncs them to disk before each task, and collects which-helped/which-failed signals from the agent so the registry improves over time."
-version: "0.4.0"
+version: "0.4.1"
 homepage: "https://github.com/luna-prompts/skillnote"
 metadata:
   openclaw:
@@ -26,7 +26,7 @@ You are running with the SkillNote skill loaded. Your responsibilities, in order
 2. **Pick + apply** the right skills before responding to user tasks
 3. **Log + rate** what worked after the task is done
 
-Setup is **silent on every load after the first**. If `~/.openclaw/skills/skillnote/config.json` already has a working `host` and the AGENTS.md graft is in place, skip Steps 1-5 and stay quiet.
+Setup is **silent on every load after the first**. If `~/.openclaw/skills/skillnote/config.json` already has a working `host` and `~/.openclaw/skillnote-agents.md` exists, skip Steps 1-5 and stay quiet.
 
 ---
 
@@ -45,7 +45,7 @@ This `SKILL.md` lives at `~/.openclaw/skills/skillnote/` and arrived via one of:
    If `$SKILLNOTE_BASE_URL` isn't set, default to `http://localhost:8082`.
 3. **Manual ZIP** — download `<host>/v1/openclaw-bundle.zip` and unzip into `~/.openclaw/skills/`. Air-gapped only.
 
-If you find critical files missing from `~/.openclaw/skills/skillnote/` (e.g., `sync.sh`, `log-watcher.py`, `install-backend.sh`), use method 2 to reinstall — don't try to reconstruct missing files.
+If you find critical files missing from `~/.openclaw/skills/skillnote/` (e.g., `sync.sh`, `log-watcher.py`), use method 2 to reinstall — don't try to reconstruct missing files.
 
 ---
 
@@ -70,56 +70,30 @@ Reachability check: `GET <host>/v1/skills?limit=1`.
 
 Tell the user what's about to happen, then ask once:
 
-> **SkillNote backend isn't running.** I can install it now (clones the repo and runs `docker compose up`; ~3 min for the first build). Proceed? [Y/n]
-
-**On `n`** — output the manual instructions and STOP setup:
-
-> No problem. When you're ready, run one of:
+> **SkillNote backend isn't running.** Run these two commands in another terminal (takes ~3 min for the first Docker build):
+>
 > ```bash
-> bash ~/.openclaw/skills/skillnote/install-backend.sh
-> # or
-> git clone https://github.com/luna-prompts/skillnote.git && cd skillnote && ./install.sh
+> git clone https://github.com/luna-prompts/skillnote.git
+> cd skillnote && ./install.sh
 > ```
-> Then restart this session.
+>
+> When `./install.sh` prints `✓ Stage 1 complete — SkillNote is running`, come back and tell me "done" and I'll continue setup.
 
-**On `Y`** — run this single command and **stream stdout/stderr back to the user** so they see Docker build progress (don't background it; don't silence it; let them see what's happening for the ~3 min build):
+Wait for the user to confirm. Do not run the commands yourself — `git clone` + `docker compose` from inside an `always: true` skill is the exact pattern static scanners flag as a "dropper." The user runs it themselves so the install action is theirs and auditable.
 
-```bash
-bash ~/.openclaw/skills/skillnote/install-backend.sh
-```
+After the user confirms the backend is up:
+- Re-run the reachability check from Step 1 (`GET <host>/v1/skills?limit=1`).
+- If reachable → continue to Step 3.
+- If still unreachable after 3 retries spaced 5s apart: ask the user to share the last 20 lines of `./install.sh` output; surface their error verbatim; stop.
 
-The script handles: prereq check (`git`, `curl`, `docker`-or-`podman`), clone to `$HOME/skillnote`, `./install.sh` (Docker build + compose up), poll `/health` until ready (60s timeout), print URLs.
-
-### If install-backend.sh is missing
-Curl the canonical version from GitHub raw:
-```bash
-curl -sfL https://raw.githubusercontent.com/luna-prompts/skillnote/master/plugin-openclaw/skillnote/install-backend.sh | bash
-```
-If even that fails (no network), instruct the user to clone the repo manually:
-```bash
-git clone https://github.com/luna-prompts/skillnote.git && cd skillnote && ./install.sh
-```
-
-### Customizing
-Set env vars BEFORE invoking install-backend.sh:
+### Customizing the install
+If the user needs non-default ports or paths, tell them to set the env vars before `./install.sh`:
 
 | Need | Command |
 | ---- | ------- |
-| Different install dir | `SKILLNOTE_INSTALL_DIR=$HOME/work/skillnote bash ~/.openclaw/skills/skillnote/install-backend.sh` |
-| Port `8082` busy | `SKILLNOTE_API_PORT=8182 bash ~/.openclaw/skills/skillnote/install-backend.sh` |
-| Port `3000` busy | `SKILLNOTE_WEB_PORT=3001 bash ~/.openclaw/skills/skillnote/install-backend.sh` |
-
-### If install-backend.sh exits non-zero
-Capture the last 20 lines of output and show them verbatim. Common patterns:
-
-| Error pattern | What to suggest |
-|---|---|
-| `address already in use` / `port is already allocated` | Set a different port via env var (see customization) |
-| `Cannot connect to the Docker daemon` | Ask the user to start Docker Desktop / Podman machine |
-| `MISSING: <tool>` | The script names the missing tool + install link; relay it to the user |
-| anything else | Show the captured output verbatim; don't try to recover blindly |
-
-After success, the URLs appear (`http://localhost:3000`, `http://localhost:8082`). Continue to Step 3.
+| Different install dir | `cd ~/work && git clone https://github.com/luna-prompts/skillnote.git && cd skillnote && ./install.sh` |
+| Port `8082` busy | `SKILLNOTE_API_PORT=8182 ./install.sh` |
+| Port `3000` busy | `SKILLNOTE_WEB_PORT=3001 ./install.sh` |
 
 ## Step 3 — Persist the resolved host (idempotent)
 
@@ -143,27 +117,37 @@ chmod +x ~/.openclaw/skills/skillnote/sync.sh && ~/.openclaw/skills/skillnote/sy
 Tell the user "Syncing skills from the registry…" — sync usually takes a couple seconds. The script:
 - Fetches the catalog (`GET <host>/v1/skills`)
 - Writes one `~/.openclaw/skills/sn-<slug>/SKILL.md` per skill (with rating-footer pre-baked)
-- Spawns the `log-watcher.py` daemon (PID-guarded; won't double-launch)
-- Appends the `<skillnote v1>` block to `~/.openclaw/workspace/AGENTS.md` (idempotent; honors `{"grafted": false}` in config)
+- Spawns the `log-watcher.py` daemon (single-instance, pgrep-guarded)
+- Writes `~/.openclaw/skillnote-agents.md` (the sidecar instructions file; idempotent; honors `{"grafted": false}` in config)
 
 If sync.sh exits non-zero: capture the output, surface to the user, stop. Don't retry blindly.
 
-## Step 5 — Verify the AGENTS.md graft (sync.sh did it; you just check)
+## Step 5 — Wire the sidecar into AGENTS.md (one-time, user-confirmed)
+
+sync.sh writes the `<skillnote v1>` instructions to a sidecar file: `~/.openclaw/skillnote-agents.md`. For OpenClaw to actually pick up those instructions, the user's own `~/.openclaw/workspace/AGENTS.md` needs to `@include` it. This is a **one-line edit, one time, with user confirmation** — not something sync.sh does itself.
+
+First, check if it's already wired:
 
 ```bash
-grep -c '<skillnote v1>' ~/.openclaw/workspace/AGENTS.md
+grep -c 'skillnote-agents.md' ~/.openclaw/workspace/AGENTS.md 2>/dev/null
 ```
 
 | Result | Action |
 |---|---|
-| `1` | ✅ done; continue to Step 6 |
-| `0` | Re-run sync.sh once. If still `0`, surface to user (likely a permissions issue on `~/.openclaw/workspace/`). **Do NOT graft manually with your file-edit tool — that's sync.sh's job.** |
-| `≥2` | Duplicate marker — tell the user; do not auto-fix |
+| `1` | ✅ already wired; continue to Step 6 |
+| `0` or file missing | Ask the user (once, explicit consent): "I need to add one line to your `~/.openclaw/workspace/AGENTS.md` so OpenClaw picks up the SkillNote instructions: `@include ~/.openclaw/skillnote-agents.md`. OK to add it?" |
+| `≥2` | Already wired multiple times — tell the user; don't auto-fix |
 
-### Honoring an opt-out
-If the user told you in this session *"don't touch AGENTS.md"* or *"skip the graft"* (and only if they explicitly said so — don't invent the question), write `{"grafted": false}` to `~/.openclaw/skills/skillnote/config.json` BEFORE running sync.sh in Step 4. sync.sh checks that flag and skips the graft.
+**On user `Y`** — append the line:
+```bash
+mkdir -p ~/.openclaw/workspace
+echo '@include ~/.openclaw/skillnote-agents.md' >> ~/.openclaw/workspace/AGENTS.md
+```
 
-The block sync.sh appends is the source of truth — don't paraphrase or modify it. If you need to inspect it, read `~/.openclaw/skills/skillnote/sync.sh`.
+**On user `n`** — write `{"grafted": false}` to `~/.openclaw/skills/skillnote/config.json` so sync.sh stops regenerating the sidecar, and tell them:
+> No problem. SkillNote will sync skills but won't inject instructions into your agent. Re-run `~/.openclaw/skills/skillnote/sync.sh` and add the `@include` line later if you change your mind.
+
+The sidecar content is sync.sh's source of truth — don't paraphrase or copy it inline. If you need to inspect it, read `~/.openclaw/skillnote-agents.md`.
 
 ## Step 6 — Done
 
@@ -176,7 +160,7 @@ Say once on first setup; never again unless re-installing:
 
 (Replace N with `ls ~/.openclaw/skills/ | grep -c "^sn-"`.)
 
-On every subsequent session: **complete silence**. Just check the marker is in AGENTS.md; if not, sync.sh re-grafts on next run.
+On every subsequent session: **complete silence**. Just check that `~/.openclaw/skillnote-agents.md` exists and AGENTS.md still has the `@include` line; if not, surface to the user (don't auto-fix the @include — it requires their consent).
 
 ---
 
@@ -318,15 +302,20 @@ When the user says "remove skillnote" or "uninstall skillnote":
 
 1. **Stop the daemon:**
    ```bash
-   PID=$(cat ~/.openclaw/skills/skillnote/.log-watcher.pid 2>/dev/null) && kill "$PID" 2>/dev/null
+   pkill -f "python3 .*log-watcher\.py" 2>/dev/null
    ```
-2. **Remove the AGENTS.md graft** (the `<skillnote v1>...</skillnote v1>` block) from `~/.openclaw/workspace/AGENTS.md`.
-3. **Remove the skill files:**
+2. **Ask the user to remove the `@include` line** from their `~/.openclaw/workspace/AGENTS.md`:
+   > Open `~/.openclaw/workspace/AGENTS.md` and delete the line `@include ~/.openclaw/skillnote-agents.md`. (I won't auto-edit your AGENTS.md.)
+3. **Remove the sidecar:**
+   ```bash
+   rm -f ~/.openclaw/skillnote-agents.md
+   ```
+4. **Remove the skill files:**
    - If `clawhub` is on PATH: `clawhub uninstall skillnote`
    - Otherwise: `rm -rf ~/.openclaw/skills/skillnote`
-4. **Optional** (frees disk; loses synced skills): `rm -rf ~/.openclaw/skills/sn-*`
-5. **Confirm to the user:**
-   > SkillNote removed. AGENTS.md restored, daemon stopped, skill files deleted.
+5. **Optional** (frees disk; loses synced skills): `rm -rf ~/.openclaw/skills/sn-*`
+6. **Confirm to the user:**
+   > SkillNote removed. Daemon stopped, sidecar deleted, skill files removed. One thing left: delete the `@include` line from your AGENTS.md.
 
 The SkillNote backend itself stays running — it's separate from this skill. To stop it too: `cd <skillnote-repo> && docker compose down`.
 
@@ -341,4 +330,5 @@ The SkillNote backend itself stays running — it's separate from this skill. To
 - **Don't comment more than once per skill per day** (self-enforced — backend doesn't check).
 - **Don't mention SkillNote on every reply.** Only when relevant or when the user asks about activity.
 - **Don't mutate `config.json` after setup.** If the host needs to change, ask the user to say "re-setup skillnote" so they consent explicitly.
-- **Don't graft AGENTS.md yourself.** sync.sh handles it. If you find the marker missing, re-run sync.sh — don't use your file-edit tool.
+- **Don't auto-edit AGENTS.md.** sync.sh writes the sidecar `~/.openclaw/skillnote-agents.md`; adding the `@include` line to AGENTS.md is a one-time user-consented edit (Step 5). On every subsequent session: don't re-graft, don't re-ask. If the line was deleted by the user, leave it alone — that's their signal.
+- **Don't auto-install the backend.** If `localhost:8082` is unreachable, give the user the two commands (`git clone ... && cd skillnote && ./install.sh`) and wait for them to run it. Do not chain commands or fetch installer scripts from the network.

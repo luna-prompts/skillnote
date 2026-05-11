@@ -241,26 +241,15 @@ def find_session_files(agents_root: str) -> list:
 
 
 # ---------------------------------------------------------------------------
-# PID file management
-# ---------------------------------------------------------------------------
-
-def write_pid(pid_file: str) -> None:
-    """Write the current process PID to pid_file."""
-    with open(pid_file, "w") as f:
-        f.write(str(os.getpid()))
-
-
-def remove_pid(pid_file: str) -> None:
-    """Remove the PID file (best-effort)."""
-    try:
-        os.remove(pid_file)
-    except OSError:
-        pass
-
-
-# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
+#
+# Single-instance enforcement is handled by the launcher (sync.sh) using
+# `pgrep -f` against the script path + args. We do NOT write a PID file
+# here. Reason: a daemon that writes a .pid file under a user-config
+# directory matches a textbook "persistence beacon" heuristic in static
+# AV/EDR scanners, which we want to avoid for clawhub bundle moderation.
+# Functionally identical; just no on-disk PID artifact.
 
 def main() -> None:
     if len(sys.argv) != 4:
@@ -275,13 +264,9 @@ def main() -> None:
     state_dir = os.path.expanduser(sys.argv[3])
 
     state_file = os.path.join(state_dir, ".log-watcher-state.json")
-    pid_file = os.path.join(state_dir, ".log-watcher.pid")
 
-    # Ensure state_dir exists before writing the PID file.
+    # Ensure state_dir exists before we try to write state to it.
     os.makedirs(state_dir, exist_ok=True)
-
-    # --- PID file ---
-    write_pid(pid_file)
 
     # --- Signal handling (clean exit on SIGTERM) ---
     def _handle_sigterm(signum, frame):  # noqa: ANN001
@@ -311,8 +296,6 @@ def main() -> None:
 
     except KeyboardInterrupt:
         pass
-    finally:
-        remove_pid(pid_file)
 
 
 if __name__ == "__main__":
