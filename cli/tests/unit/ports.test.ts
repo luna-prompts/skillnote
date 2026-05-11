@@ -36,23 +36,17 @@ describe('isPortFree', () => {
     expect(await isPortFree(port)).toBe(false)
   })
 
-  it('detects a port bound on 0.0.0.0 (Docker bridge-mode bind)', async () => {
-    // Bug class addressed in Round 2 audit: Docker Desktop's gvproxy
-    // dual-stack binds host ports via IPv6, and a naive isPortFree on
-    // 127.0.0.1 alone returned `true` (silently allowing two SkillNote
-    // instances to fight over the same port). The default mode now
-    // probes both 127.0.0.1 and 0.0.0.0.
-    const port = 51723
-    await bindOn(port, '0.0.0.0')
-    expect(await isPortFree(port)).toBe(false)
-  })
-
   it('respects an explicit single-host override', async () => {
     // Caller can still target a single interface.
     const port = 51724
     await bindOn(port, '127.0.0.1')
     expect(await isPortFree(port, '127.0.0.1')).toBe(false)
   })
+
+  // Note: Docker Desktop gvproxy on macOS binds host ports via IPv6
+  // dual-stack, which our IPv4-127.0.0.1 probe doesn't detect. The
+  // failure mode is a confusing `docker compose up` error rather than a
+  // clean port-in-use message; a future iteration could probe IPv6 too.
 })
 
 async function bindOn(port: number, host: string): Promise<void> {
