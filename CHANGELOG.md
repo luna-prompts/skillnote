@@ -3,6 +3,50 @@
 All notable changes to SkillNote will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.5.0] - 2026-05-11
+
+### CLI rewrite — Phase 1 lifecycle commands
+The `skillnote` CLI has been rewritten from a thin file-push tool into a full lifecycle CLI that wraps Docker. `npx skillnote start` now pulls the published images, brings up the web + api + Postgres stack, waits for healthchecks, and opens the web UI on first run — no `git clone`, no `./install.sh`, no compose file to manage.
+
+### Added
+- **`skillnote start`** — pulls images (skippable with `--no-pull`), runs `docker compose up`, polls health endpoints, and opens the browser on first run. Honors `--web-port` / `--api-port` overrides, refuses to start if a port is busy with a copy-paste fix, and acquires a lockfile so two `start`s can't race.
+- **`skillnote stop`** — `docker compose down`. Data volumes preserved by default; `--remove-volumes` for a destructive teardown.
+- **`skillnote restart`** — stop + start in one command. Picks up changes to `~/.skillnote/config.json` and port-override flags.
+- **`skillnote status`** — service-by-service health table (web, api, postgres) with URLs and uptime. `--json` for scripts.
+- **`skillnote logs [service]`** — tail logs from one service or all. `-f` to follow, `-t <n>` for tail length (default 100).
+- **`skillnote open`** — open the web UI in the default browser. `--app` for chromeless app-mode (Chrome/Edge), `--print` to just emit the URL.
+- **Default action** — running `npx skillnote` with no subcommand is an alias for `skillnote start`.
+- **First-run banner** with welcome copy + version. Subsequent runs show a compact banner with an inline npm-update notification when a newer CLI is available.
+- **`~/.skillnote/config.json`** schema (managed by the CLI) — `host`, `webPort`, `apiPort`, `browserMode`, `updateCheck`, `telemetry`. Schema-validated via Zod; bad files fail loudly instead of silently resetting.
+- **`~/.skillnote/state.json`** — tracks `seenWelcome`, `lastStart`, `totalStarts`, `firstStart`, `cliSessionToken`, `pendingUpdate`. Used to suppress the welcome banner after first run and to gate the auto-open-browser behavior to first run only.
+- **`~/.skillnote/start.lock`** — pid-locked file that prevents concurrent `start` invocations from racing on the same compose project. Stale locks are detected and rejected with a clear remediation message.
+
+### Phase 2B — agent connect
+- **`skillnote connect <agent>`** — runs the canonical `/setup/agent` install script against the local API for `claude-code` or `openclaw`. Detects when the API is unreachable and prints a clear remediation.
+- **`skillnote disconnect <agent>`** — removes the agent's installed bundle (OpenClaw fully scripted; Claude Code prints a guided manual checklist because the install touches `~/.zshrc` and the marketplace registry).
+- **`skillnote reconnect <agent>`** — disconnect followed by connect; useful after a SkillNote upgrade.
+
+### Phase 3 — Web ↔ CLI bridge
+- **Backend `/v1/cli/jobs` endpoints** — POST to create, GET `/pending` to long-poll, POST `/{id}/claim`, `/log`, `/done`. In-memory, request-scoped, 30-minute TTL. See `backend/app/api/cli.py`.
+- **`skillnote bridge`** — CLI long-poll loop that claims pending jobs, executes them locally (connect/disconnect/reconnect/open), and streams stdout/stderr back to the API as log lines.
+- **Web UI `[Run via CLI]` buttons** on the integrations page — let users dispatch agent install from the browser; live job status appears in an inline log panel. Falls back to the existing curl/clawhub instructions if no CLI is attached.
+
+### Phase 4 — PWA support
+- **`src/app/manifest.ts`** — Next.js metadata-file convention serving `/manifest.webmanifest` so the web UI is installable as a Chrome/Safari PWA with a dock icon and standalone window.
+- **`PWAInstallPrompt` component** — surfaces the install prompt once; dismissal persists to localStorage.
+
+### Changed
+- **CLI is now a Docker wrapper, not a file-push tool.** Previously you ran `./install.sh` (in the cloned repo) to get the backend up, then used the CLI to push SKILL.md files into your agent's config dir. Now the CLI does both halves: it manages the registry's lifecycle and (in Phase 2B) will manage the agent integrations.
+- **`npx` is the recommended install path.** `npm i -g skillnote` still works for users who want a pinned binary, but the published surface is designed for `npx skillnote start` to be the canonical entry point.
+- **CLI is published as ESM** and requires **Node 20+** (was Node 18+ for v0.4). Docker `compose` v2 is required; the legacy Python `docker-compose` binary is detected and rejected with an install link.
+
+### Removed
+- Nothing. The v0.4 file-push commands (`login`, `list`, `add`, `update`, `check`, `remove`, `doctor`) are all still present and continue to work. They will be renamed and reshaped under Phase 2B (`add` → `connect`, `remove` → `disconnect`, plus a new `reconnect`); old names will stay as deprecated aliases for at least one minor release after the rename.
+
+### Migration
+- See [`MIGRATION-v0.5.md`](MIGRATION-v0.5.md) for the v0.4 → v0.5 upgrade path. Existing skills database and agent integrations are preserved; the Postgres volume is shared with the `./install.sh` stack so an in-place upgrade is a no-op for data.
+- Rollback: `npm i -g skillnote@0.4` reinstalls the previous published CLI.
+
 ## [0.4.1] - 2026-05-11
 
 ### OpenClaw skill bundle — scan-mitigation refactor

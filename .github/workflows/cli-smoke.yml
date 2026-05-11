@@ -1,0 +1,47 @@
+name: CLI Smoke
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'cli/**'
+  schedule:
+    - cron: '0 6 * * *'  # nightly 06:00 UTC
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: cli
+
+jobs:
+  smoke-real-docker:
+    name: Real Docker smoke (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: cli/package-lock.json
+      - name: Confirm Docker is available
+        run: docker version && docker compose version
+      - run: npm ci
+      - run: npm run build
+      - name: npm pack
+        run: npm pack
+      - name: Install from tarball into temp dir
+        run: |
+          mkdir -p /tmp/sn-smoke
+          cd /tmp/sn-smoke
+          npm init -y > /dev/null
+          npm install ${{ github.workspace }}/cli/skillnote-*.tgz
+      - name: Run skillnote --version
+        run: cd /tmp/sn-smoke && npx skillnote --version
+      - name: Run smoke tests
+        run: npm run test -- tests/smoke
+        timeout-minutes: 15

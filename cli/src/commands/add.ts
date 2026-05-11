@@ -1,16 +1,16 @@
 import fs from 'node:fs'
-import path from 'node:path'
 import os from 'node:os'
+import path from 'node:path'
+import { detectAgents, getAdapter } from '../agents/index.js'
 import { ApiClient, type SkillVersionItem } from '../api/client.js'
 import { defaultConfigDir, resolveAuth } from '../config/index.js'
 import { loadManifest, saveManifest } from '../manifest/index.js'
-import { detectAgents, getAdapter } from '../agents/index.js'
 import { computeSha256 } from '../util/checksum.js'
-import { extractZipSafe } from '../util/zip.js'
 import * as ui from '../util/ui.js'
+import { extractZipSafe } from '../util/zip.js'
 
 function pickLatestActive(versions: SkillVersionItem[]): SkillVersionItem | null {
-  return versions.find(v => v.status === 'active') ?? null
+  return versions.find((v) => v.status === 'active') ?? null
 }
 
 function copyDirSync(src: string, dest: string): void {
@@ -65,7 +65,7 @@ async function installSkill(
     return false
   }
 
-  spin.text = `Verifying checksum...`
+  spin.text = 'Verifying checksum...'
   const localChecksum = computeSha256(buffer)
   if (serverChecksum && localChecksum !== serverChecksum) {
     spin.stop()
@@ -75,8 +75,11 @@ async function installSkill(
     return false
   }
 
-  spin.text = `Extracting...`
-  const tmpDir = path.join(os.tmpdir(), `skillnote-${Date.now()}-${Math.random().toString(36).slice(2)}`)
+  spin.text = 'Extracting...'
+  const tmpDir = path.join(
+    os.tmpdir(),
+    `skillnote-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+  )
   try {
     extractZipSafe(buffer, tmpDir)
   } catch (err: any) {
@@ -116,7 +119,7 @@ export async function addCommand(
 ): Promise<void> {
   const auth = resolveAuth(defaultConfigDir())
   if (!auth) {
-    ui.fail('Not logged in. Run ' + ui.bold('skillnote login') + ' first.')
+    ui.fail(`Not logged in. Run ${ui.bold('skillnote login')} first.`)
     process.exit(1)
   }
 
@@ -124,7 +127,7 @@ export async function addCommand(
   const client = new ApiClient(auth.host)
 
   let agents = options.agent
-    ? [getAdapter(options.agent, projectDir)].filter(Boolean) as ReturnType<typeof detectAgents>
+    ? ([getAdapter(options.agent, projectDir)].filter(Boolean) as ReturnType<typeof detectAgents>)
     : detectAgents(projectDir)
 
   if (agents.length === 0) {
@@ -133,7 +136,7 @@ export async function addCommand(
     agents = [new UniversalAdapter(projectDir)]
   }
 
-  ui.info(`Target agents: ${agents.map(a => a.displayName).join(', ')}`)
+  ui.info(`Target agents: ${agents.map((a) => a.displayName).join(', ')}`)
 
   let slugs: string[]
   if (options.all) {
@@ -141,7 +144,7 @@ export async function addCommand(
     spin.start()
     const skills = await client.listSkills()
     spin.stop()
-    slugs = skills.map(s => s.slug)
+    slugs = skills.map((s) => s.slug)
   } else if (skill) {
     slugs = [skill]
   } else {

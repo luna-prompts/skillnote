@@ -1,0 +1,13 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`prettyError > snapshot: full error layout 1`] = `
+"  ✗  Docker is not running
+
+     SkillNote needs Docker to run locally.
+
+     macOS:   open -a Docker
+     Linux:   sudo systemctl start docker
+
+     docs: https://docs.docker.com/get-docker/
+"
+`;

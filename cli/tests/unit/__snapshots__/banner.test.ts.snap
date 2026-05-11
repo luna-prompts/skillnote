@@ -1,0 +1,14 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`compactBanner > renders with update hint when one provided 1`] = `"  SkillNote ▸ v0.5.0  update available: v0.5.2"`;
+
+exports[`compactBanner > renders without update hint when none provided 1`] = `"  SkillNote ▸ v0.5.0"`;
+
+exports[`welcomeBanner > renders the expected first-run welcome card 1`] = `
+"  ┌────────────────────────────────────────────────────────────┐
+  │                                                            │
+  │  SkillNote ▸  the skill registry for AI agents             │
+  │  v0.5.0 · github.com/luna-prompts/skillnote                │
+  │                                                            │
+  └────────────────────────────────────────────────────────────┘"
+`;

@@ -1,6 +1,6 @@
 import fs from 'node:fs'
-import { loadManifest, saveManifest } from '../manifest/index.js'
 import { getAdapter } from '../agents/index.js'
+import { loadManifest, saveManifest } from '../manifest/index.js'
 import * as ui from '../util/ui.js'
 
 export async function removeCommand(skill: string): Promise<void> {

@@ -1,0 +1,91 @@
+name: CLI Release
+
+on:
+  push:
+    tags:
+      - 'cli-v*'
+
+defaults:
+  run:
+    working-directory: cli
+
+permissions:
+  contents: write
+  id-token: write  # for npm provenance
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: 'https://registry.npmjs.org'
+          cache: npm
+          cache-dependency-path: cli/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run test
+      - run: npm run build
+      - name: Verify version matches tag
+        id: version
+        run: |
+          TAG_VERSION="${GITHUB_REF#refs/tags/cli-v}"
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "Tag version $TAG_VERSION does not match package version $PKG_VERSION"
+            exit 1
+          fi
+          # Pre-release versions (containing -alpha/-beta/-rc) ship under
+          # `next` so `npx skillnote` keeps resolving to the stable `latest`.
+          if echo "$TAG_VERSION" | grep -E '\-(alpha|beta|rc)' > /dev/null; then
+            echo "dist_tag=next" >> "$GITHUB_OUTPUT"
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "dist_tag=latest" >> "$GITHUB_OUTPUT"
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "version=$TAG_VERSION" >> "$GITHUB_OUTPUT"
+      - name: Verify packed tarball contents
+        run: |
+          npm pack --dry-run --json > /tmp/pack.json
+          # Hard-fail if any *.env, *.pem, *.key, or .npmrc files leak into the tarball.
+          if node -e "
+            const p = require('/tmp/pack.json')[0].files.map(f => f.path)
+            const bad = p.filter(f => /\\.(env|pem|key)$|^\\.npmrc$/.test(f))
+            if (bad.length) { console.error('Refusing to publish — sensitive files in tarball:'); bad.forEach(f => console.error('  ' + f)); process.exit(1) }
+            console.log('Tarball has', p.length, 'files; none look sensitive.')
+          "; then echo "tarball OK"; else exit 1; fi
+      - name: Publish to npm with provenance
+        run: npm publish --provenance --access public --tag ${{ steps.version.outputs.dist_tag }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Verify Docker images exist on GHCR
+        # Polls GHCR for the matching image manifests. The docker-images.yml
+        # workflow runs in parallel on the same tag — give it up to 15 min
+        # to land. Soft-fails (warning only) so a successful npm publish
+        # isn't undone if image publishing is briefly slow.
+        continue-on-error: true
+        run: |
+          V="${{ steps.version.outputs.version }}"
+          for image in api web; do
+            for attempt in $(seq 1 30); do
+              if docker manifest inspect "ghcr.io/luna-prompts/skillnote-${image}:${V}" > /dev/null 2>&1; then
+                echo "✓ ghcr.io/luna-prompts/skillnote-${image}:${V} is present"
+                break
+              fi
+              if [ "$attempt" -eq 30 ]; then
+                echo "⚠️  ghcr.io/luna-prompts/skillnote-${image}:${V} not found after 30 polls — check docker-images.yml"
+              else
+                sleep 30
+              fi
+            done
+          done
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: CLI ${{ github.ref_name }}
+          generate_release_notes: true
+          prerelease: ${{ steps.version.outputs.prerelease == 'true' }}
