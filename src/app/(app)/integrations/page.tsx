@@ -5,10 +5,13 @@ import {
   Copy, Check, RefreshCw, Target, BarChart3, Zap, Wrench, Bell,
   FolderOpen, Shield, Layers, Terminal, ExternalLink,
   FileText, Activity, Star, BookOpen, Download, Radio,
-  Package, MessageSquare,
+  Package, MessageSquare, Play,
 } from 'lucide-react'
+import { toast } from 'sonner'
 import { TopBar } from '@/components/layout/topbar'
 import { getApiBaseUrl } from '@/lib/api/client'
+import { Button } from '@/components/ui/button'
+import { dispatchJob, useJobPolling, type JobAgent, type JobStatus } from '@/lib/cli-jobs'
 import { cn } from '@/lib/utils'
 
 async function copyText(text: string): Promise<boolean> {
@@ -317,6 +320,130 @@ chmod +x ~/.openclaw/skills/skillnote/sync.sh
 }
 
 
+// ─── [Run via CLI] button + live log panel ────────────────────────────────
+//
+// Sits next to the curl install commands and offers a one-click alternative:
+// dispatch a job to the local `skillnote bridge` long-poller, then stream
+// progress back. The button is additive — the existing copy/paste install
+// flow is untouched.
+
+const STATUS_GLYPH: Record<JobStatus, string> = {
+  pending: '⟳',
+  running: '▶',
+  succeeded: '✓',
+  failed: '✗',
+  cancelled: '✗',
+}
+
+const STATUS_LABEL: Record<JobStatus, string> = {
+  pending: 'Waiting for CLI…',
+  running: 'Running…',
+  succeeded: 'Succeeded',
+  failed: 'Failed',
+  cancelled: 'Cancelled',
+}
+
+const COLLAPSE_AFTER_SUCCESS_MS = 3000
+
+function RunViaCliPanel({ agent }: { agent: JobAgent }) {
+  const [jobId, setJobId] = useState<string | null>(null)
+  const [dispatching, setDispatching] = useState(false)
+  const [collapsed, setCollapsed] = useState(false)
+  const { job, isPolling } = useJobPolling(jobId)
+
+  // Collapse the panel 3s after a successful run, but keep the ✓ Connected
+  // pill visible so the user has confirmation it ran.
+  useEffect(() => {
+    if (job?.status !== 'succeeded') return
+    const t = setTimeout(() => setCollapsed(true), COLLAPSE_AFTER_SUCCESS_MS)
+    return () => clearTimeout(t)
+  }, [job?.status])
+
+  const handleClick = async () => {
+    setDispatching(true)
+    setCollapsed(false)
+    try {
+      const { id } = await dispatchJob({ type: 'connect', agent })
+      setJobId(id)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Failed to dispatch job'
+      toast.error(`Could not start CLI job: ${msg}`)
+    } finally {
+      setDispatching(false)
+    }
+  }
+
+  const status = job?.status ?? (jobId ? 'pending' : null)
+  const showPanel = jobId !== null && !collapsed
+  const showConnectedPill = job?.status === 'succeeded' && collapsed
+
+  // Last 20 lines, joined for the <pre>.
+  const tailLog = job?.log?.slice(-20) ?? []
+
+  return (
+    <div className="mt-3" data-testid="run-via-cli">
+      <div className="flex items-center gap-2 flex-wrap">
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={handleClick}
+          disabled={dispatching || isPolling}
+          data-testid="run-via-cli-button"
+        >
+          <Play className="h-3 w-3" />
+          {isPolling ? 'Running…' : dispatching ? 'Starting…' : 'Run via CLI'}
+        </Button>
+        <span className="text-[11px] text-muted-foreground/40">
+          Requires <code className="font-mono">skillnote bridge</code> running locally.
+        </span>
+        {showConnectedPill && (
+          <span
+            className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-500 text-[11px] font-medium"
+            data-testid="run-via-cli-connected"
+          >
+            <Check className="h-3 w-3" />
+            Connected
+          </span>
+        )}
+      </div>
+
+      {showPanel && status && (
+        <div
+          className="mt-3 rounded-lg border border-border/40 bg-zinc-950 dark:bg-zinc-950/80 overflow-hidden"
+          data-testid="run-via-cli-panel"
+        >
+          <div className="flex items-center justify-between px-3 py-1.5 border-b border-white/[0.06]">
+            <span className="text-[10px] font-mono text-white/30 uppercase tracking-wider">
+              cli · {agent}
+            </span>
+            <span
+              className={cn(
+                'inline-flex items-center gap-1.5 text-[11px] font-mono',
+                status === 'succeeded' && 'text-emerald-400',
+                status === 'failed' && 'text-red-400',
+                status === 'cancelled' && 'text-red-400',
+                status === 'running' && 'text-blue-400',
+                status === 'pending' && 'text-white/40',
+              )}
+              data-testid="run-via-cli-status"
+            >
+              <span className={cn(status === 'pending' && 'animate-pulse')}>{STATUS_GLYPH[status]}</span>
+              {STATUS_LABEL[status]}
+            </span>
+          </div>
+          <pre
+            className="px-3 py-2 text-[12px] font-mono text-zinc-300 leading-relaxed whitespace-pre-wrap break-words max-h-[200px] overflow-y-auto"
+            data-testid="run-via-cli-log"
+          >
+            {tailLog.length > 0 ? tailLog.join('\n') : <span className="text-white/30">Waiting for output…</span>}
+          </pre>
+        </div>
+      )}
+    </div>
+  )
+}
+
+
 export default function IntegrationsPage() {
   const [agent, setAgent] = useState<Agent>('claude-code')
   const [apiBase, setApiBase] = useState('http://localhost:8082')
@@ -384,9 +511,13 @@ export default function IntegrationsPage() {
                 <p className="text-[11px] text-muted-foreground/30 mt-2 pl-1">
                   Installs to <code className="font-mono">~/.claude/plugins/skillnote</code> · No sudo required · macOS + Linux
                 </p>
+                <RunViaCliPanel agent="claude-code" />
               </>
             ) : (
-              <OpenClawInstall apiBase={apiBase} />
+              <>
+                <OpenClawInstall apiBase={apiBase} />
+                <RunViaCliPanel agent="openclaw" />
+              </>
             )}
           </div>
 

@@ -4,6 +4,7 @@ import { usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { Sidebar } from '@/components/layout/sidebar'
 import { ConnectionBanner } from '@/components/layout/connection-banner'
+import { PWAInstallPrompt } from '@/components/PWAInstallPrompt'
 import { BookOpen, FolderOpen, Plug2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { SidebarContext } from '@/lib/sidebar-context'
@@ -39,6 +40,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <ConnectionBanner />
         {children}
       </div>
+
+      <PWAInstallPrompt />
 
       {/* Mobile bottom navigation bar */}
       <nav className="fixed bottom-0 left-0 right-0 z-30 bg-card border-t border-border/60 flex items-center justify-around lg:hidden" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>

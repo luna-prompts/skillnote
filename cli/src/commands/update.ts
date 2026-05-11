@@ -1,13 +1,13 @@
 import fs from 'node:fs'
-import path from 'node:path'
 import os from 'node:os'
+import path from 'node:path'
+import { detectAgents, getAdapter } from '../agents/index.js'
 import { ApiClient, type SkillVersionItem } from '../api/client.js'
 import { defaultConfigDir, resolveAuth } from '../config/index.js'
 import { loadManifest, saveManifest } from '../manifest/index.js'
-import { getAdapter, detectAgents } from '../agents/index.js'
 import { computeSha256 } from '../util/checksum.js'
-import { extractZipSafe } from '../util/zip.js'
 import * as ui from '../util/ui.js'
+import { extractZipSafe } from '../util/zip.js'
 
 function copyDirSync(src: string, dest: string): void {
   const entries = fs.readdirSync(src, { withFileTypes: true })
@@ -29,7 +29,7 @@ export async function updateCommand(
 ): Promise<void> {
   const auth = resolveAuth(defaultConfigDir())
   if (!auth) {
-    ui.fail('Not logged in. Run ' + ui.bold('skillnote login') + ' first.')
+    ui.fail(`Not logged in. Run ${ui.bold('skillnote login')} first.`)
     process.exit(1)
   }
 
@@ -42,7 +42,7 @@ export async function updateCommand(
     slugs = Object.keys(manifest.skills)
   } else if (skill) {
     if (!manifest.skills[skill]) {
-      ui.fail(`${skill} is not installed. Run ${ui.bold('skillnote add ' + skill)} first.`)
+      ui.fail(`${skill} is not installed. Run ${ui.bold(`skillnote add ${skill}`)} first.`)
       process.exit(1)
     }
     slugs = [skill]
@@ -75,7 +75,7 @@ export async function updateCommand(
       continue
     }
 
-    const latest = versions.find(v => v.status === 'active')
+    const latest = versions.find((v) => v.status === 'active')
     if (!latest || latest.version === entry.version) {
       spin.stop()
       ui.info(`${slug} is up to date (${entry.version})`)
@@ -106,7 +106,10 @@ export async function updateCommand(
     }
 
     spin.text = `Extracting ${slug}@${latest.version}...`
-    const tmpDir = path.join(os.tmpdir(), `skillnote-${Date.now()}-${Math.random().toString(36).slice(2)}`)
+    const tmpDir = path.join(
+      os.tmpdir(),
+      `skillnote-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    )
     try {
       extractZipSafe(buffer, tmpDir)
     } catch (err: any) {
@@ -117,7 +120,7 @@ export async function updateCommand(
     }
 
     const agents = entry.agents
-      .map(name => getAdapter(name, projectDir))
+      .map((name) => getAdapter(name, projectDir))
       .filter((a): a is NonNullable<typeof a> => a !== undefined)
 
     if (agents.length === 0) {
@@ -139,7 +142,7 @@ export async function updateCommand(
       version: latest.version,
       checksum: localChecksum,
       installedAt: new Date().toISOString(),
-      agents: agents.map(a => a.name),
+      agents: agents.map((a) => a.name),
     }
     saveManifest(projectDir, manifest)
 

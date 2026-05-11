@@ -46,7 +46,7 @@ export class ApiClient {
   ): Promise<{ buffer: Buffer; checksum: string }> {
     const res = await fetch(`${this.baseUrl}/v1/skills/${skill}/${version}/download`)
     if (!res.ok) {
-      const body = await res.json().catch(() => ({ error: { code: 'UNKNOWN', message: res.statusText } }))
+      const body = (await res.json().catch(() => ({ error: { code: 'UNKNOWN', message: res.statusText } }))) as { error?: { code?: string; message?: string } }
       throw new ApiError(res.status, body.error?.code ?? 'UNKNOWN', body.error?.message ?? res.statusText)
     }
     const checksum = res.headers.get('X-Checksum-Sha256') ?? ''
@@ -74,7 +74,7 @@ export class ApiClient {
   private async request<T>(path: string, init: RequestInit): Promise<T> {
     const res = await fetch(`${this.baseUrl}${path}`, init)
     if (!res.ok) {
-      const body = await res.json().catch(() => ({ error: { code: 'UNKNOWN', message: res.statusText } }))
+      const body = (await res.json().catch(() => ({ error: { code: 'UNKNOWN', message: res.statusText } }))) as { error?: { code?: string; message?: string } }
       throw new ApiError(res.status, body.error?.code ?? 'UNKNOWN', body.error?.message ?? res.statusText)
     }
     return res.json() as Promise<T>

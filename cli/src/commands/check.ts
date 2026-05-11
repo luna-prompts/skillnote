@@ -6,14 +6,14 @@ import * as ui from '../util/ui.js'
 export async function checkCommand(): Promise<void> {
   const auth = resolveAuth(defaultConfigDir())
   if (!auth) {
-    ui.fail('Not logged in. Run ' + ui.bold('skillnote login') + ' first.')
+    ui.fail(`Not logged in. Run ${ui.bold('skillnote login')} first.`)
     process.exit(1)
   }
 
   const manifest = loadManifest(process.cwd())
   const slugs = Object.keys(manifest.skills)
   if (slugs.length === 0) {
-    ui.info('No skills installed. Run ' + ui.bold('skillnote add <skill>') + ' to install one.')
+    ui.info(`No skills installed. Run ${ui.bold('skillnote add <skill>')} to install one.`)
     return
   }
 
@@ -28,7 +28,7 @@ export async function checkCommand(): Promise<void> {
     const installed = manifest.skills[slug]
     try {
       const versions = await client.listVersions(slug)
-      const latest = versions.find(v => v.status === 'active')
+      const latest = versions.find((v) => v.status === 'active')
       if (latest && latest.version !== installed.version) {
         rows.push([slug, `${installed.version} → ${latest.version}`, 'update available'])
         updatesAvailable++
@@ -45,6 +45,8 @@ export async function checkCommand(): Promise<void> {
 
   if (updatesAvailable > 0) {
     console.log()
-    ui.info(`${updatesAvailable} update(s) available. Run ${ui.bold('skillnote update --all')} to update.`)
+    ui.info(
+      `${updatesAvailable} update(s) available. Run ${ui.bold('skillnote update --all')} to update.`,
+    )
   }
 }

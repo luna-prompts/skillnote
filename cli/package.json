@@ -1,30 +1,75 @@
 {
   "name": "skillnote",
-  "version": "0.1.0",
-  "description": "CLI for the SkillNote skills registry",
+  "version": "0.5.0-alpha.0",
+  "description": "Self-hosted skill registry for AI coding agents",
+  "license": "MIT",
+  "homepage": "https://github.com/luna-prompts/skillnote",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/luna-prompts/skillnote.git",
+    "directory": "cli"
+  },
+  "bugs": "https://github.com/luna-prompts/skillnote/issues",
+  "keywords": [
+    "skills",
+    "ai",
+    "agents",
+    "claude",
+    "cursor",
+    "codex",
+    "openclaw",
+    "registry",
+    "mcp",
+    "self-hosted"
+  ],
   "type": "module",
   "bin": {
     "skillnote": "./dist/index.js"
   },
-  "files": ["dist"],
+  "files": [
+    "dist",
+    "assets",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
-    "build": "tsup",
+    "build": "tsup && node scripts/copy-assets.mjs",
     "dev": "tsup --watch",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:integration": "vitest run tests/integration",
+    "test:e2e": "vitest run tests/e2e",
+    "lint": "biome check src tests",
+    "lint:fix": "biome check --write src tests",
+    "format": "biome format --write src tests",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run lint && npm run typecheck && npm run test && npm run build"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "dependencies": {
-    "commander": "^12.0.0",
-    "chalk": "^5.3.0",
-    "ora": "^8.0.0"
+    "@clack/prompts": "^0.11.0",
+    "chalk": "^5.6.0",
+    "cli-table3": "^0.6.5",
+    "commander": "^12.1.0",
+    "dockerode": "^4.0.7",
+    "execa": "^9.6.0",
+    "fast-npm-meta": "^0.4.2",
+    "get-port": "^7.1.0",
+    "open": "^10.2.0",
+    "zod": "^3.25.0"
   },
   "devDependencies": {
-    "tsup": "^8.0.0",
-    "typescript": "^5.5.0",
-    "vitest": "^2.0.0",
-    "@types/node": "^20.0.0"
+    "@biomejs/biome": "^1.9.4",
+    "@types/dockerode": "^3.3.40",
+    "@types/node": "^22.10.0",
+    "@vitest/coverage-v8": "^2.1.0",
+    "strip-ansi": "^7.1.2",
+    "testcontainers": "^10.16.0",
+    "tsup": "^8.3.0",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
   }
 }
