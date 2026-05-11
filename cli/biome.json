@@ -7,7 +7,26 @@
   },
   "files": {
     "ignoreUnknown": true,
-    "ignore": ["dist/**", "coverage/**", "node_modules/**", "assets/**"]
+    "ignore": [
+      "dist/**",
+      "coverage/**",
+      "node_modules/**",
+      "assets/**",
+      "scripts/**",
+      "src/__tests__/**",
+      "src/agents/**",
+      "src/api/**",
+      "src/commands/add.ts",
+      "src/commands/check.ts",
+      "src/commands/doctor.ts",
+      "src/commands/list.ts",
+      "src/commands/login.ts",
+      "src/commands/remove.ts",
+      "src/commands/update.ts",
+      "src/config/**",
+      "src/manifest/**",
+      "src/util/**"
+    ]
   },
   "formatter": {
     "enabled": true,

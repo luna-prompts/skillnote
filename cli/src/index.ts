@@ -130,10 +130,7 @@ program
   .option('-y, --yes', 'Skip confirmation prompts')
   .action(addCommand)
 
-program
-  .command('check')
-  .description('Check installed skills for updates')
-  .action(checkCommand)
+program.command('check').description('Check installed skills for updates').action(checkCommand)
 
 program
   .command('update [skill]')
@@ -144,7 +141,10 @@ program
 
 program.command('remove <skill>').description('Remove an installed skill').action(removeCommand)
 
-program.command('doctor').description('Run diagnostics on your SkillNote setup').action(doctorCommand)
+program
+  .command('doctor')
+  .description('Run diagnostics on your SkillNote setup')
+  .action(doctorCommand)
 
 // Catch unknown subcommands explicitly. With `isDefault: true` on `start`,
 // commander otherwise forwards unknown args to the default as positional.
