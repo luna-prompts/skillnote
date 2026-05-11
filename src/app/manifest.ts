@@ -6,19 +6,35 @@ export default function manifest(): MetadataRoute.Manifest {
     short_name: 'SkillNote',
     description: 'Self-hosted skill registry for AI coding agents',
     start_url: '/',
+    scope: '/',
     display: 'standalone',
-    background_color: '#f7f7f8',
+    orientation: 'any',
+    background_color: '#ffffff',
     theme_color: '#0d9488',
-    // SVG icons are supported by Chrome, Edge, Safari (PWA install) and
-    // satisfy the "any" purpose. Maskable purpose requires a raster fallback;
-    // generate icon-512-maskable.png from the SVG once design lands.
+    categories: ['developer', 'productivity', 'utilities'],
     icons: [
+      // PNGs satisfy Chrome's install criteria (192 + 512 required).
       {
-        src: '/icon-192.svg',
+        src: '/icon-192.png',
         sizes: '192x192',
-        type: 'image/svg+xml',
+        type: 'image/png',
         purpose: 'any',
       },
+      {
+        src: '/icon-512.png',
+        sizes: '512x512',
+        type: 'image/png',
+        purpose: 'any',
+      },
+      // Maskable variant: Android adaptive icons crop to circle/squircle;
+      // visible art sits inside the inner 80% safe area.
+      {
+        src: '/icon-512-maskable.png',
+        sizes: '512x512',
+        type: 'image/png',
+        purpose: 'maskable',
+      },
+      // SVGs render crisply on high-density displays where supported.
       {
         src: '/icon-512.svg',
         sizes: '512x512',
