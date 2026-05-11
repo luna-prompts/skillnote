@@ -4,6 +4,11 @@ export default defineConfig({
   test: {
     globals: true,
     root: '.',
+    // The CLI has no CSS; disabling CSS processing prevents vitest from
+    // walking up to the repo root and trying to load the Next.js web
+    // app's postcss config (which depends on @tailwindcss/postcss — a
+    // module that lives in the root package, not in cli/).
+    css: false,
     include: ['tests/**/*.test.ts', 'src/**/*.test.ts'],
     exclude: [
       'node_modules',
