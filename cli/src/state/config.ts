@@ -1,22 +1,12 @@
-import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
+import { mkdir, readFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
+import writeFileAtomic from 'write-file-atomic'
 import { z } from 'zod'
 import { getPaths } from '../lib/system.js'
 
-// Same atomic-write pattern as state.ts — see comment there for rationale.
-// Per-call counter prevents collisions when multiple concurrent saves are
-// in flight within the same process.
-let _atomicCounter = 0
+// See state.ts for the rationale on write-file-atomic + graceful-fs.
 async function atomicWrite(path: string, content: string, mode: number): Promise<void> {
-  const seq = ++_atomicCounter
-  const tmp = `${path}.${process.pid}.${seq}.tmp`
-  await writeFile(tmp, content, { mode })
-  try {
-    await rename(tmp, path)
-  } catch (err) {
-    await unlink(tmp).catch(() => undefined)
-    throw err
-  }
+  await writeFileAtomic(path, content, { mode, fsync: true })
 }
 
 export const ConfigSchema = z.object({

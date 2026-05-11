@@ -36,17 +36,13 @@ describe('isPortFree', () => {
     expect(await isPortFree(port)).toBe(false)
   })
 
-  it('respects an explicit single-host override', async () => {
-    // Caller can still target a single interface.
-    const port = 51724
-    await bindOn(port, '127.0.0.1')
-    expect(await isPortFree(port, '127.0.0.1')).toBe(false)
+  it('detects a port bound on 0.0.0.0 wildcard', async () => {
+    // get-port probes every local interface, so wildcard binds are detected
+    // even though we don't explicitly probe 0.0.0.0 ourselves.
+    const port = 51725
+    await bindOn(port, '0.0.0.0')
+    expect(await isPortFree(port)).toBe(false)
   })
-
-  // Note: Docker Desktop gvproxy on macOS binds host ports via IPv6
-  // dual-stack, which our IPv4-127.0.0.1 probe doesn't detect. The
-  // failure mode is a confusing `docker compose up` error rather than a
-  // clean port-in-use message; a future iteration could probe IPv6 too.
 })
 
 async function bindOn(port: number, host: string): Promise<void> {

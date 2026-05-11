@@ -1,16 +1,22 @@
+import { dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vitest/config'
 
+const __dirname = dirname(fileURLToPath(import.meta.url))
+
 export default defineConfig({
-  // Top-level CSS config: pin an empty PostCSS pipeline so vite doesn't
-  // walk up to the repo root and try to load the Next.js web app's
-  // postcss.config.mjs (which requires @tailwindcss/postcss — a module
-  // that lives in the root package, not in cli/). The CLI has no CSS.
+  // Pin both `root` and `css.postcss` to isolate vitest from the parent
+  // Next.js project. Vite docs explicitly state that an inline `css.postcss`
+  // object short-circuits the upward search for postcss config sources, and
+  // a fixed `root` stops the upward search for vite config. Without both,
+  // vitest finds the repo-root postcss.config.mjs and fails to load
+  // @tailwindcss/postcss (a dep of the root package, not cli/).
+  root: __dirname,
   css: {
     postcss: { plugins: [] },
   },
   test: {
     globals: true,
-    root: '.',
     include: ['tests/**/*.test.ts', 'src/**/*.test.ts'],
     exclude: [
       'node_modules',
@@ -20,6 +26,9 @@ export default defineConfig({
       // src/__tests__/e2e.test.ts hits a live backend and only runs in CI's
       // smoke job — skip it from the default unit-test run.
       'src/__tests__/e2e.test.ts',
+      // src/__tests__/zip.test.ts shells out to the `zip` CLI which doesn't
+      // exist on stock Windows runners; v0.4 legacy test, Phase 2C cleanup.
+      'src/__tests__/zip.test.ts',
     ],
     coverage: {
       provider: 'v8',

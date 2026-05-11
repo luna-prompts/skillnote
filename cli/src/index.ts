@@ -1,3 +1,12 @@
+// Monkey-patch fs with graceful-fs's EPERM/EBUSY/EACCES retry-with-backoff
+// before any other fs call. This is what npm CLI itself does — it inherits
+// Windows resilience for fs.rename, fs.unlink, etc. (Anti-virus, Defender,
+// and Windows Search Indexer transiently lock files; graceful-fs retries
+// with exponential backoff up to ~60s.)
+import fs from 'node:fs'
+import gracefulFs from 'graceful-fs'
+gracefulFs.gracefulify(fs)
+
 import { Command } from 'commander'
 
 // Existing commands (file-push surface — kept intact for Phase 2 replacement).

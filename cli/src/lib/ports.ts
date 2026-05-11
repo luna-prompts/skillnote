@@ -1,38 +1,30 @@
-import { createServer } from 'node:net'
-
-/**
- * Try to bind a TCP port on the given host. Returns true if the bind
- * succeeded (port is free), false on any error (in use or denied).
- */
-function tryBind(port: number, host: string): Promise<boolean> {
-  return new Promise((resolve) => {
-    const server = createServer()
-    server.unref()
-    server.once('error', () => resolve(false))
-    server.listen({ port, host, exclusive: true }, () => {
-      server.close(() => resolve(true))
-    })
-  })
-}
+import getPort, { portNumbers } from 'get-port'
 
 /**
  * Check whether a TCP port is available for SkillNote to bind.
  *
- * Probes `127.0.0.1` by default. On Linux this catches everything
- * (IPv4/IPv6 share the namespace by default, so any wildcard listener
- * is detected). On macOS with Docker Desktop, IPv6-only gvproxy binds
- * can be missed (the IPv6 namespace is separate); the dev-time error
- * surfaces as a docker compose up failure rather than a clean port-in-use
- * message, which is acceptable for now.
+ * Uses `get-port` (the same package the npm CLI and Cloudflare/Vercel
+ * tooling rely on, ~17M weekly downloads). It probes every local network
+ * interface from `os.networkInterfaces()` plus the IPv4 wildcard, so it
+ * catches:
+ *   - 127.0.0.1-only listeners
+ *   - 0.0.0.0-bound listeners
+ *   - IPv6 wildcard / Docker Desktop gvproxy dual-stack binds
+ *   - listeners on any other configured interface (LAN IPs, etc.)
  *
- * History: Round 2 tried a dual-probe (127.0.0.1 + 0.0.0.0) to catch
- * the macOS gvproxy case, but the two probes self-conflict (overlapping
- * addresses) and 0.0.0.0 binds are denied in some Linux CI sandboxes.
- * Reverted to the simpler probe; the macOS edge case is a known
- * follow-up.
+ * Swallows `EADDRNOTAVAIL` / `EINVAL` (CI sandbox restrictions) so a
+ * locked-down runner doesn't false-positive as "in use". `EACCES` is
+ * still surfaced (privileged port detection).
  */
-export async function isPortFree(port: number, host = '127.0.0.1'): Promise<boolean> {
-  return tryBind(port, host)
+export async function isPortFree(port: number): Promise<boolean> {
+  // portNumbers(p, p) is a single-element range — get-port either returns
+  // exactly that port (free) or throws (in use). We catch + convert to bool.
+  try {
+    const got = await getPort({ port: portNumbers(port, port) })
+    return got === port
+  } catch {
+    return false
+  }
 }
 
 export interface PortCheckResult {
@@ -56,13 +48,19 @@ export async function checkPorts(
 /**
  * Find the first free port at or after `start`, capped at `end`.
  * Returns null if nothing free in range.
+ *
+ * Note: `get-port` falls back to an OS-assigned random port when every
+ * port in the requested range is busy. We reject anything outside [start,end]
+ * and treat that as "no free port in range".
  */
 export async function findFreePort(
   start: number,
   end: number = start + 100,
 ): Promise<number | null> {
-  for (let p = start; p <= end; p++) {
-    if (await isPortFree(p)) return p
+  try {
+    const got = await getPort({ port: portNumbers(start, end) })
+    return got >= start && got <= end ? got : null
+  } catch {
+    return null
   }
-  return null
 }

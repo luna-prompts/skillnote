@@ -26,28 +26,24 @@ describe('lockfile', () => {
     expect(await readLock(file)).toBeNull()
   })
 
-  it('throws LockHeldError when a live process holds the lock', async () => {
-    // Simulate a lock held by our own running PID (always alive).
-    await writeFile(
-      file,
-      JSON.stringify({
-        pid: process.pid,
-        startedAt: new Date().toISOString(),
-        version: '1.0.0',
-      }),
-    )
-    // Note: we pass our own PID is alive so this MUST throw — but to keep the
-    // test honest we use a different "live" PID: PID 1 (init/launchd, always alive).
-    await writeFile(
-      file,
-      JSON.stringify({
-        pid: 1,
-        startedAt: new Date().toISOString(),
-        version: '1.0.0',
-      }),
-    )
-    await expect(acquireLock('1.0.0', file)).rejects.toThrow(LockHeldError)
-  })
+  // Uses PID 1 (init/launchd) to simulate a "live" non-self process. Windows
+  // has no PID 1, so process.kill(1, 0) returns ESRCH and the test mode
+  // doesn't apply. Coverage on POSIX exercises the path; Windows users still
+  // get correct behavior — only the test stunt is platform-specific.
+  it.skipIf(process.platform === 'win32')(
+    'throws LockHeldError when a live process holds the lock',
+    async () => {
+      await writeFile(
+        file,
+        JSON.stringify({
+          pid: 1,
+          startedAt: new Date().toISOString(),
+          version: '1.0.0',
+        }),
+      )
+      await expect(acquireLock('1.0.0', file)).rejects.toThrow(LockHeldError)
+    },
+  )
 
   it('overrides a stale lock (PID dead)', async () => {
     // Pick a PID that is extremely unlikely to be alive — a max-int 32-bit value.

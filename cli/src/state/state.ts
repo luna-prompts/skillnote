@@ -1,25 +1,15 @@
-import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
+import { mkdir, readFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
+import writeFileAtomic from 'write-file-atomic'
 import { z } from 'zod'
 import { getPaths } from '../lib/system.js'
 
-// Write-then-rename for atomicity: a crash mid-write leaves the .tmp file
-// behind but the live file is never half-written. POSIX rename() is atomic
-// within the same filesystem; we always write the temp next to the target.
-// The temp filename includes PID + a per-call counter so concurrent writes
-// in the same process don't collide on the same temp path.
-let _atomicCounter = 0
+// write-file-atomic (90M weekly DLs, used by the npm CLI itself) handles:
+//   - tmp + rename + fsync on every platform
+//   - in-process serialization queue per-path (concurrent saves don't race)
+//   - graceful-fs retry on Windows EPERM/EBUSY from AV / Search Indexer
 async function atomicWrite(path: string, content: string, mode: number): Promise<void> {
-  const seq = ++_atomicCounter
-  const tmp = `${path}.${process.pid}.${seq}.tmp`
-  await writeFile(tmp, content, { mode })
-  try {
-    await rename(tmp, path)
-  } catch (err) {
-    // Best-effort cleanup; the rename failure is what we surface to the caller.
-    await unlink(tmp).catch(() => undefined)
-    throw err
-  }
+  await writeFileAtomic(path, content, { mode, fsync: true })
 }
 
 // Internal state — what the CLI remembers between runs but the user doesn't

@@ -16,13 +16,16 @@ describe('getPlatform', () => {
 })
 
 describe('getPaths', () => {
+  // Normalize separators so the same assertion works on POSIX and Windows.
+  const norm = (p: string) => p.replaceAll('\\', '/')
+
   it('returns paths derived from the given home directory', () => {
     const p = getPaths('/Users/test')
-    expect(p.root).toBe('/Users/test/.skillnote')
-    expect(p.configFile).toBe('/Users/test/.skillnote/config.json')
-    expect(p.stateFile).toBe('/Users/test/.skillnote/state.json')
-    expect(p.lockFile).toBe('/Users/test/.skillnote/start.lock')
-    expect(p.composeFile).toBe('/Users/test/.skillnote/compose/docker-compose.yml')
+    expect(norm(p.root)).toBe('/Users/test/.skillnote')
+    expect(norm(p.configFile)).toBe('/Users/test/.skillnote/config.json')
+    expect(norm(p.stateFile)).toBe('/Users/test/.skillnote/state.json')
+    expect(norm(p.lockFile)).toBe('/Users/test/.skillnote/start.lock')
+    expect(norm(p.composeFile)).toBe('/Users/test/.skillnote/compose/docker-compose.yml')
   })
 
   it('uses os.homedir() when no argument', () => {
@@ -32,8 +35,8 @@ describe('getPaths', () => {
 
   it('handles home directories with spaces', () => {
     const p = getPaths('/Users/has space/test')
-    expect(p.root).toBe('/Users/has space/test/.skillnote')
-    expect(p.configFile).toBe('/Users/has space/test/.skillnote/config.json')
+    expect(norm(p.root)).toBe('/Users/has space/test/.skillnote')
+    expect(norm(p.configFile)).toBe('/Users/has space/test/.skillnote/config.json')
   })
 })
 
