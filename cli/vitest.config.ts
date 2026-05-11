@@ -1,14 +1,16 @@
 import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
+  // Top-level CSS config: pin an empty PostCSS pipeline so vite doesn't
+  // walk up to the repo root and try to load the Next.js web app's
+  // postcss.config.mjs (which requires @tailwindcss/postcss — a module
+  // that lives in the root package, not in cli/). The CLI has no CSS.
+  css: {
+    postcss: { plugins: [] },
+  },
   test: {
     globals: true,
     root: '.',
-    // The CLI has no CSS; disabling CSS processing prevents vitest from
-    // walking up to the repo root and trying to load the Next.js web
-    // app's postcss config (which depends on @tailwindcss/postcss — a
-    // module that lives in the root package, not in cli/).
-    css: false,
     include: ['tests/**/*.test.ts', 'src/**/*.test.ts'],
     exclude: [
       'node_modules',
