@@ -1,7 +1,7 @@
 ---
 name: skillnote-doctor
 description: "A diagnostic tool for OpenClaw agents -- checks skill registry connectivity, AGENTS.md setup, config file validity, and installed skill health. Use when your setup seems broken, skills aren't loading, or you want to audit your agent's configuration."
-version: "1.0.0"
+version: "1.0.1"
 metadata: {"openclaw": {"emoji": "🩺", "triggers": ["diagnose", "check setup", "why isn't", "debug", "broken", "not working"]}}
 ---
 
