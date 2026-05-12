@@ -10,7 +10,7 @@ export default function manifest(): MetadataRoute.Manifest {
     display: 'standalone',
     orientation: 'any',
     background_color: '#ffffff',
-    theme_color: '#0d9488',
+    theme_color: '#10b981',
     categories: ['developer', 'productivity', 'utilities'],
     icons: [
       // PNGs satisfy Chrome's install criteria (192 + 512 required).

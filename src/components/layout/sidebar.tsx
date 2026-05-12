@@ -150,7 +150,7 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
           Help
         </a>
         <div className="flex items-center gap-1.5 px-2.5 pt-2" title={connStatus === 'online' ? 'Connected to backend' : connStatus === 'offline' ? 'Backend offline' : 'Running locally'}>
-          <div className={cn('w-1.5 h-1.5 rounded-full shrink-0', connStatus === 'online' ? 'bg-emerald-500' : connStatus === 'offline' ? 'bg-red-500' : 'bg-teal-500')} />
+          <div className={cn('w-1.5 h-1.5 rounded-full shrink-0', connStatus === 'online' ? 'bg-emerald-500' : connStatus === 'offline' ? 'bg-red-500' : 'bg-amber-500')} />
           <p className="text-[10px] text-[var(--muted-foreground)]/40">
             {connStatus === 'online' ? 'Connected' : connStatus === 'offline' ? 'Offline' : 'Admin'}
           </p>

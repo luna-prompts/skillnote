@@ -163,7 +163,7 @@ export const mockSkills: Skill[] = [
     revisions: [
       {
         id: 'r3', rev: 3, label: 'Added code examples and improved formatting', time: '2026-02-20T14:30:00Z',
-        author: 'Nova Vex', avatar_color: '#0d9488', latest: true,
+        author: 'Nova Vex', avatar_color: '#10b981', latest: true,
         diff: [
           { type: 'context', lineOld: 12, lineNew: 12, text: '## Custom Hooks' },
           { type: 'context', lineOld: 13, lineNew: 13, text: '' },
@@ -193,7 +193,7 @@ export const mockSkills: Skill[] = [
       },
       {
         id: 'r1', rev: 1, label: 'Initial version created', time: '2026-02-10T10:00:00Z',
-        author: 'Nova Vex', avatar_color: '#0d9488', latest: false,
+        author: 'Nova Vex', avatar_color: '#10b981', latest: false,
         diff: [],
       },
     ],

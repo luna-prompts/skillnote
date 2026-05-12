@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils'
 const CARD_ACCENTS = [
   { bg: 'bg-violet-500/10 dark:bg-violet-500/15', text: 'text-violet-600 dark:text-violet-400', border: 'border-violet-500/15', dot: 'bg-violet-400' },
   { bg: 'bg-sky-500/10 dark:bg-sky-500/15', text: 'text-sky-600 dark:text-sky-400', border: 'border-sky-500/15', dot: 'bg-sky-400' },
-  { bg: 'bg-teal-500/10 dark:bg-teal-500/15', text: 'text-teal-600 dark:text-teal-400', border: 'border-teal-500/15', dot: 'bg-teal-400' },
+  { bg: 'bg-emerald-500/10 dark:bg-emerald-500/15', text: 'text-emerald-600 dark:text-emerald-400', border: 'border-emerald-500/15', dot: 'bg-emerald-400' },
   { bg: 'bg-amber-500/10 dark:bg-amber-500/15', text: 'text-amber-600 dark:text-amber-400', border: 'border-amber-500/15', dot: 'bg-amber-400' },
   { bg: 'bg-rose-500/10 dark:bg-rose-500/15', text: 'text-rose-600 dark:text-rose-400', border: 'border-rose-500/15', dot: 'bg-rose-400' },
 ]
