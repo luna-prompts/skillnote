@@ -1,7 +1,7 @@
 # SkillNote — standalone docker-compose for self-hosting
 #
 # For users who want to run SkillNote with Docker directly (no Node / npx).
-# Pinned to v0.5.0; bump the image tags below to upgrade.
+# Pinned to v0.5.1; bump the image tags below to upgrade.
 #
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/luna-prompts/skillnote/master/deploy/docker-compose.yml -o docker-compose.yml
@@ -36,7 +36,7 @@ services:
     restart: unless-stopped
 
   api:
-    image: ghcr.io/luna-prompts/skillnote-api:0.5.0
+    image: ghcr.io/luna-prompts/skillnote-api:0.5.1
     environment:
       SKILLNOTE_DATABASE_URL: postgresql+psycopg://skillnote:skillnote@postgres:5432/skillnote
       SKILLNOTE_BUNDLE_STORAGE_DIR: /app/data/bundles
@@ -62,7 +62,7 @@ services:
     restart: unless-stopped
 
   web:
-    image: ghcr.io/luna-prompts/skillnote-web:0.5.0
+    image: ghcr.io/luna-prompts/skillnote-web:0.5.1
     ports:
       - "${SKILLNOTE_WEB_PORT:-3000}:3000"
     environment:
