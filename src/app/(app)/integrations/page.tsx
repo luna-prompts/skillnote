@@ -130,9 +130,9 @@ export default function IntegrationsPage() {
         ...prev,
         [pendingJob.agent]: { ...prev[pendingJob.agent], state: 'active' },
       }))
-      toast.success(`${labelOf(pendingJob.agent)} connected`)
-      // Jump to the Connected tab so the user sees their new connection.
-      setActiveTab('connected')
+      // No tab switch — the wire's green check inside the expanded row is
+      // the visual confirmation. Auto-navigating felt like the page yanked
+      // out from under the user.
       setPendingJob(null)
     } else if (job.status === 'failed' || job.status === 'cancelled') {
       toast.error(`Install failed. Try the manual command in Advanced.`)

@@ -380,3 +380,27 @@ body.skill-editing .content-wrapper {
   100% { opacity: 1; transform: translateY(0); }
 }
 
+/* Row expand — slightly more lift than canvas-in, used for the click-to-
+   expand transition on integration rows. Slightly slower for a tactile feel. */
+@keyframes row-expand-in {
+  0%   { opacity: 0; transform: translateY(-6px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+/* Check-pop — applied to the wire's center check when state flips to
+   active. Subtle bounce so the success moment is felt, not announced. */
+@keyframes check-pop {
+  0%   { opacity: 0; transform: scale(0.4); }
+  55%  { opacity: 1; transform: scale(1.18); }
+  85%  { transform: scale(0.96); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+/* Wire-reveal — the SkillNote↔Agent wiring diagram materializes when the
+   user clicks Connect. Fades in + scales up slightly so the moment of
+   "now we're connected" reads as an event, not a layout shift. */
+@keyframes wire-reveal {
+  0%   { opacity: 0; transform: translateY(6px) scale(0.98); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+

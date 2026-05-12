@@ -105,7 +105,10 @@ function CenterNode({ state }: { state: ConnectionState }) {
             base,
             size,
             'border-2 border-emerald-500 text-emerald-500',
-            'motion-safe:animate-[pulse-ring_3.4s_ease-in-out_infinite]',
+            // Pop in with a small bounce (360ms) then settle into the
+            // slow pulse-ring. The delay matches the pop duration so the
+            // two animations don't fight on initial mount.
+            'motion-safe:animate-[check-pop_360ms_cubic-bezier(0.34,1.56,0.64,1),pulse-ring_3.4s_ease-in-out_infinite_360ms]',
           )}
         >
           <Check className="h-4 w-4" strokeWidth={3} />

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { ChevronDown, ChevronRight } from 'lucide-react'
+import { ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ConnectionDiagram } from './connection-diagram'
 import { ActionPanel } from './action-panel'
@@ -37,7 +37,13 @@ export function AgentListRow(props: Props) {
   const isConnected = props.state === 'active' || props.state === 'idle'
 
   return (
-    <li className="rounded-xl border border-border bg-card overflow-hidden">
+    <li
+      className={cn(
+        'rounded-xl border border-border bg-card overflow-hidden',
+        'transition-shadow duration-200',
+        open && 'shadow-[0_4px_18px_rgba(0,0,0,0.06)] dark:shadow-[0_4px_18px_rgba(0,0,0,0.35)]',
+      )}
+    >
       {/* Summary row — always visible, clickable */}
       <button
         type="button"
@@ -70,17 +76,23 @@ export function AgentListRow(props: Props) {
 
         <div className="flex items-center gap-3 shrink-0">
           <StatusBadge state={props.state} lastCallAt={props.lastCallAt} />
-          {open ? (
-            <ChevronDown className="h-4 w-4 text-muted-foreground" />
-          ) : (
-            <ChevronRight className="h-4 w-4 text-muted-foreground" />
-          )}
+          <ChevronRight
+            className={cn(
+              'h-4 w-4 text-muted-foreground transition-transform duration-200',
+              open && 'rotate-90',
+            )}
+          />
         </div>
       </button>
 
       {/* Expandable detail panel — wire diagram + action panel */}
       {open && (
-        <div className="px-5 pt-5 pb-5 space-y-5 border-t border-border/40 bg-background">
+        <div
+          className={cn(
+            'px-5 pt-5 pb-5 space-y-5 border-t border-border/40 bg-background',
+            'motion-safe:animate-[row-expand-in_280ms_ease-out]',
+          )}
+        >
           {(props.description || (props.platforms && props.platforms.length > 0)) && (
             <div className="space-y-2 -mt-1">
               {props.description ? (
@@ -102,12 +114,22 @@ export function AgentListRow(props: Props) {
               ) : null}
             </div>
           )}
-          <ConnectionDiagram
-            state={props.state}
-            agentLabel={props.agentLabel}
-            agentSublabel={props.agentSublabel}
-            agentMark={props.agentMark}
-          />
+
+          {/* Wire diagram only appears once we're actually mid-connect or
+              already connected. In pending state we hide it — the
+              SkillNote↔Agent visual is the *reward* for clicking Connect,
+              not a static preview. */}
+          {props.state !== 'pending' && (
+            <div className="motion-safe:animate-[wire-reveal_420ms_ease-out]">
+              <ConnectionDiagram
+                state={props.state}
+                agentLabel={props.agentLabel}
+                agentSublabel={props.agentSublabel}
+                agentMark={props.agentMark}
+              />
+            </div>
+          )}
+
           <ActionPanel
             state={props.state}
             agentLabel={props.agentLabel}

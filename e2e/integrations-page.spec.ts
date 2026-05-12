@@ -92,7 +92,7 @@ test.describe('/integrations — Browse/Connected tabs', () => {
     await expect(page.getByRole('button', { name: /Browse integrations/ })).toBeVisible()
   })
 
-  test('clicking a row expands to reveal description + platforms + wire diagram', async ({ page }) => {
+  test('clicking a pending row expands to reveal description + platforms + Connect button (no wire yet)', async ({ page }) => {
     await mockSetup(page, [
       { agent: 'claude-code', state: 'pending', installed_at: null, last_active_at: null, calls_24h: 0, calls_7d: 0 },
       { agent: 'openclaw', state: 'pending', installed_at: null, last_active_at: null, calls_24h: 0, calls_7d: 0 },
