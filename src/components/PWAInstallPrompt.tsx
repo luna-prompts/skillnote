@@ -90,7 +90,7 @@ export function PWAInstallPrompt() {
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium text-foreground">Install SkillNote as an app</p>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            Launch from your dock or home screen with offline support.
+            Get a dock icon and chromeless window. Same data, no browser tab.
           </p>
           <div className="mt-3 flex items-center gap-2">
             <Button size="sm" onClick={handleInstall}>
