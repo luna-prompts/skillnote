@@ -1,11 +1,11 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { ExternalLink, Info } from 'lucide-react'
+import { ExternalLink } from 'lucide-react'
 import { toast } from 'sonner'
 import { TopBar } from '@/components/layout/topbar'
+import { InstallAppRow } from '@/components/InstallAppRow'
 import { fetchSettings, updateSettings } from '@/lib/api/settings'
-import { OpenClawSetupCard } from '@/components/settings/openclaw-setup-card'
 
 function Toggle({ checked, onChange, disabled }: { checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
   return (
@@ -67,8 +67,6 @@ export default function SettingsPage() {
   const update = useCallback(async (key: string, value: boolean) => {
     const strVal = value ? 'true' : 'false'
     const patch: Record<string, string> = { [key]: strVal }
-
-    // When disabling complete_skill, also disable outcome
     if (key === 'complete_skill_enabled' && !value) {
       patch['complete_skill_outcome_enabled'] = 'false'
     }
@@ -76,9 +74,8 @@ export default function SettingsPage() {
     setSettings(prev => ({ ...prev, ...patch }))
     try {
       await updateSettings(patch)
-      toast.success('Setting updated — connected agents will refresh automatically')
+      toast.success('Setting updated')
     } catch {
-      // Revert all changes
       const revert: Record<string, string> = {}
       for (const k of Object.keys(patch)) {
         revert[k] = patch[k] === 'true' ? 'false' : 'true'
@@ -106,73 +103,55 @@ export default function SettingsPage() {
         <div className="max-w-2xl mx-auto px-6 py-8">
           <h1 className="text-xl font-semibold text-foreground mb-8">Settings</h1>
 
-          {/* Skill Settings */}
-          {loaded && (
-            <section className="mb-10">
-              <h2 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-4">Skill Settings</h2>
+          <section className="mb-8">
+            <InstallAppRow />
+          </section>
 
-              {/* Info box */}
-              <div className="flex gap-3 p-3.5 rounded-lg bg-muted/50 border border-border mb-6">
-                <Info className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
-                <div className="space-y-2 text-[13px] text-muted-foreground">
-                  <p>
-                    Skill completion tracking creates a feedback loop between AI agents and your skill library. When enabled, agents can rate skills (1-5) after applying them, helping you:
+          {loaded && (
+            <section className="mb-10 space-y-4 border-t border-border/40 pt-6">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-[14px] font-medium text-foreground">Skill rating</p>
+                  <p className="text-[13px] text-muted-foreground mt-0.5">
+                    Let agents rate a skill 1–5 after they use it.
                   </p>
-                  <ul className="list-disc pl-4 space-y-1">
-                    <li>Identify high-performing skills and double down on what works</li>
-                    <li>Spot underperforming skills that need revision</li>
-                    <li>Track adoption trends across agents and versions on the Analytics page</li>
-                  </ul>
-                  <p>Changes take effect immediately for all connected agents.</p>
                 </div>
+                <Toggle checked={csEnabled} onChange={handleCompleteSkillToggle} />
               </div>
 
-              <div className="space-y-4">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <p className="text-[14px] font-medium text-foreground">Skill Completion Tracking</p>
-                    <p className="text-[13px] text-muted-foreground mt-0.5">
-                      Allow agents to rate skills (1-5) after using them
-                    </p>
-                  </div>
-                  <Toggle checked={csEnabled} onChange={handleCompleteSkillToggle} />
+              <div className={`flex items-start justify-between gap-4 pl-4 border-l-2 border-border transition-opacity ${!csEnabled ? 'opacity-40' : ''}`}>
+                <div>
+                  <p className="text-[14px] font-medium text-foreground">Outcome field</p>
+                  <p className="text-[13px] text-muted-foreground mt-0.5">
+                    Ask agents to describe what they accomplished.
+                  </p>
                 </div>
-                <div className={`flex items-start justify-between gap-4 pl-4 border-l-2 border-border transition-opacity ${!csEnabled ? 'opacity-40' : ''}`}>
-                  <div>
-                    <p className="text-[14px] font-medium text-foreground">Outcome Field</p>
-                    <p className="text-[13px] text-muted-foreground mt-0.5">
-                      Ask agents to describe what they accomplished — adds an <span className="font-mono text-[12px]">outcome</span> parameter to the tool
-                    </p>
-                  </div>
-                  <Toggle checked={outcomeEnabled} onChange={v => update('complete_skill_outcome_enabled', v)} disabled={!csEnabled} />
+                <Toggle checked={outcomeEnabled} onChange={v => update('complete_skill_outcome_enabled', v)} disabled={!csEnabled} />
+              </div>
+
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-[14px] font-medium text-foreground">Agent-authored skills</p>
+                  <p className="text-[13px] text-muted-foreground mt-0.5">
+                    Include the <span className="font-mono text-[12px]">skill-push</span> tool so agents can add skills from a conversation.
+                  </p>
                 </div>
-                <hr className="border-border/40 my-2" />
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <p className="text-[14px] font-medium text-foreground">Allow Agents to Create Skills</p>
-                    <p className="text-[13px] text-muted-foreground mt-0.5">
-                      Include the <span className="font-mono text-[12px]">skill-push</span> tool so agents can add skills to the registry from conversations
-                    </p>
-                  </div>
-                  <Toggle checked={settings['skill_push_enabled'] === 'true'} onChange={v => update('skill_push_enabled', v)} />
-                </div>
+                <Toggle checked={settings['skill_push_enabled'] === 'true'} onChange={v => update('skill_push_enabled', v)} />
               </div>
             </section>
           )}
 
-          <OpenClawSetupCard />
-
-          {/* About */}
-          <section className="mb-10">
-            <h2 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-4">About</h2>
-            <div className="space-y-1.5">
-              <p className="text-[14px] font-semibold text-foreground">SkillNote <span className="text-[12px] font-normal text-muted-foreground ml-1">v{APP_VERSION}</span></p>
-              <div className="flex items-center gap-4 pt-2">
-                <a href="https://github.com/luna-prompts/skillnote" target="_blank" rel="noopener noreferrer" className="text-[13px] text-accent hover:underline inline-flex items-center gap-1">
-                  View on GitHub <ExternalLink className="h-3 w-3" />
+          <section className="border-t border-border/40 pt-6">
+            <div className="flex items-center justify-between gap-4">
+              <p className="text-[13px] text-muted-foreground">
+                SkillNote <span className="font-mono text-[12px] text-foreground/80">v{APP_VERSION}</span>
+              </p>
+              <div className="flex items-center gap-4 text-[12px]">
+                <a href="https://github.com/luna-prompts/skillnote" target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-foreground transition-colors inline-flex items-center gap-1">
+                  GitHub <ExternalLink className="h-3 w-3" />
                 </a>
-                <a href="https://github.com/luna-prompts/skillnote#readme" target="_blank" rel="noopener noreferrer" className="text-[13px] text-accent hover:underline inline-flex items-center gap-1">
-                  Documentation <ExternalLink className="h-3 w-3" />
+                <a href="https://github.com/luna-prompts/skillnote#readme" target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-foreground transition-colors inline-flex items-center gap-1">
+                  Docs <ExternalLink className="h-3 w-3" />
                 </a>
               </div>
             </div>
@@ -182,8 +161,8 @@ export default function SettingsPage() {
 
       <ConfirmDialog
         open={confirmDisable}
-        title="Disable Skill Completion Tracking?"
-        message="This will remove the complete_skill tool from all connected agents immediately. Agents will no longer be able to rate skills after use. You can re-enable it at any time."
+        title="Disable skill rating?"
+        message="Connected agents will lose the complete_skill tool. You can re-enable it any time."
         onConfirm={() => { setConfirmDisable(false); update('complete_skill_enabled', false) }}
         onCancel={() => setConfirmDisable(false)}
       />

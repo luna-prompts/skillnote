@@ -869,19 +869,28 @@ def _agent_status(agent: AgentLiteral, db: Session) -> AgentStatus:
             {"agent": "claude-code"},
         ).scalar() or 0
     else:
+        # OpenClaw activity. agent_name is freeform; canonical values are
+        # 'openclaw' and 'openclaw-main' (the default user_id in config.json).
+        # Match both via prefix so admins who customise the agent_name still
+        # get their events attributed correctly.
         last_active = db.execute(
-            text("SELECT MAX(created_at) FROM skill_usage_events")
+            text(
+                "SELECT MAX(created_at) FROM skill_usage_events "
+                "WHERE agent_name LIKE 'openclaw%'"
+            )
         ).scalar()
         calls_24h = db.execute(
             text(
                 "SELECT COUNT(*) FROM skill_usage_events "
-                "WHERE created_at >= now() - interval '24 hours'"
+                "WHERE agent_name LIKE 'openclaw%' "
+                "AND created_at >= now() - interval '24 hours'"
             ),
         ).scalar() or 0
         calls_7d = db.execute(
             text(
                 "SELECT COUNT(*) FROM skill_usage_events "
-                "WHERE created_at >= now() - interval '7 days'"
+                "WHERE agent_name LIKE 'openclaw%' "
+                "AND created_at >= now() - interval '7 days'"
             ),
         ).scalar() or 0
 
@@ -914,3 +923,25 @@ def _agent_status(agent: AgentLiteral, db: Session) -> AgentStatus:
 def get_agents_status(db: Session = Depends(get_db)) -> list[AgentStatus]:
     """Return the per-agent state machine row for the Connect page."""
     return [_agent_status(agent, db) for agent in SUPPORTED_AGENTS]
+
+
+@router.delete("/v1/setup/installs/{agent}", status_code=204)
+def delete_agent_installs(
+    agent: AgentLiteral,
+    db: Session = Depends(get_db),
+) -> Response:
+    """Disconnect — remove every install row for this agent.
+
+    The UI's "Disconnect" action calls this. The actual plugin files on
+    the user's machine stay in place (we can't reach across the network
+    to delete them), but from SkillNote's perspective the agent is
+    detached: state flips back to pending, the wire goes dashed grey,
+    and the agent moves back to the Browse tab. Re-running the install
+    script (or clicking Connect again) brings it right back.
+    """
+    db.execute(
+        text("DELETE FROM agent_installs WHERE agent = :agent"),
+        {"agent": agent},
+    )
+    db.commit()
+    return Response(status_code=204)

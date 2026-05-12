@@ -387,6 +387,14 @@ body.skill-editing .content-wrapper {
   100% { opacity: 1; transform: translateY(0); }
 }
 
+/* Step-fade-in — short crossfade for the rotating "current step" text on
+   the install progress panel. Keyed on the step label so React remounts
+   the node and replays this animation each time the step ticks over. */
+@keyframes step-fade-in {
+  0%   { opacity: 0; transform: translateY(2px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
 /* Check-pop — applied to the wire's center check when state flips to
    active. Subtle bounce so the success moment is felt, not announced. */
 @keyframes check-pop {

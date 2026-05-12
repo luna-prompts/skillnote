@@ -22,6 +22,9 @@ interface Props {
   platformCommands: PlatformCommands
   /** Per-agent file/path manifest shown under "What gets installed". */
   installManifest: string[]
+  /** Numbered "How to use" steps — same content the install modal shows
+   *  after success, persisted on the row so connected users can revisit it. */
+  usageSteps?: string[]
   installedAt?: string
   lastCallAt?: string
   /**
@@ -107,20 +110,11 @@ export function AgentListRow(props: Props) {
             'motion-safe:animate-[row-expand-in_280ms_ease-out]',
           )}
         >
-          {(props.description || (props.platforms && props.platforms.length > 0)) && (
-            <div className="space-y-2 -mt-1">
-              {props.description ? (
-                <p className="text-[13px] text-muted-foreground leading-relaxed">
-                  {props.description}
-                </p>
-              ) : null}
-              {props.platforms && props.platforms.length > 0 ? (
-                <p className="text-[11px] text-muted-foreground/70 font-medium tracking-wide">
-                  {props.platforms.join(' · ')}
-                </p>
-              ) : null}
-            </div>
-          )}
+          {props.description ? (
+            <p className="text-[13px] text-muted-foreground leading-relaxed -mt-1">
+              {props.description}
+            </p>
+          ) : null}
 
           {/* Wire diagram only appears once we're actually mid-connect or
               already connected. In pending state we hide it — the
@@ -131,7 +125,6 @@ export function AgentListRow(props: Props) {
               <ConnectionDiagram
                 state={props.state}
                 agentLabel={props.agentLabel}
-                agentSublabel={props.agentSublabel}
                 agentMark={props.agentMark}
               />
             </div>
@@ -151,9 +144,63 @@ export function AgentListRow(props: Props) {
             onReinstall={props.onReinstall}
             onDisconnect={props.onDisconnect}
           />
+
+          {/* How to use — persistent collapsible for connected agents so
+              users can revisit usage steps without re-triggering install. */}
+          {isConnected && props.usageSteps && props.usageSteps.length > 0 && (
+            <HowToUse steps={props.usageSteps} agentLabel={props.agentLabel} />
+          )}
         </div>
       )}
     </li>
+  )
+}
+
+function HowToUse({
+  steps,
+  agentLabel,
+}: {
+  steps: string[]
+  agentLabel: string
+}) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="border-t border-border/40 pt-3">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="flex items-center gap-2 -mx-1 px-1 py-1.5
+                   text-[12px] text-muted-foreground hover:text-foreground transition-colors"
+      >
+        <ChevronRight
+          className={cn(
+            'h-3 w-3 transition-transform duration-200',
+            open && 'rotate-90',
+          )}
+        />
+        <span className="font-medium">How to use {agentLabel}</span>
+        <span className="text-muted-foreground/70">{steps.length} steps</span>
+      </button>
+      {open && (
+        <ol className="mt-2 space-y-1.5 pl-1 motion-safe:animate-[row-expand-in_220ms_ease-out]">
+          {steps.map((step, i) => (
+            <li
+              key={i}
+              className="flex items-start gap-2.5 text-[12.5px] text-foreground/80 leading-snug"
+            >
+              <span
+                className="shrink-0 mt-[2px] inline-flex h-4 w-4 items-center justify-center
+                           rounded-full bg-foreground/5 text-[10.5px] font-medium text-foreground/65 tabular-nums"
+              >
+                {i + 1}
+              </span>
+              <span className="flex-1">{step}</span>
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
   )
 }
 

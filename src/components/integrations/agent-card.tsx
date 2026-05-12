@@ -112,14 +112,7 @@ export function AgentCard(props: Props) {
       ) : null}
 
       {/* Spacer pushes the footer to the bottom — cards align via flex */}
-      <div className="flex-1 min-h-[12px]" />
-
-      {/* Platform metadata strip — quiet, mono-style */}
-      {props.platforms && props.platforms.length > 0 ? (
-        <p className="px-5 pb-3 text-[10.5px] uppercase tracking-[0.1em] text-muted-foreground/60 font-medium">
-          {props.platforms.join(' · ')}
-        </p>
-      ) : null}
+      <div className="flex-1 min-h-[16px]" />
 
       {/* Hairline separator above footer button */}
       <div className="mx-3 h-px bg-border/60" />

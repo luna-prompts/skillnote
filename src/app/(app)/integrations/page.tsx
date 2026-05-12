@@ -7,6 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { AgentCard } from '@/components/integrations/agent-card'
 import { AgentListRow } from '@/components/integrations/agent-list-row'
 import { ConnectModal } from '@/components/integrations/connect-modal'
+import { DisconnectModal } from '@/components/integrations/disconnect-modal'
 import { ClaudeCodeMark, OpenClawMark } from '@/components/integrations/agent-marks'
 import type { ConnectionState } from '@/components/integrations/connector'
 import { getApiBaseUrl } from '@/lib/api/client'
@@ -37,6 +38,8 @@ interface AgentMeta {
   description: string
   platforms: string[]
   badge?: 'official' | 'new' | null
+  /** Numbered steps shown in the post-success modal panel. */
+  usageSteps: string[]
 }
 
 // Catalog metadata for the discover view. Sublabel is the short
@@ -51,6 +54,11 @@ const AGENTS: AgentMeta[] = [
       "Anthropic's official CLI for agentic coding workflows. Skills load automatically per session via the SkillNote plugin.",
     platforms: ['macOS', 'Linux', 'Windows'],
     badge: 'official',
+    usageSteps: [
+      'Open a new terminal so the shell wrapper picks up.',
+      'Run `claude` — the SkillNote collection picker appears.',
+      'Pick a collection and start a session. Your skills load automatically.',
+    ],
   },
   {
     id: 'openclaw',
@@ -60,6 +68,11 @@ const AGENTS: AgentMeta[] = [
       'Self-hosted coding agent. The SkillNote skill syncs your registry continuously and reports back which skills the agent used.',
     platforms: ['macOS', 'Linux'],
     badge: 'official',
+    usageSteps: [
+      'Restart your OpenClaw session so the new skill loads.',
+      'sync.sh runs every 60s — your registry stays current automatically.',
+      'Try a task; the log-watcher reports which skills the agent used.',
+    ],
   },
 ]
 
@@ -83,6 +96,8 @@ export default function IntegrationsPage() {
   // Which agent (if any) is currently in the connect modal. Single-shot —
   // the modal owns its own dispatch + polling lifecycle internally.
   const [connectingAgent, setConnectingAgent] = useState<AgentId | null>(null)
+  // Which agent is being disconnected (confirmation dialog open).
+  const [disconnectingAgent, setDisconnectingAgent] = useState<AgentId | null>(null)
 
   useEffect(() => {
     setApiBase(getApiBaseUrl())
@@ -198,22 +213,25 @@ export default function IntegrationsPage() {
   // box. Kept hardcoded per agent so security-conscious enterprise users can
   // audit before running. Keep these in lockstep with the install scripts in
   // `cli/src/agents/` and `backend/app/setup/`.
+  // Each entry MUST follow `<label> — <value>` so the modal can parse it into
+  // a two-column row. Keep labels short (2-4 words); values can be paths or
+  // short descriptive strings.
   const installManifest = (id: AgentId): string[] =>
     id === 'claude-code'
       ? [
-          '~/.claude/plugins/marketplaces/skillnote-local/ — plugin install root',
-          '~/.claude/plugins/marketplaces/skillnote-local/marketplace.json',
-          '~/.claude/plugins/skillnote/ — plugin file (skill loader + statusline hook)',
-          '~/.claude/plugins/skillnote/statusline — statusline binary',
-          'Shell-rc wrapper line appended to ~/.zshrc or ~/.bashrc',
-          `Bridge daemon URL pinned to ${base}`,
+          'Plugin root — ~/.claude/plugins/marketplaces/skillnote-local/',
+          'Marketplace manifest — ~/.claude/plugins/marketplaces/skillnote-local/marketplace.json',
+          'Skill loader plugin — ~/.claude/plugins/skillnote/',
+          'Statusline binary — ~/.claude/plugins/skillnote/statusline',
+          'Shell wrapper — appended to ~/.zshrc or ~/.bashrc',
+          `Bridge daemon — ${base}`,
         ]
       : [
-          '~/.openclaw/skills/skillnote/ — skill install root',
-          '~/.openclaw/skills/skillnote/sync.sh — refreshes skills on each session',
-          '~/.openclaw/skills/skillnote/log-watcher.py — usage analytics agent',
-          `~/.openclaw/skills/skillnote/config.json — host URL pinned to ${base}`,
-          `Bridge daemon URL pinned to ${base}`,
+          'Skill root — ~/.openclaw/skills/skillnote/',
+          'Refresh hook — ~/.openclaw/skills/skillnote/sync.sh',
+          'Analytics agent — ~/.openclaw/skills/skillnote/log-watcher.py',
+          `Host config — ~/.openclaw/skills/skillnote/config.json`,
+          `Bridge daemon — ${base}`,
         ]
 
   const handleReinstall = (id: AgentId) => {
@@ -221,11 +239,34 @@ export default function IntegrationsPage() {
     handleConnect(id)
   }
 
-  const handleDisconnect = (id: AgentId) => {
-    toast.info(
-      `Open ${labelOf(id)} and remove the SkillNote plugin from its config to disconnect.`,
-    )
-  }
+  // Disconnect requires confirmation — handleDisconnect just opens the
+  // destructive-styled DisconnectConfirmModal. Actual DELETE happens in
+  // confirmDisconnect below once the user has reviewed what gets removed.
+  const handleDisconnect = useCallback((id: AgentId) => {
+    setDisconnectingAgent(id)
+  }, [])
+
+  const confirmDisconnect = useCallback(
+    async (id: AgentId) => {
+      try {
+        const res = await fetch(`${base}/v1/setup/installs/${id}`, { method: 'DELETE' })
+        if (!res.ok && res.status !== 204) throw new Error(`HTTP ${res.status}`)
+        setSnapshots((prev) => ({
+          ...prev,
+          [id]: { id, state: 'pending', installedAt: undefined, lastCallAt: undefined },
+        }))
+        toast.success(`${labelOf(id)} disconnected`)
+        // Stay on Connected tab — switching to Browse on every disconnect
+        // disorients users who are working through multiple agents.
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'unknown error'
+        toast.error(`Couldn't disconnect (${msg}). Try again or remove the plugin manually.`)
+      } finally {
+        setDisconnectingAgent(null)
+      }
+    },
+    [base],
+  )
 
   const markFor = (id: AgentId) =>
     id === 'claude-code' ? <ClaudeCodeMark /> : <OpenClawMark />
@@ -266,6 +307,7 @@ export default function IntegrationsPage() {
         installCommand={installCmd(agent.id)}
         platformCommands={platformCmds(agent.id)}
         installManifest={installManifest(agent.id)}
+        usageSteps={agent.usageSteps}
         installedAt={snap.installedAt}
         lastCallAt={snap.lastCallAt}
         logLines={logLines}
@@ -308,7 +350,7 @@ export default function IntegrationsPage() {
         <div className="max-w-3xl mx-auto px-6 py-8">
           <header className="mb-6">
             <h1 className="text-xl font-semibold text-foreground tracking-tight">
-              Integrations
+              Connect
             </h1>
           </header>
 
@@ -363,27 +405,49 @@ export default function IntegrationsPage() {
       </div>
 
       {/* Focused install dialog. Mounted at root so it overlays the page. */}
-      {connectingAgent ? (
-        <ConnectModal
+      {connectingAgent ? (() => {
+        const meta = AGENTS.find((a) => a.id === connectingAgent)!
+        return (
+          <ConnectModal
+            open={true}
+            agentId={connectingAgent as JobAgent}
+            agentLabel={meta.label}
+            agentSubtitle={meta.description}
+            agentMark={markFor(connectingAgent)}
+            platformCommands={platformCmds(connectingAgent)}
+            installManifest={installManifest(connectingAgent)}
+            usageGuide={{
+              steps: meta.usageSteps,
+              links: [
+                {
+                  label: 'Documentation',
+                  href: 'https://github.com/luna-prompts/skillnote#readme',
+                },
+              ],
+            }}
+            onClose={() => setConnectingAgent(null)}
+            onViewConnected={() => setActiveTab('connected')}
+            onSuccess={() => {
+              // Optimistically mark the agent active so the Connected tab
+              // is ready when the user clicks "View in Connected" or "Done".
+              const id = connectingAgent
+              setSnapshots((prev) => ({
+                ...prev,
+                [id]: { ...prev[id], state: 'active' as ConnectionState },
+              }))
+            }}
+          />
+        )
+      })() : null}
+
+      {disconnectingAgent ? (
+        <DisconnectModal
           open={true}
-          agentId={connectingAgent as JobAgent}
-          agentLabel={labelOf(connectingAgent)}
-          agentMark={markFor(connectingAgent)}
-          platformCommands={platformCmds(connectingAgent)}
-          onClose={() => setConnectingAgent(null)}
-          onSuccess={() => {
-            // Modal calls this ~900ms after the green-check moment.
-            // Optimistically flip local state to 'active' so the Connected
-            // tab is populated immediately; the next /v1/setup/agents poll
-            // will confirm.
-            const id = connectingAgent
-            setSnapshots((prev) => ({
-              ...prev,
-              [id]: { ...prev[id], state: 'active' as ConnectionState },
-            }))
-            setConnectingAgent(null)
-            setActiveTab('connected')
-          }}
+          agentLabel={labelOf(disconnectingAgent)}
+          agentMark={markFor(disconnectingAgent)}
+          installManifest={installManifest(disconnectingAgent)}
+          onClose={() => setDisconnectingAgent(null)}
+          onConfirm={() => confirmDisconnect(disconnectingAgent)}
         />
       ) : null}
 

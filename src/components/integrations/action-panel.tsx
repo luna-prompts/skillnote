@@ -163,36 +163,30 @@ function ConnectingPanel(props: Props) {
 }
 
 function ActivePanel({
-  lastCallAt,
   onReinstall,
   onDisconnect,
 }: Props) {
-  // No "● Connected" status line — the wire's green check above already
-  // says it. Just surface the timestamp (the only fact the wire doesn't
-  // convey) and the management actions.
+  // No status line, no "last call" timestamp — the wire's green check
+  // above says "connected", and detailed activity lives on the Analytics
+  // page. Keep this panel down to just the two management actions.
   return (
-    <div className="flex items-center justify-between gap-3">
-      <p className="text-[12px] text-muted-foreground tabular-nums">
-        {lastCallAt ? <>Last call {relativeTime(lastCallAt)}</> : 'No activity yet'}
-      </p>
-      <div className="flex items-center gap-3 text-[12px] text-muted-foreground shrink-0">
-        <button
-          type="button"
-          onClick={onReinstall}
-          className="inline-flex items-center gap-1 hover:text-foreground transition-colors"
-        >
-          <RefreshCw className="h-3 w-3" />
-          Reinstall
-        </button>
-        <span className="text-border/80">·</span>
-        <button
-          type="button"
-          onClick={onDisconnect}
-          className="hover:text-foreground transition-colors"
-        >
-          Disconnect
-        </button>
-      </div>
+    <div className="flex items-center justify-end gap-3 text-[12px] text-muted-foreground">
+      <button
+        type="button"
+        onClick={onReinstall}
+        className="inline-flex items-center gap-1 hover:text-foreground transition-colors"
+      >
+        <RefreshCw className="h-3 w-3" />
+        Reinstall
+      </button>
+      <span className="text-border/80">·</span>
+      <button
+        type="button"
+        onClick={onDisconnect}
+        className="hover:text-foreground transition-colors"
+      >
+        Disconnect
+      </button>
     </div>
   )
 }
@@ -403,18 +397,3 @@ function TestResultInline({ result }: { result: TestResult }) {
   )
 }
 
-// ─────────────────────────────────────────────────────────────────────────
-
-function relativeTime(iso: string): string {
-  const then = new Date(iso).getTime()
-  const now = Date.now()
-  const sec = Math.max(0, Math.floor((now - then) / 1000))
-  if (sec < 60) return 'just now'
-  const min = Math.floor(sec / 60)
-  if (min < 60) return `${min}m ago`
-  const hr = Math.floor(min / 60)
-  if (hr < 24) return `${hr}h ago`
-  const day = Math.floor(hr / 24)
-  if (day < 30) return `${day}d ago`
-  return new Date(iso).toLocaleDateString()
-}
