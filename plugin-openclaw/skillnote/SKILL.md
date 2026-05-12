@@ -1,7 +1,7 @@
 ---
 name: skillnote
 description: "Self-hosted skill registry for OpenClaw. Stores procedures your team writes (name, description, body), syncs them to disk before each task, and collects which-helped/which-failed signals from the agent so the registry improves over time."
-version: "0.4.1"
+version: "0.5.1"
 homepage: "https://github.com/luna-prompts/skillnote"
 metadata:
   openclaw:
@@ -70,30 +70,29 @@ Reachability check: `GET <host>/v1/skills?limit=1`.
 
 Tell the user what's about to happen, then ask once:
 
-> **SkillNote backend isn't running.** Run these two commands in another terminal (takes ~3 min for the first Docker build):
+> **SkillNote backend isn't running.** Run this in another terminal (takes ~3 min for the first Docker image pull):
 >
 > ```bash
-> git clone https://github.com/luna-prompts/skillnote.git
-> cd skillnote && ./install.sh
+> npx skillnote start
 > ```
 >
-> When `./install.sh` prints `✓ Stage 1 complete — SkillNote is running`, come back and tell me "done" and I'll continue setup.
+> When the CLI prints `Services healthy` and shows the URL table, come back and tell me "done" and I'll continue setup.
 
-Wait for the user to confirm. Do not run the commands yourself — `git clone` + `docker compose` from inside an `always: true` skill is the exact pattern static scanners flag as a "dropper." The user runs it themselves so the install action is theirs and auditable.
+Wait for the user to confirm. Do not run the command yourself — `npx` pulling code from the registry and starting Docker containers from inside an `always: true` skill is the exact pattern static scanners flag as a "dropper." The user runs it themselves so the install action is theirs and auditable.
 
 After the user confirms the backend is up:
 - Re-run the reachability check from Step 1 (`GET <host>/v1/skills?limit=1`).
 - If reachable → continue to Step 3.
-- If still unreachable after 3 retries spaced 5s apart: ask the user to share the last 20 lines of `./install.sh` output; surface their error verbatim; stop.
+- If still unreachable after 3 retries spaced 5s apart: ask the user to share the last 20 lines of `npx skillnote start` output; surface their error verbatim; stop.
 
 ### Customizing the install
-If the user needs non-default ports or paths, tell them to set the env vars before `./install.sh`:
+If the user needs non-default ports, pass CLI flags to `skillnote start`:
 
 | Need | Command |
 | ---- | ------- |
-| Different install dir | `cd ~/work && git clone https://github.com/luna-prompts/skillnote.git && cd skillnote && ./install.sh` |
-| Port `8082` busy | `SKILLNOTE_API_PORT=8182 ./install.sh` |
-| Port `3000` busy | `SKILLNOTE_WEB_PORT=3001 ./install.sh` |
+| Port `8082` busy | `npx skillnote start --api-port 8182` |
+| Port `3000` busy | `npx skillnote start --web-port 3001` |
+| Bind to a LAN IP | `SKILLNOTE_HOST=<your-lan-ip> npx skillnote start` |
 
 ## Step 3 — Persist the resolved host (idempotent)
 
@@ -331,4 +330,4 @@ The SkillNote backend itself stays running — it's separate from this skill. To
 - **Don't mention SkillNote on every reply.** Only when relevant or when the user asks about activity.
 - **Don't mutate `config.json` after setup.** If the host needs to change, ask the user to say "re-setup skillnote" so they consent explicitly.
 - **Don't auto-edit AGENTS.md.** sync.sh writes the sidecar `~/.openclaw/skillnote-agents.md`; adding the `@include` line to AGENTS.md is a one-time user-consented edit (Step 5). On every subsequent session: don't re-graft, don't re-ask. If the line was deleted by the user, leave it alone — that's their signal.
-- **Don't auto-install the backend.** If `localhost:8082` is unreachable, give the user the two commands (`git clone ... && cd skillnote && ./install.sh`) and wait for them to run it. Do not chain commands or fetch installer scripts from the network.
+- **Don't auto-install the backend.** If `localhost:8082` is unreachable, give the user the single command (`npx skillnote start`) and wait for them to run it. Do not run `npx`/Docker/install scripts on the user's behalf or chain them into other commands.
