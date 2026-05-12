@@ -283,16 +283,22 @@ export default function IntegrationsPage() {
             value={activeTab ?? 'browse'}
             onValueChange={(v) => setActiveTab(v as 'browse' | 'connected')}
           >
-            <TabsList variant="line" className="mb-5">
-              <TabsTrigger value="browse" className="px-4">
+            <TabsList variant="line" className="mb-5 w-fit">
+              <TabsTrigger
+                value="browse"
+                className="!flex-none px-3 text-[13px]"
+              >
                 Browse
-                <span className="ml-1 text-[11px] text-muted-foreground/70 tabular-nums">
+                <span className="ml-1.5 text-[11px] text-muted-foreground/70 tabular-nums">
                   {AGENTS.length}
                 </span>
               </TabsTrigger>
-              <TabsTrigger value="connected" className="px-4">
+              <TabsTrigger
+                value="connected"
+                className="!flex-none px-3 text-[13px]"
+              >
                 Connected
-                <span className="ml-1 text-[11px] text-muted-foreground/70 tabular-nums">
+                <span className="ml-1.5 text-[11px] text-muted-foreground/70 tabular-nums">
                   {connectedCount}
                 </span>
               </TabsTrigger>
@@ -300,7 +306,7 @@ export default function IntegrationsPage() {
 
             {/* Browse — every supported agent, richer rows */}
             <TabsContent value="browse">
-              <ul className="space-y-2">{AGENTS.map(renderRow)}</ul>
+              <ul className="space-y-3">{AGENTS.map(renderRow)}</ul>
             </TabsContent>
 
             {/* Connected — empty state if zero, otherwise just the wired ones */}
@@ -308,7 +314,7 @@ export default function IntegrationsPage() {
               {connectedCount === 0 ? (
                 <EmptyConnected onBrowse={() => setActiveTab('browse')} />
               ) : (
-                <ul className="space-y-2">{connected.map(renderRow)}</ul>
+                <ul className="space-y-3">{connected.map(renderRow)}</ul>
               )}
             </TabsContent>
           </Tabs>
@@ -328,20 +334,21 @@ function labelOf(id: AgentId): string {
 
 function EmptyConnected({ onBrowse }: { onBrowse: () => void }) {
   return (
-    <div className="rounded-xl border border-dashed border-border bg-card/30 px-6 py-10 text-center">
+    <div className="rounded-xl border border-dashed border-border/70 bg-card/20 px-6 py-12 text-center">
       <p className="text-[14px] font-medium text-foreground">
-        No agents connected yet
+        Nothing connected
       </p>
-      <p className="mt-1 text-[13px] text-muted-foreground max-w-sm mx-auto">
-        Browse the catalog and connect Claude Code or OpenClaw to start syncing
-        SkillNote skills.
+      <p className="mt-1 text-[13px] text-muted-foreground/80">
+        Pick an agent from Browse to wire it in.
       </p>
       <button
         type="button"
         onClick={onBrowse}
-        className="mt-4 inline-flex items-center gap-1.5 px-4 py-1.5 rounded-md bg-foreground text-background text-[13px] font-medium hover:opacity-90 transition-opacity"
+        className="mt-5 inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-md
+                   border border-border bg-background text-[13px] font-medium text-foreground
+                   hover:bg-muted/50 transition-colors"
       >
-        Browse integrations
+        Browse
       </button>
     </div>
   )

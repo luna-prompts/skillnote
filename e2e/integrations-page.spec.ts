@@ -89,8 +89,8 @@ test.describe('/integrations — Browse/Connected tabs', () => {
     // Switch to Connected tab manually
     await page.getByRole('tab', { name: /Connected/ }).click()
 
-    await expect(page.getByText(/No agents connected yet/)).toBeVisible()
-    await expect(page.getByRole('button', { name: /Browse integrations/ })).toBeVisible()
+    await expect(page.getByText(/Nothing connected/)).toBeVisible()
+    await expect(page.getByRole('button', { name: /^Browse$/ })).toBeVisible()
   })
 
   test('clicking a pending row expands to reveal description + platforms + Connect button (no wire yet)', async ({ page }) => {

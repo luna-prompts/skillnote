@@ -50,9 +50,11 @@ export function AgentListRow(props: Props) {
   return (
     <li
       className={cn(
-        'rounded-xl border border-border bg-card overflow-hidden',
-        'transition-shadow duration-200',
-        open && 'shadow-[0_4px_18px_rgba(0,0,0,0.06)] dark:shadow-[0_4px_18px_rgba(0,0,0,0.35)]',
+        'rounded-xl border border-border/60 bg-card overflow-hidden',
+        'transition-all duration-200',
+        open
+          ? 'shadow-[0_4px_18px_rgba(0,0,0,0.06)] dark:shadow-[0_4px_18px_rgba(0,0,0,0.35)] border-border'
+          : 'hover:border-border hover:shadow-[0_1px_3px_rgba(0,0,0,0.04)] dark:hover:shadow-[0_1px_3px_rgba(0,0,0,0.25)]',
       )}
     >
       {/* Summary row — always visible, clickable */}
@@ -60,16 +62,16 @@ export function AgentListRow(props: Props) {
         type="button"
         onClick={() => setOpen((v) => !v)}
         className={cn(
-          'w-full flex items-center justify-between gap-3 px-4 py-3',
-          'hover:bg-muted/30 transition-colors text-left',
-          open && 'bg-muted/20',
+          'group/row w-full flex items-center justify-between gap-3 px-4 py-3.5',
+          'text-left transition-colors',
+          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:ring-inset',
         )}
         aria-expanded={open}
       >
-        <div className="flex items-center gap-3 min-w-0 flex-1">
+        <div className="flex items-center gap-3.5 min-w-0 flex-1">
           <span
             className="shrink-0 inline-flex items-center justify-center
-                       [&>*]:!w-8 [&>*]:!h-8 [&_svg]:!w-4 [&_svg]:!h-4"
+                       [&>*]:!w-9 [&>*]:!h-9 [&_svg]:!w-[18px] [&_svg]:!h-[18px]"
           >
             {props.agentMark}
           </span>
@@ -78,7 +80,7 @@ export function AgentListRow(props: Props) {
               {props.agentLabel}
             </p>
             {props.agentSublabel ? (
-              <p className="text-[12px] text-muted-foreground leading-tight mt-0.5 truncate">
+              <p className="text-[12px] text-muted-foreground/80 leading-tight mt-0.5 truncate">
                 {props.agentSublabel}
               </p>
             ) : null}
@@ -89,8 +91,9 @@ export function AgentListRow(props: Props) {
           <StatusBadge state={props.state} lastCallAt={props.lastCallAt} />
           <ChevronRight
             className={cn(
-              'h-4 w-4 text-muted-foreground transition-transform duration-200',
-              open && 'rotate-90',
+              'h-4 w-4 text-muted-foreground/60 transition-all duration-200',
+              'group-hover/row:text-muted-foreground',
+              open && 'rotate-90 text-foreground/70',
             )}
           />
         </div>

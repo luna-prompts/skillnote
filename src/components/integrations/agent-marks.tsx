@@ -24,6 +24,8 @@ export function SkillNoteMark({ size = 56 }: { size?: number }) {
 export function ClaudeCodeMark({ size = 56 }: { size?: number }) {
   // Anthropic's "A" mark from Bootstrap Icons (MIT). Coral fill matches
   // Anthropic's brand palette (#cc785c). Renders crisp at any size.
+  // Inner glyph sized to 62% to roughly match the visual weight of the
+  // OpenClaw lobster mark, which fills its own square corner-to-corner.
   return (
     <div
       className="flex items-center justify-center rounded-lg"
@@ -32,8 +34,8 @@ export function ClaudeCodeMark({ size = 56 }: { size?: number }) {
       <svg
         xmlns="http://www.w3.org/2000/svg"
         viewBox="0 0 16 16"
-        width={size * 0.55}
-        height={size * 0.55}
+        width={size * 0.62}
+        height={size * 0.62}
         aria-label="Claude Code"
         role="img"
         style={{ color: '#cc785c' }}
