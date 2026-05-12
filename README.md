@@ -11,13 +11,13 @@
 </p>
 
 <p align="center">
+  <a href="https://www.npmjs.com/package/skillnote"><img src="https://img.shields.io/npm/v/skillnote.svg?color=blue" alt="npm version" /></a>
+  <a href="https://www.npmjs.com/package/skillnote"><img src="https://img.shields.io/npm/dm/skillnote.svg" alt="npm downloads" /></a>
+  <a href="https://github.com/luna-prompts/skillnote/pkgs/container/skillnote-api"><img src="https://img.shields.io/badge/ghcr.io-luna--prompts%2Fskillnote-2496ED?logo=docker&logoColor=white" alt="Docker images on GHCR" /></a>
   <a href="https://github.com/luna-prompts/skillnote/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License" /></a>
   <a href="https://github.com/luna-prompts/skillnote"><img src="https://img.shields.io/github/stars/luna-prompts/skillnote?style=social" alt="Stars" /></a>
-  <a href="https://github.com/luna-prompts/skillnote/issues"><img src="https://img.shields.io/github/issues/luna-prompts/skillnote" alt="Issues" /></a>
   <a href="https://clawhub.ai/latentloop07/skillnote"><img src="https://img.shields.io/badge/clawhub-skillnote-F97316" alt="On clawhub" /></a>
   <a href="https://discord.gg/GazU4amU6H"><img src="https://img.shields.io/badge/Discord-Join%20us-5865F2?logo=discord&logoColor=white" alt="Discord" /></a>
-  <img src="https://img.shields.io/badge/docker-ready-2496ED?logo=docker&logoColor=white" alt="Docker Ready" />
-  <img src="https://img.shields.io/badge/self--hosted-yes-green" alt="Self-hosted" />
 </p>
 
 <br />
@@ -60,7 +60,71 @@ Your skills. Your servers. Your rules.
 
 ## Quick Start
 
-Spin up the registry locally:
+```bash
+npx skillnote start
+```
+
+Opens <http://localhost:3000>. That's it.
+
+Requires [Docker Desktop](https://docs.docker.com/get-docker/) and [Node.js 20+](https://nodejs.org/). The CLI pulls the published Docker images from GHCR, brings up the web + API + Postgres stack, waits for healthchecks, and opens the dashboard.
+
+### Boot output
+
+```text
+┌────────────────────────────────────────────┐
+│  SkillNote ▸  the skill registry for AI    │
+│  v0.5.0 · github.com/luna-prompts/skillnote│
+└────────────────────────────────────────────┘
+◇  Prerequisites ok
+◇  Images pulled
+◇  Containers running
+◇  Services healthy
+
+╭────────┬──────────────────────────────╮
+│ Web UI │ http://localhost:3000        │
+│ API    │ http://localhost:8082        │
+╰────────┴──────────────────────────────╯
+```
+
+### Lifecycle commands
+
+`npx skillnote` wraps the Docker stack with these:
+
+| Command | What it does |
+| --- | --- |
+| `npx skillnote start` | Pull, boot, wait for health, open UI |
+| `npx skillnote stop` | Stop the stack. Data preserved in Docker volumes. |
+| `npx skillnote restart` | Stop + start |
+| `npx skillnote status` | Health table + URLs. `--json` for scripts. |
+| `npx skillnote logs [service]` | Tail logs. `-f` to follow. |
+| `npx skillnote open` | Open the web UI. `--app` for chromeless Chrome mode. |
+| `npx skillnote doctor` | Run 11 health checks (Docker, ports, services). |
+| `npx skillnote reset --confirm` | **Destructive** — drop all data. |
+
+### Other install paths
+
+<details>
+<summary><b>Without Node — Docker Compose directly</b></summary>
+
+If you don't have Node or prefer pure Docker:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/luna-prompts/skillnote/master/deploy/docker-compose.yml -o docker-compose.yml
+docker compose up -d
+```
+
+Opens at <http://localhost:3000>. To bind on your LAN so other devices can reach the UI:
+
+```bash
+SKILLNOTE_HOST=<your-lan-ip> docker compose up -d
+```
+
+The compose file pins images to a specific version; bump the `:0.5.0` tag to upgrade. Lifecycle is `docker compose up -d` / `down` / `logs -f` / `restart`.
+
+</details>
+
+<details>
+<summary><b>Building from source (contributors)</b></summary>
 
 ```bash
 git clone https://github.com/luna-prompts/skillnote.git
@@ -68,26 +132,24 @@ cd skillnote
 ./install.sh
 ```
 
-The install script builds and starts all containers, waits for health checks, and prints the connect command when ready.
+`./install.sh` builds containers from the local source instead of pulling published images. Use this when you're hacking on SkillNote itself. End users should prefer `npx skillnote start`.
 
-Then wire up your AI agent:
+</details>
+
+#### Then wire up your AI agent
 
 <details>
 <summary><b>Connect Claude Code</b></summary>
 
-#### Recommended: one-liner
-
-End-to-end from a fresh machine (clone, start backend, connect Claude Code):
+#### Recommended: two commands
 
 ```bash
-git clone https://github.com/luna-prompts/skillnote.git
-cd skillnote
-./install.sh
-curl -sf http://localhost:8082/setup/agent | bash -s -- --agent claude-code
+npx skillnote start
+npx skillnote connect claude-code
 source ~/.zshrc
 ```
 
-`./install.sh` prints which `setup/agent` command to run for each agent home it detects on your machine, so you can also stop after step 3 and follow its instructions instead of pasting the curl line above.
+The first command boots the backend (pulls published Docker images). The second runs the canonical `/setup/agent` script — registers the plugin marketplace in `~/.claude/settings.json`, installs the SkillNote plugin into `~/.claude/plugins/`, drops picker binaries in `~/.skillnote/bin/`, and adds a shell wrapper to `.zshrc`/`.bashrc`.
 
 The same `setup/agent` endpoint works for any harness; pass `--agent claude-code` or `--agent openclaw`. Run `claude` in any project; SkillNote picks up your skills automatically and the collection picker appears on first launch.
 
@@ -104,10 +166,9 @@ Do the full install yourself. Don't ask me to run commands.
 1. Check if the SkillNote backend is already running:
    - Try: curl -sf http://localhost:8082/health
    - If it responds, skip to step 2.
-   - If not, clone the repo and start the backend yourself:
-       git clone https://github.com/luna-prompts/skillnote.git ~/skillnote
-       cd ~/skillnote && ./install.sh
-     ./install.sh builds containers, runs migrations, seeds, and waits for health.
+   - If not, start the backend yourself:
+       npx skillnote start --no-browser -d
+     This pulls published Docker images and brings up the stack.
      Don't move on until http://localhost:8082/health responds with ok.
 
 2. Check if the Claude Code plugin is already installed:
@@ -190,8 +251,8 @@ For a host other than `http://localhost:8082`, swap the URL in step 1's fallback
 **2. Manual install (no clawhub, fully scripted).** Use for CI, scripted installs, or if you'd rather not pull from a third-party registry.
 
 ```bash
-git clone https://github.com/luna-prompts/skillnote.git && cd skillnote && ./install.sh
-curl -sf http://localhost:8082/setup/agent | bash -s -- --agent openclaw
+npx skillnote start --no-browser -d
+npx skillnote connect openclaw
 ```
 
 </details>
@@ -544,12 +605,13 @@ Fixed in v0.4.0. The log-watcher now derives `agent_name` from the file path (`~
 
 | Layer | Technology |
 | --- | --- |
-| Frontend | Next.js 16, React 19, TypeScript, Tailwind CSS 4, Tiptap |
+| CLI | Node 20+, TypeScript, commander, [@clack/prompts](https://www.npmjs.com/package/@clack/prompts), [get-port](https://www.npmjs.com/package/get-port), [write-file-atomic](https://www.npmjs.com/package/write-file-atomic) |
+| Frontend | Next.js 16, React 19, TypeScript, Tailwind CSS 4, Tiptap, PWA (manifest + service worker) |
 | Backend | Python 3.12, FastAPI, SQLAlchemy 2, Alembic |
 | Claude Code plugin | Bash, Python, Claude Code Plugin API |
-| OpenClaw skill | Bash (sync.sh), Python (log-watcher.py + install-backend.sh), clawhub-installable bundle |
+| OpenClaw skill | Bash (sync.sh), Python (log-watcher.py), clawhub-installable bundle |
 | Database | PostgreSQL 16 |
-| Infra | Docker Compose |
+| Distribution | npm (`skillnote`), GHCR multi-arch (`ghcr.io/luna-prompts/skillnote-{api,web}`), Docker Compose |
 
 ---
 
