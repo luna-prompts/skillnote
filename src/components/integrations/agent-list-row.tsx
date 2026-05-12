@@ -12,6 +12,10 @@ interface Props {
   agentLabel: string
   agentSublabel?: string
   agentMark: React.ReactNode
+  /** One-line description for catalog/discovery rows. */
+  description?: string
+  /** OS platforms this agent supports (rendered as a thin chip strip). */
+  platforms?: string[]
   installCommand: string
   installedAt?: string
   lastCallAt?: string
@@ -76,7 +80,28 @@ export function AgentListRow(props: Props) {
 
       {/* Expandable detail panel — wire diagram + action panel */}
       {open && (
-        <div className="px-5 pt-6 pb-5 space-y-5 border-t border-border/40 bg-background">
+        <div className="px-5 pt-5 pb-5 space-y-5 border-t border-border/40 bg-background">
+          {(props.description || (props.platforms && props.platforms.length > 0)) && (
+            <div className="space-y-2 -mt-1">
+              {props.description ? (
+                <p className="text-[13px] text-muted-foreground leading-relaxed">
+                  {props.description}
+                </p>
+              ) : null}
+              {props.platforms && props.platforms.length > 0 ? (
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {props.platforms.map((p) => (
+                    <span
+                      key={p}
+                      className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-muted text-[11px] text-muted-foreground font-medium"
+                    >
+                      {p}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          )}
           <ConnectionDiagram
             state={props.state}
             agentLabel={props.agentLabel}

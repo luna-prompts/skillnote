@@ -1,8 +1,11 @@
 /**
- * E2E: /integrations page — Installed/Available row list.
+ * E2E: /integrations — Browse/Connected tab pattern.
  *
- * Mocks /v1/setup/agents to return mixed states and verifies the
- * Claude.ai/Linear-style row layout renders correctly.
+ * Mocks /v1/setup/agents and asserts on the Notion-style two-tab layout:
+ *   - Browse tab lists every supported agent.
+ *   - Connected tab lists only agents in active/idle state.
+ *   - Default tab is Connected when at least one agent is wired,
+ *     Browse otherwise.
  */
 
 import { test, expect, type Page } from '@playwright/test'
@@ -32,8 +35,8 @@ async function mockSetup(page: Page, rows: AgentRow[]) {
   )
 }
 
-test.describe('/integrations — Installed/Available list', () => {
-  test('header is native-styled (left-aligned h1, no marketing hero)', async ({ page }) => {
+test.describe('/integrations — Browse/Connected tabs', () => {
+  test('header is native-styled', async ({ page }) => {
     await mockSetup(page, [
       { agent: 'claude-code', state: 'pending', installed_at: null, last_active_at: null, calls_24h: 0, calls_7d: 0 },
       { agent: 'openclaw', state: 'pending', installed_at: null, last_active_at: null, calls_24h: 0, calls_7d: 0 },
@@ -41,27 +44,25 @@ test.describe('/integrations — Installed/Available list', () => {
     await page.goto('/integrations')
 
     await expect(page.getByRole('heading', { name: 'Integrations', level: 1 })).toBeVisible()
-    await expect(page.getByText(/Install SkillNote into your AI coding agents/)).toBeVisible()
+    await expect(page.getByText(/Browse the catalog/)).toBeVisible()
   })
 
-  test('both pending → no Installed section, both rows under Available', async ({ page }) => {
+  test('default tab is Browse when nothing is connected', async ({ page }) => {
     await mockSetup(page, [
       { agent: 'claude-code', state: 'pending', installed_at: null, last_active_at: null, calls_24h: 0, calls_7d: 0 },
       { agent: 'openclaw', state: 'pending', installed_at: null, last_active_at: null, calls_24h: 0, calls_7d: 0 },
     ])
     await page.goto('/integrations')
 
-    // No Installed section header when nothing is installed
-    await expect(page.getByRole('heading', { name: /^Installed$/i })).toHaveCount(0)
+    const browseTab = page.getByRole('tab', { name: /Browse/ })
+    await expect(browseTab).toHaveAttribute('data-state', 'active', { timeout: 10_000 })
 
-    // Available section visible (the h2 specifically; row badges also say
-    // "Available" so we scope to the heading to avoid strict-mode misses).
-    await expect(page.getByRole('heading', { name: /^Available$/i })).toBeVisible()
+    // Both agents listed in browse
     await expect(page.getByText('Claude Code', { exact: true }).first()).toBeVisible()
     await expect(page.getByText('OpenClaw', { exact: true }).first()).toBeVisible()
   })
 
-  test('one active, one pending — split across Installed and Available', async ({ page }) => {
+  test('default tab is Connected when at least one agent is wired', async ({ page }) => {
     const recent = new Date(Date.now() - 2 * 60_000).toISOString()
     await mockSetup(page, [
       { agent: 'claude-code', state: 'active', installed_at: recent, last_active_at: recent, calls_24h: 47, calls_7d: 47 },
@@ -69,35 +70,44 @@ test.describe('/integrations — Installed/Available list', () => {
     ])
     await page.goto('/integrations')
 
-    // Both section headers visible (h2 only, ignore row badges)
-    await expect(page.getByRole('heading', { name: /^Installed$/i })).toBeVisible({ timeout: 10_000 })
-    await expect(page.getByRole('heading', { name: /^Available$/i })).toBeVisible()
+    const connectedTab = page.getByRole('tab', { name: /Connected/ })
+    await expect(connectedTab).toHaveAttribute('data-state', 'active', { timeout: 10_000 })
 
-    // Connected badge appears on the active row
-    await expect(page.getByText('Connected', { exact: false }).first()).toBeVisible()
+    // Connected tab shows the active agent, not the pending one
+    await expect(page.getByText('Claude Code', { exact: true }).first()).toBeVisible()
+    await expect(page.getByText(/Connected.*ago/).first()).toBeVisible()
   })
 
-  test('clicking a row expands to reveal wire diagram + actions', async ({ page }) => {
+  test('Connected tab shows empty state when zero agents wired', async ({ page }) => {
     await mockSetup(page, [
       { agent: 'claude-code', state: 'pending', installed_at: null, last_active_at: null, calls_24h: 0, calls_7d: 0 },
       { agent: 'openclaw', state: 'pending', installed_at: null, last_active_at: null, calls_24h: 0, calls_7d: 0 },
     ])
     await page.goto('/integrations')
 
-    // First row defaults open when nothing's installed yet, so the
-    // Connect button is already visible.
-    await expect(page.getByRole('button', { name: /^Connect / }).first()).toBeVisible({
-      timeout: 10_000,
-    })
+    // Switch to Connected tab manually
+    await page.getByRole('tab', { name: /Connected/ }).click()
 
-    // Click the SECOND row (collapsed by default) — its Connect button
-    // should appear after expansion.
-    const secondRow = page.getByRole('button', { expanded: false }).first()
-    await secondRow.click()
+    await expect(page.getByText(/No agents connected yet/)).toBeVisible()
+    await expect(page.getByRole('button', { name: /Browse integrations/ })).toBeVisible()
+  })
 
-    // Both Connect buttons now visible
+  test('clicking a row expands to reveal description + platforms + wire diagram', async ({ page }) => {
+    await mockSetup(page, [
+      { agent: 'claude-code', state: 'pending', installed_at: null, last_active_at: null, calls_24h: 0, calls_7d: 0 },
+      { agent: 'openclaw', state: 'pending', installed_at: null, last_active_at: null, calls_24h: 0, calls_7d: 0 },
+    ])
+    await page.goto('/integrations')
+
+    // Click the Claude Code row
+    await page.getByRole('button', { name: /Claude Code/ }).first().click()
+
+    // Description + platform chip visible
+    await expect(page.getByText(/agentic coding workflows/i)).toBeVisible()
+    await expect(page.getByText('macOS', { exact: true }).first()).toBeVisible()
+
+    // Connect button visible
     await expect(page.getByRole('button', { name: /Connect Claude Code/ })).toBeVisible()
-    await expect(page.getByRole('button', { name: /Connect OpenClaw/ })).toBeVisible()
   })
 
   test('advanced install drawer exposes the curl command', async ({ page }) => {
@@ -107,10 +117,9 @@ test.describe('/integrations — Installed/Available list', () => {
     ])
     await page.goto('/integrations')
 
-    // First row defaults open. Its Advanced install toggle should be visible.
-    const drawer = page.getByRole('button', { name: /Advanced install/ }).first()
-    await expect(drawer).toBeVisible({ timeout: 10_000 })
-    await drawer.click()
+    // Expand the first row
+    await page.getByRole('button', { name: /Claude Code/ }).first().click()
+    await page.getByRole('button', { name: /Advanced install/ }).first().click()
 
     await expect(page.locator('text=/curl -sf .*setup/agent/')).toBeVisible()
     await expect(page.getByRole('button', { name: 'Copy' }).first()).toBeVisible()
