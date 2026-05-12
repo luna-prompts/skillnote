@@ -404,3 +404,16 @@ body.skill-editing .content-wrapper {
   100% { opacity: 1; transform: translateY(0) scale(1); }
 }
 
+/* Connect-modal entrance — backdrop fades in, dialog scales up with a
+   small bounce. Vercel / Linear use this same pattern for focused
+   action modals. */
+@keyframes modal-in {
+  0%   { opacity: 0; }
+  100% { opacity: 1; }
+}
+@keyframes modal-pop {
+  0%   { opacity: 0; transform: translateY(8px) scale(0.96); }
+  60%  { opacity: 1; transform: translateY(0) scale(1.01); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+

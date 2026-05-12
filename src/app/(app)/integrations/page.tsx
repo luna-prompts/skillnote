@@ -6,6 +6,7 @@ import { TopBar } from '@/components/layout/topbar'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { AgentCard } from '@/components/integrations/agent-card'
 import { AgentListRow } from '@/components/integrations/agent-list-row'
+import { ConnectModal } from '@/components/integrations/connect-modal'
 import { ClaudeCodeMark, OpenClawMark } from '@/components/integrations/agent-marks'
 import type { ConnectionState } from '@/components/integrations/connector'
 import { getApiBaseUrl } from '@/lib/api/client'
@@ -79,6 +80,9 @@ export default function IntegrationsPage() {
   // fetch so returning users with connections land on "Connected", and brand
   // new users land on "Browse".
   const [activeTab, setActiveTab] = useState<'browse' | 'connected' | null>(null)
+  // Which agent (if any) is currently in the connect modal. Single-shot —
+  // the modal owns its own dispatch + polling lifecycle internally.
+  const [connectingAgent, setConnectingAgent] = useState<AgentId | null>(null)
 
   useEffect(() => {
     setApiBase(getApiBaseUrl())
@@ -284,9 +288,14 @@ export default function IntegrationsPage() {
         description={agent.description}
         platforms={agent.platforms}
         badge={agent.badge ?? null}
-        onConnectClick={() => handleConnect(agent.id)}
-        // Card click jumps to the Connected tab so the user can manage
-        // it after connecting — discovery → management handoff.
+        // Install click opens the focused connect modal. Modal owns
+        // dispatch + log polling. Resolves true immediately so the
+        // card flips to "Connecting…" briefly while the modal mounts.
+        onConnectClick={async () => {
+          setConnectingAgent(agent.id)
+          return true
+        }}
+        // Card click on already-connected agents jumps to Connected tab.
         onOpenDetail={() => setActiveTab('connected')}
       />
     )
@@ -352,6 +361,31 @@ export default function IntegrationsPage() {
           </Tabs>
         </div>
       </div>
+
+      {/* Focused install dialog. Mounted at root so it overlays the page. */}
+      {connectingAgent ? (
+        <ConnectModal
+          open={true}
+          agentId={connectingAgent as JobAgent}
+          agentLabel={labelOf(connectingAgent)}
+          agentMark={markFor(connectingAgent)}
+          platformCommands={platformCmds(connectingAgent)}
+          onClose={() => setConnectingAgent(null)}
+          onSuccess={() => {
+            // Modal calls this ~900ms after the green-check moment.
+            // Optimistically flip local state to 'active' so the Connected
+            // tab is populated immediately; the next /v1/setup/agents poll
+            // will confirm.
+            const id = connectingAgent
+            setSnapshots((prev) => ({
+              ...prev,
+              [id]: { ...prev[id], state: 'active' as ConnectionState },
+            }))
+            setConnectingAgent(null)
+            setActiveTab('connected')
+          }}
+        />
+      ) : null}
 
       <DevCycler overrides={overrides} setOverrides={setOverrides} />
     </>
