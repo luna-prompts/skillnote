@@ -47,7 +47,7 @@ describe('composePull — disk full (ENOSPC) classifier', () => {
       // Remediation must include the canonical cleanup hint.
       const remed = Array.isArray(opts.remediation)
         ? opts.remediation.join(' ')
-        : opts.remediation ?? ''
+        : (opts.remediation ?? '')
       expect(remed).toMatch(/docker system prune/)
     }
   })
