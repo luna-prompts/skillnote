@@ -36,7 +36,7 @@ async function mockSetup(page: Page, rows: AgentRow[]) {
 }
 
 test.describe('/integrations — Browse/Connected tabs', () => {
-  test('header is native-styled', async ({ page }) => {
+  test('header is minimal — h1 only, no marketing subtitle', async ({ page }) => {
     await mockSetup(page, [
       { agent: 'claude-code', state: 'pending', installed_at: null, last_active_at: null, calls_24h: 0, calls_7d: 0 },
       { agent: 'openclaw', state: 'pending', installed_at: null, last_active_at: null, calls_24h: 0, calls_7d: 0 },
@@ -44,7 +44,8 @@ test.describe('/integrations — Browse/Connected tabs', () => {
     await page.goto('/integrations')
 
     await expect(page.getByRole('heading', { name: 'Integrations', level: 1 })).toBeVisible()
-    await expect(page.getByText(/Browse the catalog/)).toBeVisible()
+    // No descriptive subtitle under the H1 — page lets the tabs explain themselves
+    await expect(page.getByText(/Browse the catalog/)).toHaveCount(0)
   })
 
   test('default tab is Browse when nothing is connected', async ({ page }) => {
@@ -102,9 +103,10 @@ test.describe('/integrations — Browse/Connected tabs', () => {
     // Click the Claude Code row
     await page.getByRole('button', { name: /Claude Code/ }).first().click()
 
-    // Description + platform chip visible
+    // Description + platforms line visible (platforms are now a single
+    // "macOS · Linux · Windows" string, not individual chips)
     await expect(page.getByText(/agentic coding workflows/i)).toBeVisible()
-    await expect(page.getByText('macOS', { exact: true }).first()).toBeVisible()
+    await expect(page.getByText(/macOS.*Linux/i).first()).toBeVisible()
 
     // Connect button visible
     await expect(page.getByRole('button', { name: /Connect Claude Code/ })).toBeVisible()
@@ -123,5 +125,81 @@ test.describe('/integrations — Browse/Connected tabs', () => {
 
     await expect(page.locator('text=/curl -sf .*setup/agent/')).toBeVisible()
     await expect(page.getByRole('button', { name: 'Copy' }).first()).toBeVisible()
+  })
+
+  test('connecting panel streams progressive log lines from the bridge', async ({
+    page,
+  }) => {
+    // Base setup mock — start with both agents pending.
+    await mockSetup(page, [
+      { agent: 'claude-code', state: 'pending', installed_at: null, last_active_at: null, calls_24h: 0, calls_7d: 0 },
+      { agent: 'openclaw', state: 'pending', installed_at: null, last_active_at: null, calls_24h: 0, calls_7d: 0 },
+    ])
+
+    const JOB_ID = 'log-stream-job'
+    let pollCount = 0
+
+    // POST /v1/cli/jobs — create the pending job.
+    await page.route('**/v1/cli/jobs', (route, req) => {
+      if (req.method() === 'POST') {
+        return route.fulfill({
+          status: 201,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            id: JOB_ID,
+            type: 'connect',
+            agent: 'claude-code',
+            status: 'pending',
+            log: [],
+            created_at: Date.now() / 1000,
+            claimed_at: null,
+            finished_at: null,
+            exit_code: null,
+            error: null,
+          }),
+        })
+      }
+      return route.continue()
+    })
+
+    // GET /v1/cli/jobs/{id} — append a log line per poll, then succeed.
+    // We never reach 'succeeded' on a tick where the test still needs the
+    // connecting panel visible, so we keep it 'running' until the final tick.
+    await page.route(`**/v1/cli/jobs/${JOB_ID}`, (route, req) => {
+      if (req.method() !== 'GET') return route.continue()
+      pollCount += 1
+      const logs = ['connecting...', 'claiming job...', 'installing plugin...']
+      const visible = logs.slice(0, Math.min(pollCount, logs.length))
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          id: JOB_ID,
+          type: 'connect',
+          agent: 'claude-code',
+          status: 'running',
+          log: visible,
+          created_at: Date.now() / 1000,
+          claimed_at: Date.now() / 1000,
+          finished_at: null,
+          exit_code: null,
+          error: null,
+        }),
+      })
+    })
+
+    await page.goto('/integrations')
+
+    // Expand the Claude Code row and trigger the connect flow.
+    await page.getByRole('button', { name: /Claude Code/ }).first().click()
+    await page.getByRole('button', { name: /Connect Claude Code/ }).click()
+
+    // The terminal-style log panel should appear and stream the progressive
+    // log lines as the polling hook (re)fetches the job state.
+    const logs = page.getByTestId('connecting-logs')
+    await expect(logs).toBeVisible({ timeout: 5_000 })
+    await expect(logs).toContainText('connecting...', { timeout: 5_000 })
+    await expect(logs).toContainText('claiming job...', { timeout: 5_000 })
+    await expect(logs).toContainText('installing plugin...', { timeout: 5_000 })
   })
 })

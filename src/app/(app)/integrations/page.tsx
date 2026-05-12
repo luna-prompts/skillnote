@@ -171,10 +171,42 @@ export default function IntegrationsPage() {
   }, [snapshots, overrides])
 
   const base = apiBase || 'http://localhost:8082'
-  const installCmd = (id: AgentId) =>
+  // Canonical bash one-liner per agent. macOS + Linux execute it directly;
+  // Windows prefixes `wsl ` because the install scripts only run inside a
+  // POSIX shell. The Advanced drawer explains the WSL caveat to the user.
+  const baseCmd = (id: AgentId) =>
     id === 'claude-code'
       ? `curl -sf ${base}/setup/agent | bash -s -- --agent claude-code`
       : `curl -sf ${base}/setup/openclaw | bash`
+
+  const installCmd = (id: AgentId) => baseCmd(id)
+
+  const platformCmds = (id: AgentId): Record<'macos' | 'linux' | 'windows', string> => {
+    const cmd = baseCmd(id)
+    return { macos: cmd, linux: cmd, windows: `wsl ${cmd}` }
+  }
+
+  // Trust manifest — exactly what the install script writes onto the user's
+  // box. Kept hardcoded per agent so security-conscious enterprise users can
+  // audit before running. Keep these in lockstep with the install scripts in
+  // `cli/src/agents/` and `backend/app/setup/`.
+  const installManifest = (id: AgentId): string[] =>
+    id === 'claude-code'
+      ? [
+          '~/.claude/plugins/marketplaces/skillnote-local/ — plugin install root',
+          '~/.claude/plugins/marketplaces/skillnote-local/marketplace.json',
+          '~/.claude/plugins/skillnote/ — plugin file (skill loader + statusline hook)',
+          '~/.claude/plugins/skillnote/statusline — statusline binary',
+          'Shell-rc wrapper line appended to ~/.zshrc or ~/.bashrc',
+          `Bridge daemon URL pinned to ${base}`,
+        ]
+      : [
+          '~/.openclaw/skills/skillnote/ — skill install root',
+          '~/.openclaw/skills/skillnote/sync.sh — refreshes skills on each session',
+          '~/.openclaw/skills/skillnote/log-watcher.py — usage analytics agent',
+          `~/.openclaw/skills/skillnote/config.json — host URL pinned to ${base}`,
+          `Bridge daemon URL pinned to ${base}`,
+        ]
 
   const handleReinstall = (id: AgentId) => {
     toast.info(`Re-running the install for ${labelOf(id)}…`)
@@ -208,18 +240,27 @@ export default function IntegrationsPage() {
 
   const renderRow = (agent: AgentMeta) => {
     const snap = effective[agent.id]
+    // Only forward bridge logs to the row whose agent currently owns the job.
+    // Other rows get `undefined` so we don't accidentally render claude-code
+    // logs under openclaw (or vice versa).
+    const logLines =
+      pendingJob && pendingJob.agent === agent.id ? job?.log ?? [] : undefined
     return (
       <AgentListRow
         key={agent.id}
         state={snap.state}
+        agentId={agent.id}
         agentLabel={agent.label}
         agentSublabel={agent.sublabel}
         agentMark={markFor(agent.id)}
         description={agent.description}
         platforms={agent.platforms}
         installCommand={installCmd(agent.id)}
+        platformCommands={platformCmds(agent.id)}
+        installManifest={installManifest(agent.id)}
         installedAt={snap.installedAt}
         lastCallAt={snap.lastCallAt}
+        logLines={logLines}
         onConnectClick={() => handleConnect(agent.id)}
         onReinstall={() => handleReinstall(agent.id)}
         onDisconnect={() => handleDisconnect(agent.id)}
@@ -236,10 +277,6 @@ export default function IntegrationsPage() {
             <h1 className="text-xl font-semibold text-foreground tracking-tight">
               Integrations
             </h1>
-            <p className="text-[13px] text-muted-foreground mt-1">
-              Install SkillNote into your AI coding agents. Browse the catalog
-              or manage your existing connections.
-            </p>
           </header>
 
           <Tabs

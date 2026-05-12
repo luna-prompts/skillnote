@@ -4,11 +4,12 @@ import { useState } from 'react'
 import { ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ConnectionDiagram } from './connection-diagram'
-import { ActionPanel } from './action-panel'
+import { ActionPanel, type PlatformCommands } from './action-panel'
 import type { ConnectionState } from './connector'
 
 interface Props {
   state: ConnectionState
+  agentId: 'claude-code' | 'openclaw'
   agentLabel: string
   agentSublabel?: string
   agentMark: React.ReactNode
@@ -17,8 +18,18 @@ interface Props {
   /** OS platforms this agent supports (rendered as a thin chip strip). */
   platforms?: string[]
   installCommand: string
+  /** Per-platform install commands rendered in the Advanced drawer's tabs. */
+  platformCommands: PlatformCommands
+  /** Per-agent file/path manifest shown under "What gets installed". */
+  installManifest: string[]
   installedAt?: string
   lastCallAt?: string
+  /**
+   * Bridge log lines for the in-flight connect job (passed through to the
+   * ActionPanel's ConnectingPanel). Only the agent being connected receives
+   * a non-undefined value; everyone else stays `undefined`.
+   */
+  logLines?: readonly string[]
   /** Open by default (e.g. when only one agent and it's not connected). */
   defaultOpen?: boolean
   onConnectClick?: () => Promise<boolean>
@@ -101,16 +112,9 @@ export function AgentListRow(props: Props) {
                 </p>
               ) : null}
               {props.platforms && props.platforms.length > 0 ? (
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  {props.platforms.map((p) => (
-                    <span
-                      key={p}
-                      className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-muted text-[11px] text-muted-foreground font-medium"
-                    >
-                      {p}
-                    </span>
-                  ))}
-                </div>
+                <p className="text-[11px] text-muted-foreground/70 font-medium tracking-wide">
+                  {props.platforms.join(' · ')}
+                </p>
               ) : null}
             </div>
           )}
@@ -132,10 +136,14 @@ export function AgentListRow(props: Props) {
 
           <ActionPanel
             state={props.state}
+            agentId={props.agentId}
             agentLabel={props.agentLabel}
             installCommand={props.installCommand}
+            platformCommands={props.platformCommands}
+            installManifest={props.installManifest}
             installedAt={props.installedAt}
             lastCallAt={props.lastCallAt}
+            logLines={props.logLines}
             onConnectClick={props.onConnectClick}
             onReinstall={props.onReinstall}
             onDisconnect={props.onDisconnect}
@@ -158,25 +166,23 @@ function StatusBadge({
   state: ConnectionState
   lastCallAt?: string
 }) {
+  // Single signal per state — color carries the meaning, no redundant dot
+  // next to the word. Exception: 'connecting' keeps the pulsing dot because
+  // animation is the signal that something is in flight.
   switch (state) {
     case 'active':
       return (
-        <span className="inline-flex items-center gap-1.5 text-[12px] text-emerald-700 dark:text-emerald-400 font-medium">
-          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+        <span className="text-[12px] text-emerald-700 dark:text-emerald-400 font-medium tabular-nums">
           Connected
           {lastCallAt ? (
-            <span className="text-muted-foreground font-normal">
-              · {relativeTime(lastCallAt)}
-            </span>
+            <span className="text-muted-foreground font-normal"> · {relativeTime(lastCallAt)}</span>
           ) : null}
         </span>
       )
     case 'idle':
       return (
-        <span className="inline-flex items-center gap-1.5 text-[12px] text-muted-foreground">
-          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500/50" />
-          Idle
-          {lastCallAt ? <span> · {relativeTime(lastCallAt)}</span> : null}
+        <span className="text-[12px] text-muted-foreground tabular-nums">
+          Idle{lastCallAt ? <> · {relativeTime(lastCallAt)}</> : null}
         </span>
       )
     case 'connecting':
@@ -189,10 +195,7 @@ function StatusBadge({
     case 'pending':
     default:
       return (
-        <span className="inline-flex items-center gap-1.5 text-[12px] text-muted-foreground">
-          <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/40" />
-          Available
-        </span>
+        <span className="text-[12px] text-muted-foreground">Available</span>
       )
   }
 }
