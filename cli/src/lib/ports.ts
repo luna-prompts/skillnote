@@ -5,12 +5,13 @@ import getPort, { portNumbers } from 'get-port'
  *
  * Uses `get-port` (the same package the npm CLI and Cloudflare/Vercel
  * tooling rely on, ~17M weekly downloads). It probes every local network
- * interface from `os.networkInterfaces()` plus the IPv4 wildcard, so it
- * catches:
- *   - 127.0.0.1-only listeners
- *   - 0.0.0.0-bound listeners
- *   - IPv6 wildcard / Docker Desktop gvproxy dual-stack binds
- *   - listeners on any other configured interface (LAN IPs, etc.)
+ * interface from `os.networkInterfaces()` plus the IPv4 wildcard.
+ *
+ * Caveat (#41): macOS Docker Desktop's gvproxy binds via IPv6 `::` and
+ * dual-stacks to IPv4; that mapping isn't always visible to a pure
+ * userspace IPv4 probe. We work around this in the `start` command by
+ * short-circuiting the port check if our own compose project is already
+ * up (see `isProjectRunning` in `docker/inspect.ts`).
  *
  * Swallows `EADDRNOTAVAIL` / `EINVAL` (CI sandbox restrictions) so a
  * locked-down runner doesn't false-positive as "in use". `EACCES` is
