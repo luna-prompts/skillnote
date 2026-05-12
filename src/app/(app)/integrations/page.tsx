@@ -36,6 +36,8 @@ interface AgentMeta {
   description: string
   platforms: string[]
   badge?: 'official' | 'new' | null
+  /** CSS color string for the 2px accent line at the top of the agent's card. */
+  accentColor: string
 }
 
 // Catalog metadata for the discover view. Sublabel is the short
@@ -50,6 +52,7 @@ const AGENTS: AgentMeta[] = [
       "Anthropic's official CLI for agentic coding workflows. Skills load automatically per session via the SkillNote plugin.",
     platforms: ['macOS', 'Linux', 'Windows'],
     badge: 'official',
+    accentColor: '#cc785c', // Anthropic coral
   },
   {
     id: 'openclaw',
@@ -59,6 +62,7 @@ const AGENTS: AgentMeta[] = [
       'Self-hosted coding agent. The SkillNote skill syncs your registry continuously and reports back which skills the agent used.',
     platforms: ['macOS', 'Linux'],
     badge: 'official',
+    accentColor: '#e81b25', // OpenClaw red (from their wordmark)
   },
 ]
 
@@ -283,6 +287,7 @@ export default function IntegrationsPage() {
         agentMark={markFor(agent.id)}
         description={agent.description}
         badge={agent.badge ?? null}
+        accentColor={agent.accentColor}
         onConnectClick={() => handleConnect(agent.id)}
         // Card click jumps to the Connected tab so the user can manage
         // it after connecting — discovery → management handoff.
