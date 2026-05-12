@@ -3,7 +3,23 @@
 All notable changes to SkillNote will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
-## [0.5.0] - 2026-05-11
+## [0.5.0] - 2026-05-12
+
+Stable promotion of [0.5.0-alpha.0]. The CLI surface and Docker images are
+unchanged from the alpha. Two additions on top:
+
+### Added
+- **PWA install refinement** — four raster icons (`icon-192.png`, `icon-512.png`, `icon-512-maskable.png` with teal #0d9488 safe-area padding, `apple-touch-icon.png`) so Chrome's install prompt fires reliably. Open Graph + Twitter card metadata for nice link previews. `scripts/generate-pwa-icons.mjs` makes the icons re-generatable from the source SVG.
+- **Version sync** — root `package.json` bumped to `0.5.0` to match `cli/package.json`. The web UI footer now reflects the same version as the CLI binary (they had drifted to 0.4.1 / 0.5.0-alpha.0).
+
+### Changed
+- **PWA install banner copy** — "Get a dock icon and chromeless window. Same data, no browser tab." Replaces the previous "with offline support" copy, which was inaccurate (the service worker only handles registration, not offline caching).
+
+### Notes
+- This is the first non-prerelease publish of `skillnote` on npm; `latest` and `next` dist-tags both point at `0.5.0`.
+- Existing v0.4 file-push commands (`login`, `list`, `add`, `update`, `check`, `remove`, `doctor`) remain available for backward compatibility. Phase 2C will deprecate them in a later release.
+
+## [0.5.0-alpha.0] - 2026-05-11
 
 ### CLI rewrite — Phase 1 lifecycle commands
 The `skillnote` CLI has been rewritten from a thin file-push tool into a full lifecycle CLI that wraps Docker. `npx skillnote start` now pulls the published images, brings up the web + api + Postgres stack, waits for healthchecks, and opens the web UI on first run — no `git clone`, no `./install.sh`, no compose file to manage.
