@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { TopBar } from '@/components/layout/topbar'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { AgentCard } from '@/components/integrations/agent-card'
 import { AgentListRow } from '@/components/integrations/agent-list-row'
 import { ClaudeCodeMark, OpenClawMark } from '@/components/integrations/agent-marks'
 import type { ConnectionState } from '@/components/integrations/connector'
@@ -34,6 +35,7 @@ interface AgentMeta {
   sublabel: string
   description: string
   platforms: string[]
+  badge?: 'official' | 'new' | null
 }
 
 // Catalog metadata for the discover view. Sublabel is the short
@@ -47,6 +49,7 @@ const AGENTS: AgentMeta[] = [
     description:
       "Anthropic's official CLI for agentic coding workflows. Skills load automatically per session via the SkillNote plugin.",
     platforms: ['macOS', 'Linux', 'Windows'],
+    badge: 'official',
   },
   {
     id: 'openclaw',
@@ -55,6 +58,7 @@ const AGENTS: AgentMeta[] = [
     description:
       'Self-hosted coding agent. The SkillNote skill syncs your registry continuously and reports back which skills the agent used.',
     platforms: ['macOS', 'Linux'],
+    badge: 'official',
   },
 ]
 
@@ -268,6 +272,25 @@ export default function IntegrationsPage() {
     )
   }
 
+  const renderCard = (agent: AgentMeta) => {
+    const snap = effective[agent.id]
+    return (
+      <AgentCard
+        key={agent.id}
+        state={snap.state}
+        agentLabel={agent.label}
+        agentSublabel={agent.sublabel}
+        agentMark={markFor(agent.id)}
+        description={agent.description}
+        badge={agent.badge ?? null}
+        onConnectClick={() => handleConnect(agent.id)}
+        // Card click jumps to the Connected tab so the user can manage
+        // it after connecting — discovery → management handoff.
+        onOpenDetail={() => setActiveTab('connected')}
+      />
+    )
+  }
+
   return (
     <>
       <TopBar showFab={false} />
@@ -304,9 +327,17 @@ export default function IntegrationsPage() {
               </TabsTrigger>
             </TabsList>
 
-            {/* Browse — every supported agent, richer rows */}
+            {/* Browse — grid of portrait cards. Discovery surface, distinct
+                from Connected's compact rows. VS Code marketplace pattern. */}
             <TabsContent value="browse">
-              <ul className="space-y-3">{AGENTS.map(renderRow)}</ul>
+              <ul
+                className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3
+                           [&>li]:list-none"
+              >
+                {AGENTS.map((a) => (
+                  <li key={a.id}>{renderCard(a)}</li>
+                ))}
+              </ul>
             </TabsContent>
 
             {/* Connected — empty state if zero, otherwise just the wired ones */}

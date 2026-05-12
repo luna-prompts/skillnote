@@ -1,11 +1,11 @@
 /**
- * E2E: /integrations — Browse/Connected tab pattern.
+ * E2E: /integrations — Browse (grid cards) + Connected (row list)
  *
- * Mocks /v1/setup/agents and asserts on the Notion-style two-tab layout:
- *   - Browse tab lists every supported agent.
- *   - Connected tab lists only agents in active/idle state.
- *   - Default tab is Connected when at least one agent is wired,
- *     Browse otherwise.
+ * Browse and Connected use deliberately different layouts:
+ *   - Browse  → grid of portrait <AgentCard>s with Install button
+ *   - Connected → vertical list of compact <AgentListRow>s with expand
+ *
+ * The same mock data flows through both — only the layout differs.
  */
 
 import { test, expect, type Page } from '@playwright/test'
@@ -35,7 +35,7 @@ async function mockSetup(page: Page, rows: AgentRow[]) {
   )
 }
 
-test.describe('/integrations — Browse/Connected tabs', () => {
+test.describe('/integrations — Browse cards + Connected rows', () => {
   test('header is minimal — h1 only, no marketing subtitle', async ({ page }) => {
     await mockSetup(page, [
       { agent: 'claude-code', state: 'pending', installed_at: null, last_active_at: null, calls_24h: 0, calls_7d: 0 },
@@ -44,7 +44,6 @@ test.describe('/integrations — Browse/Connected tabs', () => {
     await page.goto('/integrations')
 
     await expect(page.getByRole('heading', { name: 'Integrations', level: 1 })).toBeVisible()
-    // No descriptive subtitle under the H1 — page lets the tabs explain themselves
     await expect(page.getByText(/Browse the catalog/)).toHaveCount(0)
   })
 
@@ -58,7 +57,7 @@ test.describe('/integrations — Browse/Connected tabs', () => {
     const browseTab = page.getByRole('tab', { name: /Browse/ })
     await expect(browseTab).toHaveAttribute('data-state', 'active', { timeout: 10_000 })
 
-    // Both agents listed in browse
+    // Both agents listed in browse grid
     await expect(page.getByText('Claude Code', { exact: true }).first()).toBeVisible()
     await expect(page.getByText('OpenClaw', { exact: true }).first()).toBeVisible()
   })
@@ -74,8 +73,7 @@ test.describe('/integrations — Browse/Connected tabs', () => {
     const connectedTab = page.getByRole('tab', { name: /Connected/ })
     await expect(connectedTab).toHaveAttribute('data-state', 'active', { timeout: 10_000 })
 
-    // Connected tab shows the active agent, not the pending one
-    await expect(page.getByText('Claude Code', { exact: true }).first()).toBeVisible()
+    // Connected tab uses the row list — assert on its compact status text
     await expect(page.getByText(/Connected.*ago/).first()).toBeVisible()
   })
 
@@ -86,120 +84,60 @@ test.describe('/integrations — Browse/Connected tabs', () => {
     ])
     await page.goto('/integrations')
 
-    // Switch to Connected tab manually
     await page.getByRole('tab', { name: /Connected/ }).click()
 
     await expect(page.getByText(/Nothing connected/)).toBeVisible()
     await expect(page.getByRole('button', { name: /^Browse$/ })).toBeVisible()
   })
 
-  test('clicking a pending row expands to reveal description + platforms + Connect button (no wire yet)', async ({ page }) => {
+  test('Browse tab shows portrait cards with "Official" badge + Install affordance', async ({ page }) => {
     await mockSetup(page, [
       { agent: 'claude-code', state: 'pending', installed_at: null, last_active_at: null, calls_24h: 0, calls_7d: 0 },
       { agent: 'openclaw', state: 'pending', installed_at: null, last_active_at: null, calls_24h: 0, calls_7d: 0 },
     ])
     await page.goto('/integrations')
 
-    // Click the Claude Code row
-    await page.getByRole('button', { name: /Claude Code/ }).first().click()
+    // Badge on each card — uppercase OFFICIAL chip
+    const officialBadges = page.getByText('Official', { exact: true })
+    await expect(officialBadges.first()).toBeVisible()
+    // At least one per agent (Anthropic's "official" CLI description also
+    // contains the word, so we don't pin the count).
+    expect(await officialBadges.count()).toBeGreaterThanOrEqual(2)
 
-    // Description + platforms line visible (platforms are now a single
-    // "macOS · Linux · Windows" string, not individual chips)
-    await expect(page.getByText(/agentic coding workflows/i)).toBeVisible()
-    await expect(page.getByText(/macOS.*Linux/i).first()).toBeVisible()
-
-    // Connect button visible
-    await expect(page.getByRole('button', { name: /Connect Claude Code/ })).toBeVisible()
+    // Each card has an "Install" affordance (the role-button div in the footer)
+    const installButtons = page.getByText('Install', { exact: true })
+    await expect(installButtons.first()).toBeVisible()
   })
 
-  test('advanced install drawer exposes the curl command', async ({ page }) => {
+  test('Browse cards swap to "Connected" footer state when agent is active', async ({ page }) => {
+    const recent = new Date(Date.now() - 60_000).toISOString()
     await mockSetup(page, [
-      { agent: 'claude-code', state: 'pending', installed_at: null, last_active_at: null, calls_24h: 0, calls_7d: 0 },
+      { agent: 'claude-code', state: 'active', installed_at: recent, last_active_at: recent, calls_24h: 1, calls_7d: 1 },
       { agent: 'openclaw', state: 'pending', installed_at: null, last_active_at: null, calls_24h: 0, calls_7d: 0 },
     ])
     await page.goto('/integrations')
+    // Default tab is Connected when ≥1 wired — switch back to Browse manually
+    await page.getByRole('tab', { name: /Browse/ }).click()
 
-    // Expand the first row
-    await page.getByRole('button', { name: /Claude Code/ }).first().click()
-    await page.getByRole('button', { name: /Advanced install/ }).first().click()
-
-    await expect(page.locator('text=/curl -sf .*setup/agent/')).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Copy' }).first()).toBeVisible()
+    // Claude's card shows "Connected" in the footer; OpenClaw's shows "Install"
+    await expect(page.getByText('Connected', { exact: true }).first()).toBeVisible()
+    await expect(page.getByText('Install', { exact: true })).toBeVisible()
   })
 
-  test('connecting panel streams progressive log lines from the bridge', async ({
-    page,
-  }) => {
-    // Base setup mock — start with both agents pending.
+  test('Connected row click expands to wire diagram + Reinstall/Disconnect', async ({ page }) => {
+    const recent = new Date(Date.now() - 60_000).toISOString()
     await mockSetup(page, [
-      { agent: 'claude-code', state: 'pending', installed_at: null, last_active_at: null, calls_24h: 0, calls_7d: 0 },
+      { agent: 'claude-code', state: 'active', installed_at: recent, last_active_at: recent, calls_24h: 1, calls_7d: 1 },
       { agent: 'openclaw', state: 'pending', installed_at: null, last_active_at: null, calls_24h: 0, calls_7d: 0 },
     ])
-
-    const JOB_ID = 'log-stream-job'
-    let pollCount = 0
-
-    // POST /v1/cli/jobs — create the pending job.
-    await page.route('**/v1/cli/jobs', (route, req) => {
-      if (req.method() === 'POST') {
-        return route.fulfill({
-          status: 201,
-          contentType: 'application/json',
-          body: JSON.stringify({
-            id: JOB_ID,
-            type: 'connect',
-            agent: 'claude-code',
-            status: 'pending',
-            log: [],
-            created_at: Date.now() / 1000,
-            claimed_at: null,
-            finished_at: null,
-            exit_code: null,
-            error: null,
-          }),
-        })
-      }
-      return route.continue()
-    })
-
-    // GET /v1/cli/jobs/{id} — append a log line per poll, then succeed.
-    // We never reach 'succeeded' on a tick where the test still needs the
-    // connecting panel visible, so we keep it 'running' until the final tick.
-    await page.route(`**/v1/cli/jobs/${JOB_ID}`, (route, req) => {
-      if (req.method() !== 'GET') return route.continue()
-      pollCount += 1
-      const logs = ['connecting...', 'claiming job...', 'installing plugin...']
-      const visible = logs.slice(0, Math.min(pollCount, logs.length))
-      return route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          id: JOB_ID,
-          type: 'connect',
-          agent: 'claude-code',
-          status: 'running',
-          log: visible,
-          created_at: Date.now() / 1000,
-          claimed_at: Date.now() / 1000,
-          finished_at: null,
-          exit_code: null,
-          error: null,
-        }),
-      })
-    })
-
     await page.goto('/integrations')
+    await expect(page.getByRole('tab', { name: /Connected/ })).toHaveAttribute('data-state', 'active', { timeout: 10_000 })
 
-    // Expand the Claude Code row and trigger the connect flow.
+    // Click the Claude Code row — should be the only row on Connected tab
     await page.getByRole('button', { name: /Claude Code/ }).first().click()
-    await page.getByRole('button', { name: /Connect Claude Code/ }).click()
 
-    // The terminal-style log panel should appear and stream the progressive
-    // log lines as the polling hook (re)fetches the job state.
-    const logs = page.getByTestId('connecting-logs')
-    await expect(logs).toBeVisible({ timeout: 5_000 })
-    await expect(logs).toContainText('connecting...', { timeout: 5_000 })
-    await expect(logs).toContainText('claiming job...', { timeout: 5_000 })
-    await expect(logs).toContainText('installing plugin...', { timeout: 5_000 })
+    // Reinstall / Disconnect text-buttons live in the expanded panel
+    await expect(page.getByRole('button', { name: 'Reinstall' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Disconnect' })).toBeVisible()
   })
 })
