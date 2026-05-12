@@ -15,12 +15,11 @@ defaults:
 
 jobs:
   smoke-real-docker:
-    name: Real Docker smoke (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
+    name: Real Docker smoke (ubuntu-latest)
+    # macOS runners don't ship Docker, so we only run the real-Docker smoke on
+    # Linux. macOS coverage for everything that doesn't need a Docker daemon
+    # lives in cli-pr.yml's unit-test matrix.
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
