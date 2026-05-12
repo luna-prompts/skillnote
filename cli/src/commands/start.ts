@@ -8,7 +8,7 @@ import {
   ensureComposeExtracted,
 } from '../docker/compose.js'
 import { waitForHealthy } from '../docker/health.js'
-import { composeVersion, requireDocker } from '../docker/inspect.js'
+import { composeVersion, isProjectRunning, requireDocker } from '../docker/inspect.js'
 import { pkgInfo } from '../lib/package-info.js'
 import { checkPorts } from '../lib/ports.js'
 import { isInteractive } from '../lib/system.js'
@@ -95,20 +95,27 @@ export async function startCommand(opts: StartOptions = {}): Promise<void> {
       })
     }
 
-    const ports = await checkPorts([
-      { service: 'web', port: webPort },
-      { service: 'api', port: apiPort },
-    ])
-    const conflict = ports.find((p) => !p.free)
-    if (conflict) {
-      throw new UserFacingError({
-        header: `Port ${conflict.port} (${conflict.service}) is in use`,
-        body: 'Another process is already listening on that port.',
-        remediation: [
-          `Find it:    lsof -i :${conflict.port}`,
-          `Override:   skillnote start --${conflict.service}-port <free port>`,
-        ],
-      })
+    // If our own compose project is already up, the ports are bound by us —
+    // skip the host-port pre-check (which on macOS Docker Desktop sometimes
+    // misses gvproxy's IPv6 dual-stack binds) and let `compose up` be
+    // idempotent. See #41.
+    const alreadyUp = await isProjectRunning()
+    if (!alreadyUp) {
+      const ports = await checkPorts([
+        { service: 'web', port: webPort },
+        { service: 'api', port: apiPort },
+      ])
+      const conflict = ports.find((p) => !p.free)
+      if (conflict) {
+        throw new UserFacingError({
+          header: `Port ${conflict.port} (${conflict.service}) is in use`,
+          body: 'Another process is already listening on that port.',
+          remediation: [
+            `Find it:    lsof -i :${conflict.port}`,
+            `Override:   skillnote start --${conflict.service}-port <free port>`,
+          ],
+        })
+      }
     }
 
     prereq.stop(`Prerequisites ${c.ok('ok')}`)
