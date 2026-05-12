@@ -125,6 +125,16 @@ function classify(err: ExecaError): never {
       ],
     })
   }
+  if (msg.includes('no space left on device') || msg.includes('ENOSPC')) {
+    throw new UserFacingError({
+      header: 'Disk full',
+      body: "Docker can't write — your disk is out of space.",
+      remediation: [
+        'Free up Docker disk space:  docker system prune -a',
+        'Or free up host disk space and retry.',
+      ],
+    })
+  }
   if (msg.includes('manifest unknown') || msg.includes('not found')) {
     throw new UserFacingError({
       header: 'SkillNote image not found in the registry',

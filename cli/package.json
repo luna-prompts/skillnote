@@ -1,6 +1,6 @@
 {
   "name": "skillnote",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Self-hosted skill registry for AI coding agents",
   "license": "MIT",
   "homepage": "https://github.com/luna-prompts/skillnote",

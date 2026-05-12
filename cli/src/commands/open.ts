@@ -36,6 +36,15 @@ export async function openCommand(opts: OpenOptions = {}): Promise<void> {
     }
   }
 
-  await open(url)
-  process.stdout.write(`${c.muted('Opened:')} ${c.brand(url)}\n`)
+  // open() can throw on headless systems (no DISPLAY, ssh sessions, WSL2
+  // without an X server, CI runners). Catch the rejection and fall back to
+  // printing the URL so the user can copy/paste — same end state as `--print`.
+  try {
+    await open(url)
+    process.stdout.write(`${c.muted('Opened:')} ${c.brand(url)}\n`)
+  } catch {
+    process.stdout.write(
+      `${c.muted('Could not open a browser — visit')} ${c.brand(url)} ${c.muted('manually.')}\n`,
+    )
+  }
 }

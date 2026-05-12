@@ -52,26 +52,19 @@ afterEach(() => {
 })
 
 describe('openCommand — browser failure handling', () => {
-  it('does not throw when `open()` rejects (headless box)', async () => {
+  it('does not throw when `open()` rejects (headless box) — prints fallback URL', async () => {
     vi.mocked(open).mockRejectedValueOnce(new Error('spawn xdg-open ENOENT'))
-    // The fallback message after the rejected open() is written via `c.brand`,
-    // which still succeeds; the *open* call itself rejecting must propagate to
-    // the caller — TODO: source could catch and print URL fallback.
-    await expect(openCommand()).rejects.toThrow(/xdg-open|ENOENT/)
-    // TODO: src/commands/open.ts should catch the rejection on the bare
-    // `await open(url)` and instead print the URL as a fallback (like
-    // --print does). Today it propagates and the CLI top-level prints an
-    // ugly stack. When that fix lands, change the assertion above to:
-    //   await expect(openCommand()).resolves.toBeUndefined()
+    await expect(openCommand()).resolves.toBeUndefined()
+    expect(stdoutWrites.join('')).toMatch(/visit.*http:\/\/localhost:3000.*manually/i)
   })
 
   it('falls back gracefully when --app launch fails, then default also fails', async () => {
-    // --app path is wrapped in try/catch and explicitly falls through.
-    // The default open() at the bottom is NOT wrapped, so this still rejects.
+    // Both open() calls reject — should NOT throw, just print the URL.
     vi.mocked(open)
       .mockRejectedValueOnce(new Error('chrome not found'))
       .mockRejectedValueOnce(new Error('xdg-open not found'))
-    await expect(openCommand({ app: true })).rejects.toThrow()
+    await expect(openCommand({ app: true })).resolves.toBeUndefined()
+    expect(stdoutWrites.join('')).toContain('http://localhost:3000')
   })
 
   it('--print short-circuits and never calls open() at all', async () => {
