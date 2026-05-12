@@ -6,7 +6,6 @@ import { cn } from '@/lib/utils'
 export type ConnectionState =
   | 'pending'
   | 'connecting'
-  | 'installed'
   | 'active'
   | 'idle'
 
@@ -26,7 +25,7 @@ interface Props {
  * via `motion-safe:` prefix on the animated classes.
  */
 export function Connector({ state, className }: Props) {
-  const showPackets = state === 'connecting' || state === 'installed'
+  const showPackets = state === 'connecting'
   const isLive = state === 'active' || state === 'idle'
 
   const lineColor =
@@ -34,14 +33,11 @@ export function Connector({ state, className }: Props) {
       ? 'stroke-emerald-500'
       : state === 'idle'
         ? 'stroke-emerald-500/40'
-        : state === 'installed'
-          ? 'stroke-amber-500'
-          : state === 'connecting'
-            ? 'stroke-emerald-500/70'
-            : 'stroke-muted-foreground/40'
+        : state === 'connecting'
+          ? 'stroke-emerald-500/70'
+          : 'stroke-muted-foreground/40'
 
-  const packetColor =
-    state === 'installed' ? 'bg-amber-500' : 'bg-emerald-500'
+  const packetColor = 'bg-emerald-500'
 
   const dashClass = isLive ? '' : '[stroke-dasharray:5_7]'
 
@@ -121,14 +117,6 @@ function CenterNode({ state }: { state: ConnectionState }) {
           className={cn(base, size, 'border-2 border-emerald-500/40 text-emerald-500/60')}
         >
           <Check className="h-4 w-4" strokeWidth={3} />
-        </div>
-      )
-    case 'installed':
-      return (
-        <div
-          className={cn(base, size, 'border-2 border-amber-500 text-amber-500')}
-        >
-          <Loader2 className="h-4 w-4 motion-safe:animate-spin" />
         </div>
       )
     case 'connecting':

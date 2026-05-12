@@ -819,7 +819,12 @@ def post_install_ping(
 
 class AgentStatus(BaseModel):
     agent: AgentLiteral
-    state: Literal["pending", "installed", "active", "idle"]
+    # Three states, not four. "installed but waiting for first skill call"
+    # was UI noise — once the install pinged successfully, we trust the
+    # install and call it connected. If the agent's first skill call never
+    # comes, the user will notice that on their own (no analytics to look
+    # at) rather than us nagging them with a "waiting" badge.
+    state: Literal["pending", "active", "idle"]
     installed_at: datetime | None
     last_active_at: datetime | None
     calls_24h: int
@@ -880,25 +885,20 @@ def _agent_status(agent: AgentLiteral, db: Session) -> AgentStatus:
             ),
         ).scalar() or 0
 
-    # State derivation:
-    #   - active: recent skill call (in 24h) regardless of install ping
-    #   - installed: install ping exists, no recent activity yet
-    #   - idle: recent activity in 30d but >24h ago
+    # State derivation (3 states, no "installed/waiting" middle ground):
+    #   - active: install pinged at any point OR a skill call in the last 24h
+    #   - idle:   no install ping AND last activity was 24h..30d ago
     #   - pending: nothing
     now = datetime.now(tz=timezone.utc)
-    state: Literal["pending", "installed", "active", "idle"] = "pending"
-    if last_active is not None:
+    state: Literal["pending", "active", "idle"] = "pending"
+    if installed_at is not None:
+        state = "active"
+    elif last_active is not None:
         age = now - last_active
         if age.total_seconds() < ACTIVE_WINDOW_HOURS * 3600:
             state = "active"
         elif age.days < IDLE_WINDOW_DAYS:
             state = "idle"
-        elif installed_at is not None:
-            state = "installed"
-        else:
-            state = "pending"
-    elif installed_at is not None:
-        state = "installed"
 
     return AgentStatus(
         agent=agent,

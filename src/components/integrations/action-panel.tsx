@@ -33,8 +33,6 @@ export function ActionPanel(props: Props) {
       return <PendingPanel {...props} />
     case 'connecting':
       return <ConnectingPanel {...props} />
-    case 'installed':
-      return <InstalledPanel {...props} />
     case 'active':
     case 'idle':
       return <ActivePanel {...props} />
@@ -145,20 +143,6 @@ function StepItem({
         {children}
       </span>
     </li>
-  )
-}
-
-function InstalledPanel({ agentLabel }: Props) {
-  return (
-    <div className="space-y-2">
-      <StatusLine dotClass="bg-amber-500">
-        Installed — waiting for first task
-      </StatusLine>
-      <p className="text-[13px] text-muted-foreground">
-        Open {agentLabel} and try any task. Skills activate automatically;
-        this card updates the moment we see activity.
-      </p>
-    </div>
   )
 }
 

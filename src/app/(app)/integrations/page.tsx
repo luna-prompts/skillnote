@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { TopBar } from '@/components/layout/topbar'
-import { AgentRow } from '@/components/integrations/agent-row'
+import { AgentListRow } from '@/components/integrations/agent-list-row'
 import { ClaudeCodeMark, OpenClawMark } from '@/components/integrations/agent-marks'
 import type { ConnectionState } from '@/components/integrations/connector'
 import { getApiBaseUrl } from '@/lib/api/client'
@@ -20,7 +20,7 @@ interface AgentSnapshot {
 
 interface SetupAgentStatus {
   agent: AgentId
-  state: 'pending' | 'installed' | 'active' | 'idle'
+  state: 'pending' | 'active' | 'idle'
   installed_at: string | null
   last_active_at: string | null
   calls_24h: number
@@ -28,12 +28,11 @@ interface SetupAgentStatus {
 }
 
 const AGENTS: { id: AgentId; label: string; sublabel: string }[] = [
-  { id: 'claude-code', label: 'Claude Code', sublabel: 'by Anthropic' },
-  { id: 'openclaw', label: 'OpenClaw', sublabel: 'by OpenClaw' },
+  { id: 'claude-code', label: 'Claude Code', sublabel: 'Anthropic CLI' },
+  { id: 'openclaw', label: 'OpenClaw', sublabel: 'Open-source agent runtime' },
 ]
 
-const ALL_STATES: ConnectionState[] = ['pending', 'connecting', 'installed', 'active', 'idle']
-
+const ALL_STATES: ConnectionState[] = ['pending', 'connecting', 'active', 'idle']
 const POLL_INTERVAL_MS = 5_000
 
 export default function IntegrationsPage() {
@@ -61,8 +60,7 @@ export default function IntegrationsPage() {
         setSnapshots((prev) => {
           const next = { ...prev }
           for (const row of rows) {
-            // Preserve the local 'connecting' optimistic state if a bridge
-            // job is mid-flight — the backend won't know about it yet.
+            // Preserve optimistic 'connecting' while a bridge job is mid-flight
             if (prev[row.agent]?.state === 'connecting') continue
             next[row.agent] = {
               id: row.agent,
@@ -74,13 +72,10 @@ export default function IntegrationsPage() {
           return next
         })
       } catch {
-        // Network down / backend offline → leave snapshots untouched. Banner
-        // at the top of the app already surfaces the connection state.
+        // Network down — leave snapshots untouched; banner surfaces the rest.
       }
     }
 
-    // Initial fetch + light polling so the page reflects new installs/calls
-    // without a hard refresh.
     fetchStatus()
     const id = setInterval(fetchStatus, POLL_INTERVAL_MS)
     return () => {
@@ -95,11 +90,13 @@ export default function IntegrationsPage() {
   useEffect(() => {
     if (!pendingJob || !job) return
     if (job.status === 'succeeded') {
+      // Backend install ping will flip state on next poll; in the meantime
+      // optimistically mark active so the UI doesn't bounce.
       setSnapshots((prev) => ({
         ...prev,
-        [pendingJob.agent]: { ...prev[pendingJob.agent], state: 'installed' },
+        [pendingJob.agent]: { ...prev[pendingJob.agent], state: 'active' },
       }))
-      toast.success(`${labelOf(pendingJob.agent)} install complete — try a task to activate`)
+      toast.success(`${labelOf(pendingJob.agent)} connected`)
       setPendingJob(null)
     } else if (job.status === 'failed' || job.status === 'cancelled') {
       toast.error(`Install failed. Try the manual command in Advanced.`)
@@ -137,8 +134,7 @@ export default function IntegrationsPage() {
     } as Record<AgentId, AgentSnapshot>
   }, [snapshots, overrides])
 
-  // Resolved base — always falls back to localhost:8082 if state hasn't
-  // hydrated yet, so the curl command is never empty.
+  // Resolve apiBase fallback so install commands are never empty before hydration
   const base = apiBase || 'http://localhost:8082'
   const installCmd = (id: AgentId) =>
     id === 'claude-code'
@@ -159,42 +155,88 @@ export default function IntegrationsPage() {
   const markFor = (id: AgentId) =>
     id === 'claude-code' ? <ClaudeCodeMark /> : <OpenClawMark />
 
+  // Partition by state. A 'connecting' agent stays in the "Available" group
+  // until the bridge job completes — moving it would feel like premature
+  // celebration.
+  const installed: typeof AGENTS = []
+  const available: typeof AGENTS = []
+  for (const agent of AGENTS) {
+    const s = effective[agent.id].state
+    if (s === 'active' || s === 'idle') {
+      installed.push(agent)
+    } else {
+      available.push(agent)
+    }
+  }
+
   return (
     <>
       <TopBar showFab={false} />
       <div className="flex-1 overflow-auto">
         <div className="max-w-3xl mx-auto px-6 py-8">
-          {/* Page header — native style, matches Settings page */}
+          {/* Header — matches Settings page hierarchy */}
           <header className="mb-8">
             <h1 className="text-xl font-semibold text-foreground tracking-tight">
               Integrations
             </h1>
             <p className="text-[13px] text-muted-foreground mt-1">
-              Wire SkillNote into your AI coding agent.
+              Install SkillNote into your AI coding agents.
             </p>
           </header>
 
-          {/* Stacked agent rows — both visible at once */}
-          <div className="space-y-4">
-            {AGENTS.map((agent) => {
-              const snap = effective[agent.id]
-              return (
-                <AgentRow
-                  key={agent.id}
-                  state={snap.state}
-                  agentLabel={agent.label}
-                  agentSublabel={agent.sublabel}
-                  agentMark={markFor(agent.id)}
-                  installCommand={installCmd(agent.id)}
-                  installedAt={snap.installedAt}
-                  lastCallAt={snap.lastCallAt}
-                  onConnectClick={() => handleConnect(agent.id)}
-                  onReinstall={() => handleReinstall(agent.id)}
-                  onDisconnect={() => handleDisconnect(agent.id)}
-                />
-              )
-            })}
-          </div>
+          {installed.length > 0 ? (
+            <Section
+              label="Installed"
+              count={installed.length}
+              className="mb-6"
+            >
+              {installed.map((agent) => {
+                const snap = effective[agent.id]
+                return (
+                  <AgentListRow
+                    key={agent.id}
+                    state={snap.state}
+                    agentLabel={agent.label}
+                    agentSublabel={agent.sublabel}
+                    agentMark={markFor(agent.id)}
+                    installCommand={installCmd(agent.id)}
+                    installedAt={snap.installedAt}
+                    lastCallAt={snap.lastCallAt}
+                    onConnectClick={() => handleConnect(agent.id)}
+                    onReinstall={() => handleReinstall(agent.id)}
+                    onDisconnect={() => handleDisconnect(agent.id)}
+                  />
+                )
+              })}
+            </Section>
+          ) : null}
+
+          {available.length > 0 ? (
+            <Section label="Available" count={available.length}>
+              {available.map((agent) => {
+                const snap = effective[agent.id]
+                return (
+                  <AgentListRow
+                    key={agent.id}
+                    state={snap.state}
+                    agentLabel={agent.label}
+                    agentSublabel={agent.sublabel}
+                    agentMark={markFor(agent.id)}
+                    installCommand={installCmd(agent.id)}
+                    installedAt={snap.installedAt}
+                    lastCallAt={snap.lastCallAt}
+                    // When the user has zero installed agents, default the
+                    // first available row to open so the install affordance
+                    // is immediately visible — no extra click required.
+                    defaultOpen={installed.length === 0 && agent === available[0]}
+                    onConnectClick={() => handleConnect(agent.id)}
+                    onReinstall={() => handleReinstall(agent.id)}
+                    onDisconnect={() => handleDisconnect(agent.id)}
+                  />
+                )
+              })}
+            </Section>
+          ) : null}
         </div>
       </div>
 
@@ -205,6 +247,34 @@ export default function IntegrationsPage() {
 
 function labelOf(id: AgentId): string {
   return id === 'claude-code' ? 'Claude Code' : 'OpenClaw'
+}
+
+// ─── Section header + list wrapper ────────────────────────────────────────
+
+function Section({
+  label,
+  count,
+  children,
+  className,
+}: {
+  label: string
+  count: number
+  children: React.ReactNode
+  className?: string
+}) {
+  return (
+    <section className={className}>
+      <div className="flex items-baseline gap-2 mb-3">
+        <h2 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+          {label}
+        </h2>
+        <span className="text-[11px] text-muted-foreground/60 tabular-nums">
+          {count}
+        </span>
+      </div>
+      <ul className="space-y-2">{children}</ul>
+    </section>
+  )
 }
 
 // ─── Dev cycler ────────────────────────────────────────────────────────────
