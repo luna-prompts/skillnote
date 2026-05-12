@@ -1,3 +1,4 @@
+import { cn } from '@/lib/utils'
 import { ConnectionDiagram } from './connection-diagram'
 import { ActionPanel, type AgentStats } from './action-panel'
 import type { ConnectionState } from './connector'
@@ -24,8 +25,16 @@ interface Props {
  * than a wide bar.
  */
 export function AgentRow(props: Props) {
+  // The `key` forces React to remount the section when the agent changes,
+  // triggering the fade-in animation. Smooth canvas swap on tab change.
   return (
-    <section className="rounded-2xl border border-border bg-card/40 backdrop-blur-sm p-8 md:p-10">
+    <section
+      key={props.agentLabel}
+      className={cn(
+        'rounded-2xl border border-border bg-card/40 backdrop-blur-sm p-8 md:p-10',
+        'motion-safe:animate-[canvas-in_280ms_ease-out]',
+      )}
+    >
       <div className="max-w-2xl mx-auto space-y-8">
         <ConnectionDiagram
           state={props.state}

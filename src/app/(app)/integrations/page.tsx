@@ -177,11 +177,14 @@ export default function IntegrationsPage() {
         <div className="max-w-3xl mx-auto px-6 py-10 md:py-14">
           {/* Header */}
           <header className="text-center mb-8">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground/70 mb-2">
+              Integrations
+            </p>
             <h1 className="text-2xl md:text-3xl font-semibold tracking-tight text-foreground">
-              Connect
+              Connect your agent
             </h1>
             <p className="mt-2 text-[14px] text-muted-foreground">
-              Wire your AI agents into SkillNote.
+              Wire SkillNote into your AI coding agent in about 30 seconds.
             </p>
           </header>
 
@@ -242,40 +245,51 @@ function AgentTabs({
   className?: string
 }) {
   return (
-    <div
-      role="tablist"
-      aria-label="Choose agent"
-      className={cn(
-        'inline-flex w-full p-1 rounded-xl border border-border bg-card',
-        'shadow-[0_1px_2px_rgba(0,0,0,0.03)]',
-        className,
-      )}
-    >
-      {agents.map((a) => {
-        const active = a.id === selected
-        return (
-          <button
-            key={a.id}
-            role="tab"
-            aria-selected={active}
-            onClick={() => onSelect(a.id)}
-            className={cn(
-              'flex-1 inline-flex items-center justify-center gap-2.5 px-4 py-2 rounded-lg',
-              'text-[13px] font-medium transition-all duration-200',
-              active
-                ? 'bg-background text-foreground shadow-sm'
-                : 'text-muted-foreground hover:text-foreground hover:bg-muted/40',
-            )}
-          >
-            <span className="shrink-0 [&>img]:!w-5 [&>img]:!h-5 [&>div]:!w-5 [&>div]:!h-5">
-              {a.mark}
-            </span>
-            <span className="truncate">{a.label}</span>
-            <StateChip state={a.state} />
-          </button>
-        )
-      })}
+    <div className={cn('flex justify-center', className)}>
+      <div
+        role="tablist"
+        aria-label="Choose agent"
+        className={cn(
+          'inline-flex p-1 rounded-xl border border-border bg-card',
+          'shadow-[0_1px_2px_rgba(0,0,0,0.03)]',
+        )}
+      >
+        {agents.map((a) => {
+          const active = a.id === selected
+          return (
+            <button
+              key={a.id}
+              role="tab"
+              aria-selected={active}
+              onClick={() => onSelect(a.id)}
+              className={cn(
+                'inline-flex items-center gap-2.5 px-4 py-2 rounded-lg',
+                'text-[13px] font-medium transition-all duration-200',
+                active
+                  ? 'bg-background text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-muted/40',
+              )}
+            >
+              <span className="shrink-0 inline-flex h-5 w-5 items-center justify-center overflow-hidden rounded">
+                <TabMark>{a.mark}</TabMark>
+              </span>
+              <span>{a.label}</span>
+              <StateChip state={a.state} />
+            </button>
+          )
+        })}
+      </div>
     </div>
+  )
+}
+
+// Forces any mark variant (img or div+svg) into a uniform 20px square so
+// the tab strip reads as a clean row.
+function TabMark({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="[&>*]:!w-5 [&>*]:!h-5 [&_svg]:!w-3 [&_svg]:!h-3 inline-flex items-center justify-center">
+      {children}
+    </span>
   )
 }
 

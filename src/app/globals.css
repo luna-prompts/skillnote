@@ -374,3 +374,9 @@ body.skill-editing .content-wrapper {
   100% { box-shadow: 0 0 0 0 rgb(16 185 129 / 0); }
 }
 
+/* Canvas swap on agent-tab change — short, restrained. */
+@keyframes canvas-in {
+  0%   { opacity: 0; transform: translateY(4px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+

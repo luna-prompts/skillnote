@@ -21,6 +21,7 @@ export function ProductCard({ label, sublabel, mark, className }: Props) {
           'rounded-2xl border border-border bg-card',
           'shadow-[0_1px_2px_rgba(0,0,0,0.04),0_4px_12px_rgba(0,0,0,0.04)]',
           'dark:shadow-[0_1px_2px_rgba(0,0,0,0.4),0_4px_12px_rgba(0,0,0,0.25)]',
+          'transition-transform duration-200 hover:scale-[1.03]',
         )}
       >
         {mark}
@@ -29,7 +30,9 @@ export function ProductCard({ label, sublabel, mark, className }: Props) {
         {label}
       </p>
       {sublabel ? (
-        <p className="mt-0.5 text-[11px] text-muted-foreground">{sublabel}</p>
+        <p className="mt-px text-[10.5px] uppercase tracking-[0.12em] text-muted-foreground/70 font-medium">
+          {sublabel}
+        </p>
       ) : null}
     </div>
   )

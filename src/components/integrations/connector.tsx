@@ -38,12 +38,12 @@ export function Connector({ state, className }: Props) {
           ? 'stroke-amber-500'
           : state === 'connecting'
             ? 'stroke-emerald-500/70'
-            : 'stroke-border'
+            : 'stroke-muted-foreground/40'
 
   const packetColor =
     state === 'installed' ? 'bg-amber-500' : 'bg-emerald-500'
 
-  const dashClass = isLive ? '' : '[stroke-dasharray:6_8]'
+  const dashClass = isLive ? '' : '[stroke-dasharray:5_7]'
 
   return (
     <div className={cn('relative flex-1 min-w-[80px]', className)}>
