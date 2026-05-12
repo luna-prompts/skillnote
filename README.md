@@ -60,15 +60,46 @@ Your skills. Your servers. Your rules.
 
 ## Quick Start
 
-Run SkillNote with one command:
+Three install paths — pick the one that matches your setup.
+
+### Option A — npx (recommended for Node-using developers)
 
 ```bash
 npx skillnote start
 ```
 
-Open the URL it prints (default: <http://localhost:3000>).
+Opens <http://localhost:3000>. Requires [Docker Desktop](https://docs.docker.com/get-docker/) and [Node.js 20+](https://nodejs.org/). The CLI pulls the published Docker images from GHCR, brings up the web + API + Postgres stack, waits for healthchecks, and opens the dashboard.
 
-That's it. The CLI pulls the published Docker images, brings up the web + API + Postgres stack, waits for healthchecks, and opens the dashboard. Requires [Docker Desktop](https://docs.docker.com/get-docker/) and [Node.js 20+](https://nodejs.org/).
+### Option B — Docker Compose (no Node required)
+
+If you don't have Node, or prefer pure Docker:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/luna-prompts/skillnote/master/deploy/docker-compose.yml -o docker-compose.yml
+docker compose up -d
+```
+
+Open <http://localhost:3000>. The compose file pins the images to a specific version; bump `:0.5.0` to upgrade. To bind on your LAN so other devices can reach the UI:
+
+```bash
+SKILLNOTE_HOST=<your-lan-ip> docker compose up -d
+```
+
+### Option C — Build from source (contributors)
+
+```bash
+git clone https://github.com/luna-prompts/skillnote.git
+cd skillnote
+./install.sh
+```
+
+`./install.sh` builds containers from the local source instead of pulling published images. Use this when you're hacking on SkillNote itself.
+
+---
+
+### Boot output (any path)
+
+All paths converge on the same stack — Postgres + FastAPI + Next.js — running on `localhost:3000` (UI) and `localhost:8082` (API):
 
 ```text
 ┌────────────────────────────────────────────┐
@@ -86,30 +117,22 @@ That's it. The CLI pulls the published Docker images, brings up the web + API + 
 ╰────────┴──────────────────────────────╯
 ```
 
-#### Other lifecycle commands
+### Lifecycle commands (Option A only)
+
+`npx skillnote` wraps the Docker stack with these:
 
 | Command | What it does |
 | --- | --- |
+| `npx skillnote start` | Pull, boot, wait for health, open UI |
 | `npx skillnote stop` | Stop the stack. Data preserved in Docker volumes. |
-| `npx skillnote restart` | Stop + start. |
+| `npx skillnote restart` | Stop + start |
 | `npx skillnote status` | Health table + URLs. `--json` for scripts. |
 | `npx skillnote logs [service]` | Tail logs. `-f` to follow. |
 | `npx skillnote open` | Open the web UI. `--app` for chromeless Chrome mode. |
 | `npx skillnote doctor` | Run 11 health checks (Docker, ports, services). |
 | `npx skillnote reset --confirm` | **Destructive** — drop all data. |
 
-<details>
-<summary><b>Building from source (contributors)</b></summary>
-
-```bash
-git clone https://github.com/luna-prompts/skillnote.git
-cd skillnote
-./install.sh
-```
-
-`./install.sh` builds containers from the local source instead of pulling published images. Use this when you're hacking on SkillNote itself. End users should prefer `npx skillnote start`.
-
-</details>
+Option B users use the equivalent `docker compose` commands (`docker compose up -d`, `docker compose down`, `docker compose logs -f`, etc.).
 
 #### Then wire up your AI agent
 
