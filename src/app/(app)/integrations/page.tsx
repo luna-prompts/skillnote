@@ -2,11 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { cn } from '@/lib/utils'
 import { TopBar } from '@/components/layout/topbar'
 import { AgentRow } from '@/components/integrations/agent-row'
 import { ClaudeCodeMark, OpenClawMark } from '@/components/integrations/agent-marks'
-import type { AgentStats } from '@/components/integrations/action-panel'
 import type { ConnectionState } from '@/components/integrations/connector'
 import { getApiBaseUrl } from '@/lib/api/client'
 import { dispatchJob, useJobPolling, type JobAgent } from '@/lib/cli-jobs'
@@ -20,7 +18,7 @@ interface AgentSnapshot {
   id: AgentId
   state: ConnectionState
   installedAt?: string
-  stats?: AgentStats
+  lastCallAt?: string
 }
 
 const AGENTS: { id: AgentId; label: string; sublabel: string }[] = [
@@ -28,42 +26,10 @@ const AGENTS: { id: AgentId; label: string; sublabel: string }[] = [
   { id: 'openclaw', label: 'OpenClaw', sublabel: 'by OpenClaw' },
 ]
 
-// Mock stats are intentionally different per agent so the user notices when
-// they tab between (so they don't suspect the page is stuck).
-const MOCK_STATS_CLAUDE: AgentStats = {
-  lastCallAt: new Date(Date.now() - 2 * 60_000).toISOString(),
-  calls7d: 47,
-  uniqueSkills7d: 8,
-  timeline7d: [0.1, 0.25, 0.55, 0.9, 0.7, 1.0, 0.35],
-  topSkills: [
-    { slug: 'error-handling', calls: 12, lastAt: new Date(Date.now() - 60_000).toISOString() },
-    { slug: 'testing-guide', calls: 8, lastAt: new Date(Date.now() - 60 * 60_000).toISOString() },
-    { slug: 'code-review-list', calls: 6, lastAt: new Date(Date.now() - 3 * 60 * 60_000).toISOString() },
-  ],
-}
-
-const MOCK_STATS_OPENCLAW: AgentStats = {
-  lastCallAt: new Date(Date.now() - 14 * 60_000).toISOString(),
-  calls7d: 18,
-  uniqueSkills7d: 5,
-  timeline7d: [0.3, 0.1, 0.45, 0.6, 0.2, 0.35, 0.55],
-  topSkills: [
-    { slug: 'react-component-patterns', calls: 7, lastAt: new Date(Date.now() - 14 * 60_000).toISOString() },
-    { slug: 'sql-query-optimize', calls: 5, lastAt: new Date(Date.now() - 4 * 60 * 60_000).toISOString() },
-    { slug: 'systematic-debugging', calls: 4, lastAt: new Date(Date.now() - 7 * 60 * 60_000).toISOString() },
-  ],
-}
-
-const MOCK_STATS_BY_AGENT: Record<AgentId, AgentStats> = {
-  'claude-code': MOCK_STATS_CLAUDE,
-  openclaw: MOCK_STATS_OPENCLAW,
-}
-
 const ALL_STATES: ConnectionState[] = ['pending', 'connecting', 'installed', 'active', 'idle']
 
 export default function IntegrationsPage() {
   const [apiBase, setApiBase] = useState<string>('')
-  const [selected, setSelected] = useState<AgentId>('claude-code')
   const [overrides, setOverrides] = useState<Partial<Record<AgentId, ConnectionState>>>({})
   const [snapshots, setSnapshots] = useState<Record<AgentId, AgentSnapshot>>({
     'claude-code': { id: 'claude-code', state: 'pending' },
@@ -94,14 +60,7 @@ export default function IntegrationsPage() {
               : 'pending'
         setSnapshots((prev) => ({
           ...prev,
-          [id]: {
-            id,
-            state,
-            stats:
-              state === 'active' || state === 'idle'
-                ? { ...MOCK_STATS_BY_AGENT[id], lastCallAt: ts }
-                : undefined,
-          },
+          [id]: { id, state, lastCallAt: ts },
         }))
       } catch {
         // network errors leave state at 'pending'
@@ -159,9 +118,6 @@ export default function IntegrationsPage() {
       }))
       return true
     } catch (err) {
-      // Bridge probably isn't running, or backend is down. Surface a
-      // useful message instead of silent failure — direct the user to
-      // the manual install path in the Advanced drawer.
       const msg = err instanceof Error ? err.message : 'unknown error'
       toast.error(
         `Couldn't dispatch install (${msg.includes('fetch') ? 'backend offline' : msg}). Open "Advanced install" and run the command manually.`,
@@ -174,11 +130,7 @@ export default function IntegrationsPage() {
   const effective = useMemo(() => {
     const apply = (s: AgentSnapshot): AgentSnapshot => {
       const override = overrides[s.id]
-      if (!override) return s
-      if (override === 'active' || override === 'idle') {
-        return { ...s, state: override, stats: MOCK_STATS_BY_AGENT[s.id] }
-      }
-      return { ...s, state: override }
+      return override ? { ...s, state: override } : s
     }
     return {
       'claude-code': apply(snapshots['claude-code']),
@@ -208,52 +160,42 @@ export default function IntegrationsPage() {
   const markFor = (id: AgentId) =>
     id === 'claude-code' ? <ClaudeCodeMark /> : <OpenClawMark />
 
-  const current = AGENTS.find((a) => a.id === selected)!
-  const currentSnapshot = effective[selected]
-
   return (
     <>
       <TopBar showFab={false} />
       <div className="flex-1 overflow-auto">
-        <div className="max-w-3xl mx-auto px-6 py-10 md:py-14">
-          {/* Header */}
-          <header className="text-center mb-8">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground/70 mb-2">
+        <div className="max-w-3xl mx-auto px-6 py-8">
+          {/* Page header — native style, matches Settings page */}
+          <header className="mb-8">
+            <h1 className="text-xl font-semibold text-foreground tracking-tight">
               Integrations
-            </p>
-            <h1 className="text-2xl md:text-3xl font-semibold tracking-tight text-foreground">
-              Connect your agent
             </h1>
-            <p className="mt-2 text-[14px] text-muted-foreground">
-              Wire SkillNote into your AI coding agent in about 30 seconds.
+            <p className="text-[13px] text-muted-foreground mt-1">
+              Wire SkillNote into your AI coding agent.
             </p>
           </header>
 
-          {/* Agent tab switcher */}
-          <AgentTabs
-            agents={AGENTS.map((a) => ({
-              ...a,
-              state: effective[a.id].state,
-              mark: markFor(a.id),
-            }))}
-            selected={selected}
-            onSelect={setSelected}
-            className="mb-6"
-          />
-
-          {/* Single selected agent — the canvas */}
-          <AgentRow
-            state={currentSnapshot.state}
-            agentLabel={current.label}
-            agentSublabel={current.sublabel}
-            agentMark={markFor(selected)}
-            installCommand={installCmd(selected)}
-            installedAt={currentSnapshot.installedAt}
-            stats={currentSnapshot.stats}
-            onConnectClick={() => handleConnect(selected)}
-            onReinstall={() => handleReinstall(selected)}
-            onDisconnect={() => handleDisconnect(selected)}
-          />
+          {/* Stacked agent rows — both visible at once */}
+          <div className="space-y-4">
+            {AGENTS.map((agent) => {
+              const snap = effective[agent.id]
+              return (
+                <AgentRow
+                  key={agent.id}
+                  state={snap.state}
+                  agentLabel={agent.label}
+                  agentSublabel={agent.sublabel}
+                  agentMark={markFor(agent.id)}
+                  installCommand={installCmd(agent.id)}
+                  installedAt={snap.installedAt}
+                  lastCallAt={snap.lastCallAt}
+                  onConnectClick={() => handleConnect(agent.id)}
+                  onReinstall={() => handleReinstall(agent.id)}
+                  onDisconnect={() => handleDisconnect(agent.id)}
+                />
+              )
+            })}
+          </div>
         </div>
       </div>
 
@@ -264,96 +206,6 @@ export default function IntegrationsPage() {
 
 function labelOf(id: AgentId): string {
   return id === 'claude-code' ? 'Claude Code' : 'OpenClaw'
-}
-
-// ─── Tab switcher ──────────────────────────────────────────────────────────
-
-interface TabAgent {
-  id: AgentId
-  label: string
-  sublabel: string
-  state: ConnectionState
-  mark: React.ReactNode
-}
-
-function AgentTabs({
-  agents,
-  selected,
-  onSelect,
-  className,
-}: {
-  agents: TabAgent[]
-  selected: AgentId
-  onSelect: (id: AgentId) => void
-  className?: string
-}) {
-  return (
-    <div className={cn('flex justify-center', className)}>
-      <div
-        role="tablist"
-        aria-label="Choose agent"
-        className={cn(
-          'inline-flex p-1 rounded-xl border border-border bg-card',
-          'shadow-[0_1px_2px_rgba(0,0,0,0.03)]',
-        )}
-      >
-        {agents.map((a) => {
-          const active = a.id === selected
-          return (
-            <button
-              key={a.id}
-              role="tab"
-              aria-selected={active}
-              onClick={() => onSelect(a.id)}
-              className={cn(
-                'inline-flex items-center gap-2.5 px-4 py-2 rounded-lg',
-                'text-[13px] font-medium transition-all duration-200',
-                active
-                  ? 'bg-background text-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground hover:bg-muted/40',
-              )}
-            >
-              <span className="shrink-0 inline-flex h-5 w-5 items-center justify-center overflow-hidden rounded">
-                <TabMark>{a.mark}</TabMark>
-              </span>
-              <span>{a.label}</span>
-              <StateChip state={a.state} />
-            </button>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
-
-// Forces any mark variant (img or div+svg) into a uniform 20px square so
-// the tab strip reads as a clean row.
-function TabMark({ children }: { children: React.ReactNode }) {
-  return (
-    <span className="[&>*]:!w-5 [&>*]:!h-5 [&_svg]:!w-3 [&_svg]:!h-3 inline-flex items-center justify-center">
-      {children}
-    </span>
-  )
-}
-
-function StateChip({ state }: { state: ConnectionState }) {
-  const meta =
-    state === 'active'
-      ? { label: 'Connected', dot: 'bg-emerald-500', wrap: 'text-emerald-600 dark:text-emerald-400' }
-      : state === 'idle'
-        ? { label: 'Idle', dot: 'bg-emerald-500/40', wrap: 'text-muted-foreground' }
-        : state === 'installed'
-          ? { label: 'Waiting', dot: 'bg-amber-500', wrap: 'text-amber-600 dark:text-amber-400' }
-          : state === 'connecting'
-            ? { label: 'Connecting', dot: 'bg-emerald-500 motion-safe:animate-pulse', wrap: 'text-emerald-600 dark:text-emerald-400' }
-            : { label: 'Not connected', dot: 'bg-muted-foreground/40', wrap: 'text-muted-foreground' }
-
-  return (
-    <span className={cn('inline-flex items-center gap-1 text-[11px] font-medium', meta.wrap)}>
-      <span className={cn('h-1.5 w-1.5 rounded-full', meta.dot)} />
-      {meta.label}
-    </span>
-  )
 }
 
 // ─── Dev cycler ────────────────────────────────────────────────────────────

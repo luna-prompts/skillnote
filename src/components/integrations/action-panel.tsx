@@ -6,38 +6,26 @@ import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import type { ConnectionState } from './connector'
 
-export interface AgentStats {
-  lastCallAt: string // ISO
-  calls7d: number
-  uniqueSkills7d: number
-  timeline7d: number[] // 7 bars, height 0..1
-  topSkills: { slug: string; calls: number; lastAt: string }[]
-}
-
 interface Props {
   state: ConnectionState
   agentLabel: string
-  /** The install command shown in the Advanced drawer for pending state. */
   installCommand: string
-  /** Bridge job dispatcher for one-click connect. Returns true if accepted. */
-  onConnectClick?: () => Promise<boolean>
-  /** Optional install ping → if set, ISO time the agent's plugin first phoned home. */
   installedAt?: string
-  /** Stats — only relevant for active / idle. */
-  stats?: AgentStats
-  /** For idle and active variants: callbacks. */
+  lastCallAt?: string
+  onConnectClick?: () => Promise<boolean>
   onReinstall?: () => void
   onDisconnect?: () => void
 }
 
 /**
- * State-dispatched action panel that appears UNDER the connection diagram.
+ * State-dispatched action panel rendered under the wiring diagram.
  *
- *   pending     → status line + big Connect button + Advanced drawer
- *   connecting  → status line + step indicator + Advanced drawer
- *   installed   → status line + "open your agent and try a task"
- *   active      → status line + stats dashboard + dim reinstall/disconnect
- *   idle        → muted variant of active
+ *   pending     → Connect button + Advanced drawer
+ *   connecting  → step list + Advanced drawer
+ *   installed   → "open your agent" copy
+ *   active/idle → "last call N ago" + tiny Reinstall/Disconnect links
+ *
+ * Note: no analytics dashboard here. The Analytics page handles that.
  */
 export function ActionPanel(props: Props) {
   switch (props.state) {
@@ -70,11 +58,7 @@ function StatusLine({
   )
 }
 
-function PendingPanel({
-  agentLabel,
-  installCommand,
-  onConnectClick,
-}: Props) {
+function PendingPanel({ agentLabel, installCommand, onConnectClick }: Props) {
   const [connecting, setConnecting] = useState(false)
 
   const handle = async () => {
@@ -88,28 +72,28 @@ function PendingPanel({
   }
 
   return (
-    <div className="text-center space-y-5">
-      <StatusLine dotClass="bg-muted-foreground/40">Not connected</StatusLine>
-      <div className="flex justify-center">
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-[13px] text-muted-foreground">
+          Takes ~30 seconds. We'll guide you.
+        </p>
         <button
           type="button"
           onClick={handle}
           disabled={connecting || !onConnectClick}
           className={cn(
-            'group inline-flex items-center gap-2 px-5 py-2.5 rounded-lg',
-            'bg-foreground text-background text-[14px] font-medium',
-            'shadow-[0_4px_14px_rgba(0,0,0,0.10),0_1px_2px_rgba(0,0,0,0.06)]',
-            'hover:shadow-[0_6px_22px_rgba(0,0,0,0.14),0_2px_4px_rgba(0,0,0,0.08)]',
-            'hover:opacity-95 active:opacity-85',
+            'group inline-flex items-center gap-2 px-4 py-2 rounded-lg',
+            'bg-foreground text-background text-[13px] font-medium',
+            'shadow-[0_2px_8px_rgba(0,0,0,0.08)]',
+            'hover:shadow-[0_4px_14px_rgba(0,0,0,0.12)] hover:opacity-95 active:opacity-85',
             'disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-sm',
             'transition-all duration-200',
           )}
         >
           {connecting ? 'Connecting…' : `Connect ${agentLabel}`}
-          <ArrowRight className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-0.5" />
+          <ArrowRight className="h-3.5 w-3.5 transition-transform duration-200 group-hover:translate-x-0.5" />
         </button>
       </div>
-      <p className="text-[12px] text-muted-foreground">Takes ~30 seconds. We'll guide you.</p>
       <AdvancedDrawer installCommand={installCommand} />
     </div>
   )
@@ -117,11 +101,11 @@ function PendingPanel({
 
 function ConnectingPanel({ agentLabel, installCommand }: Props) {
   return (
-    <div className="text-center space-y-4">
+    <div className="space-y-4">
       <StatusLine dotClass="bg-emerald-500 motion-safe:animate-pulse">
         Connecting {agentLabel}…
       </StatusLine>
-      <ol className="inline-flex flex-col gap-1.5 text-left text-[13px] text-muted-foreground">
+      <ol className="flex flex-col gap-1.5 text-[13px] text-muted-foreground">
         <StepItem state="done">Bridge ready</StepItem>
         <StepItem state="done">Install command sent</StepItem>
         <StepItem state="active">Detecting plugin on your machine…</StepItem>
@@ -166,13 +150,13 @@ function StepItem({
 
 function InstalledPanel({ agentLabel }: Props) {
   return (
-    <div className="text-center space-y-3">
+    <div className="space-y-2">
       <StatusLine dotClass="bg-amber-500">
         Installed — waiting for first task
       </StatusLine>
-      <p className="text-[13px] text-muted-foreground max-w-md mx-auto">
-        Open {agentLabel} and try any task. Skills activate automatically and we'll
-        update this card the moment we see activity.
+      <p className="text-[13px] text-muted-foreground">
+        Open {agentLabel} and try any task. Skills activate automatically;
+        this card updates the moment we see activity.
       </p>
     </div>
   )
@@ -180,53 +164,18 @@ function InstalledPanel({ agentLabel }: Props) {
 
 function ActivePanel({
   state,
-  stats,
+  lastCallAt,
   onReinstall,
   onDisconnect,
 }: Props) {
-  if (!stats) return null
   const isActive = state === 'active'
-
   return (
-    <div className="space-y-5">
-      <div className="text-center">
-        <StatusLine dotClass={isActive ? 'bg-emerald-500' : 'bg-emerald-500/40'}>
-          {isActive ? (
-            <>Connected · last call {relativeTime(stats.lastCallAt)}</>
-          ) : (
-            <>Idle · last call {relativeTime(stats.lastCallAt)}</>
-          )}
-        </StatusLine>
-      </div>
-
-      {/* Stats row */}
-      <div className="grid grid-cols-3 gap-4 max-w-md mx-auto text-center">
-        <Stat label="Calls / 7d" value={stats.calls7d.toString()} />
-        <Stat label="Skills used" value={stats.uniqueSkills7d.toString()} />
-        <Stat label="Avg / day" value={Math.round(stats.calls7d / 7).toString()} />
-      </div>
-
-      <Sparkline values={stats.timeline7d} active={isActive} />
-
-      {/* Top skills */}
-      <div className="max-w-md mx-auto">
-        <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-2">
-          Top skills
-        </p>
-        <ul className="divide-y divide-border/40 rounded-lg border border-border bg-card overflow-hidden">
-          {stats.topSkills.slice(0, 3).map((s) => (
-            <li key={s.slug} className="flex items-center justify-between px-3 py-2 text-[13px]">
-              <span className="font-mono text-foreground truncate">{s.slug}</span>
-              <span className="text-muted-foreground tabular-nums shrink-0 ml-3">
-                {s.calls} · {relativeTime(s.lastAt)}
-              </span>
-            </li>
-          ))}
-        </ul>
-      </div>
-
-      {/* Tiny destructive actions */}
-      <div className="flex items-center justify-center gap-4 text-[12px] text-muted-foreground">
+    <div className="flex items-center justify-between gap-3">
+      <StatusLine dotClass={isActive ? 'bg-emerald-500' : 'bg-emerald-500/50'}>
+        {isActive ? 'Connected' : 'Idle'}
+        {lastCallAt ? <> · last call {relativeTime(lastCallAt)}</> : null}
+      </StatusLine>
+      <div className="flex items-center gap-3 text-[12px] text-muted-foreground shrink-0">
         <button
           type="button"
           onClick={onReinstall}
@@ -235,7 +184,7 @@ function ActivePanel({
           <RefreshCw className="h-3 w-3" />
           Reinstall
         </button>
-        <span className="text-border">·</span>
+        <span className="text-border/80">·</span>
         <button
           type="button"
           onClick={onDisconnect}
@@ -248,47 +197,10 @@ function ActivePanel({
   )
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <p className="text-[22px] font-semibold tabular-nums text-foreground tracking-tight">
-        {value}
-      </p>
-      <p className="text-[11px] uppercase tracking-wider text-muted-foreground mt-0.5">
-        {label}
-      </p>
-    </div>
-  )
-}
-
-function Sparkline({ values, active }: { values: number[]; active: boolean }) {
-  const max = Math.max(...values, 1)
-  return (
-    <div className="flex items-end justify-center gap-1 h-12 max-w-md mx-auto">
-      {values.map((v, i) => (
-        <span
-          key={i}
-          className={cn(
-            'w-3 rounded-sm transition-colors',
-            active ? 'bg-emerald-500/70' : 'bg-emerald-500/30',
-          )}
-          style={{ height: `${Math.max(8, (v / max) * 100)}%` }}
-        />
-      ))}
-    </div>
-  )
-}
-
 // ─────────────────────────────────────────────────────────────────────────
 
-function AdvancedDrawer({
-  installCommand,
-  defaultOpen = false,
-}: {
-  installCommand: string
-  defaultOpen?: boolean
-}) {
-  const [open, setOpen] = useState(defaultOpen)
+function AdvancedDrawer({ installCommand }: { installCommand: string }) {
+  const [open, setOpen] = useState(false)
   const [copied, setCopied] = useState(false)
 
   const copy = () => {
@@ -298,7 +210,7 @@ function AdvancedDrawer({
   }
 
   return (
-    <div className="max-w-xl mx-auto">
+    <div>
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -310,7 +222,7 @@ function AdvancedDrawer({
         Advanced install
       </button>
       {open && (
-        <div className="mt-3 rounded-lg border border-border bg-muted/30 p-3 text-left space-y-2">
+        <div className="mt-3 rounded-lg border border-border bg-muted/30 p-3 space-y-2">
           <p className="text-[12px] text-muted-foreground">
             Run this in any terminal — or paste it to your AI agent and ask it to run.
           </p>
