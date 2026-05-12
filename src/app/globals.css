@@ -357,3 +357,20 @@ body.skill-editing .content-wrapper {
   transform: translateY(0) scale(1);
 }
 
+/* ── Connect-page wiring diagram ──────────────────────────────────────── */
+/* Packet dot travelling across the connector. Percentage-based so the
+   motion tracks the responsive width of the wire. */
+@keyframes packet-flow {
+  0%   { left: 2%;  opacity: 0; transform: translate(0, -50%) scale(0.6); }
+  12%  { opacity: 1; transform: translate(0, -50%) scale(1); }
+  88%  { opacity: 1; transform: translate(0, -50%) scale(1); }
+  100% { left: 98%; opacity: 0; transform: translate(0, -50%) scale(0.6); }
+}
+
+/* Subtle pulse-ring on the "active" check node. Soft, slow, non-distracting. */
+@keyframes pulse-ring {
+  0%   { box-shadow: 0 0 0 0 rgb(16 185 129 / 0.45); }
+  70%  { box-shadow: 0 0 0 10px rgb(16 185 129 / 0); }
+  100% { box-shadow: 0 0 0 0 rgb(16 185 129 / 0); }
+}
+
