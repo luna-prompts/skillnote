@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
+import { cn } from '@/lib/utils'
 import { TopBar } from '@/components/layout/topbar'
 import { AgentRow } from '@/components/integrations/agent-row'
 import { ClaudeCodeMark, OpenClawMark } from '@/components/integrations/agent-marks'
@@ -22,11 +23,10 @@ interface AgentSnapshot {
   stats?: AgentStats
 }
 
-// ─── Dev-mode state cycler ──────────────────────────────────────────────────
-// Click the small badge in the bottom-right to walk through every state.
-// Hidden in production builds.
-
-const ALL_STATES: ConnectionState[] = ['pending', 'connecting', 'installed', 'active', 'idle']
+const AGENTS: { id: AgentId; label: string; sublabel: string }[] = [
+  { id: 'claude-code', label: 'Claude Code', sublabel: 'Anthropic' },
+  { id: 'openclaw', label: 'OpenClaw', sublabel: 'open source' },
+]
 
 const MOCK_STATS: AgentStats = {
   lastCallAt: new Date(Date.now() - 2 * 60_000).toISOString(),
@@ -40,8 +40,11 @@ const MOCK_STATS: AgentStats = {
   ],
 }
 
+const ALL_STATES: ConnectionState[] = ['pending', 'connecting', 'installed', 'active', 'idle']
+
 export default function IntegrationsPage() {
   const [apiBase, setApiBase] = useState<string>('')
+  const [selected, setSelected] = useState<AgentId>('claude-code')
   const [overrides, setOverrides] = useState<Partial<Record<AgentId, ConnectionState>>>({})
   const [snapshots, setSnapshots] = useState<Record<AgentId, AgentSnapshot>>({
     'claude-code': { id: 'claude-code', state: 'pending' },
@@ -52,9 +55,6 @@ export default function IntegrationsPage() {
     setApiBase(getApiBaseUrl())
   }, [])
 
-  // Real connection-state probes — read recency from existing analytics
-  // endpoints. This is the "minimum viable" detection while the proper
-  // /v1/setup/agents endpoint isn't wired up yet.
   useEffect(() => {
     if (!apiBase) return
     let cancelled = false
@@ -78,7 +78,10 @@ export default function IntegrationsPage() {
           [id]: {
             id,
             state,
-            stats: state === 'active' || state === 'idle' ? { ...MOCK_STATS, lastCallAt: ts } : undefined,
+            stats:
+              state === 'active' || state === 'idle'
+                ? { ...MOCK_STATS, lastCallAt: ts }
+                : undefined,
           },
         }))
       } catch {
@@ -109,7 +112,6 @@ export default function IntegrationsPage() {
     }
   }, [apiBase])
 
-  // Bridge-based one-click connect (uses the existing CLI job pipeline)
   const [pendingJob, setPendingJob] = useState<{ agent: AgentId; jobId: string } | null>(null)
   const { job } = useJobPolling(pendingJob?.jobId ?? null)
 
@@ -128,29 +130,24 @@ export default function IntegrationsPage() {
     }
   }, [job, pendingJob])
 
-  const handleConnect = useCallback(
-    async (agent: AgentId): Promise<boolean> => {
-      try {
-        const { id } = await dispatchJob({ type: 'connect', agent: agent as JobAgent })
-        setPendingJob({ agent, jobId: id })
-        setSnapshots((prev) => ({
-          ...prev,
-          [agent]: { ...prev[agent], state: 'connecting' },
-        }))
-        return true
-      } catch {
-        return false
-      }
-    },
-    [],
-  )
+  const handleConnect = useCallback(async (agent: AgentId): Promise<boolean> => {
+    try {
+      const { id } = await dispatchJob({ type: 'connect', agent: agent as JobAgent })
+      setPendingJob({ agent, jobId: id })
+      setSnapshots((prev) => ({
+        ...prev,
+        [agent]: { ...prev[agent], state: 'connecting' },
+      }))
+      return true
+    } catch {
+      return false
+    }
+  }, [])
 
-  // Apply dev overrides (if any) on top of detected snapshots
   const effective = useMemo(() => {
     const apply = (s: AgentSnapshot): AgentSnapshot => {
       const override = overrides[s.id]
       if (!override) return s
-      // When overriding to active/idle, attach mock stats so the panel renders.
       if (override === 'active' || override === 'idle') {
         return { ...s, state: override, stats: MOCK_STATS }
       }
@@ -162,8 +159,16 @@ export default function IntegrationsPage() {
     } as Record<AgentId, AgentSnapshot>
   }, [snapshots, overrides])
 
-  const claudeInstallCmd = `curl -sf ${apiBase || 'http://localhost:8082'}/setup/agent | bash -s -- --agent claude-code`
-  const openclawInstallCmd = `curl -sf ${apiBase || 'http://localhost:8082'}/setup/openclaw | bash`
+  const installCmd = (id: AgentId) =>
+    id === 'claude-code'
+      ? `curl -sf ${apiBase || 'http://localhost:8082'}/setup/agent | bash -s -- --agent claude-code`
+      : `curl -sf ${apiBase || 'http://localhost:8082'}/setup/openclaw | bash`
+
+  const markFor = (id: AgentId) =>
+    id === 'claude-code' ? <ClaudeCodeMark /> : <OpenClawMark />
+
+  const current = AGENTS.find((a) => a.id === selected)!
+  const currentSnapshot = effective[selected]
 
   return (
     <>
@@ -171,7 +176,7 @@ export default function IntegrationsPage() {
       <div className="flex-1 overflow-auto">
         <div className="max-w-3xl mx-auto px-6 py-10 md:py-14">
           {/* Header */}
-          <header className="text-center mb-10">
+          <header className="text-center mb-8">
             <h1 className="text-2xl md:text-3xl font-semibold tracking-tight text-foreground">
               Connect
             </h1>
@@ -180,32 +185,32 @@ export default function IntegrationsPage() {
             </p>
           </header>
 
-          <div className="space-y-6">
-            <AgentRow
-              state={effective['claude-code'].state}
-              agentLabel="Claude Code"
-              agentSublabel="Anthropic"
-              agentMark={<ClaudeCodeMark />}
-              installCommand={claudeInstallCmd}
-              installedAt={effective['claude-code'].installedAt}
-              stats={effective['claude-code'].stats}
-              onConnectClick={() => handleConnect('claude-code')}
-            />
-            <AgentRow
-              state={effective.openclaw.state}
-              agentLabel="OpenClaw"
-              agentSublabel="open source"
-              agentMark={<OpenClawMark />}
-              installCommand={openclawInstallCmd}
-              installedAt={effective.openclaw.installedAt}
-              stats={effective.openclaw.stats}
-              onConnectClick={() => handleConnect('openclaw')}
-            />
-          </div>
+          {/* Agent tab switcher */}
+          <AgentTabs
+            agents={AGENTS.map((a) => ({
+              ...a,
+              state: effective[a.id].state,
+              mark: markFor(a.id),
+            }))}
+            selected={selected}
+            onSelect={setSelected}
+            className="mb-6"
+          />
+
+          {/* Single selected agent — the canvas */}
+          <AgentRow
+            state={currentSnapshot.state}
+            agentLabel={current.label}
+            agentSublabel={current.sublabel}
+            agentMark={markFor(selected)}
+            installCommand={installCmd(selected)}
+            installedAt={currentSnapshot.installedAt}
+            stats={currentSnapshot.stats}
+            onConnectClick={() => handleConnect(selected)}
+          />
         </div>
       </div>
 
-      {/* Dev-only state cycler (only renders when ?dev=1 is in URL) */}
       <DevCycler overrides={overrides} setOverrides={setOverrides} />
     </>
   )
@@ -213,6 +218,85 @@ export default function IntegrationsPage() {
 
 function labelOf(id: AgentId): string {
   return id === 'claude-code' ? 'Claude Code' : 'OpenClaw'
+}
+
+// ─── Tab switcher ──────────────────────────────────────────────────────────
+
+interface TabAgent {
+  id: AgentId
+  label: string
+  sublabel: string
+  state: ConnectionState
+  mark: React.ReactNode
+}
+
+function AgentTabs({
+  agents,
+  selected,
+  onSelect,
+  className,
+}: {
+  agents: TabAgent[]
+  selected: AgentId
+  onSelect: (id: AgentId) => void
+  className?: string
+}) {
+  return (
+    <div
+      role="tablist"
+      aria-label="Choose agent"
+      className={cn(
+        'inline-flex w-full p-1 rounded-xl border border-border bg-card',
+        'shadow-[0_1px_2px_rgba(0,0,0,0.03)]',
+        className,
+      )}
+    >
+      {agents.map((a) => {
+        const active = a.id === selected
+        return (
+          <button
+            key={a.id}
+            role="tab"
+            aria-selected={active}
+            onClick={() => onSelect(a.id)}
+            className={cn(
+              'flex-1 inline-flex items-center justify-center gap-2.5 px-4 py-2 rounded-lg',
+              'text-[13px] font-medium transition-all duration-200',
+              active
+                ? 'bg-background text-foreground shadow-sm'
+                : 'text-muted-foreground hover:text-foreground hover:bg-muted/40',
+            )}
+          >
+            <span className="shrink-0 [&>img]:!w-5 [&>img]:!h-5 [&>div]:!w-5 [&>div]:!h-5">
+              {a.mark}
+            </span>
+            <span className="truncate">{a.label}</span>
+            <StateChip state={a.state} />
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+function StateChip({ state }: { state: ConnectionState }) {
+  const meta =
+    state === 'active'
+      ? { label: 'Connected', dot: 'bg-emerald-500', wrap: 'text-emerald-600 dark:text-emerald-400' }
+      : state === 'idle'
+        ? { label: 'Idle', dot: 'bg-emerald-500/40', wrap: 'text-muted-foreground' }
+        : state === 'installed'
+          ? { label: 'Waiting', dot: 'bg-amber-500', wrap: 'text-amber-600 dark:text-amber-400' }
+          : state === 'connecting'
+            ? { label: 'Connecting', dot: 'bg-emerald-500 motion-safe:animate-pulse', wrap: 'text-emerald-600 dark:text-emerald-400' }
+            : { label: 'Not connected', dot: 'bg-muted-foreground/40', wrap: 'text-muted-foreground' }
+
+  return (
+    <span className={cn('inline-flex items-center gap-1 text-[11px] font-medium', meta.wrap)}>
+      <span className={cn('h-1.5 w-1.5 rounded-full', meta.dot)} />
+      {meta.label}
+    </span>
+  )
 }
 
 // ─── Dev cycler ────────────────────────────────────────────────────────────
