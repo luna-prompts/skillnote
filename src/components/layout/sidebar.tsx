@@ -5,6 +5,7 @@ import { BookOpen, FolderOpen, Settings, HelpCircle, X, Plug2, BarChart2, Store 
 import { cn } from '@/lib/utils'
 import { useEffect, useMemo, useState } from 'react'
 import { getSkills, syncSkillsFromApi, getConnectionStatus, onConnectionStatusChange } from '@/lib/skills-store'
+import { PWAInstallButton } from '@/components/pwa-install-button'
 
 export function Sidebar({ onClose }: { onClose?: () => void }) {
   const pathname = usePathname()
@@ -149,6 +150,7 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
           <HelpCircle className="h-[15px] w-[15px] shrink-0" />
           Help
         </a>
+        <PWAInstallButton variant="pill" className="px-2.5 pt-2" />
         <div className="flex items-center gap-1.5 px-2.5 pt-2" title={connStatus === 'online' ? 'Connected to backend' : connStatus === 'offline' ? 'Backend offline' : 'Running locally'}>
           <div className={cn('w-1.5 h-1.5 rounded-full shrink-0', connStatus === 'online' ? 'bg-emerald-500' : connStatus === 'offline' ? 'bg-red-500' : 'bg-amber-500')} />
           <p className="text-[10px] text-[var(--muted-foreground)]/40">

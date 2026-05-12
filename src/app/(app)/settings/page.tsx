@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import { TopBar } from '@/components/layout/topbar'
 import { fetchSettings, updateSettings } from '@/lib/api/settings'
 import { OpenClawSetupCard } from '@/components/settings/openclaw-setup-card'
+import { PWAInstallButton } from '@/components/pwa-install-button'
 
 function Toggle({ checked, onChange, disabled }: { checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
   return (
@@ -161,6 +162,20 @@ export default function SettingsPage() {
           )}
 
           <OpenClawSetupCard />
+
+          {/* Desktop app */}
+          <section className="mb-10">
+            <h2 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-4">Desktop app</h2>
+            <div className="flex items-start justify-between gap-4 p-3.5 rounded-lg bg-muted/30 border border-border">
+              <div>
+                <p className="text-[14px] font-medium text-foreground">Install as a desktop app</p>
+                <p className="text-[13px] text-muted-foreground mt-0.5">
+                  Get a dock icon and chromeless window. Same data, no browser tab.
+                </p>
+              </div>
+              <PWAInstallButton variant="inline" className="shrink-0" />
+            </div>
+          </section>
 
           {/* About */}
           <section className="mb-10">

@@ -1,115 +1,50 @@
 'use client'
 
-import { useEffect, useState } from 'react'
 import { Download, X } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { toast } from 'sonner'
+import { usePWAInstall } from '@/lib/use-pwa-install'
 
 /**
- * Minimal shape of the `beforeinstallprompt` event surfaced by Chromium-based
- * browsers. Not yet part of the standard TypeScript DOM lib, so we model it
- * locally rather than depending on `any`.
+ * Compact one-time install prompt. Shown only on first eligibility and
+ * only if not previously dismissed. Once dismissed, the user can still
+ * install from Settings → About or the sidebar footer pill.
  */
-interface BeforeInstallPromptEvent extends Event {
-  readonly platforms: string[]
-  readonly userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>
-  prompt: () => Promise<void>
-}
-
-const DISMISS_KEY = 'skillnote:pwa-install-dismissed'
-
 export function PWAInstallPrompt() {
-  const [promptEvent, setPromptEvent] = useState<BeforeInstallPromptEvent | null>(null)
-  const [visible, setVisible] = useState(false)
+  const { canInstall, toastDismissed, install, dismissToast } = usePWAInstall()
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-
-    // Respect prior dismissal.
-    try {
-      if (window.localStorage.getItem(DISMISS_KEY) === '1') return
-    } catch {
-      // localStorage may be unavailable (private mode, SSR-ish edge cases).
-    }
-
-    const onBeforeInstallPrompt = (e: Event) => {
-      e.preventDefault()
-      setPromptEvent(e as BeforeInstallPromptEvent)
-      setVisible(true)
-    }
-
-    const onAppInstalled = () => {
-      setPromptEvent(null)
-      setVisible(false)
-    }
-
-    window.addEventListener('beforeinstallprompt', onBeforeInstallPrompt)
-    window.addEventListener('appinstalled', onAppInstalled)
-
-    return () => {
-      window.removeEventListener('beforeinstallprompt', onBeforeInstallPrompt)
-      window.removeEventListener('appinstalled', onAppInstalled)
-    }
-  }, [])
+  if (!canInstall || toastDismissed) return null
 
   const handleInstall = async () => {
-    if (!promptEvent) return
-    await promptEvent.prompt()
-    const choice = await promptEvent.userChoice
-    if (choice.outcome === 'dismissed') {
-      try {
-        window.localStorage.setItem(DISMISS_KEY, '1')
-      } catch {
-        // ignore
-      }
+    const outcome = await install()
+    if (outcome === 'accepted') {
+      toast.success('SkillNote installed — look for it in your dock')
     }
-    setPromptEvent(null)
-    setVisible(false)
   }
-
-  const handleDismiss = () => {
-    try {
-      window.localStorage.setItem(DISMISS_KEY, '1')
-    } catch {
-      // ignore
-    }
-    setVisible(false)
-  }
-
-  if (!visible || !promptEvent) return null
 
   return (
     <div
       role="dialog"
       aria-label="Install SkillNote as an app"
-      className="fixed bottom-20 left-4 right-4 z-50 mx-auto max-w-md rounded-xl border border-border bg-card p-4 shadow-lg lg:bottom-6 lg:left-auto lg:right-6"
+      className="fixed bottom-4 right-4 z-50 flex items-center gap-3 rounded-full border border-border/60 bg-card/95 py-1.5 pl-2 pr-1 shadow-md backdrop-blur-sm"
     >
-      <div className="flex items-start gap-3">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-accent/10 text-accent">
-          <Download className="h-4 w-4" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-foreground">Install SkillNote as an app</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            Get a dock icon and chromeless window. Same data, no browser tab.
-          </p>
-          <div className="mt-3 flex items-center gap-2">
-            <Button size="sm" onClick={handleInstall}>
-              Install
-            </Button>
-            <Button size="sm" variant="ghost" onClick={handleDismiss}>
-              Not now
-            </Button>
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={handleDismiss}
-          aria-label="Dismiss install prompt"
-          className="-mr-1 -mt-1 inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-        >
-          <X className="h-4 w-4" />
-        </button>
+      <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent/10 text-accent">
+        <Download className="h-3 w-3" />
       </div>
+      <button
+        type="button"
+        onClick={handleInstall}
+        className="text-[13px] font-medium text-foreground hover:text-accent transition-colors"
+      >
+        Install SkillNote as an app
+      </button>
+      <button
+        type="button"
+        onClick={dismissToast}
+        aria-label="Dismiss install prompt"
+        className="inline-flex h-6 w-6 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+      >
+        <X className="h-3 w-3" />
+      </button>
     </div>
   )
 }
