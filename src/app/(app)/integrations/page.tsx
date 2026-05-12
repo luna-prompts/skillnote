@@ -24,11 +24,13 @@ interface AgentSnapshot {
 }
 
 const AGENTS: { id: AgentId; label: string; sublabel: string }[] = [
-  { id: 'claude-code', label: 'Claude Code', sublabel: 'Anthropic' },
-  { id: 'openclaw', label: 'OpenClaw', sublabel: 'open source' },
+  { id: 'claude-code', label: 'Claude Code', sublabel: 'by Anthropic' },
+  { id: 'openclaw', label: 'OpenClaw', sublabel: 'by OpenClaw' },
 ]
 
-const MOCK_STATS: AgentStats = {
+// Mock stats are intentionally different per agent so the user notices when
+// they tab between (so they don't suspect the page is stuck).
+const MOCK_STATS_CLAUDE: AgentStats = {
   lastCallAt: new Date(Date.now() - 2 * 60_000).toISOString(),
   calls7d: 47,
   uniqueSkills7d: 8,
@@ -38,6 +40,23 @@ const MOCK_STATS: AgentStats = {
     { slug: 'testing-guide', calls: 8, lastAt: new Date(Date.now() - 60 * 60_000).toISOString() },
     { slug: 'code-review-list', calls: 6, lastAt: new Date(Date.now() - 3 * 60 * 60_000).toISOString() },
   ],
+}
+
+const MOCK_STATS_OPENCLAW: AgentStats = {
+  lastCallAt: new Date(Date.now() - 14 * 60_000).toISOString(),
+  calls7d: 18,
+  uniqueSkills7d: 5,
+  timeline7d: [0.3, 0.1, 0.45, 0.6, 0.2, 0.35, 0.55],
+  topSkills: [
+    { slug: 'react-component-patterns', calls: 7, lastAt: new Date(Date.now() - 14 * 60_000).toISOString() },
+    { slug: 'sql-query-optimize', calls: 5, lastAt: new Date(Date.now() - 4 * 60 * 60_000).toISOString() },
+    { slug: 'systematic-debugging', calls: 4, lastAt: new Date(Date.now() - 7 * 60 * 60_000).toISOString() },
+  ],
+}
+
+const MOCK_STATS_BY_AGENT: Record<AgentId, AgentStats> = {
+  'claude-code': MOCK_STATS_CLAUDE,
+  openclaw: MOCK_STATS_OPENCLAW,
 }
 
 const ALL_STATES: ConnectionState[] = ['pending', 'connecting', 'installed', 'active', 'idle']
@@ -80,7 +99,7 @@ export default function IntegrationsPage() {
             state,
             stats:
               state === 'active' || state === 'idle'
-                ? { ...MOCK_STATS, lastCallAt: ts }
+                ? { ...MOCK_STATS_BY_AGENT[id], lastCallAt: ts }
                 : undefined,
           },
         }))
@@ -139,7 +158,15 @@ export default function IntegrationsPage() {
         [agent]: { ...prev[agent], state: 'connecting' },
       }))
       return true
-    } catch {
+    } catch (err) {
+      // Bridge probably isn't running, or backend is down. Surface a
+      // useful message instead of silent failure — direct the user to
+      // the manual install path in the Advanced drawer.
+      const msg = err instanceof Error ? err.message : 'unknown error'
+      toast.error(
+        `Couldn't dispatch install (${msg.includes('fetch') ? 'backend offline' : msg}). Open "Advanced install" and run the command manually.`,
+        { duration: 6000 },
+      )
       return false
     }
   }, [])
@@ -149,7 +176,7 @@ export default function IntegrationsPage() {
       const override = overrides[s.id]
       if (!override) return s
       if (override === 'active' || override === 'idle') {
-        return { ...s, state: override, stats: MOCK_STATS }
+        return { ...s, state: override, stats: MOCK_STATS_BY_AGENT[s.id] }
       }
       return { ...s, state: override }
     }
@@ -159,10 +186,24 @@ export default function IntegrationsPage() {
     } as Record<AgentId, AgentSnapshot>
   }, [snapshots, overrides])
 
+  // Resolved base — always falls back to localhost:8082 if state hasn't
+  // hydrated yet, so the curl command is never empty.
+  const base = apiBase || 'http://localhost:8082'
   const installCmd = (id: AgentId) =>
     id === 'claude-code'
-      ? `curl -sf ${apiBase || 'http://localhost:8082'}/setup/agent | bash -s -- --agent claude-code`
-      : `curl -sf ${apiBase || 'http://localhost:8082'}/setup/openclaw | bash`
+      ? `curl -sf ${base}/setup/agent | bash -s -- --agent claude-code`
+      : `curl -sf ${base}/setup/openclaw | bash`
+
+  const handleReinstall = (id: AgentId) => {
+    toast.info(`Re-running the install for ${labelOf(id)}…`)
+    handleConnect(id)
+  }
+
+  const handleDisconnect = (id: AgentId) => {
+    toast.info(
+      `Open ${labelOf(id)} and remove the SkillNote plugin from its config to disconnect.`,
+    )
+  }
 
   const markFor = (id: AgentId) =>
     id === 'claude-code' ? <ClaudeCodeMark /> : <OpenClawMark />
@@ -210,6 +251,8 @@ export default function IntegrationsPage() {
             installedAt={currentSnapshot.installedAt}
             stats={currentSnapshot.stats}
             onConnectClick={() => handleConnect(selected)}
+            onReinstall={() => handleReinstall(selected)}
+            onDisconnect={() => handleDisconnect(selected)}
           />
         </div>
       </div>

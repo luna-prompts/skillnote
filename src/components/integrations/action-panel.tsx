@@ -281,8 +281,14 @@ function Sparkline({ values, active }: { values: number[]; active: boolean }) {
 
 // ─────────────────────────────────────────────────────────────────────────
 
-function AdvancedDrawer({ installCommand }: { installCommand: string }) {
-  const [open, setOpen] = useState(false)
+function AdvancedDrawer({
+  installCommand,
+  defaultOpen = false,
+}: {
+  installCommand: string
+  defaultOpen?: boolean
+}) {
+  const [open, setOpen] = useState(defaultOpen)
   const [copied, setCopied] = useState(false)
 
   const copy = () => {
