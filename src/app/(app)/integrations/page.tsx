@@ -11,14 +11,20 @@ import { dispatchJob, useJobPolling, type JobAgent } from '@/lib/cli-jobs'
 
 type AgentId = 'claude-code' | 'openclaw'
 
-const ACTIVE_THRESHOLD_HOURS = 24
-const IDLE_THRESHOLD_DAYS = 7
-
 interface AgentSnapshot {
   id: AgentId
   state: ConnectionState
   installedAt?: string
   lastCallAt?: string
+}
+
+interface SetupAgentStatus {
+  agent: AgentId
+  state: 'pending' | 'installed' | 'active' | 'idle'
+  installed_at: string | null
+  last_active_at: string | null
+  calls_24h: number
+  calls_7d: number
 }
 
 const AGENTS: { id: AgentId; label: string; sublabel: string }[] = [
@@ -27,6 +33,8 @@ const AGENTS: { id: AgentId; label: string; sublabel: string }[] = [
 ]
 
 const ALL_STATES: ConnectionState[] = ['pending', 'connecting', 'installed', 'active', 'idle']
+
+const POLL_INTERVAL_MS = 5_000
 
 export default function IntegrationsPage() {
   const [apiBase, setApiBase] = useState<string>('')
@@ -44,49 +52,40 @@ export default function IntegrationsPage() {
     if (!apiBase) return
     let cancelled = false
 
-    const probe = async (id: AgentId, url: string, extractTs: (d: unknown) => string | null) => {
+    const fetchStatus = async () => {
       try {
-        const res = await fetch(url, { cache: 'no-store' })
-        if (!res.ok) return
-        const data = await res.json()
-        const ts = extractTs(data)
-        if (!ts || cancelled) return
-        const ageMs = Date.now() - new Date(ts).getTime()
-        const state: ConnectionState =
-          ageMs < ACTIVE_THRESHOLD_HOURS * 3600_000
-            ? 'active'
-            : ageMs < IDLE_THRESHOLD_DAYS * 86400_000
-              ? 'idle'
-              : 'pending'
-        setSnapshots((prev) => ({
-          ...prev,
-          [id]: { id, state, lastCallAt: ts },
-        }))
+        const res = await fetch(`${apiBase}/v1/setup/agents`, { cache: 'no-store' })
+        if (!res.ok || cancelled) return
+        const rows = (await res.json()) as SetupAgentStatus[]
+        if (cancelled) return
+        setSnapshots((prev) => {
+          const next = { ...prev }
+          for (const row of rows) {
+            // Preserve the local 'connecting' optimistic state if a bridge
+            // job is mid-flight — the backend won't know about it yet.
+            if (prev[row.agent]?.state === 'connecting') continue
+            next[row.agent] = {
+              id: row.agent,
+              state: row.state as ConnectionState,
+              installedAt: row.installed_at ?? undefined,
+              lastCallAt: row.last_active_at ?? undefined,
+            }
+          }
+          return next
+        })
       } catch {
-        // network errors leave state at 'pending'
+        // Network down / backend offline → leave snapshots untouched. Banner
+        // at the top of the app already surfaces the connection state.
       }
     }
 
-    probe(
-      'claude-code',
-      `${apiBase}/v1/analytics/skill-calls?limit=1`,
-      (d) => {
-        const arr = d as { last_called_at?: string }[]
-        return Array.isArray(arr) && arr.length > 0 ? arr[0]?.last_called_at ?? null : null
-      },
-    )
-
-    probe(
-      'openclaw',
-      `${apiBase}/v1/openclaw/usage?limit=1`,
-      (d) => {
-        const obj = d as { events?: { created_at?: string }[] }
-        return obj?.events?.[0]?.created_at ?? null
-      },
-    )
-
+    // Initial fetch + light polling so the page reflects new installs/calls
+    // without a hard refresh.
+    fetchStatus()
+    const id = setInterval(fetchStatus, POLL_INTERVAL_MS)
     return () => {
       cancelled = true
+      clearInterval(id)
     }
   }, [apiBase])
 

@@ -3,11 +3,27 @@ import io
 import zipfile
 from pathlib import Path
 from datetime import datetime, timezone
+from typing import Literal
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse, Response
+from pydantic import BaseModel, Field
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+
+from app.db.models import AgentInstall
+from app.db.session import get_db
 
 router = APIRouter(tags=["setup"])
+
+# Agents the Connect page understands. Keep the canonical names in sync
+# with the frontend's `AgentId` union and with the install scripts below.
+SUPPORTED_AGENTS = ("claude-code", "openclaw")
+AgentLiteral = Literal["claude-code", "openclaw"]
+
+# Buckets for the per-agent state machine on the Connect page.
+ACTIVE_WINDOW_HOURS = 24
+IDLE_WINDOW_DAYS = 30
 
 _PLUGIN_DIR = Path("/plugin") if Path("/plugin/.claude-plugin").is_dir() else Path(__file__).resolve().parent.parent.parent.parent / "plugin"
 _OPENCLAW_DIR = Path("/openclaw") if Path("/openclaw").is_dir() else Path(__file__).resolve().parent.parent.parent.parent / "plugin-openclaw"
@@ -309,6 +325,19 @@ else
     echo "  Collection picker won't auto-run. Run skillnote-pick manually before claude."
 fi
 
+# ── ping backend so the Connect page knows we installed ─────────────────────
+# Fire-and-forget. Failure is silently ignored — the Connect page will still
+# fall back to "active" detection via skill_call_events once the user runs
+# their first task. We hash hostname+user so we don't ship raw PII.
+MACHINE_HASH=$(printf '%s' "${HOSTNAME:-host}-${USER:-user}" \
+    | shasum -a 256 2>/dev/null \
+    | awk '{print $1}' \
+    || echo "")
+curl -sf --max-time 5 -X POST "$API_URL/v1/setup/installs" \
+    -H "Content-Type: application/json" \
+    -d "{\"agent\":\"claude-code\",\"machine_id_hash\":\"$MACHINE_HASH\"}" \
+    >/dev/null 2>&1 || true
+
 echo ""
 python3 -c "
 rc = '$SHELL_RC'
@@ -480,6 +509,18 @@ if "$SKILLNOTE_DIR/sync.sh" 2>/dev/null; then
 else
     echo "  First sync did not complete (will retry on next OpenClaw session)."
 fi
+
+# ── ping backend so the Connect page knows we installed ─────────────────────
+# Same pattern as the claude-code installer — fire-and-forget, hashed
+# machine id only (no PII).
+MACHINE_HASH=$(printf '%s' "${HOSTNAME:-host}-${USER:-user}" \
+    | shasum -a 256 2>/dev/null \
+    | awk '{print $1}' \
+    || echo "")
+curl -sf --max-time 5 -X POST "$API_URL/v1/setup/installs" \
+    -H "Content-Type: application/json" \
+    -d "{\"agent\":\"openclaw\",\"machine_id_hash\":\"$MACHINE_HASH\"}" \
+    >/dev/null 2>&1 || true
 
 echo ""
 echo "  Installed:"
@@ -724,3 +765,152 @@ def get_agent_prompt(
     # Return as plain text so it's clipboard-friendly. Connect page reads it
     # with fetch().then(r => r.text()) and pipes straight into the copy buffer.
     return PlainTextResponse(prompt, media_type="text/plain; charset=utf-8")
+
+
+# ─── Connect page state machine ─────────────────────────────────────────────
+#
+# The Connect page needs ONE truthful answer per agent: pending / installed /
+# active / idle. Two pieces of evidence feed that answer:
+#
+#   1. agent_installs row — "the install script ran on a user's machine"
+#   2. recent analytics event — "the agent has actually called a skill"
+#
+# Without (1) we can't distinguish a fresh install from a never-installed
+# state; without (2) we can't tell an active install from a stale one.
+
+
+class InstallPing(BaseModel):
+    agent: AgentLiteral
+    version: str | None = Field(default=None, max_length=64)
+    machine_id_hash: str | None = Field(default=None, max_length=128)
+
+
+class InstallPingResponse(BaseModel):
+    id: str
+    agent: str
+    installed_at: datetime
+
+
+@router.post("/v1/setup/installs", response_model=InstallPingResponse, status_code=201)
+def post_install_ping(
+    body: InstallPing,
+    db: Session = Depends(get_db),
+) -> InstallPingResponse:
+    """Record a successful install. Called by the install scripts on success.
+
+    Idempotency: the scripts may run multiple times (re-installs, updates).
+    Each run produces a new row — that lets the UI surface the *latest*
+    install_at while preserving full history for analytics.
+    """
+    row = AgentInstall(
+        agent=body.agent,
+        version=body.version,
+        machine_id_hash=body.machine_id_hash,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return InstallPingResponse(
+        id=str(row.id),
+        agent=row.agent,
+        installed_at=row.installed_at,
+    )
+
+
+class AgentStatus(BaseModel):
+    agent: AgentLiteral
+    state: Literal["pending", "installed", "active", "idle"]
+    installed_at: datetime | None
+    last_active_at: datetime | None
+    calls_24h: int
+    calls_7d: int
+
+
+def _agent_status(agent: AgentLiteral, db: Session) -> AgentStatus:
+    """Compose one agent's status row from install + analytics evidence."""
+    install_row = db.execute(
+        text(
+            "SELECT installed_at FROM agent_installs "
+            "WHERE agent = :agent ORDER BY installed_at DESC LIMIT 1"
+        ),
+        {"agent": agent},
+    ).fetchone()
+    installed_at = install_row[0] if install_row else None
+
+    # Both tables answer "when did this agent last call a skill?", but live
+    # in different shapes — Claude Code logs to skill_call_events (one row
+    # per skill call), OpenClaw logs to skill_usage_events (one row per
+    # session). We dispatch on agent name to pick the right source.
+    if agent == "claude-code":
+        last_active = db.execute(
+            text(
+                "SELECT MAX(created_at) FROM skill_call_events "
+                "WHERE agent_name = :agent"
+            ),
+            {"agent": "claude-code"},
+        ).scalar()
+        calls_24h = db.execute(
+            text(
+                "SELECT COUNT(*) FROM skill_call_events "
+                "WHERE agent_name = :agent AND created_at >= now() - interval '24 hours'"
+            ),
+            {"agent": "claude-code"},
+        ).scalar() or 0
+        calls_7d = db.execute(
+            text(
+                "SELECT COUNT(*) FROM skill_call_events "
+                "WHERE agent_name = :agent AND created_at >= now() - interval '7 days'"
+            ),
+            {"agent": "claude-code"},
+        ).scalar() or 0
+    else:
+        last_active = db.execute(
+            text("SELECT MAX(created_at) FROM skill_usage_events")
+        ).scalar()
+        calls_24h = db.execute(
+            text(
+                "SELECT COUNT(*) FROM skill_usage_events "
+                "WHERE created_at >= now() - interval '24 hours'"
+            ),
+        ).scalar() or 0
+        calls_7d = db.execute(
+            text(
+                "SELECT COUNT(*) FROM skill_usage_events "
+                "WHERE created_at >= now() - interval '7 days'"
+            ),
+        ).scalar() or 0
+
+    # State derivation:
+    #   - active: recent skill call (in 24h) regardless of install ping
+    #   - installed: install ping exists, no recent activity yet
+    #   - idle: recent activity in 30d but >24h ago
+    #   - pending: nothing
+    now = datetime.now(tz=timezone.utc)
+    state: Literal["pending", "installed", "active", "idle"] = "pending"
+    if last_active is not None:
+        age = now - last_active
+        if age.total_seconds() < ACTIVE_WINDOW_HOURS * 3600:
+            state = "active"
+        elif age.days < IDLE_WINDOW_DAYS:
+            state = "idle"
+        elif installed_at is not None:
+            state = "installed"
+        else:
+            state = "pending"
+    elif installed_at is not None:
+        state = "installed"
+
+    return AgentStatus(
+        agent=agent,
+        state=state,
+        installed_at=installed_at,
+        last_active_at=last_active,
+        calls_24h=int(calls_24h),
+        calls_7d=int(calls_7d),
+    )
+
+
+@router.get("/v1/setup/agents", response_model=list[AgentStatus])
+def get_agents_status(db: Session = Depends(get_db)) -> list[AgentStatus]:
+    """Return the per-agent state machine row for the Connect page."""
+    return [_agent_status(agent, db) for agent in SUPPORTED_AGENTS]
