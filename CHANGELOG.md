@@ -3,6 +3,17 @@
 All notable changes to SkillNote will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.5.1] - 2026-05-12
+
+Three small UX/correctness fixes filed as followups during the v0.5.0 audit ([#36](https://github.com/luna-prompts/skillnote/issues/36), [#37](https://github.com/luna-prompts/skillnote/issues/37), [#38](https://github.com/luna-prompts/skillnote/issues/38)).
+
+### Fixed
+- **`skillnote open` no longer crashes on headless systems** ([#37](https://github.com/luna-prompts/skillnote/issues/37)) — when there's no `DISPLAY` (CI, SSH sessions, WSL2 without an X server), `open()` rejects with `spawn xdg-open ENOENT`. The command now catches the rejection and prints `Could not open a browser — visit http://localhost:3000 manually.` instead of leaking a stack trace.
+- **`skillnote start` recognizes disk-full errors** ([#38](https://github.com/luna-prompts/skillnote/issues/38)) — when Docker can't pull an image because the host disk is full, the user now sees a clean `Disk full` message with `docker system prune -a` remediation instead of a raw `ExecaError` stack.
+
+### Docs
+- **`MIGRATION-v0.5.md`** rewritten ([#36](https://github.com/luna-prompts/skillnote/issues/36)) — the table that described `connect` / `disconnect` / `reconnect` as "scheduled for a later release" was already wrong at the time of the v0.5.0 publish (those commands shipped in 0.5.0). Replaced with an accurate "what's new in v0.5" table, and a forward-pointer to Phase 2C ([#40](https://github.com/luna-prompts/skillnote/issues/40)) for the eventual v0.4 deprecation.
+
 ## [0.5.0] - 2026-05-12
 
 Stable promotion of [0.5.0-alpha.0]. The CLI surface and Docker images are

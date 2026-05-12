@@ -27,17 +27,19 @@ The web UI, the API, and the database all run in containers managed by the CLI. 
 
 ## Breaking changes
 
-None of the v0.4 commands have been removed or renamed in v0.5.0. The file-push surface (`login`, `list`, `add`, `update`, `check`, `remove`, `doctor`) is still present and still works against a running backend.
+None. The v0.4 file-push surface (`login`, `list`, `add`, `update`, `check`, `remove`, `doctor`) is still present and still works against a running backend. v0.5 adds new commands alongside them.
 
-The renames below are scheduled for Phase 2B of the v0.5 series and will land in a later minor release. They are listed here so you can plan ahead:
+## What's new in v0.5
 
-| v0.4 command | Planned v0.5 (Phase 2B) | Notes |
+A new agent-connect surface ships alongside the v0.4 commands. The unit of action shifts from "push file Y into agent X's directory" (v0.4) to "connect agent X to the registry" (v0.5):
+
+| New v0.5 command | Replaces (when convenient) | Notes |
 | --- | --- | --- |
-| `skillnote add <skill>` | `skillnote connect <agent>` | The unit of action becomes "connect agent X to the registry", not "push file Y into agent X's directory". |
-| `skillnote remove <skill>` | `skillnote disconnect <agent>` | Reverses what `connect` wrote. |
-| _(new)_ | `skillnote reconnect <agent>` | Re-runs `connect` against a clean slate after an agent or SkillNote update. |
+| `skillnote connect <agent>` | `skillnote add <skill>` for that agent | Wires the agent into your local registry — runs the canonical `/setup/agent` install. |
+| `skillnote disconnect <agent>` | `skillnote remove <skill>` for that agent | Reverses what `connect` wrote (OpenClaw fully scripted; Claude Code prints a guided manual checklist). |
+| `skillnote reconnect <agent>` | _(new)_ | Re-runs `connect` against a clean slate after an agent or SkillNote update. |
 
-When those land, the old names will stay as deprecated aliases for at least one minor release with a warning, so you'll have time to update scripts.
+Phase 2C (a future minor release, no fixed date) will deprecate the v0.4 commands and eventually remove them. When that lands you'll get a deprecation warning with the equivalent v0.5 command for a full release cycle before removal. Tracking: [#40](https://github.com/luna-prompts/skillnote/issues/40).
 
 ## What's preserved
 
