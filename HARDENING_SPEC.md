@@ -45,7 +45,7 @@ Each round must complete ALL of the following before commit:
 5. **Tests added for everything touched:** unit, component, integration, e2e, visual regression
 6. **Extra scrutiny on new functionality** (paths listed above)
 7. **All findings fixed before commit**
-8. **Round summary** appended to ROUND_LOG.md: bugs found, fixes applied, tests added, what improved
+8. **Round summary** appended to `docs/HARDENING_LOG.md`: bugs found, fixes applied, tests added, what improved
 
 ## Reporting rules (critical)
 Report every issue found — including ones you're uncertain about or consider low-severity. Do not filter for importance at discovery time. A separate verification pass will filter. Suppressing low-severity findings here loses signal permanently.
@@ -53,4 +53,4 @@ Report every issue found — including ones you're uncertain about or consider l
 ## Commit discipline
 - One commit per round, conventional commits format
 - Round number in commit message: `chore(hardening): round N — <summary>`
-- ROUND_LOG.md updated in the same commit
+- `docs/HARDENING_LOG.md` updated in the same commit

@@ -63,7 +63,7 @@ Production-readiness sweep ("Round 9" of the 10-round hardening exercise). Drove
 - 140/140 CLI unit tests pass.
 - `npx tsc --noEmit` clean.
 - 30/30 README links healthy via the new link-checker.
-- Full audit trail in `ROUND_LOG.md` (R9 section).
+- Full audit trail in `docs/HARDENING_LOG.md` (R9 section).
 
 ## [0.5.1] - 2026-05-12
 
