@@ -40,11 +40,11 @@
 
 ## The 8,000-character problem
 
-Claude Code shares **~8,000 characters** across every active skill description ([docs](https://docs.anthropic.com/en/docs/claude-code/skills)). Past that limit descriptions silently truncate. The system prompt forbids using skills that aren't listed in context — so truncated skills are both invisible *and* explicitly off-limits ([#13343](https://github.com/anthropics/claude-code/issues/13343), [#40121](https://github.com/anthropics/claude-code/issues/40121)).
+Claude Code shares **~8,000 characters** across every active skill description ([docs](https://docs.anthropic.com/en/docs/claude-code/skills)). Past that limit, descriptions silently truncate. The system prompt forbids using skills that aren't listed in context, so truncated skills are both invisible *and* explicitly off-limits ([#13343](https://github.com/anthropics/claude-code/issues/13343), [#40121](https://github.com/anthropics/claude-code/issues/40121)).
 
-In practice: past ~15 active skills, your skills stop working and you can't tell which. New teammates have no way to discover what skills the project depends on. Updating a shared skill means re-zipping and re-uploading for everyone, and private skills (deploy procedures, compliance workflows, internal APIs) have nowhere safe to live.
+In practice, past ~15 active skills your skills stop working and you can't tell which ones. New teammates have no way to discover what skills the project depends on. Updating a shared skill means re-zipping and re-uploading for everyone. And private skills, like deploy procedures, compliance workflows, or internal API patterns, have nowhere safe to live.
 
-**SkillNote is a self-hosted registry that fixes this.** Per-project collections scope which skills load. Live sync pushes browser edits to every connected agent within 60 seconds. Agents rate skills 1-5 after using them, so you finally have signal on what works. Your skills stay on your infrastructure — your servers, your rules.
+**SkillNote is a self-hosted registry that fixes that.** Per-project collections scope which skills load. Live sync pushes browser edits to every connected agent within 60 seconds. Agents rate skills 1 to 5 after using them, so you finally have signal on what works. Your skills stay on your infrastructure. Your servers, your rules.
 
 | Without SkillNote | With SkillNote |
 | --- | --- |
@@ -121,7 +121,7 @@ npx skillnote status        # health table (--json for scripts)
 npx skillnote logs [svc]    # tail logs (-f to follow)
 npx skillnote open          # open UI (--app for chromeless)
 npx skillnote doctor        # 11 health checks
-npx skillnote reset --confirm   # DESTRUCTIVE — drops all data
+npx skillnote reset --confirm   # DESTRUCTIVE: drops all data
 ```
 
 ---
@@ -137,13 +137,13 @@ npx skillnote connect claude-code
 source ~/.zshrc      # or ~/.bashrc
 ```
 
-Runs the canonical `/setup/agent` script: registers the plugin marketplace in `~/.claude/settings.json`, installs the SkillNote plugin into `~/.claude/plugins/`, drops picker binaries in `~/.skillnote/bin/`, and adds a shell wrapper. Run `claude` in any project — the collection picker appears on first launch:
+Runs the canonical `/setup/agent` script: registers the plugin marketplace in `~/.claude/settings.json`, installs the SkillNote plugin into `~/.claude/plugins/`, drops picker binaries in `~/.skillnote/bin/`, and adds a shell wrapper. Run `claude` in any project, and the collection picker appears on first launch:
 
 <p align="center">
   <img src="docs/terminal/picker4.png" width="640" alt="SkillNote collection picker in Claude Code terminal showing Conventions, DevOps, and Frontend collections" />
 </p>
 
-Pick a collection — saved to `.skillnote.json` — and your scoped skills load on every session.
+Pick a collection (it's saved to `.skillnote.json`) and your scoped skills load on every session.
 
 <details>
 <summary><i>Or, paste this prompt into a fresh Claude Code session</i></summary>
@@ -214,7 +214,7 @@ If your folder name matches a collection, the plugin recommends it automatically
 
 ### Import from any GitHub repo
 
-The community has published thousands of `SKILL.md` files since Anthropic released the format. Paste a GitHub URL, shorthand (`garrytan/gstack`), a tree URL to a subfolder, or a Claude Code marketplace manifest (`anthropic.json`) — SkillNote shallow-clones, scans every `SKILL.md`, validates frontmatter, and opens a workspace where you pick exactly what to install.
+The community has published thousands of `SKILL.md` files since Anthropic released the format. Paste a GitHub URL, shorthand (`garrytan/gstack`), a tree URL to a subfolder, or a Claude Code marketplace manifest (`anthropic.json`). SkillNote shallow-clones the repo, scans every `SKILL.md`, validates frontmatter, and opens a workspace where you pick exactly what to install.
 
 <p align="center">
   <img src="docs/screenshots/marketplace-workspace.png" width="100%" alt="Marketplace workspace showing skills from garrytan/gstack with select-all, filter, and per-skill preview pane" />
@@ -222,11 +222,11 @@ The community has published thousands of `SKILL.md` files since Anthropic releas
 
 Some popular registries to try:
 
-- [**`anthropics/skills`**](https://github.com/anthropics/skills) — Anthropic's official Agent Skills repository
-- [**`ComposioHQ/awesome-claude-skills`**](https://github.com/ComposioHQ/awesome-claude-skills) — 800+ community skills, the largest curated set
-- [**`alirezarezvani/claude-skills`**](https://github.com/alirezarezvani/claude-skills) — 600+ skills for Claude Code, Codex, Gemini CLI, Cursor, and more
-- [**`garrytan/gstack`**](https://github.com/garrytan/gstack) — Garry Tan's 50+ opinionated YC-flavored tools (CEO, Designer, Eng Manager, etc.)
-- [**`obra/superpowers`**](https://github.com/obra/superpowers) — Jesse Vincent's agentic skills framework
+- [**`anthropics/skills`**](https://github.com/anthropics/skills): Anthropic's official Agent Skills repository
+- [**`ComposioHQ/awesome-claude-skills`**](https://github.com/ComposioHQ/awesome-claude-skills): 800+ community skills, the largest curated set
+- [**`alirezarezvani/claude-skills`**](https://github.com/alirezarezvani/claude-skills): 600+ skills for Claude Code, Codex, Gemini CLI, Cursor, and more
+- [**`garrytan/gstack`**](https://github.com/garrytan/gstack): Garry Tan's 50+ opinionated YC-flavored tools (CEO, Designer, Eng Manager, etc.)
+- [**`obra/superpowers`**](https://github.com/obra/superpowers): Jesse Vincent's agentic skills framework
 
 ### Live sync, every agent
 
@@ -242,7 +242,7 @@ Most skill setups are fire-and-forget. SkillNote closes the loop. After applying
 
 ### Version history
 
-Every save creates a snapshot. Browse, compare, restore — one click. Published versions use semver and ship as checksummed ZIP bundles.
+Every save creates a snapshot. Browse, compare, and restore any version in one click. Published versions use semver and ship as checksummed ZIP bundles.
 
 ### Skill push
 
@@ -256,10 +256,10 @@ When Claude Code notices you correct the same thing three times ("use pnpm, not 
 | --- | --- | --- |
 | **Claude Code** | Supported | Native plugin (`~/.claude/plugins/skillnote/`) with 6 lifecycle hooks |
 | **OpenClaw** | Supported | clawhub skill bundle with `sync.sh` + analytics daemon |
-| Cursor | Planned | — |
-| Codex CLI | Planned | — |
-| Antigravity | Planned | — |
-| OpenHands | Planned | — |
+| Cursor | Planned | Roadmap |
+| Codex CLI | Planned | Roadmap |
+| Antigravity | Planned | Roadmap |
+| OpenHands | Planned | Roadmap |
 
 Want to help build an adapter? [Open an issue](https://github.com/luna-prompts/skillnote/issues) or join us on [Discord](https://discord.gg/GazU4amU6H).
 
@@ -293,11 +293,11 @@ Want to help build an adapter? [Open an issue](https://github.com/luna-prompts/s
 └────────────────────┘   └────────────────────┘
 ```
 
-SkillNote uses each agent's native skill system. Claude Code: hooks + plugin format with `SessionStart`, `UserPromptSubmit`, `PostToolUse`, `PostCompact`, `SubagentStart`, and `Stop`. Only `SessionStart` blocks (for ~1 second to sync); every other hook runs async — you never wait for SkillNote.
+SkillNote uses each agent's native skill system. For Claude Code that's hooks plus plugin format, with `SessionStart`, `UserPromptSubmit`, `PostToolUse`, `PostCompact`, `SubagentStart`, and `Stop`. Only `SessionStart` blocks (for ~1 second to sync); every other hook runs async, so you never wait for SkillNote.
 
-OpenClaw: clawhub-installable bundle with `sync.sh` (catalog), `log-watcher.py` (analytics), and an AGENTS.md graft that keeps the agent consulting the registry on every task.
+For OpenClaw it's a clawhub-installable bundle with `sync.sh` (catalog), `log-watcher.py` (analytics), and an AGENTS.md graft that keeps the agent consulting the registry on every task.
 
-Skills are written as local `SKILL.md` files, not piped through a network abstraction. That means every [Claude Code frontmatter feature](https://docs.anthropic.com/en/docs/claude-code/skills) — `allowed-tools`, `context: fork`, `effort`, `model` — works natively, because they only work with on-disk `SKILL.md` files.
+Skills are written as local `SKILL.md` files, not piped through a network abstraction. That means every [Claude Code frontmatter feature](https://docs.anthropic.com/en/docs/claude-code/skills), including `allowed-tools`, `context: fork`, `effort`, and `model`, works natively. These features only work with on-disk `SKILL.md` files, which is why SkillNote syncs to disk instead of serving skills over a network protocol.
 
 For the full HLD see [`docs/openclaw-hld.md`](docs/openclaw-hld.md).
 
@@ -326,14 +326,14 @@ When the user provides a PDF file:
 
 ## Security & deployment
 
-SkillNote is built for trusted environments — a developer's laptop, a team VM on a private network, or a self-hosted server behind a VPN. Out of the box it has **no authentication** on the web UI or API; anything that can reach `:3000` and `:8082` can read and write skills.
+SkillNote is built for trusted environments: a developer's laptop, a team VM on a private network, or a self-hosted server behind a VPN. Out of the box it has **no authentication** on the web UI or API; anything that can reach `:3000` and `:8082` can read and write skills.
 
 - **Local-only (default):** `npx skillnote start` binds to `localhost`. Safe.
 - **LAN-only:** set `SKILLNOTE_HOST=<lan-ip>` to expose to teammates on the same network. Assumes the LAN is trusted.
 - **Internet-exposed:** never bind `:3000` or `:8082` directly to a public IP. Put it behind a reverse proxy (Caddy, Nginx, Traefik) with basic auth, OAuth, or a Tailscale/Cloudflare Tunnel.
 - **Marketplace imports:** every install writes `SKILL.md` files that your agent will read. Review the workspace preview before importing from unfamiliar sources.
 
-Auth on the API is on the roadmap — until then, treat reachability as the access boundary.
+Auth on the API is on the roadmap. Until then, treat reachability as the access boundary.
 
 ---
 
@@ -352,6 +352,42 @@ Auth on the API is on the roadmap — until then, treat reachability as the acce
 ---
 
 ## FAQ
+
+<details>
+<summary><b>What is SkillNote?</b></summary>
+
+<br />
+
+SkillNote is an open-source, self-hosted registry for Anthropic's [Agent Skills format](https://docs.anthropic.com/en/docs/claude-code/skills). You run it on your own infrastructure (a laptop, a team VM, a private server), and it gives your team one place to create, version, and share `SKILL.md` files across Claude Code, OpenClaw, and other coding agents. The web UI lets you edit skills in a Notion-style editor; the CLI plugin syncs your registry into each agent's native skill system so the skills hot-reload mid-session.
+
+</details>
+
+<details>
+<summary><b>How is SkillNote different from MCP?</b></summary>
+
+<br />
+
+MCP (Model Context Protocol) is a wire protocol for talking to tools over a network. Skills are local `SKILL.md` files that the agent reads from disk. The two solve different problems: MCP lets an agent call a remote service; skills tell an agent *how* to do something with instructions, examples, and frontmatter directives like `allowed-tools` or `context: fork`. SkillNote distributes the second kind. It syncs skills to disk because that's where features like `allowed-tools`, `context: fork`, `effort`, and `model` are actually evaluated by Claude Code, and they don't work over a network protocol.
+
+</details>
+
+<details>
+<summary><b>How do I share Claude Code skills across my team?</b></summary>
+
+<br />
+
+Run SkillNote on a server your team can reach (`SKILLNOTE_HOST=<lan-ip> docker compose up -d` for a LAN, or behind a reverse proxy for a remote team). Everyone installs the SkillNote plugin into Claude Code with `npx skillnote connect claude-code`. From then on, any edit anyone makes in the SkillNote web UI propagates to every running Claude Code session in 60 seconds. New teammates run the connect command once and inherit every skill the team has built.
+
+</details>
+
+<details>
+<summary><b>Is SkillNote free?</b></summary>
+
+<br />
+
+Yes. SkillNote is MIT licensed and self-hosted. There is no cloud tier, no paid plan, and no usage telemetry. You run it on your own machines and own your data.
+
+</details>
 
 <details>
 <summary><b>Claude Code: skills from another collection are showing up</b></summary>
