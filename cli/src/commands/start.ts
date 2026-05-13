@@ -78,7 +78,7 @@ export async function startCommand(opts: StartOptions = {}): Promise<void> {
             `The holding process has been alive for ${ageHours}h — it's likely hung.`,
             `Inspect:   ps -p ${err.pid} -o pid,etime,command`,
             `Kill it:   kill ${err.pid}`,
-            `Or force:  skillnote start --force`,
+            'Or force:  skillnote start --force',
           ]
         : [
             'Wait for the other process to finish,',
