@@ -87,11 +87,17 @@ jobs:
       # the manual "Settings → Packages → Change visibility" step.
       #
       # Idempotent: PATCH visibility=public on an already-public package
-      # returns 200. The `|| true` swallows transient API hiccups so a flaky
-      # GitHub API call doesn't fail the whole release.
+      # returns 200. The `|| echo ::warning::` swallows transient API hiccups
+      # so a flaky GitHub API call doesn't fail the whole release.
       #
-      # Requires `PACKAGES_ADMIN_TOKEN` — a PAT with `admin:packages` scope
-      # stored as a repo secret. `GITHUB_TOKEN` doesn't have that scope.
+      # Requires `PACKAGES_ADMIN_TOKEN` — a classic PAT with `write:packages`
+      # + `read:packages` scopes (the legacy `admin:packages` scope was
+      # deprecated; admin-level operations on org packages are now gated by
+      # the token-owner's org role rather than a dedicated scope, and the
+      # PAT owner must be an org owner of `luna-prompts`). `GITHUB_TOKEN`
+      # can't be used — its `packages: write` permission covers pushing
+      # but not visibility changes. Fallback if `write:packages` returns
+      # 403: add `admin:org` to the PAT.
       - name: Ensure ${{ matrix.image.name }} package is public
         if: ${{ env.PACKAGES_ADMIN_TOKEN != '' }}
         env:
