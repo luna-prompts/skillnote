@@ -88,7 +88,7 @@ Requires **Docker** (running) and **Node.js 20+**. The CLI pulls the published i
 **Docker Compose directly** (no Node):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/luna-prompts/skillnote/cli-v0.5.2/deploy/docker-compose.yml -o docker-compose.yml
+curl -fsSL https://raw.githubusercontent.com/luna-prompts/skillnote/cli-v0.5.3/deploy/docker-compose.yml -o docker-compose.yml
 docker compose up -d
 ```
 
