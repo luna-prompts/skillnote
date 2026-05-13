@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils'
 import { getApiBaseUrl } from '@/lib/api/client'
 import { useKeyboardShortcut } from '@/lib/hooks'
 import { toast } from 'sonner'
+import { getSkills } from '@/lib/skills-store'
 import {
   Zap, BookOpen, Users, Activity, TrendingUp, Radio, WifiOff,
   ChevronDown, ChevronRight, RefreshCw, BarChart2, PieChart as PieChartIcon,
@@ -163,7 +164,7 @@ function Skeleton({ className }: { className?: string }) {
   return <div className={cn('animate-pulse rounded-md bg-muted/40', className)} />
 }
 
-function Sparkline({ data }: { data: number[] }) {
+function Sparkline({ data, ariaLabel }: { data: number[]; ariaLabel?: string }) {
   if (data.length < 2) return null
   const max = Math.max(...data, 1)
   const W = 120, H = 24
@@ -173,8 +174,19 @@ function Sparkline({ data }: { data: number[] }) {
   }))
   const pathD = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ')
   const fillD = pathD + ` L${W},${H} L0,${H} Z`
+  // When a label is provided, expose the trend to screen readers via
+  // role="img"; otherwise keep the chart fully hidden (the surrounding
+  // number/text already conveys the data). Decorative-only callers can omit.
+  const hasLabel = !!ariaLabel
   return (
-    <svg width={W} height={H} className="overflow-visible" aria-hidden="true">
+    <svg
+      width={W}
+      height={H}
+      className="overflow-visible"
+      role={hasLabel ? 'img' : undefined}
+      aria-label={hasLabel ? ariaLabel : undefined}
+      aria-hidden={hasLabel ? undefined : true}
+    >
       <path d={fillD} fill="var(--accent)" fillOpacity={0.15} />
       <path d={pathD} fill="none" stroke="var(--accent)" strokeOpacity={0.6} strokeWidth={1.5} />
     </svg>
@@ -315,7 +327,31 @@ function SummaryCard({
           )}
           {accent && sparklineData && sparklineData.length >= 2 && (
             <div className="mt-1">
-              <Sparkline data={sparklineData} />
+              <Sparkline
+                data={sparklineData}
+                ariaLabel={(() => {
+                  // Compare the AVERAGE of the first half vs the second half
+                  // rather than first-vs-last endpoints. A U-shape returning
+                  // to its start would otherwise be labelled "flat" while the
+                  // chart is visibly volatile. The half-average compare is
+                  // robust to a single outlier at either endpoint.
+                  const n = sparklineData.length
+                  const mid = Math.floor(n / 2)
+                  const avg = (s: number[]) => s.reduce((a, b) => a + b, 0) / Math.max(s.length, 1)
+                  const first = avg(sparklineData.slice(0, mid))
+                  const second = avg(sparklineData.slice(mid))
+                  // 5% noise band so tiny oscillations don't read as a trend.
+                  const eps = Math.max(first, 1) * 0.05
+                  const trend =
+                    second > first + eps
+                      ? 'rising'
+                      : second < first - eps
+                        ? 'falling'
+                        : 'flat'
+                  const last = sparklineData[n - 1]
+                  return `Recent trend: ${trend} (${n} data points, latest ${last})`
+                })()}
+              />
             </div>
           )}
         </>
@@ -421,6 +457,19 @@ function AnalyticsContent() {
   const [secondsLeft, setSecondsLeft] = useState(30)
   const [agentView, setAgentView] = useState<'bars' | 'donut'>('bars')
   const [ldrMounted, setLdrMounted] = useState(false)
+  // Cross-reference leaderboard slugs against the registered-skills set so
+  // unregistered slugs (e.g. test events for `Skill`, `oc-usage-*`, etc.) can
+  // be visually marked and made non-clickable rather than navigating users
+  // to a "Skill not found" dead end (R7 live-bug L3/L5).
+  const [registeredSlugs, setRegisteredSlugs] = useState<Set<string>>(() => new Set())
+  useEffect(() => {
+    const refresh = () => setRegisteredSlugs(new Set(getSkills().map((s) => s.slug)))
+    refresh()
+    if (typeof window !== 'undefined') {
+      window.addEventListener('skillnote:skills-changed', refresh)
+      return () => window.removeEventListener('skillnote:skills-changed', refresh)
+    }
+  }, [])
 
   const [mcpStatus, setMcpStatus] = useState<McpStatus | null>(null)
   const [mcpError, setMcpError] = useState(false)
@@ -542,13 +591,24 @@ function AnalyticsContent() {
     router.push(`/analytics?${p.toString()}`)
   }
 
-  const agentOptions = [
-    { value: '', label: 'All Agents' },
-    ...Array.from(new Set(agents.map(a => a.agent_name))).map(n => ({
-      value: n,
-      label: AGENT_CATALOG[categorize(n)]?.label ?? n,
-    })),
-  ]
+  // Filter dropdown — dedup by display category so two raw names that map
+  // to the same label (e.g. 'claude-code' + 'claude' → "Claude Code") don't
+  // both appear. We pick the first raw name we see for the value; the
+  // backend filter param accepts any of the agent_names anyway. R6 reviewer
+  // caught that the donut/bars fix didn't propagate here.
+  const agentOptions = (() => {
+    const seen = new Map<string, { value: string; label: string }>()
+    for (const a of agents) {
+      const cat = categorize(a.agent_name)
+      if (!seen.has(cat)) {
+        seen.set(cat, {
+          value: a.agent_name,
+          label: AGENT_CATALOG[cat]?.label ?? a.agent_name,
+        })
+      }
+    }
+    return [{ value: '', label: 'All Agents' }, ...seen.values()]
+  })()
 
   const collectionOptions = [
     { value: '', label: 'All Collections' },
@@ -576,11 +636,51 @@ function AnalyticsContent() {
     ? collections.map(c => `${(c.call_count / totalCollectionCalls) * 100}fr`).join(' ')
     : ''
 
-  const donutData = agents.map(a => {
-    const cat = categorize(a.agent_name)
-    const info = AGENT_CATALOG[cat] ?? AGENT_CATALOG.other
-    return { name: info.label, value: a.call_count, color: info.color, pct: a.pct }
-  })
+  // Consolidate agents by their display category. Without this, the chart
+  // shows two "Claude Code" entries when the backend returns events for both
+  // `claude-code` and `claude` agent_names (any near-duplicates that
+  // `categorize()` collapses to the same label). Before R6 the donut legend
+  // had two "Claude Code 51.6%" / "Claude Code 29.0%" rows and the bars
+  // view had two bars with the same bold label — users thought they were
+  // looking at two distinct agents. Now we group by category, sum the
+  // values, and keep the raw agent_names as a comma-joined "sub-labels"
+  // list so the bars view can still disambiguate if needed.
+  const consolidatedAgents = (() => {
+    const byCat = new Map<string, {
+      cat: string
+      name: string
+      color: string
+      call_count: number
+      pct: number
+      raw_names: string[]
+    }>()
+    for (const a of agents) {
+      const cat = categorize(a.agent_name)
+      const info = AGENT_CATALOG[cat] ?? AGENT_CATALOG.other
+      const existing = byCat.get(cat)
+      if (existing) {
+        existing.call_count += a.call_count
+        existing.pct += a.pct
+        existing.raw_names.push(a.agent_name)
+      } else {
+        byCat.set(cat, {
+          cat,
+          name: info.label,
+          color: info.color,
+          call_count: a.call_count,
+          pct: a.pct,
+          raw_names: [a.agent_name],
+        })
+      }
+    }
+    return Array.from(byCat.values()).sort((a, b) => b.call_count - a.call_count)
+  })()
+  const donutData = consolidatedAgents.map((c) => ({
+    name: c.name,
+    value: c.call_count,
+    color: c.color,
+    pct: c.pct,
+  }))
 
   const refreshProgress = Math.min(((30 - secondsLeft) / 30) * 100, 100)
 
@@ -773,6 +873,7 @@ function AnalyticsContent() {
                 <div className="divide-y divide-border/30 max-h-[420px] overflow-y-auto [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-thumb]:rounded [&::-webkit-scrollbar-thumb]:bg-border/60">
                   {skillCalls.map((s, i) => {
                     const barWidth = maxSkillCalls > 0 ? (s.call_count / maxSkillCalls) * 100 : 0
+                    const isRegistered = registeredSlugs.has(s.slug)
                     const rankBadge = i === 0
                       ? <span className="w-5 h-5 rounded-full bg-amber-500/20 text-amber-500 text-[10px] font-bold flex items-center justify-center shrink-0">1</span>
                       : i === 1
@@ -783,14 +884,36 @@ function AnalyticsContent() {
                     return (
                       <button
                         key={s.slug}
-                        onClick={() => router.push(`/skills/${s.slug}`)}
-                        className="w-full px-4 py-2.5 flex items-center gap-3 hover:bg-accent/4 transition-colors text-left group/row"
+                        // Unregistered slugs (events with no matching skill in
+                        // the registry — e.g. test fixtures, deleted skills,
+                        // adhoc hook payloads) get no navigation: clicking
+                        // would route to a "Skill not found" dead end. The
+                        // (unknown) tag explains why the row isn't actionable.
+                        onClick={isRegistered ? () => router.push(`/skills/${s.slug}`) : undefined}
+                        disabled={!isRegistered}
+                        title={isRegistered ? '' : 'This skill is not in your registry — analytics-only event.'}
+                        className={cn(
+                          'w-full px-4 py-2.5 flex items-center gap-3 text-left group/row',
+                          isRegistered
+                            ? 'hover:bg-accent/4 transition-colors'
+                            : 'opacity-55 cursor-default',
+                        )}
                       >
                         {rankBadge}
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center justify-between gap-2 mb-1">
-                            <span className="text-[12px] font-medium font-mono text-foreground truncate group-hover/row:text-accent transition-colors">
+                            <span className={cn(
+                              'text-[12px] font-medium font-mono truncate',
+                              isRegistered
+                                ? 'text-foreground group-hover/row:text-accent transition-colors'
+                                : 'text-muted-foreground/70',
+                            )}>
                               {s.slug}
+                              {!isRegistered ? (
+                                <span className="ml-2 text-[10px] font-sans font-normal text-muted-foreground/50">
+                                  (unknown)
+                                </span>
+                              ) : null}
                             </span>
                             <span className="text-[12px] font-semibold tabular-nums text-foreground shrink-0">
                               {s.call_count.toLocaleString()}
@@ -858,7 +981,16 @@ function AnalyticsContent() {
                 <AgentBreakdownEmpty />
               ) : agentView === 'donut' ? (
                 <div className="p-4">
-                  <div className="relative">
+                  <div
+                    className="relative"
+                    role="img"
+                    aria-label={
+                      'Agent breakdown: ' +
+                      donutData
+                        .map((d) => `${d.name} ${Math.round(d.pct)}% (${d.value} calls)`)
+                        .join(', ')
+                    }
+                  >
                     <ResponsiveContainer width="100%" height={200}>
                       <PieChart>
                         <Pie
@@ -897,31 +1029,54 @@ function AnalyticsContent() {
                 </div>
               ) : (
                 <div className="p-4 space-y-3">
-                  {agents.map(a => {
-                    const cat = categorize(a.agent_name)
-                    const info = AGENT_CATALOG[cat] ?? AGENT_CATALOG.other
-                    return (
-                      <div key={a.agent_name} className="space-y-1">
-                        <div className="flex items-center justify-between text-[12px]">
-                          <div className="flex items-center gap-2">
-                            <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: info.color }} />
-                            <span className="font-medium text-foreground">{info.label}</span>
-                            <span className="text-muted-foreground/50 font-mono text-[10px]">{a.agent_name}</span>
-                          </div>
-                          <div className="flex items-center gap-2 shrink-0">
-                            <span className="font-semibold tabular-nums text-foreground">{a.call_count.toLocaleString()}</span>
-                            <span className="text-muted-foreground/50 w-9 text-right">{a.pct.toFixed(1)}%</span>
-                          </div>
+                  {consolidatedAgents.map((c) => (
+                    <div key={c.cat} className="space-y-1">
+                      <div className="flex items-center justify-between text-[12px]">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: c.color }} />
+                          <span className="font-medium text-foreground">{c.name}</span>
+                          {/* Show the raw agent_names that rolled up into this
+                              category, so admins debugging analytics can see
+                              the merge happened (e.g. "claude-code, claude").
+                              For the "Other" bucket, many adhoc names can
+                              collapse together — truncate so a single very
+                              long raw_name (R1 hooks tests stored 200+ chars)
+                              doesn't blow out the row layout (R6 reviewer
+                              flagged, R7 fixed). */}
+                          <span
+                            className="text-muted-foreground/50 font-mono text-[10px] truncate"
+                            title={c.raw_names.join(', ')}
+                          >
+                            {(() => {
+                              const SHOW = 3
+                              const PER_NAME_CAP = 40
+                              const trimmed = c.raw_names.slice(0, SHOW).map((n) =>
+                                n.length > PER_NAME_CAP ? n.slice(0, PER_NAME_CAP) + '…' : n,
+                              )
+                              const extra = c.raw_names.length - SHOW
+                              return extra > 0
+                                ? `${trimmed.join(', ')} +${extra} more`
+                                : trimmed.join(', ')
+                            })()}
+                          </span>
                         </div>
-                        <div className="h-1.5 rounded-full bg-muted/40 overflow-hidden">
-                          <div
-                            className="h-full rounded-full transition-all duration-500"
-                            style={{ width: `${a.pct}%`, backgroundColor: info.color }}
-                          />
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="font-semibold tabular-nums text-foreground">{c.call_count.toLocaleString()}</span>
+                          <span className="text-muted-foreground/50 w-9 text-right">{c.pct.toFixed(1)}%</span>
                         </div>
                       </div>
-                    )
-                  })}
+                      <div className="h-1.5 rounded-full bg-muted/40 overflow-hidden">
+                        <div
+                          className="h-full rounded-full transition-all duration-500"
+                          // Clamp at 100% — when we consolidate categories the
+                          // summed pct values can exceed 100 due to backend
+                          // rounding (e.g. 51.6 + 49.0 = 100.6). Without
+                          // clamping the bar would overflow its container.
+                          style={{ width: `${Math.min(c.pct, 100)}%`, backgroundColor: c.color }}
+                        />
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
             </section>
@@ -1049,16 +1204,33 @@ function AnalyticsContent() {
                     </thead>
                     <tbody className="divide-y divide-border/20">
                       {topSkills.map((s, i) => {
+                        const isRegistered = registeredSlugs.has(s.slug)
                         return (
                           <React.Fragment key={s.slug}>
                             <tr
-                              onClick={() => router.push(`/skills/${s.slug}`)}
-                              className="hover:bg-accent/4 cursor-pointer transition-colors group/row"
+                              onClick={isRegistered ? () => router.push(`/skills/${s.slug}`) : undefined}
+                              title={isRegistered ? '' : 'This skill is not in your registry — analytics-only event.'}
+                              className={cn(
+                                'group/row',
+                                isRegistered
+                                  ? 'hover:bg-accent/4 cursor-pointer transition-colors'
+                                  : 'opacity-55 cursor-default',
+                              )}
                             >
                               <td className="px-4 py-2.5 text-muted-foreground/50 font-mono">{i + 1}</td>
                               <td className="px-2 py-2.5">
-                                <span className="font-medium font-mono text-foreground group-hover/row:text-accent transition-colors">
+                                <span className={cn(
+                                  'font-medium font-mono',
+                                  isRegistered
+                                    ? 'text-foreground group-hover/row:text-accent transition-colors'
+                                    : 'text-muted-foreground/70',
+                                )}>
                                   {s.slug}
+                                  {!isRegistered ? (
+                                    <span className="ml-2 text-[10px] font-sans font-normal text-muted-foreground/50">
+                                      (unknown)
+                                    </span>
+                                  ) : null}
                                 </span>
                               </td>
                               <td className="px-2 py-2.5 text-right tabular-nums font-semibold text-foreground">
@@ -1091,7 +1263,13 @@ function AnalyticsContent() {
                                   ) : (
                                     <span className="text-muted-foreground/30">—</span>
                                   )}
-                                  <ChevronDown className="h-3 w-3 text-muted-foreground/30" />
+                                  {/* Hide the chevron for unknown rows — it
+                                      implies the row is expandable/clickable
+                                      but unknown rows aren't (R7 reviewer
+                                      flagged). */}
+                                  {isRegistered ? (
+                                    <ChevronDown className="h-3 w-3 text-muted-foreground/30" />
+                                  ) : null}
                                 </div>
                               </td>
                             </tr>
@@ -1122,7 +1300,7 @@ function AnalyticsContent() {
                   <Skeleton className="h-16 w-full" />
                   <Skeleton className="h-24 w-full" />
                 </div>
-              ) : !ratingSummary || ratingSummary.total_ratings === 0 ? (
+              ) : !ratingSummary || (ratingSummary.total_ratings ?? 0) === 0 ? (
                 <div className="flex flex-col items-center gap-2 py-10 text-center px-4">
                   <Star className="h-7 w-7 text-muted-foreground/20" />
                   <p className="text-[13px] text-muted-foreground/50">No ratings yet</p>
@@ -1141,9 +1319,9 @@ function AnalyticsContent() {
                       </span>
                     </div>
                     <p className="text-[11px] text-muted-foreground/50">
-                      {ratingSummary.total_ratings.toLocaleString()} rating{ratingSummary.total_ratings !== 1 ? 's' : ''} across {ratingSummary.rated_skills} skill{ratingSummary.rated_skills !== 1 ? 's' : ''}
+                      {(ratingSummary.total_ratings ?? 0).toLocaleString()} rating{(ratingSummary.total_ratings ?? 0) !== 1 ? 's' : ''} across {ratingSummary.rated_skills ?? 0} skill{(ratingSummary.rated_skills ?? 0) !== 1 ? 's' : ''}
                     </p>
-                    {ratingSummary.rating_agents > 0 && (
+                    {(ratingSummary.rating_agents ?? 0) > 0 && (
                       <p className="text-[10px] text-muted-foreground/35 mt-0.5">
                         from {ratingSummary.rating_agents} agent{ratingSummary.rating_agents !== 1 ? 's' : ''}
                       </p>
@@ -1154,9 +1332,10 @@ function AnalyticsContent() {
                   <div className="space-y-1.5">
                     <p className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground/40 font-medium mb-2">Distribution</p>
                     {[5, 4, 3, 2, 1].map(star => {
-                      const count = ratingSummary.distribution[star] ?? 0
-                      const pct = ratingSummary.total_ratings > 0
-                        ? (count / ratingSummary.total_ratings) * 100
+                      const count = (ratingSummary.distribution ?? {})[star] ?? 0
+                      const totalR = ratingSummary.total_ratings ?? 0
+                      const pct = totalR > 0
+                        ? (count / totalR) * 100
                         : 0
                       return (
                         <div key={star} className="flex items-center gap-2">

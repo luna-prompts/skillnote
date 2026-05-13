@@ -28,6 +28,15 @@ export interface StartOptions {
   pull?: boolean
   browser?: boolean
   detach?: boolean
+  /** Override an alive-but-stale lock (R9 F26/F34). */
+  force?: boolean
+}
+
+/** Compute how old a lock is, in hours, given its `startedAt` timestamp. */
+function lockAgeHours(startedAt: string): number | null {
+  const t = Date.parse(startedAt)
+  if (Number.isNaN(t)) return null
+  return Math.round((Date.now() - t) / 36e5)
 }
 
 export async function startCommand(opts: StartOptions = {}): Promise<void> {
@@ -56,17 +65,30 @@ export async function startCommand(opts: StartOptions = {}): Promise<void> {
   // ─── Lock ──────────────────────────────────────────────────────────────
   let release: () => Promise<void>
   try {
-    release = await acquireLock(version)
+    release = await acquireLock(version, { force: opts.force === true })
   } catch (err) {
     if (err instanceof LockHeldError) {
+      const ageHours = lockAgeHours(err.startedAt)
+      const likelyHung = ageHours !== null && ageHours >= 2
+      // R9 F26/F34: when the lock is hours-old, surface the PID + age + the
+      // exact kill command so the user has a concrete next action, not just
+      // "delete a file you've never heard of."
+      const remediation = likelyHung
+        ? [
+            `The holding process has been alive for ${ageHours}h — it's likely hung.`,
+            `Inspect:   ps -p ${err.pid} -o pid,etime,command`,
+            `Kill it:   kill ${err.pid}`,
+            'Or force:  skillnote start --force',
+          ]
+        : [
+            'Wait for the other process to finish,',
+            'or run `skillnote stop` to shut it down,',
+            `or force-override:  skillnote start --force  (PID ${err.pid})`,
+          ]
       throw new UserFacingError({
         header: 'Another skillnote process is already running',
-        body: `pid ${err.pid}, started ${err.startedAt}`,
-        remediation: [
-          'Wait for the other process to finish,',
-          'or run `skillnote stop` to shut it down,',
-          'or delete ~/.skillnote/start.lock if you know the process is dead.',
-        ],
+        body: `pid ${err.pid}, started ${err.startedAt}${ageHours !== null ? ` (${ageHours}h ago)` : ''}`,
+        remediation,
       })
     }
     throw err
@@ -183,10 +205,24 @@ export async function startCommand(opts: StartOptions = {}): Promise<void> {
     healthSpin.stop(`Services ${c.ok('healthy')}`)
 
     // ─── URL summary ─────────────────────────────────────────────────────
+    // R9 F28/F43: the published web image has `NEXT_PUBLIC_API_BASE_URL`
+    // baked into the bundle at IMAGE BUILD time. Overriding `--api-port`
+    // at runtime won't reach the browser without help; AND if the user
+    // previously ran with `--api-port 8092` and now runs on defaults,
+    // the stale `localStorage['skillnote:api-url']=...:8092` keeps the
+    // browser pointing at the dead override.
+    //
+    // Resolution: ALWAYS auto-open `?api=<resolved>` so a synchronous
+    // <head> script in the web bundle reconciles localStorage to whatever
+    // this `skillnote start` invocation actually started. The terminal
+    // table shows the clean URL so docs/screenshots stay readable; the
+    // `openUrl` below is what the auto-open + first-bite browser hits.
+    const cleanWebUrl = `http://localhost:${webPort}`
+    const openUrl = `${cleanWebUrl}/?api=${encodeURIComponent(`http://localhost:${apiPort}`)}`
     process.stdout.write('\n')
     process.stdout.write(
       urlTable([
-        { label: 'Web UI', url: `http://localhost:${webPort}` },
+        { label: 'Web UI', url: apiPort === 8082 ? cleanWebUrl : openUrl },
         { label: 'API   ', url: `http://localhost:${apiPort}` },
         { label: 'Health', url: `http://localhost:${apiPort}/health` },
       ]),
@@ -204,9 +240,11 @@ export async function startCommand(opts: StartOptions = {}): Promise<void> {
 
     // ─── Browser ─────────────────────────────────────────────────────────
     if (opts.browser !== false && config.browserMode !== 'none') {
-      // First run auto-opens; subsequent runs require explicit `skillnote open`.
+      // First run auto-opens. Always uses the `?api=…` form (R9 F43) so any
+      // stale localStorage override from a previous `--api-port` invocation
+      // gets reconciled. The bootstrap script strips the param post-paint.
       if (!state.seenWelcome) {
-        await open(`http://localhost:${webPort}`).catch(() => undefined)
+        await open(openUrl).catch(() => undefined)
       }
     }
 

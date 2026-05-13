@@ -9,8 +9,14 @@ export default function manifest(): MetadataRoute.Manifest {
     scope: '/',
     display: 'standalone',
     orientation: 'any',
+    // R9: drop the teal brand accent from PWA chrome. The standalone
+    // window's titlebar uses `theme_color` directly (visible as a band
+    // above the app), and Android / Chrome generate dock + home-screen
+    // icon plates from it too. Pure black matches the icon-192/512 PNGs'
+    // own black background exactly, so the titlebar and the icon read
+    // as one continuous mark instead of "teal frame around black icon".
     background_color: '#ffffff',
-    theme_color: '#0d9488',
+    theme_color: '#000000',
     categories: ['developer', 'productivity', 'utilities'],
     icons: [
       // PNGs satisfy Chrome's install criteria (192 + 512 required).

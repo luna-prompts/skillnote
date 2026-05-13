@@ -179,7 +179,12 @@ export function WysiwygEditor({ value, onChange, renderToolbar, onModeChange, sk
   const editor = useEditor({
     immediatelyRender: false,
     extensions: [
-      StarterKit,
+      // R9 F35: StarterKit ships a default Link extension in @tiptap 3+, and
+      // we add our own `Link.configure({ openOnClick: false })` below — Tiptap
+      // warns about the duplicate name. Disable StarterKit's bundled link so
+      // ours wins (we need openOnClick: false so the editor doesn't navigate
+      // away when the user clicks a link mid-edit).
+      StarterKit.configure({ link: false }),
       Placeholder.configure({
         placeholder: 'Start writing your skill...',
       }),

@@ -1,621 +1,610 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import {
-  Copy, Check, RefreshCw, Target, BarChart3, Zap, Wrench, Bell,
-  FolderOpen, Shield, Layers, Terminal, ExternalLink,
-  FileText, Activity, Star, BookOpen, Download, Radio,
-  Package, MessageSquare, Play,
-} from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
+import { ArrowRight, Plug2 } from 'lucide-react'
 import { TopBar } from '@/components/layout/topbar'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { AgentCard } from '@/components/integrations/agent-card'
+import { AgentListRow } from '@/components/integrations/agent-list-row'
+import { ConnectModal } from '@/components/integrations/connect-modal'
+import { DisconnectModal } from '@/components/integrations/disconnect-modal'
+import { ClaudeCodeMark, OpenClawMark } from '@/components/integrations/agent-marks'
+import type { ConnectionState } from '@/components/integrations/connector'
 import { getApiBaseUrl } from '@/lib/api/client'
-import { Button } from '@/components/ui/button'
-import { dispatchJob, useJobPolling, type JobAgent, type JobStatus } from '@/lib/cli-jobs'
-import { cn } from '@/lib/utils'
+import { dispatchJob, useJobPolling, type JobAgent } from '@/lib/cli-jobs'
 
-async function copyText(text: string): Promise<boolean> {
-  if (navigator.clipboard?.writeText) {
-    try { await navigator.clipboard.writeText(text); return true } catch { /* fall through */ }
-  }
-  const el = document.createElement('textarea')
-  el.value = text
-  el.style.cssText = 'position:fixed;opacity:0;pointer-events:none'
-  document.body.appendChild(el)
-  el.focus()
-  el.select()
-  try { document.execCommand('copy'); document.body.removeChild(el); return true } catch { /* ignore */ }
-  document.body.removeChild(el)
-  return false
+type AgentId = 'claude-code' | 'openclaw'
+
+interface AgentSnapshot {
+  id: AgentId
+  state: ConnectionState
+  installedAt?: string
+  lastCallAt?: string
+  /** When this row entered `connecting` locally — used to detect a stale
+   *  install that the backend can safely override (e.g. user closed the
+   *  browser mid-install or the bridge daemon died). */
+  connectingSince?: number
 }
 
-type Agent = 'claude-code' | 'openclaw'
-
-type ConnectionStatus =
-  | { kind: 'loading' }
-  | { kind: 'connected'; label: string }
-  | { kind: 'idle' }
-  | { kind: 'error' }
-
-const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000
-
-function formatRelative(iso: string): string {
-  const rtf = new Intl.RelativeTimeFormat('en', { numeric: 'auto' })
-  const ageMin = Math.round((Date.now() - new Date(iso).getTime()) / 60000)
-  if (ageMin < 1) return rtf.format(0, 'minute')
-  if (ageMin < 60) return rtf.format(-ageMin, 'minute')
-  if (ageMin < 1440) return rtf.format(-Math.round(ageMin / 60), 'hour')
-  return rtf.format(-Math.round(ageMin / 1440), 'day')
+interface SetupAgentStatus {
+  agent: AgentId
+  state: 'pending' | 'active' | 'idle'
+  installed_at: string | null
+  last_active_at: string | null
+  calls_24h: number
+  calls_7d: number
 }
 
-const CC_FEATURES = [
-  { icon: RefreshCw, title: 'Auto-sync', desc: 'Skills sync at session start and on collection change' },
-  { icon: Target, title: 'Collection Picker', desc: 'Full-screen TUI to scope skills per project' },
-  { icon: BarChart3, title: 'Usage Analytics', desc: 'Track which skills are used and rated by agents' },
-  { icon: Zap, title: 'Status Line', desc: 'Active collection visible in Claude Code status bar' },
-  { icon: Wrench, title: 'Skill Push', desc: 'Create skills from conversations via /skillnote:skill-push' },
-  { icon: Bell, title: '6 Hooks', desc: 'SessionStart, FileChanged, PostToolUse, PostCompact, SubagentStart, Stop' },
+interface AgentMeta {
+  id: AgentId
+  label: string
+  sublabel: string
+  description: string
+  platforms: string[]
+  badge?: 'official' | 'new' | null
+  /** Numbered steps shown in the post-success modal panel. */
+  usageSteps: string[]
+}
+
+// Catalog metadata for the discover view. Sublabel is the short
+// attribution; description is the one-liner shown when the row expands.
+// Platforms is a quick-glance compatibility row.
+const AGENTS: AgentMeta[] = [
+  {
+    id: 'claude-code',
+    label: 'Claude Code',
+    sublabel: 'Anthropic CLI',
+    description:
+      "Anthropic's official CLI for agentic coding workflows. Skills load automatically per session via the SkillNote plugin.",
+    platforms: ['macOS', 'Linux', 'Windows'],
+    badge: 'official',
+    usageSteps: [
+      'Open a new terminal so the shell wrapper picks up.',
+      'Run `claude` — the SkillNote collection picker appears.',
+      'Pick a collection and start a session. Your skills load automatically.',
+    ],
+  },
+  {
+    id: 'openclaw',
+    label: 'OpenClaw',
+    sublabel: 'Open-source agent runtime',
+    description:
+      'Self-hosted coding agent. The SkillNote skill syncs your registry continuously and reports back which skills the agent used.',
+    platforms: ['macOS', 'Linux'],
+    badge: 'official',
+    usageSteps: [
+      'Restart your OpenClaw session so the new skill loads.',
+      'sync.sh runs every 60s — your registry stays current automatically.',
+      'Try a task; the log-watcher reports which skills the agent used.',
+    ],
+  },
 ]
 
-const OC_FEATURES = [
-  { icon: RefreshCw, title: 'Auto-sync', desc: 'Skills sync every 60s — available before each task' },
-  { icon: Radio, title: 'Log-watcher', desc: 'Parses session JSONL to track which skills agents actually read' },
-  { icon: Star, title: 'In-turn ratings', desc: 'Pre-filled curl command in every skill — rate without cross-session memory' },
-  { icon: FileText, title: 'AGENTS.md graft', desc: 'Persistent <skillnote v1> block keeps registry active across sessions' },
-  { icon: Download, title: 'Self-update', desc: 'Daily version check — auto-installs when a newer plugin is available' },
-  { icon: Activity, title: 'Usage logging', desc: 'Agent reports task outcomes and skill IDs back to analytics' },
-]
-
-const CC_STEPS = [
-  { text: 'Run the install command above' },
-  { text: <>Run <code className="font-mono text-[12px] bg-muted/60 px-1.5 py-0.5 rounded">source ~/.zshrc</code> or open a new terminal</> },
-  { text: <>Run <code className="font-mono text-[12px] bg-muted/60 px-1.5 py-0.5 rounded">claude</code> — the collection picker appears</> },
-  { text: 'Start coding — skills activate automatically' },
-]
-
-const OC_STEPS = [
-  { text: 'Run the install command above' },
-  { text: 'Start OpenClaw — SkillNote prompts for your server URL on first load' },
-  { text: <>Approve the <code className="font-mono text-[12px] bg-muted/60 px-1.5 py-0.5 rounded">AGENTS.md</code> graft when prompted (adds the registry block)</> },
-  { text: 'Start using — skills sync before every task, usage tracked automatically' },
-]
-
-function CodeBlock({ content, label = 'terminal', multiline = false }: { content: string; label?: string; multiline?: boolean }) {
-  const [copied, setCopied] = useState(false)
-  const handleCopy = async () => {
-    const ok = await copyText(content)
-    if (ok) { setCopied(true); setTimeout(() => setCopied(false), 2000) }
-  }
-  return (
-    <div className="relative group">
-      <div className="bg-zinc-950 dark:bg-zinc-950/80 border border-border/50 rounded-lg overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-2 border-b border-white/[0.06]">
-          <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-white/[0.08]" />
-            <span className="w-2.5 h-2.5 rounded-full bg-white/[0.08]" />
-            <span className="w-2.5 h-2.5 rounded-full bg-white/[0.08]" />
-            <span className="text-[10px] font-mono text-white/20 ml-2">{label}</span>
-          </div>
-          <button
-            onClick={handleCopy}
-            className={cn(
-              'flex items-center gap-1.5 px-2 py-1 rounded text-[11px] font-medium transition-all',
-              copied
-                ? 'bg-emerald-500/20 text-emerald-400'
-                : 'text-white/30 hover:text-white/60 hover:bg-white/5'
-            )}
-          >
-            {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-            {copied ? 'Copied' : 'Copy'}
-          </button>
-        </div>
-        {multiline ? (
-          <pre className="px-4 py-3.5 text-[12.5px] font-mono text-zinc-300 leading-relaxed whitespace-pre-wrap break-words select-all overflow-x-auto max-h-[260px]">{content}</pre>
-        ) : (
-          <div className="px-4 py-3.5 flex items-start">
-            <span className="text-emerald-400/50 font-mono text-[13px] mr-2.5 select-none shrink-0">$</span>
-            <code className="text-[13px] font-mono text-zinc-300 break-all leading-relaxed select-all">{content}</code>
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
-
-function StatusPill({ status }: { status: ConnectionStatus }) {
-  const dotCls =
-    status.kind === 'connected' ? 'bg-emerald-500' :
-    status.kind === 'error' ? 'bg-yellow-500' :
-    status.kind === 'loading' ? 'bg-muted-foreground/40 animate-pulse' :
-    'bg-muted-foreground/25'
-
-  const text =
-    status.kind === 'loading' ? 'Checking…' :
-    status.kind === 'connected' ? `Connected · last activity ${status.label}` :
-    status.kind === 'error' ? 'Cannot reach backend' :
-    'Not yet connected'
-
-  return (
-    <div className="inline-flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-muted/40 border border-border/40">
-      <span className={cn('h-1.5 w-1.5 rounded-full shrink-0', dotCls)} />
-      <span className="text-[11px] text-muted-foreground">{text}</span>
-    </div>
-  )
-}
-
-function useClaudeCodeStatus(apiBase: string): ConnectionStatus {
-  const [status, setStatus] = useState<ConnectionStatus>({ kind: 'loading' })
-  useEffect(() => {
-    if (!apiBase) return
-    let cancelled = false
-    fetch(`${apiBase}/v1/analytics/skill-calls?limit=1`)
-      .then(r => r.ok ? r.json() : Promise.reject())
-      .then((data: { last_called_at?: string }[]) => {
-        if (cancelled) return
-        if (Array.isArray(data) && data.length > 0 && data[0].last_called_at) {
-          const ageMs = Date.now() - new Date(data[0].last_called_at).getTime()
-          if (ageMs <= SEVEN_DAYS_MS) {
-            setStatus({ kind: 'connected', label: formatRelative(data[0].last_called_at) })
-            return
-          }
-        }
-        setStatus({ kind: 'idle' })
-      })
-      .catch(() => { if (!cancelled) setStatus({ kind: 'error' }) })
-    return () => { cancelled = true }
-  }, [apiBase])
-  return status
-}
-
-function useOpenClawStatus(apiBase: string): ConnectionStatus {
-  const [status, setStatus] = useState<ConnectionStatus>({ kind: 'loading' })
-  useEffect(() => {
-    if (!apiBase) return
-    let cancelled = false
-    fetch(`${apiBase}/v1/openclaw/usage?limit=1`)
-      .then(r => r.ok ? r.json() : Promise.reject())
-      .then((data: { created_at: string }[]) => {
-        if (cancelled) return
-        if (Array.isArray(data) && data.length > 0) {
-          const ageMs = Date.now() - new Date(data[0].created_at).getTime()
-          if (ageMs <= SEVEN_DAYS_MS) {
-            setStatus({ kind: 'connected', label: formatRelative(data[0].created_at) })
-            return
-          }
-        }
-        setStatus({ kind: 'idle' })
-      })
-      .catch(() => { if (!cancelled) setStatus({ kind: 'error' }) })
-    return () => { cancelled = true }
-  }, [apiBase])
-  return status
-}
-
-type InstallMethod = 'prompt' | 'clawhub' | 'curl' | 'manual'
-
-// Hook: fetch the personalized agent prompt from the backend (with apiBase
-// already substituted in). Returns null while loading, the markdown text
-// once ready, or an error message on failure.
-function useAgentPrompt(apiBase: string, agent: 'openclaw' | 'claude-code') {
-  const [text, setText] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  useEffect(() => {
-    if (!apiBase) return
-    let cancelled = false
-    setText(null); setError(null)
-    fetch(`${apiBase}/setup/agent-prompt?agent=${agent}`)
-      .then(r => r.ok ? r.text() : Promise.reject(new Error(`HTTP ${r.status}`)))
-      .then(t => { if (!cancelled) setText(t) })
-      .catch(e => { if (!cancelled) setError(String(e)) })
-    return () => { cancelled = true }
-  }, [apiBase, agent])
-  return { text, error }
-}
-
-function OpenClawInstall({ apiBase }: { apiBase: string }) {
-  // Default tab is 'prompt' — the api2cli-style copy-prompt is the dominant
-  // OpenClaw install UX today, and it's the most robust path because the
-  // agent does the install (handles missing prereqs, env vars, etc.).
-  const [method, setMethod] = useState<InstallMethod>('prompt')
-  const { text: promptText, error: promptError } = useAgentPrompt(apiBase, 'openclaw')
-
-  const clawhubScript = `# Tell the skill where your SkillNote backend is, then install via clawhub.
-# (clawhub itself doesn't take a host arg — env var is the recommended way.)
-export SKILLNOTE_BASE_URL="${apiBase}"
-clawhub install skillnote
-
-# Then in your shell rc (~/.zshrc or ~/.bashrc) make it persistent:
-echo 'export SKILLNOTE_BASE_URL="${apiBase}"' >> ~/.zshrc`
-
-  const curlCmd = `curl -sf ${apiBase}/setup/agent | bash -s -- --agent openclaw`
-
-  const manualScript = `# 1. Download bundle and extract into ~/.openclaw/skills/
-mkdir -p ~/.openclaw/skills ~/.openclaw/skillnote
-curl -sf ${apiBase}/v1/openclaw-bundle.zip -o /tmp/skillnote.zip
-unzip -qo /tmp/skillnote.zip -d ~/.openclaw/skills/
-rm /tmp/skillnote.zip
-
-# 2. Write config with your SkillNote URL
-echo '{"host":"${apiBase}","user_id":"openclaw-main"}' \\
-  > ~/.openclaw/skillnote/config.json
-
-# 3. Make sync.sh executable
-chmod +x ~/.openclaw/skills/skillnote/sync.sh
-
-# 4. Restart OpenClaw to pick up the new skill`
-
-  return (
-    <div>
-      {/* Method selector */}
-      <div className="inline-flex items-center gap-1 p-1 rounded-lg bg-muted/50 border border-border/40 mb-3 flex-wrap">
-        {([
-          { id: 'prompt' as InstallMethod, label: 'Copy prompt', icon: MessageSquare },
-          { id: 'clawhub' as InstallMethod, label: 'clawhub', icon: Package },
-          { id: 'curl' as InstallMethod, label: 'curl', icon: Terminal },
-          { id: 'manual' as InstallMethod, label: 'Manual', icon: FileText },
-        ] as const).map(({ id, label, icon: Icon }) => (
-          <button
-            key={id}
-            onClick={() => setMethod(id)}
-            className={cn(
-              'inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-[12px] font-medium transition-all',
-              method === id
-                ? 'bg-background text-foreground shadow-sm border border-border/60'
-                : 'text-muted-foreground hover:text-foreground'
-            )}
-          >
-            <Icon className="h-3 w-3" />
-            {label}
-          </button>
-        ))}
-      </div>
-
-      {method === 'prompt' && (
-        <>
-          {promptError && (
-            <p className="text-[12px] text-red-500 mb-2">Failed to load prompt: {promptError}</p>
-          )}
-          {!promptText && !promptError && (
-            <p className="text-[12px] text-muted-foreground/40 mb-2">Loading personalized prompt…</p>
-          )}
-          {promptText && <CodeBlock content={promptText} label="markdown" multiline />}
-          <p className="text-[11px] text-muted-foreground/40 mt-2 pl-1">
-            <span className="font-medium text-muted-foreground/60">Recommended · zero terminal.</span> Paste this into a fresh OpenClaw session — your URL ({apiBase}) is already baked in. The agent handles install, config, and verification end-to-end.
-          </p>
-        </>
-      )}
-
-      {method === 'clawhub' && (
-        <>
-          <CodeBlock content={clawhubScript} label="bash" multiline />
-          <p className="text-[11px] text-muted-foreground/40 mt-2 pl-1">
-            For users who already have <code className="font-mono">clawhub</code>. Versioned + auto-updates via daily check.
-          </p>
-          <p className="text-[11px] text-muted-foreground/40 mt-1 pl-1">
-            Note: clawhub doesn't accept a host argument — set <code className="font-mono">SKILLNOTE_BASE_URL</code> first so the skill knows where to talk to.
-          </p>
-        </>
-      )}
-
-      {method === 'curl' && (
-        <>
-          <CodeBlock content={curlCmd} />
-          <p className="text-[11px] text-muted-foreground/40 mt-2 pl-1">
-            Unified installer · Same command works for any agent — pass <code className="font-mono">--agent claude-code</code> or <code className="font-mono">--agent openclaw</code>. Pre-fills config with your URL and runs the first sync.
-          </p>
-        </>
-      )}
-
-      {method === 'manual' && (
-        <>
-          <CodeBlock content={manualScript} label="bash" multiline />
-          <p className="text-[11px] text-muted-foreground/40 mt-2 pl-1">
-            Step-by-step · For air-gapped environments or when you want full control over the install
-          </p>
-        </>
-      )}
-    </div>
-  )
-}
-
-
-// ─── [Run via CLI] button + live log panel ────────────────────────────────
-//
-// Sits next to the curl install commands and offers a one-click alternative:
-// dispatch a job to the local `skillnote bridge` long-poller, then stream
-// progress back. The button is additive — the existing copy/paste install
-// flow is untouched.
-
-const STATUS_GLYPH: Record<JobStatus, string> = {
-  pending: '⟳',
-  running: '▶',
-  succeeded: '✓',
-  failed: '✗',
-  cancelled: '✗',
-}
-
-const STATUS_LABEL: Record<JobStatus, string> = {
-  pending: 'Waiting for CLI…',
-  running: 'Running…',
-  succeeded: 'Succeeded',
-  failed: 'Failed',
-  cancelled: 'Cancelled',
-}
-
-const COLLAPSE_AFTER_SUCCESS_MS = 3000
-
-function RunViaCliPanel({ agent }: { agent: JobAgent }) {
-  const [jobId, setJobId] = useState<string | null>(null)
-  const [dispatching, setDispatching] = useState(false)
-  const [collapsed, setCollapsed] = useState(false)
-  const { job, isPolling } = useJobPolling(jobId)
-
-  // Collapse the panel 3s after a successful run, but keep the ✓ Connected
-  // pill visible so the user has confirmation it ran.
-  useEffect(() => {
-    if (job?.status !== 'succeeded') return
-    const t = setTimeout(() => setCollapsed(true), COLLAPSE_AFTER_SUCCESS_MS)
-    return () => clearTimeout(t)
-  }, [job?.status])
-
-  const handleClick = async () => {
-    setDispatching(true)
-    setCollapsed(false)
-    try {
-      const { id } = await dispatchJob({ type: 'connect', agent })
-      setJobId(id)
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Failed to dispatch job'
-      toast.error(`Could not start CLI job: ${msg}`)
-    } finally {
-      setDispatching(false)
-    }
-  }
-
-  const status = job?.status ?? (jobId ? 'pending' : null)
-  const showPanel = jobId !== null && !collapsed
-  const showConnectedPill = job?.status === 'succeeded' && collapsed
-
-  // Last 20 lines, joined for the <pre>.
-  const tailLog = job?.log?.slice(-20) ?? []
-
-  return (
-    <div className="mt-3" data-testid="run-via-cli">
-      <div className="flex items-center gap-2 flex-wrap">
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={handleClick}
-          disabled={dispatching || isPolling}
-          data-testid="run-via-cli-button"
-        >
-          <Play className="h-3 w-3" />
-          {isPolling ? 'Running…' : dispatching ? 'Starting…' : 'Run via CLI'}
-        </Button>
-        <span className="text-[11px] text-muted-foreground/40">
-          Requires <code className="font-mono">skillnote bridge</code> running locally.
-        </span>
-        {showConnectedPill && (
-          <span
-            className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-500 text-[11px] font-medium"
-            data-testid="run-via-cli-connected"
-          >
-            <Check className="h-3 w-3" />
-            Connected
-          </span>
-        )}
-      </div>
-
-      {showPanel && status && (
-        <div
-          className="mt-3 rounded-lg border border-border/40 bg-zinc-950 dark:bg-zinc-950/80 overflow-hidden"
-          data-testid="run-via-cli-panel"
-        >
-          <div className="flex items-center justify-between px-3 py-1.5 border-b border-white/[0.06]">
-            <span className="text-[10px] font-mono text-white/30 uppercase tracking-wider">
-              cli · {agent}
-            </span>
-            <span
-              className={cn(
-                'inline-flex items-center gap-1.5 text-[11px] font-mono',
-                status === 'succeeded' && 'text-emerald-400',
-                status === 'failed' && 'text-red-400',
-                status === 'cancelled' && 'text-red-400',
-                status === 'running' && 'text-blue-400',
-                status === 'pending' && 'text-white/40',
-              )}
-              data-testid="run-via-cli-status"
-            >
-              <span className={cn(status === 'pending' && 'animate-pulse')}>{STATUS_GLYPH[status]}</span>
-              {STATUS_LABEL[status]}
-            </span>
-          </div>
-          <pre
-            className="px-3 py-2 text-[12px] font-mono text-zinc-300 leading-relaxed whitespace-pre-wrap break-words max-h-[200px] overflow-y-auto"
-            data-testid="run-via-cli-log"
-          >
-            {tailLog.length > 0 ? tailLog.join('\n') : <span className="text-white/30">Waiting for output…</span>}
-          </pre>
-        </div>
-      )}
-    </div>
-  )
-}
-
+const ALL_STATES: ConnectionState[] = ['pending', 'connecting', 'active', 'idle']
+const POLL_INTERVAL_MS = 5_000
+// How long a local `connecting` state is trusted before the backend's view
+// is allowed to override it. Without this, killing the browser mid-install
+// or losing the bridge daemon strands the UI in `connecting` forever, because
+// the polling loop refuses to overwrite a `connecting` row. 30s is long
+// enough that a normal install (typically ~10s) won't be visually flipped to
+// `active` before the modal's own success animation completes.
+const CONNECTING_STALE_AFTER_MS = 30_000
 
 export default function IntegrationsPage() {
-  const [agent, setAgent] = useState<Agent>('claude-code')
-  const [apiBase, setApiBase] = useState('http://localhost:8082')
-  useEffect(() => { setApiBase(getApiBaseUrl()) }, [])
+  const [apiBase, setApiBase] = useState<string>('')
+  const [overrides, setOverrides] = useState<Partial<Record<AgentId, ConnectionState>>>({})
+  const [snapshots, setSnapshots] = useState<Record<AgentId, AgentSnapshot>>({
+    'claude-code': { id: 'claude-code', state: 'pending' },
+    openclaw: { id: 'openclaw', state: 'pending' },
+  })
+  // Flips true after the first successful /v1/setup/agents fetch so the
+  // default-tab resolver below doesn't race the network.
+  const [hydrated, setHydrated] = useState(false)
+  // Tab is uncontrolled initially — we resolve the default *after* the first
+  // fetch so returning users with connections land on "Connected", and brand
+  // new users land on "Browse".
+  const [activeTab, setActiveTab] = useState<'browse' | 'connected' | null>(null)
+  // Which agent (if any) is currently in the connect modal. Single-shot —
+  // the modal owns its own dispatch + polling lifecycle internally.
+  const [connectingAgent, setConnectingAgent] = useState<AgentId | null>(null)
+  // Which agent is being disconnected (confirmation dialog open).
+  const [disconnectingAgent, setDisconnectingAgent] = useState<AgentId | null>(null)
 
-  const ccStatus = useClaudeCodeStatus(apiBase)
-  const ocStatus = useOpenClawStatus(apiBase)
+  useEffect(() => {
+    setApiBase(getApiBaseUrl())
+  }, [])
 
-  const ccCmd = `curl -sf ${apiBase}/setup/agent | bash -s -- --agent claude-code`
-  const ocCmd = `curl -sf ${apiBase}/setup/openclaw | bash`
+  useEffect(() => {
+    if (!apiBase) return
+    let cancelled = false
 
-  const isCC = agent === 'claude-code'
+    const fetchStatus = async () => {
+      try {
+        const res = await fetch(`${apiBase}/v1/setup/agents`, { cache: 'no-store' })
+        if (!res.ok || cancelled) return
+        const rows = (await res.json()) as SetupAgentStatus[]
+        if (cancelled) return
+        setSnapshots((prev) => {
+          const next = { ...prev }
+          const now = Date.now()
+          for (const row of rows) {
+            const local = prev[row.agent]
+            // Don't overwrite an in-flight install — UNLESS the local
+            // `connecting` is older than CONNECTING_STALE_AFTER_MS. Without
+            // this escape hatch, killing the browser mid-install or losing
+            // the bridge stranded the row in `connecting` forever.
+            if (local?.state === 'connecting') {
+              // Missing `connectingSince` (`?? 0`) is treated as "always stale"
+              // by design — if a future code path sets `state: 'connecting'`
+              // without stamping the timestamp, we'd rather have backend state
+              // take over on the next poll than freeze the row forever.
+              const since = local.connectingSince ?? 0
+              if (now - since < CONNECTING_STALE_AFTER_MS) continue
+            }
+            next[row.agent] = {
+              id: row.agent,
+              state: row.state as ConnectionState,
+              installedAt: row.installed_at ?? undefined,
+              lastCallAt: row.last_active_at ?? undefined,
+            }
+          }
+          return next
+        })
+        setHydrated(true)
+      } catch {
+        // network down — banner handles it. Still mark hydrated so the UI
+        // doesn't hang waiting for a fetch that will never succeed.
+        setHydrated(true)
+      }
+    }
+
+    fetchStatus()
+    const id = setInterval(fetchStatus, POLL_INTERVAL_MS)
+    return () => {
+      cancelled = true
+      clearInterval(id)
+    }
+  }, [apiBase])
+
+  // ── Bridge connect flow ──────────────────────────────────────────────────
+  const [pendingJob, setPendingJob] = useState<{ agent: AgentId; jobId: string } | null>(null)
+  const { job } = useJobPolling(pendingJob?.jobId ?? null)
+
+  useEffect(() => {
+    if (!pendingJob || !job) return
+    if (job.status === 'succeeded') {
+      setSnapshots((prev) => ({
+        ...prev,
+        [pendingJob.agent]: { ...prev[pendingJob.agent], state: 'active' },
+      }))
+      // No tab switch — the wire's green check inside the expanded row is
+      // the visual confirmation. Auto-navigating felt like the page yanked
+      // out from under the user.
+      setPendingJob(null)
+    } else if (job.status === 'failed' || job.status === 'cancelled') {
+      toast.error(`Install failed. Try the manual command in Advanced.`)
+      setPendingJob(null)
+    }
+  }, [job, pendingJob])
+
+  const handleConnect = useCallback(async (agent: AgentId): Promise<boolean> => {
+    try {
+      const { id } = await dispatchJob({ type: 'connect', agent: agent as JobAgent })
+      setPendingJob({ agent, jobId: id })
+      setSnapshots((prev) => ({
+        ...prev,
+        [agent]: { ...prev[agent], state: 'connecting', connectingSince: Date.now() },
+      }))
+      return true
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'unknown error'
+      toast.error(
+        `Couldn't dispatch install (${msg.includes('fetch') ? 'backend offline' : msg}). Open "Advanced install" and run the command manually.`,
+        { duration: 6000 },
+      )
+      return false
+    }
+  }, [])
+
+  const effective = useMemo(() => {
+    const apply = (s: AgentSnapshot): AgentSnapshot => {
+      const override = overrides[s.id]
+      return override ? { ...s, state: override } : s
+    }
+    return {
+      'claude-code': apply(snapshots['claude-code']),
+      openclaw: apply(snapshots.openclaw),
+    } as Record<AgentId, AgentSnapshot>
+  }, [snapshots, overrides])
+
+  const base = apiBase || 'http://localhost:8082'
+  // Canonical bash one-liner per agent. macOS + Linux execute it directly;
+  // Windows prefixes `wsl ` because the install scripts only run inside a
+  // POSIX shell. The Advanced drawer explains the WSL caveat to the user.
+  const baseCmd = (id: AgentId) =>
+    id === 'claude-code'
+      ? `curl -sf ${base}/setup/agent | bash -s -- --agent claude-code`
+      : `curl -sf ${base}/setup/openclaw | bash`
+
+  const installCmd = (id: AgentId) => baseCmd(id)
+
+  const platformCmds = (id: AgentId): Record<'macos' | 'linux' | 'windows', string> => {
+    const cmd = baseCmd(id)
+    return { macos: cmd, linux: cmd, windows: `wsl ${cmd}` }
+  }
+
+  // Trust manifest — exactly what the install script writes onto the user's
+  // box. Kept hardcoded per agent so security-conscious enterprise users can
+  // audit before running. Keep these in lockstep with the install scripts in
+  // `cli/src/agents/` and `backend/app/setup/`.
+  // Each entry MUST follow `<label> — <value>` so the modal can parse it into
+  // a two-column row. Keep labels short (2-4 words); values can be paths or
+  // short descriptive strings.
+  const installManifest = (id: AgentId): string[] =>
+    id === 'claude-code'
+      ? [
+          'Plugin root — ~/.claude/plugins/marketplaces/skillnote-local/',
+          'Marketplace manifest — ~/.claude/plugins/marketplaces/skillnote-local/marketplace.json',
+          'Skill loader plugin — ~/.claude/plugins/skillnote/',
+          'Statusline binary — ~/.claude/plugins/skillnote/statusline',
+          'Shell wrapper — appended to ~/.zshrc or ~/.bashrc',
+          `Bridge daemon — ${base}`,
+        ]
+      : [
+          'Skill root — ~/.openclaw/skills/skillnote/',
+          'Refresh hook — ~/.openclaw/skills/skillnote/sync.sh',
+          'Analytics agent — ~/.openclaw/skills/skillnote/log-watcher.py',
+          `Host config — ~/.openclaw/skills/skillnote/config.json`,
+          `Bridge daemon — ${base}`,
+        ]
+
+  const handleReinstall = (id: AgentId) => {
+    toast.info(`Re-running the install for ${labelOf(id)}…`)
+    handleConnect(id)
+  }
+
+  // Disconnect requires confirmation — handleDisconnect just opens the
+  // destructive-styled DisconnectConfirmModal. Actual DELETE happens in
+  // confirmDisconnect below once the user has reviewed what gets removed.
+  const handleDisconnect = useCallback((id: AgentId) => {
+    setDisconnectingAgent(id)
+  }, [])
+
+  const confirmDisconnect = useCallback(
+    async (id: AgentId) => {
+      try {
+        const res = await fetch(`${base}/v1/setup/installs/${id}`, { method: 'DELETE' })
+        if (!res.ok && res.status !== 204) throw new Error(`HTTP ${res.status}`)
+        setSnapshots((prev) => ({
+          ...prev,
+          [id]: { id, state: 'pending', installedAt: undefined, lastCallAt: undefined },
+        }))
+        toast.success(`${labelOf(id)} disconnected`)
+        // Stay on Connected tab — switching to Browse on every disconnect
+        // disorients users who are working through multiple agents.
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'unknown error'
+        toast.error(`Couldn't disconnect (${msg}). Try again or remove the plugin manually.`)
+      } finally {
+        setDisconnectingAgent(null)
+      }
+    },
+    [base],
+  )
+
+  const markFor = (id: AgentId) =>
+    id === 'claude-code' ? <ClaudeCodeMark /> : <OpenClawMark />
+
+  // Connected = agents in active or idle state. Everything else is browseable.
+  const connected = AGENTS.filter((a) => {
+    const s = effective[a.id].state
+    return s === 'active' || s === 'idle'
+  })
+  const connectedCount = connected.length
+
+  // R9 (Connect-page round): Connected is the primary surface — agents you
+  // already wired in are the thing you most often come back to. Default to
+  // Connected always; the inner empty state for first-time users invites
+  // them to Browse with a one-click button. Previously this branched on
+  // `connectedCount > 0` so a fresh install defaulted to Browse — which made
+  // the tab order feel like Browse-first. Now the tab order is
+  // Connected | Browse and the default lands on Connected.
+  useEffect(() => {
+    if (activeTab !== null) return
+    if (!hydrated) return
+    setActiveTab('connected')
+  }, [activeTab, hydrated])
+
+  const renderRow = (agent: AgentMeta) => {
+    const snap = effective[agent.id]
+    // Only forward bridge logs to the row whose agent currently owns the job.
+    // Other rows get `undefined` so we don't accidentally render claude-code
+    // logs under openclaw (or vice versa).
+    const logLines =
+      pendingJob && pendingJob.agent === agent.id ? job?.log ?? [] : undefined
+    return (
+      <AgentListRow
+        key={agent.id}
+        state={snap.state}
+        agentId={agent.id}
+        agentLabel={agent.label}
+        agentSublabel={agent.sublabel}
+        agentMark={markFor(agent.id)}
+        description={agent.description}
+        platforms={agent.platforms}
+        installCommand={installCmd(agent.id)}
+        platformCommands={platformCmds(agent.id)}
+        installManifest={installManifest(agent.id)}
+        usageSteps={agent.usageSteps}
+        installedAt={snap.installedAt}
+        lastCallAt={snap.lastCallAt}
+        logLines={logLines}
+        onConnectClick={() => handleConnect(agent.id)}
+        onReinstall={() => handleReinstall(agent.id)}
+        onDisconnect={() => handleDisconnect(agent.id)}
+      />
+    )
+  }
+
+  const renderCard = (agent: AgentMeta) => {
+    const snap = effective[agent.id]
+    return (
+      <AgentCard
+        key={agent.id}
+        state={snap.state}
+        agentLabel={agent.label}
+        agentSublabel={agent.sublabel}
+        agentMark={markFor(agent.id)}
+        description={agent.description}
+        platforms={agent.platforms}
+        badge={agent.badge ?? null}
+        // Install click opens the focused connect modal. Modal owns
+        // dispatch + log polling. Resolves true immediately so the
+        // card flips to "Connecting…" briefly while the modal mounts.
+        onConnectClick={async () => {
+          setConnectingAgent(agent.id)
+          return true
+        }}
+        // Card click on already-connected agents jumps to Connected tab.
+        onOpenDetail={() => setActiveTab('connected')}
+      />
+    )
+  }
 
   return (
     <>
       <TopBar showFab={false} />
       <div className="flex-1 overflow-auto">
         <div className="max-w-3xl mx-auto px-6 py-8">
+          <header className="mb-6">
+            <h1 className="text-xl font-semibold text-foreground tracking-tight">
+              Connect
+            </h1>
+          </header>
 
-          {/* Page title */}
-          <div className="mb-8">
-            <div className="flex items-center gap-2.5 mb-1">
-              <Terminal className="h-5 w-5 text-muted-foreground/40" />
-              <h1 className="text-xl font-semibold text-foreground">Connect</h1>
-            </div>
-            <p className="text-[13px] text-muted-foreground/60 pl-[30px]">
-              Install the SkillNote plugin to sync skills and track usage.
-            </p>
-          </div>
+          <Tabs
+            value={activeTab ?? 'connected'}
+            onValueChange={(v) => setActiveTab(v as 'browse' | 'connected')}
+          >
+            <TabsList variant="line" className="mb-5 w-fit">
+              {/* Connected first — it's the primary surface for returning
+                  users and the activation-funnel target for new users. */}
+              <TabsTrigger
+                value="connected"
+                className="!flex-none px-3 text-[13px]"
+              >
+                Connected
+                <span className="ml-1.5 text-[11px] text-muted-foreground/70 tabular-nums">
+                  {connectedCount}
+                </span>
+              </TabsTrigger>
+              <TabsTrigger
+                value="browse"
+                className="!flex-none px-3 text-[13px]"
+              >
+                Browse
+                <span className="ml-1.5 text-[11px] text-muted-foreground/70 tabular-nums">
+                  {AGENTS.length}
+                </span>
+              </TabsTrigger>
+            </TabsList>
 
-          {/* Agent selector */}
-          <div className="mb-8">
-            <div className="inline-flex items-center gap-1 p-1 rounded-lg bg-muted/50 border border-border/40">
-              {([
-                { id: 'claude-code' as Agent, label: 'Claude Code' },
-                { id: 'openclaw' as Agent, label: 'OpenClaw' },
-              ] as const).map(({ id, label }) => (
-                <button
-                  key={id}
-                  onClick={() => setAgent(id)}
-                  className={cn(
-                    'px-3.5 py-1.5 rounded-md text-[13px] font-medium transition-all',
-                    agent === id
-                      ? 'bg-background text-foreground shadow-sm border border-border/60'
-                      : 'text-muted-foreground hover:text-foreground'
-                  )}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
+            {/* Browse — grid of portrait cards. Discovery surface, distinct
+                from Connected's compact rows. VS Code marketplace pattern. */}
+            <TabsContent value="browse">
+              <ul
+                className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3
+                           [&>li]:list-none"
+              >
+                {AGENTS.map((a) => (
+                  <li key={a.id}>{renderCard(a)}</li>
+                ))}
+              </ul>
+            </TabsContent>
 
-          {/* Connection status */}
-          <div className="mb-6">
-            <StatusPill status={isCC ? ccStatus : ocStatus} />
-          </div>
-
-          {/* Install command */}
-          <div className="mb-10">
-            <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/40 mb-3">Install</p>
-            {isCC ? (
-              <>
-                <CodeBlock content={ccCmd} />
-                <p className="text-[11px] text-muted-foreground/30 mt-2 pl-1">
-                  Installs to <code className="font-mono">~/.claude/plugins/skillnote</code> · No sudo required · macOS + Linux
-                </p>
-                <RunViaCliPanel agent="claude-code" />
-              </>
-            ) : (
-              <>
-                <OpenClawInstall apiBase={apiBase} />
-                <RunViaCliPanel agent="openclaw" />
-              </>
-            )}
-          </div>
-
-          {/* Setup steps */}
-          <div className="mb-10">
-            <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/40 mb-3">Setup</p>
-            <div className="border border-border/40 rounded-lg divide-y divide-border/30 bg-card">
-              {(isCC ? CC_STEPS : OC_STEPS).map(({ text }, i) => (
-                <div key={i} className="flex items-center gap-3 px-4 py-3">
-                  <span className="w-5 h-5 rounded-full bg-muted/80 text-[10px] font-bold text-muted-foreground flex items-center justify-center shrink-0 tabular-nums">{i + 1}</span>
-                  <p className="text-[13px] text-foreground/80">{text}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Features */}
-          <div className="mb-10">
-            <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/40 mb-3">Included</p>
-            <div className="border border-border/40 rounded-lg divide-y divide-border/30 bg-card">
-              {(isCC ? CC_FEATURES : OC_FEATURES).map(({ icon: Icon, title, desc }) => (
-                <div key={title} className="flex items-start gap-3 px-4 py-3 hover:bg-muted/30 transition-colors">
-                  <div className="w-7 h-7 rounded-md bg-muted/60 flex items-center justify-center shrink-0 mt-0.5">
-                    <Icon className="h-3.5 w-3.5 text-muted-foreground" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[13px] font-medium text-foreground">{title}</p>
-                    <p className="text-[12px] text-muted-foreground/60 leading-relaxed">{desc}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Collections callout — Claude Code only */}
-          {isCC && (
-            <div className="mb-10">
-              <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/40 mb-3">Why collections?</p>
-              <div className="border border-border/40 rounded-lg bg-card p-5">
-                <div className="flex items-start gap-3 mb-4">
-                  <FolderOpen className="h-4 w-4 text-muted-foreground/50 mt-0.5 shrink-0" />
-                  <p className="text-[13px] text-foreground/80 leading-relaxed">
-                    Collections group skills by purpose and scope them per project. Each project gets one active collection.
-                  </p>
-                </div>
-                <div className="grid grid-cols-3 gap-3">
-                  {[
-                    { icon: Layers, value: '15', label: 'skills per collection' },
-                    { icon: Shield, value: '~8k', label: 'char description budget' },
-                    { icon: FolderOpen, value: '1:1', label: 'collection per project' },
-                  ].map(({ icon: Icon, value, label }) => (
-                    <div key={label} className="bg-muted/30 rounded-lg px-3 py-3 text-center">
-                      <Icon className="h-3.5 w-3.5 text-muted-foreground/40 mx-auto mb-2" />
-                      <p className="text-[18px] font-bold text-foreground tabular-nums leading-none mb-1">{value}</p>
-                      <p className="text-[10px] text-muted-foreground/50">{label}</p>
-                    </div>
-                  ))}
-                </div>
-                <p className="text-[12px] text-muted-foreground/40 mt-4 leading-relaxed">
-                  Too many active skills = descriptions get truncated = skills stop triggering reliably. Collections keep Claude fast and accurate.
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* OpenClaw: how analytics work */}
-          {!isCC && (
-            <div className="mb-10">
-              <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/40 mb-3">How analytics work</p>
-              <div className="border border-border/40 rounded-lg bg-card p-5 space-y-3">
-                <div className="flex items-start gap-3">
-                  <Radio className="h-4 w-4 text-muted-foreground/50 mt-0.5 shrink-0" />
-                  <p className="text-[13px] text-foreground/80 leading-relaxed">
-                    <span className="font-medium">Log-watcher</span> runs as a background daemon and reads your OpenClaw session JSONL files. Every time a skill is read, it fires a <code className="font-mono text-[12px]">POST /v1/hooks/skill-used</code> event — fully automatic, no agent involvement.
-                  </p>
-                </div>
-                <div className="flex items-start gap-3">
-                  <BookOpen className="h-4 w-4 text-muted-foreground/50 mt-0.5 shrink-0" />
-                  <p className="text-[13px] text-foreground/80 leading-relaxed">
-                    <span className="font-medium">Rating footer</span> appended to every synced skill gives the agent a pre-filled <code className="font-mono text-[12px]">curl</code> command to rate the skill in the same turn — no cross-session memory needed.
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Links */}
-          <div className="flex items-center gap-4 pb-8">
-            <a href="https://github.com/luna-prompts/skillnote" target="_blank" rel="noopener noreferrer" className="text-[12px] text-muted-foreground/50 hover:text-foreground transition-colors inline-flex items-center gap-1">
-              GitHub <ExternalLink className="h-2.5 w-2.5" />
-            </a>
-            <a href="https://github.com/luna-prompts/skillnote#readme" target="_blank" rel="noopener noreferrer" className="text-[12px] text-muted-foreground/50 hover:text-foreground transition-colors inline-flex items-center gap-1">
-              Documentation <ExternalLink className="h-2.5 w-2.5" />
-            </a>
-          </div>
-
+            {/* Connected — empty state if zero, otherwise just the wired ones */}
+            <TabsContent value="connected">
+              {connectedCount === 0 ? (
+                <EmptyConnected onBrowse={() => setActiveTab('browse')} />
+              ) : (
+                <ul className="space-y-3">{connected.map(renderRow)}</ul>
+              )}
+            </TabsContent>
+          </Tabs>
         </div>
       </div>
+
+      {/* Focused install dialog. Mounted at root so it overlays the page. */}
+      {connectingAgent ? (() => {
+        const meta = AGENTS.find((a) => a.id === connectingAgent)!
+        return (
+          <ConnectModal
+            open={true}
+            agentId={connectingAgent as JobAgent}
+            agentLabel={meta.label}
+            agentSubtitle={meta.description}
+            agentMark={markFor(connectingAgent)}
+            platformCommands={platformCmds(connectingAgent)}
+            installManifest={installManifest(connectingAgent)}
+            usageGuide={{
+              steps: meta.usageSteps,
+              links: [
+                {
+                  label: 'Documentation',
+                  href: 'https://github.com/luna-prompts/skillnote#readme',
+                },
+              ],
+            }}
+            onClose={() => setConnectingAgent(null)}
+            onViewConnected={() => setActiveTab('connected')}
+            onSuccess={() => {
+              // Optimistically mark the agent active so the Connected tab
+              // is ready when the user clicks "View in Connected" or "Done".
+              const id = connectingAgent
+              setSnapshots((prev) => ({
+                ...prev,
+                [id]: { ...prev[id], state: 'active' as ConnectionState },
+              }))
+            }}
+          />
+        )
+      })() : null}
+
+      {disconnectingAgent ? (
+        <DisconnectModal
+          open={true}
+          agentLabel={labelOf(disconnectingAgent)}
+          agentMark={markFor(disconnectingAgent)}
+          installManifest={installManifest(disconnectingAgent)}
+          onClose={() => setDisconnectingAgent(null)}
+          onConfirm={() => confirmDisconnect(disconnectingAgent)}
+        />
+      ) : null}
+
+      <DevCycler overrides={overrides} setOverrides={setOverrides} />
     </>
+  )
+}
+
+function labelOf(id: AgentId): string {
+  return id === 'claude-code' ? 'Claude Code' : 'OpenClaw'
+}
+
+// ─── Empty state for the Connected tab ────────────────────────────────────
+
+/**
+ * R9 Connect-focused round: Connected is now the default tab even for fresh
+ * installs, so the empty state has to do real onboarding work — explain what
+ * "connecting an agent" buys the user AND give a one-click jump to Browse.
+ * Previous copy was a single muted sentence + a small Browse button; now we
+ * lead with the value prop and give the primary action visual weight.
+ */
+function EmptyConnected({ onBrowse }: { onBrowse: () => void }) {
+  return (
+    <div
+      className="rounded-xl border border-dashed border-border/70 bg-card/20
+                 px-6 py-12 text-center"
+    >
+      <div
+        className="mx-auto mb-4 flex h-10 w-10 items-center justify-center
+                   rounded-full bg-muted/60 text-muted-foreground/80"
+        aria-hidden="true"
+      >
+        <Plug2 className="h-5 w-5" />
+      </div>
+      <p className="text-[15px] font-semibold text-foreground tracking-tight">
+        No agents connected yet
+      </p>
+      <p className="mx-auto mt-1.5 max-w-sm text-[12.5px] text-muted-foreground/85 leading-relaxed">
+        Wire in Claude Code or OpenClaw and SkillNote will sync your skills,
+        stream usage analytics, and let you publish skills with one command.
+      </p>
+      <div className="mt-5 flex items-center justify-center gap-2">
+        <button
+          type="button"
+          onClick={onBrowse}
+          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-md
+                     bg-foreground text-background text-[13px] font-medium
+                     hover:opacity-90 transition-opacity
+                     focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+        >
+          Browse agents
+          <ArrowRight className="h-3.5 w-3.5" />
+        </button>
+        <a
+          href="https://github.com/luna-prompts/skillnote#readme"
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-1 px-3 py-2 rounded-md
+                     text-[13px] text-muted-foreground hover:text-foreground
+                     hover:bg-muted/50 transition-colors"
+        >
+          How it works
+        </a>
+      </div>
+    </div>
+  )
+}
+
+// ─── Dev cycler ────────────────────────────────────────────────────────────
+
+function DevCycler({
+  overrides,
+  setOverrides,
+}: {
+  overrides: Partial<Record<AgentId, ConnectionState>>
+  setOverrides: (v: Partial<Record<AgentId, ConnectionState>>) => void
+}) {
+  const [enabled, setEnabled] = useState(false)
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    setEnabled(new URLSearchParams(window.location.search).get('dev') === '1')
+  }, [])
+
+  if (!enabled) return null
+
+  const cycle = (id: AgentId) => {
+    const current = overrides[id] ?? 'pending'
+    const idx = ALL_STATES.indexOf(current)
+    const next = ALL_STATES[(idx + 1) % ALL_STATES.length]
+    setOverrides({ ...overrides, [id]: next })
+  }
+
+  const reset = (id: AgentId) => {
+    const copy = { ...overrides }
+    delete copy[id]
+    setOverrides(copy)
+  }
+
+  const Btn = ({ id, label }: { id: AgentId; label: string }) => (
+    <div className="flex items-center gap-1">
+      <span className="text-[10px] text-muted-foreground">{label}</span>
+      <button
+        onClick={() => cycle(id)}
+        className="px-2 py-0.5 rounded-md bg-foreground text-background text-[11px] font-mono hover:opacity-90"
+      >
+        {overrides[id] ?? 'auto'}
+      </button>
+      {overrides[id] && (
+        <button
+          onClick={() => reset(id)}
+          className="text-[10px] text-muted-foreground hover:text-foreground"
+        >
+          ×
+        </button>
+      )}
+    </div>
+  )
+
+  return (
+    <div className="fixed bottom-4 left-4 z-50 flex flex-col gap-1.5 rounded-lg border border-border bg-card/95 backdrop-blur-sm p-2.5 shadow-md">
+      <p className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold">
+        Dev state cycler
+      </p>
+      <Btn id="claude-code" label="claude" />
+      <Btn id="openclaw" label="openclaw" />
+    </div>
   )
 }

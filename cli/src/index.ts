@@ -55,6 +55,10 @@ program
   .option('--no-pull', 'skip pulling images (use what is cached)')
   .option('--no-browser', 'do not open the browser automatically')
   .option('-d, --detach', 'exit after services are healthy (do not stream)')
+  .option(
+    '-f, --force',
+    'override the start lockfile even if a prior process is still alive (use when a previous start hung)',
+  )
   .action((opts) => startCommand(opts))
 
 program
@@ -185,7 +189,16 @@ if (firstArg && !firstArg.startsWith('-') && !known.has(firstArg)) {
   process.exit(1)
 }
 
-program.parseAsync().catch((err) => {
+program.parseAsync().catch(async (err) => {
+  // R9 F41: UserFacingError thrown BEFORE any per-command try/catch (e.g. the
+  // lock-acquire in `skillnote start`) was reaching here and being printed
+  // with only `err.message` — the body + remediation list got dropped. Match
+  // it here so the user sees the full actionable message.
+  if (err && typeof err === 'object' && err.name === 'UserFacingError') {
+    const { prettyError } = await import('./ui/errors.js')
+    process.stderr.write(`\n${prettyError(err.options)}`)
+    process.exit(1)
+  }
   console.error('Unexpected error:', err?.message ?? err)
   process.exit(1)
 })

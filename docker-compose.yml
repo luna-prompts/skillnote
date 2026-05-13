@@ -1,5 +1,14 @@
 name: skillnote
 
+# ─── Which compose file is this? ─────────────────────────────────
+# This file BUILDS from local source — for contributors hacking on
+# SkillNote itself (the install.sh script uses this one).
+#
+# End users wanting to run SkillNote should prefer:
+#   - `npx skillnote start` (recommended), or
+#   - the pinned-image compose file at deploy/docker-compose.yml.
+# ─────────────────────────────────────────────────────────────────
+#
 # ─── Configuration ───────────────────────────────────────────────
 # Set SKILLNOTE_HOST to your machine's IP or domain.
 # All services use this single value for URLs and CORS.
@@ -7,6 +16,12 @@ name: skillnote
 #   SKILLNOTE_HOST=<your-server-ip> docker compose up --build -d
 #
 # Defaults to localhost (works when browser is on the same machine).
+#
+# SKILLNOTE_DB_PASSWORD overrides the development Postgres password.
+# Default is "skillnote" (preserved for backwards-compat with existing
+# installs; the volume is initialised with whatever was set on first run).
+# For any deployment beyond a single dev machine, set this to a strong
+# random value AND wipe pgdata first (or rotate the password via psql).
 # ─────────────────────────────────────────────────────────────────
 
 services:
@@ -15,7 +30,7 @@ services:
     environment:
       POSTGRES_DB: skillnote
       POSTGRES_USER: skillnote
-      POSTGRES_PASSWORD: skillnote
+      POSTGRES_PASSWORD: ${SKILLNOTE_DB_PASSWORD:-skillnote}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -26,9 +41,11 @@ services:
     restart: unless-stopped
 
   api:
-    build: ./backend
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
     environment:
-      SKILLNOTE_DATABASE_URL: postgresql+psycopg://skillnote:skillnote@postgres:5432/skillnote
+      SKILLNOTE_DATABASE_URL: postgresql+psycopg://skillnote:${SKILLNOTE_DB_PASSWORD:-skillnote}@postgres:5432/skillnote
       SKILLNOTE_BUNDLE_STORAGE_DIR: /app/data/bundles
       SKILLNOTE_CORS_ORIGINS: "http://${SKILLNOTE_HOST:-localhost}:3000,http://${SKILLNOTE_HOST:-localhost}:3001,http://localhost:3000,http://127.0.0.1:3000"
     ports:
@@ -58,7 +75,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile.mcp
     environment:
-      SKILLNOTE_DATABASE_URL: postgresql+psycopg://skillnote:skillnote@postgres:5432/skillnote
+      SKILLNOTE_DATABASE_URL: postgresql+psycopg://skillnote:${SKILLNOTE_DB_PASSWORD:-skillnote}@postgres:5432/skillnote
     ports:
       - "${SKILLNOTE_MCP_PORT:-8083}:8083"
     depends_on:

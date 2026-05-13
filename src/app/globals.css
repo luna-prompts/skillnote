@@ -58,6 +58,10 @@
   --secondary-foreground: #111318;
   --muted: #f0f0f2;
   --muted-foreground: #7a7a8a;
+  /* SkillNote teal accent — used for the "Connect" sidebar active item,
+     focus rings, and form-input outlines. Stays as the in-app brand color;
+     the PWA titlebar + dock icon use the neutral black from manifest.ts
+     so the standalone-window chrome doesn't wear the brand band. */
   --accent: #0d9488;
   --accent-foreground: #ffffff;
   --destructive: #dc2626;
@@ -355,5 +359,73 @@ body.skill-editing .content-wrapper {
 .tippy-box[data-animation='shift-away'][data-state='visible'] {
   opacity: 1;
   transform: translateY(0) scale(1);
+}
+
+/* ── Connect-page wiring diagram ──────────────────────────────────────── */
+/* Packet dot travelling across the connector. Percentage-based so the
+   motion tracks the responsive width of the wire. */
+@keyframes packet-flow {
+  0%   { left: 2%;  opacity: 0; transform: translate(0, -50%) scale(0.6); }
+  12%  { opacity: 1; transform: translate(0, -50%) scale(1); }
+  88%  { opacity: 1; transform: translate(0, -50%) scale(1); }
+  100% { left: 98%; opacity: 0; transform: translate(0, -50%) scale(0.6); }
+}
+
+/* Subtle pulse-ring on the "active" check node. Soft, slow, non-distracting. */
+@keyframes pulse-ring {
+  0%   { box-shadow: 0 0 0 0 rgb(16 185 129 / 0.45); }
+  70%  { box-shadow: 0 0 0 10px rgb(16 185 129 / 0); }
+  100% { box-shadow: 0 0 0 0 rgb(16 185 129 / 0); }
+}
+
+/* Canvas swap on agent-tab change — short, restrained. */
+@keyframes canvas-in {
+  0%   { opacity: 0; transform: translateY(4px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+/* Row expand — slightly more lift than canvas-in, used for the click-to-
+   expand transition on integration rows. Slightly slower for a tactile feel. */
+@keyframes row-expand-in {
+  0%   { opacity: 0; transform: translateY(-6px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+/* Step-fade-in — short crossfade for the rotating "current step" text on
+   the install progress panel. Keyed on the step label so React remounts
+   the node and replays this animation each time the step ticks over. */
+@keyframes step-fade-in {
+  0%   { opacity: 0; transform: translateY(2px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+/* Check-pop — applied to the wire's center check when state flips to
+   active. Subtle bounce so the success moment is felt, not announced. */
+@keyframes check-pop {
+  0%   { opacity: 0; transform: scale(0.4); }
+  55%  { opacity: 1; transform: scale(1.18); }
+  85%  { transform: scale(0.96); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+/* Wire-reveal — the SkillNote↔Agent wiring diagram materializes when the
+   user clicks Connect. Fades in + scales up slightly so the moment of
+   "now we're connected" reads as an event, not a layout shift. */
+@keyframes wire-reveal {
+  0%   { opacity: 0; transform: translateY(6px) scale(0.98); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Connect-modal entrance — backdrop fades in, dialog scales up with a
+   small bounce. Vercel / Linear use this same pattern for focused
+   action modals. */
+@keyframes modal-in {
+  0%   { opacity: 0; }
+  100% { opacity: 1; }
+}
+@keyframes modal-pop {
+  0%   { opacity: 0; transform: translateY(8px) scale(0.96); }
+  60%  { opacity: 1; transform: translateY(0) scale(1.01); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
 }
 

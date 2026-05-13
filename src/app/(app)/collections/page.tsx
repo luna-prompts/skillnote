@@ -18,7 +18,10 @@ function getSkillsForCollection(skills: Skill[], name: string): Skill[] {
 }
 
 export default function CollectionsPage() {
-  const [skills, setSkills] = useState(getSkills())
+  // R9 F36: SSR-safe — start empty, populate from localStorage in effect.
+  // Reading getSkills() eagerly during render breaks hydration: server has
+  // no localStorage so renders [], client hydrates with cached data → mismatch.
+  const [skills, setSkills] = useState<Skill[]>([])
   const [apiCollections, setApiCollections] = useState<CollectionListItem[]>([])
   const [newCollectionOpen, setNewCollectionOpen] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -82,6 +85,8 @@ export default function CollectionsPage() {
   }
 
   useEffect(() => {
+    // Local-first paint (R9 F36): show cached skills immediately, then refresh.
+    setSkills(getSkills())
     syncSkillsFromApi().then(setSkills).catch(() => {})
     loadCollections()
     // eslint-disable-next-line react-hooks/exhaustive-deps

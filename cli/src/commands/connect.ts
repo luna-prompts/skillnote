@@ -116,13 +116,31 @@ export async function pingApi(apiBase: string, timeoutMs = 3_000): Promise<boole
 
 async function fetchInstallScript(apiBase: string, agent: string): Promise<string> {
   const url = `${apiBase}/setup/agent?agent=${encodeURIComponent(agent)}`
-  const res = await fetch(url)
-  if (!res.ok) {
-    throw new UserFacingError({
-      header: `Could not fetch install script from ${apiBase}`,
-      body: `HTTP ${res.status} ${res.statusText} (${url})`,
-      remediation: 'The API may be running an older version; try `skillnote update`.',
-    })
+  // 30s ceiling — the install script is small (a few KB) and any honest CDN
+  // returns it well under that. Without a timeout a hung upstream stranded
+  // the whole `skillnote connect` flow with no recovery short of Ctrl-C.
+  const ctl = new AbortController()
+  const timer = setTimeout(() => ctl.abort(), 30_000)
+  try {
+    const res = await fetch(url, { signal: ctl.signal })
+    if (!res.ok) {
+      throw new UserFacingError({
+        header: `Could not fetch install script from ${apiBase}`,
+        body: `HTTP ${res.status} ${res.statusText} (${url})`,
+        remediation: 'The API may be running an older version; try `skillnote update`.',
+      })
+    }
+    return await res.text()
+  } catch (err) {
+    if ((err as Error)?.name === 'AbortError') {
+      throw new UserFacingError({
+        header: `Timed out fetching install script from ${apiBase}`,
+        body: `No response within 30s (${url})`,
+        remediation: 'Check that the backend is reachable, or run with `--verbose` for details.',
+      })
+    }
+    throw err
+  } finally {
+    clearTimeout(timer)
   }
-  return res.text()
 }

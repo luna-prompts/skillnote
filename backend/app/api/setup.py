@@ -3,11 +3,27 @@ import io
 import zipfile
 from pathlib import Path
 from datetime import datetime, timezone
+from typing import Literal
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse, Response
+from pydantic import BaseModel, Field
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+
+from app.db.models import AgentInstall
+from app.db.session import get_db
 
 router = APIRouter(tags=["setup"])
+
+# Agents the Connect page understands. Keep the canonical names in sync
+# with the frontend's `AgentId` union and with the install scripts below.
+SUPPORTED_AGENTS = ("claude-code", "openclaw")
+AgentLiteral = Literal["claude-code", "openclaw"]
+
+# Buckets for the per-agent state machine on the Connect page.
+ACTIVE_WINDOW_HOURS = 24
+IDLE_WINDOW_DAYS = 30
 
 _PLUGIN_DIR = Path("/plugin") if Path("/plugin/.claude-plugin").is_dir() else Path(__file__).resolve().parent.parent.parent.parent / "plugin"
 _OPENCLAW_DIR = Path("/openclaw") if Path("/openclaw").is_dir() else Path(__file__).resolve().parent.parent.parent.parent / "plugin-openclaw"
@@ -309,6 +325,22 @@ else
     echo "  Collection picker won't auto-run. Run skillnote-pick manually before claude."
 fi
 
+# ── ping backend so the Connect page knows we installed ─────────────────────
+# Retry a few times if the backend is briefly unreachable. Without retries a
+# transient hiccup (deploy in-flight, dropped wifi packet) stranded the Connect
+# page in "pending" indefinitely. We still tolerate complete failure — the
+# Connect page falls back to "active" detection via skill_call_events once the
+# user runs their first task. Hash hostname+user so we don't ship raw PII.
+MACHINE_HASH=$(printf '%s' "${HOSTNAME:-host}-${USER:-user}" \
+    | shasum -a 256 2>/dev/null \
+    | awk '{print $1}' \
+    || echo "")
+curl -sf --max-time 5 --retry 3 --retry-delay 2 --retry-connrefused \
+    -X POST "$API_URL/v1/setup/installs" \
+    -H "Content-Type: application/json" \
+    -d "{\"agent\":\"claude-code\",\"machine_id_hash\":\"$MACHINE_HASH\"}" \
+    >/dev/null 2>&1 || true
+
 echo ""
 python3 -c "
 rc = '$SHELL_RC'
@@ -480,6 +512,19 @@ if "$SKILLNOTE_DIR/sync.sh" 2>/dev/null; then
 else
     echo "  First sync did not complete (will retry on next OpenClaw session)."
 fi
+
+# ── ping backend so the Connect page knows we installed ─────────────────────
+# Same pattern as the claude-code installer — retry briefly so a transient
+# backend hiccup doesn't strand the Connect page in pending forever.
+MACHINE_HASH=$(printf '%s' "${HOSTNAME:-host}-${USER:-user}" \
+    | shasum -a 256 2>/dev/null \
+    | awk '{print $1}' \
+    || echo "")
+curl -sf --max-time 5 --retry 3 --retry-delay 2 --retry-connrefused \
+    -X POST "$API_URL/v1/setup/installs" \
+    -H "Content-Type: application/json" \
+    -d "{\"agent\":\"openclaw\",\"machine_id_hash\":\"$MACHINE_HASH\"}" \
+    >/dev/null 2>&1 || true
 
 echo ""
 echo "  Installed:"
@@ -724,3 +769,237 @@ def get_agent_prompt(
     # Return as plain text so it's clipboard-friendly. Connect page reads it
     # with fetch().then(r => r.text()) and pipes straight into the copy buffer.
     return PlainTextResponse(prompt, media_type="text/plain; charset=utf-8")
+
+
+# ─── Connect page state machine ─────────────────────────────────────────────
+#
+# The Connect page needs ONE truthful answer per agent: pending / installed /
+# active / idle. Two pieces of evidence feed that answer:
+#
+#   1. agent_installs row — "the install script ran on a user's machine"
+#   2. recent analytics event — "the agent has actually called a skill"
+#
+# Without (1) we can't distinguish a fresh install from a never-installed
+# state; without (2) we can't tell an active install from a stale one.
+
+
+class InstallPing(BaseModel):
+    agent: AgentLiteral
+    version: str | None = Field(default=None, max_length=64)
+    machine_id_hash: str | None = Field(default=None, max_length=128)
+
+
+class InstallPingResponse(BaseModel):
+    id: str
+    agent: str
+    installed_at: datetime
+
+
+@router.post("/v1/setup/installs", response_model=InstallPingResponse, status_code=201)
+def post_install_ping(
+    body: InstallPing,
+    db: Session = Depends(get_db),
+) -> InstallPingResponse:
+    """Record a successful install. Called by the install scripts on success.
+
+    Idempotency: the scripts may run multiple times (re-installs, updates).
+    Each run produces a new row — that lets the UI surface the *latest*
+    install_at while preserving full history for analytics.
+    """
+    row = AgentInstall(
+        agent=body.agent,
+        version=body.version,
+        machine_id_hash=body.machine_id_hash,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return InstallPingResponse(
+        id=str(row.id),
+        agent=row.agent,
+        installed_at=row.installed_at,
+    )
+
+
+class AgentStatus(BaseModel):
+    agent: AgentLiteral
+    # Three states, not four. "installed but waiting for first skill call"
+    # was UI noise — once the install pinged successfully, we trust the
+    # install and call it connected. If the agent's first skill call never
+    # comes, the user will notice that on their own (no analytics to look
+    # at) rather than us nagging them with a "waiting" badge.
+    state: Literal["pending", "active", "idle"]
+    installed_at: datetime | None
+    last_active_at: datetime | None
+    calls_24h: int
+    calls_7d: int
+
+
+def _agent_status(agent: AgentLiteral, db: Session) -> AgentStatus:
+    """Compose one agent's status row from install + analytics evidence."""
+    # Tie-break on id so two rows with identical installed_at (possible at
+    # microsecond precision when retries fire in a tight loop) deterministically
+    # resolve to the same row — otherwise the UI flips between values.
+    install_row = db.execute(
+        text(
+            "SELECT installed_at FROM agent_installs "
+            "WHERE agent = :agent "
+            "ORDER BY installed_at DESC, id DESC LIMIT 1"
+        ),
+        {"agent": agent},
+    ).fetchone()
+    installed_at = install_row[0] if install_row else None
+
+    # Latest explicit disconnect. The activity-based "active" inference
+    # below ignores events older than this — otherwise hitting Disconnect
+    # did nothing observable when there was recent activity. If a fresh
+    # install came in AFTER the disconnect, `installed_at is not None`
+    # alone dominates state via the first branch of the if-chain below;
+    # the comparison isn't explicit because `delete_agent_installs` wipes
+    # all install rows BEFORE inserting the tombstone, so any surviving
+    # install row is guaranteed to be post-disconnect.
+    disc_row = db.execute(
+        text(
+            "SELECT disconnected_at FROM agent_disconnects "
+            "WHERE agent = :agent "
+            "ORDER BY disconnected_at DESC, id DESC LIMIT 1"
+        ),
+        {"agent": agent},
+    ).fetchone()
+    disconnected_at = disc_row[0] if disc_row else None
+    # The activity floor: events at or before this timestamp don't count.
+    activity_floor = disconnected_at
+
+    # Both tables answer "when did this agent last call a skill?", but live
+    # in different shapes — Claude Code logs to skill_call_events (one row
+    # per skill call), OpenClaw logs to skill_usage_events (one row per
+    # session). We dispatch on agent name to pick the right source.
+    # `activity_floor` (from agent_disconnects) excludes any events at or
+    # before the user's last explicit disconnect, so clicking Disconnect
+    # actually flips the agent back to pending instead of staying "active"
+    # forever from pre-disconnect activity.
+    floor_clause = "AND created_at > :floor" if activity_floor is not None else ""
+    if agent == "claude-code":
+        params = {"agent": "claude-code"}
+        if activity_floor is not None:
+            params["floor"] = activity_floor  # type: ignore[assignment]
+        last_active = db.execute(
+            text(
+                f"SELECT MAX(created_at) FROM skill_call_events "
+                f"WHERE agent_name = :agent {floor_clause}"
+            ),
+            params,
+        ).scalar()
+        calls_24h = db.execute(
+            text(
+                f"SELECT COUNT(*) FROM skill_call_events "
+                f"WHERE agent_name = :agent {floor_clause} "
+                f"AND created_at >= now() - interval '24 hours'"
+            ),
+            params,
+        ).scalar() or 0
+        calls_7d = db.execute(
+            text(
+                f"SELECT COUNT(*) FROM skill_call_events "
+                f"WHERE agent_name = :agent {floor_clause} "
+                f"AND created_at >= now() - interval '7 days'"
+            ),
+            params,
+        ).scalar() or 0
+    else:
+        # OpenClaw activity. agent_name is freeform; canonical values are
+        # 'openclaw' and 'openclaw-main' (the default user_id in config.json).
+        # Match this explicit allowlist instead of `LIKE 'openclaw%'` so
+        # ad-hoc names like 'openclaw-staging' or 'openclaw-experimental'
+        # don't accidentally pollute the canonical agent's counts.
+        _openclaw_names = ["openclaw", "openclaw-main"]
+        params = {"names": _openclaw_names}  # type: ignore[dict-item]
+        if activity_floor is not None:
+            params["floor"] = activity_floor  # type: ignore[assignment]
+        last_active = db.execute(
+            text(
+                f"SELECT MAX(created_at) FROM skill_usage_events "
+                f"WHERE agent_name = ANY(:names) {floor_clause}"
+            ),
+            params,
+        ).scalar()
+        calls_24h = db.execute(
+            text(
+                f"SELECT COUNT(*) FROM skill_usage_events "
+                f"WHERE agent_name = ANY(:names) {floor_clause} "
+                f"AND created_at >= now() - interval '24 hours'"
+            ),
+            params,
+        ).scalar() or 0
+        calls_7d = db.execute(
+            text(
+                f"SELECT COUNT(*) FROM skill_usage_events "
+                f"WHERE agent_name = ANY(:names) {floor_clause} "
+                f"AND created_at >= now() - interval '7 days'"
+            ),
+            params,
+        ).scalar() or 0
+
+    # State derivation (3 states, no "installed/waiting" middle ground):
+    #   - active: install pinged at any point OR a skill call in the last 24h
+    #   - idle:   no install ping AND last activity was 24h..30d ago
+    #   - pending: nothing
+    now = datetime.now(tz=timezone.utc)
+    state: Literal["pending", "active", "idle"] = "pending"
+    if installed_at is not None:
+        state = "active"
+    elif last_active is not None:
+        age = now - last_active
+        if age.total_seconds() < ACTIVE_WINDOW_HOURS * 3600:
+            state = "active"
+        elif age.days < IDLE_WINDOW_DAYS:
+            state = "idle"
+
+    return AgentStatus(
+        agent=agent,
+        state=state,
+        installed_at=installed_at,
+        last_active_at=last_active,
+        calls_24h=int(calls_24h),
+        calls_7d=int(calls_7d),
+    )
+
+
+@router.get("/v1/setup/agents", response_model=list[AgentStatus])
+def get_agents_status(db: Session = Depends(get_db)) -> list[AgentStatus]:
+    """Return the per-agent state machine row for the Connect page."""
+    return [_agent_status(agent, db) for agent in SUPPORTED_AGENTS]
+
+
+@router.delete("/v1/setup/installs/{agent}", status_code=204)
+def delete_agent_installs(
+    agent: AgentLiteral,
+    db: Session = Depends(get_db),
+) -> Response:
+    """Disconnect — remove every install row for this agent AND record a
+    disconnect event so the state-derivation logic stops counting
+    pre-disconnect activity as evidence the agent is still active.
+
+    The UI's "Disconnect" action calls this. The actual plugin files on
+    the user's machine stay in place (we can't reach across the network
+    to delete them), but from SkillNote's perspective the agent is
+    detached: state flips back to pending, the wire goes dashed grey,
+    and the agent moves back to the Browse tab. Re-running the install
+    script (or clicking Connect again) brings it right back.
+
+    Before R4: only the install row was deleted. `_agent_status` would
+    still return state="active" if recent skill_call_events existed,
+    so Disconnect was a no-op when the user had been actively using
+    the agent. The disconnect row fixes that: the state machine now
+    ignores activity older than the most recent disconnect.
+    """
+    db.execute(
+        text("DELETE FROM agent_installs WHERE agent = :agent"),
+        {"agent": agent},
+    )
+    db.execute(
+        text("INSERT INTO agent_disconnects (agent) VALUES (:agent)"),
+        {"agent": agent},
+    )
+    db.commit()
+    return Response(status_code=204)

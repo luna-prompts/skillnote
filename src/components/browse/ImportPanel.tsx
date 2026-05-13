@@ -200,6 +200,15 @@ export function ImportPanel({ onImported, onViewLibrary, existingCollectionSlugs
               {detect && typeof detect === 'object' && 'error' in detect ? (
                 <span className="ml-2 text-destructive">{detect.error}</span>
               ) : null}
+              {/* When the user has typed something but it doesn't parse as
+                  any supported source, the parser returns null. Without this
+                  inline message the Import button just sits disabled with
+                  no explanation (R6 live-bug L1). */}
+              {input.trim() && detect === null ? (
+                <span className="ml-2 text-destructive">
+                  Not a recognized URL. Try <code className="rounded bg-muted px-1 py-px font-mono text-[10.5px]">owner/repo</code> or a full https://github.com/… URL.
+                </span>
+              ) : null}
             </div>
           </div>
 

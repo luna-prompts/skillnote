@@ -254,7 +254,21 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
     }
   }, [prevSkill, nextSkill, router])
 
-  const editorDirty = editorContent !== skill.content_md || titleValue !== skill.title || descriptionValue !== skill.description || JSON.stringify(collectionsValue) !== JSON.stringify(skill.collections)
+  // Dirty if any editable field diverges from the persisted skill. Coalesce
+  // `extra_frontmatter` to '' on both sides so undefined vs '' isn't a false
+  // positive. Normalize line endings + trailing whitespace on the editor
+  // content because Tiptap's markdown serializer may strip trailing newlines
+  // that the persisted `content_md` includes — otherwise opening edit mode
+  // on a freshly-created skill immediately shows "Unsaved changes" with no
+  // user edit (R5 live-bug L2).
+  const normalizeMd = (s: string | undefined | null) =>
+    (s ?? '').replace(/\r\n/g, '\n').replace(/\s+$/, '')
+  const editorDirty =
+    normalizeMd(editorContent) !== normalizeMd(skill.content_md) ||
+    titleValue !== skill.title ||
+    descriptionValue !== skill.description ||
+    JSON.stringify(collectionsValue) !== JSON.stringify(skill.collections) ||
+    (extraFrontmatterValue || '') !== (skill.extra_frontmatter || '')
 
   useEffect(() => {
     const saved = localStorage.getItem(`starred-${skill.slug}`)
@@ -683,12 +697,20 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
       {/* Install dialog — mobile fallback (strip is hidden on small screens) */}
       {showInstall && <InstallDialog slug={skill.slug} onClose={() => setShowInstall(false)} />}
 
-      {/* Delete confirm dialog */}
+      {/* Delete confirm dialog (R9 F49: real ARIA dialog so screen readers
+          announce it AND e2e tests / a11y tooling can pick it up). */}
       {showDeleteConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowDeleteConfirm(false)}>
+        <div
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="delete-skill-title"
+          aria-describedby="delete-skill-desc"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+          onClick={() => setShowDeleteConfirm(false)}
+        >
           <div className="w-full max-w-sm bg-card border border-border rounded-xl shadow-2xl p-6" onClick={e => e.stopPropagation()}>
-            <h3 className="text-sm font-semibold text-foreground mb-2">Delete &ldquo;{skill.title}&rdquo;?</h3>
-            <p className="text-[13px] text-muted-foreground mb-5">This will permanently delete the skill. This cannot be undone.</p>
+            <h3 id="delete-skill-title" className="text-sm font-semibold text-foreground mb-2">Delete &ldquo;{skill.title}&rdquo;?</h3>
+            <p id="delete-skill-desc" className="text-[13px] text-muted-foreground mb-5">This will permanently delete the skill. This cannot be undone.</p>
             <div className="flex justify-end gap-2">
               <Button variant="outline" size="sm" className="h-8 text-[13px]" onClick={() => setShowDeleteConfirm(false)}>Cancel</Button>
               <Button variant="destructive" size="sm" className="h-8 text-[13px]" onClick={handleDelete}>Delete</Button>
@@ -697,12 +719,19 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
         </div>
       )}
 
-      {/* Discard confirm dialog */}
+      {/* Discard confirm dialog (R9 F49). */}
       {showDiscardConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowDiscardConfirm(false)}>
+        <div
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="discard-changes-title"
+          aria-describedby="discard-changes-desc"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+          onClick={() => setShowDiscardConfirm(false)}
+        >
           <div className="w-full max-w-sm bg-card border border-border rounded-xl shadow-2xl p-6" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-sm font-semibold text-foreground mb-2">Discard changes?</h3>
-            <p className="text-[13px] text-muted-foreground mb-5">All unsaved changes will be lost. This cannot be undone.</p>
+            <h3 id="discard-changes-title" className="text-sm font-semibold text-foreground mb-2">Discard changes?</h3>
+            <p id="discard-changes-desc" className="text-[13px] text-muted-foreground mb-5">All unsaved changes will be lost. This cannot be undone.</p>
             <div className="flex justify-end gap-2">
               <Button variant="outline" size="sm" className="h-8 min-h-[44px] sm:min-h-0 text-[13px]" onClick={() => setShowDiscardConfirm(false)}>Cancel</Button>
               <Button variant="destructive" size="sm" className="h-8 min-h-[44px] sm:min-h-0 text-[13px]" onClick={confirmDiscard}>Discard</Button>

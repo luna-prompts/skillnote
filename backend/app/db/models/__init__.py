@@ -1,3 +1,4 @@
+from app.db.models.agent_install import AgentInstall
 from app.db.models.analytics_event import AnalyticsEvent
 from app.db.models.collection import Collection
 from app.db.models.comment import Comment
@@ -19,6 +20,7 @@ __all__ = [
     "SkillContentVersion",
     "SkillUsageEvent",
     "Comment",
+    "AgentInstall",
     "AnalyticsEvent",
     "SkillRating",
     "Collection",

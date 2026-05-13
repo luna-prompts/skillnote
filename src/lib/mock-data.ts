@@ -79,6 +79,16 @@ export type Skill = {
   source_path?: string | null
   /** Structured provenance — populated when the skill came from an import. */
   origin?: SkillOrigin | null
+  /**
+   * R9 F32: ISO timestamp of the last time this skill was seen on the API.
+   * Set during `syncSkillsFromApi` for every API-returned skill. Absent for
+   * skills the user created while offline. Drives the "ghost skill" cleanup:
+   * if a skill was previously synced but the latest API response doesn't
+   * include it (DB wipe, upstream delete), it's stale and gets dropped on
+   * the next sync. Skills with no `_syncedAt` are treated as genuinely
+   * local and survive API resets.
+   */
+  _syncedAt?: string
 }
 
 export type SkillOrigin = {

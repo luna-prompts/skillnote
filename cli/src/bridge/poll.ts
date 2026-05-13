@@ -53,10 +53,22 @@ async function pollNext(
   signal?: AbortSignal,
 ): Promise<BridgeJob | null> {
   const url = `${apiBase}/v1/cli/jobs/pending?timeout=${timeoutSec}`
-  const res = await fetch(url, { signal })
-  if (!res.ok) return null
-  const body = (await res.json()) as BridgeJob | null
-  return body
+  // Belt-and-braces client-side timeout: if the server fails to close the
+  // long-poll within `timeoutSec + 5s`, the daemon would hang forever.
+  // Layered on the parent signal so SIGINT still wins.
+  const localCtl = new AbortController()
+  const localTimer = setTimeout(() => localCtl.abort(), (timeoutSec + 5) * 1_000)
+  const onParentAbort = () => localCtl.abort()
+  signal?.addEventListener('abort', onParentAbort, { once: true })
+  try {
+    const res = await fetch(url, { signal: localCtl.signal })
+    if (!res.ok) return null
+    const body = (await res.json()) as BridgeJob | null
+    return body
+  } finally {
+    clearTimeout(localTimer)
+    signal?.removeEventListener('abort', onParentAbort)
+  }
 }
 
 async function claim(apiBase: string, jobId: string): Promise<void> {
@@ -157,10 +169,15 @@ function stripAnsi(s: string): string {
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
-    const timer = setTimeout(resolve, ms)
-    signal?.addEventListener('abort', () => {
-      clearTimeout(timer)
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort)
       resolve()
-    })
+    }, ms)
+    const onAbort = () => {
+      clearTimeout(timer)
+      signal?.removeEventListener('abort', onAbort)
+      resolve()
+    }
+    signal?.addEventListener('abort', onAbort)
   })
 }

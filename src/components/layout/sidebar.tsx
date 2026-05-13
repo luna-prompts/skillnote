@@ -14,7 +14,21 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
   useEffect(() => {
     setSkills(getSkills())
     syncSkillsFromApi().then(setSkills).catch(() => {})
-    return onConnectionStatusChange(setConnStatus)
+    const unsubConn = onConnectionStatusChange(setConnStatus)
+    // Re-read on the cross-component change event that skills-store dispatches
+    // on every CRUD operation. Without this the sidebar count goes stale on
+    // the detail page after a create/delete — user only sees the count update
+    // after navigating away and back.
+    const onChange = () => setSkills(getSkills())
+    if (typeof window !== 'undefined') {
+      window.addEventListener('skillnote:skills-changed', onChange)
+    }
+    return () => {
+      unsubConn()
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('skillnote:skills-changed', onChange)
+      }
+    }
   }, [])
 
   const navItems = useMemo(() => {

@@ -1,7 +1,7 @@
 ---
 name: skillnote
 description: "Self-hosted skill registry for OpenClaw. Stores procedures your team writes (name, description, body), syncs them to disk before each task, and collects which-helped/which-failed signals from the agent so the registry improves over time."
-version: "0.5.1"
+version: "0.5.2"
 homepage: "https://github.com/luna-prompts/skillnote"
 metadata:
   openclaw:
