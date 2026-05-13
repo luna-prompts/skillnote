@@ -3,6 +3,41 @@
 All notable changes to SkillNote will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.5.3] - 2026-05-13
+
+UX polish and discoverability release. Reorganised the sidebar information architecture so each group label predicts its contents, completed R9's "drop teal from PWA chrome" by fixing the maskable icon that was still bleeding teal in dock and home-screen previews, and fully rewrote the README for problem-first resonance with fresh post-R9 screenshots.
+
+No new APIs, no new commands, no breaking changes.
+
+### Changed
+
+- **Sidebar IA reorganization.** Analytics and Marketplace both moved into the `WORKSPACE` group; they're views of skills you own (Analytics = how your skills perform; Marketplace = how to add more), not part of the agent wire-up flow. The Connect group label was renamed to `INTEGRATIONS` so it stops repeating its only item (was "CONNECT > Connect"; now "INTEGRATIONS > Connect"). Net layout:
+
+  ```
+  WORKSPACE          INTEGRATIONS
+    Skills             Connect
+    Collections
+    Analytics
+    Marketplace
+  ```
+
+- **README full rewrite** for discoverability + problem-first resonance. 659 → ~495 lines. Lead the body with the 8,000-character pain Claude Code users actually feel (truncated descriptions, GitHub issue numbers, Anthropic doc link) plus a Without/With comparison table. Inline Claude Code + OpenClaw install commands; alternative install paths stay collapsed. Feature section is 6 bullets with inline screenshots. Footer adds a `contrib.rocks` contributor wall.
+- **Marketplace section in README now lists 5 popular community sources** to import skills from: `anthropics/skills` (Anthropic's official Agent Skills repo), `ComposioHQ/awesome-claude-skills` (800+ skills, the largest curated set), `alirezarezvani/claude-skills` (600+ multi-agent skills), `garrytan/gstack` (50+ YC-flavored tools), `obra/superpowers` (Jesse Vincent's agentic framework). Helps SkillNote's discoverability through the GitHub graph and gives new installs immediate starter content.
+- **4 LLM-search-friendly FAQ entries added at the top** of the README FAQ ("What is SkillNote?", "How is SkillNote different from MCP?", "How do I share Claude Code skills across my team?", "Is SkillNote free?"). These match the natural phrasing of how people query ChatGPT, Claude, or Google about a project. Existing troubleshooting Q&As stay below.
+- **README hero** now displays a tighter (1440×580) crop of the Connect → Browse view showing Claude Code + OpenClaw cards with their canonical marks. Replaces the older full-page screenshot.
+- **README badges** added `npm total downloads` next to the version badge. Star history chart removed (looked weak at the project's current 45 stars; will revisit once there's a growth curve worth showing).
+
+### Fixed
+
+- **PWA maskable icon teal bleed.** R9 set `theme_color: '#000000'` in the manifest and `themeColor` in the root layout, but missed `public/icon-512-maskable.png`, which still had teal (`#0d9488`) baked into the outer 16% as the bleed zone. Chrome / macOS rendered the dock icon through the maskable adaptive-icon path, so the safe-area black square sat inside a teal frame, exactly what R9 was trying to kill. Regenerated as all-black `512×512` background with the LP logo resized to 80% to fit the maskable safe area. Now matches `icon-512.png`, `icon-192.png`, and the manifest `theme_color` (one continuous black mark).
+
+  **Note for existing PWA users:** browsers cache installed-PWA icons aggressively. To pick up the new icon, uninstall the existing SkillNote PWA from your dock or home screen and reinstall it via Chrome's address bar (`Install SkillNote`) or `⋮ → Cast/Save/Share → Install SkillNote`.
+
+### Internal
+
+- **Em-dashes purged from README** (20 instances → 0). Replaced with periods, commas, and colons as the surrounding clause required. Em-dashes are a strong AI-writing tell, and removing them noticeably lifted the natural-human reading.
+- **README screenshots re-shot at v0.5.2 UI** for Collections, Marketplace workspace, and Analytics, so the README matches the current sidebar layout and Connect-page redesign. Analytics screenshot kept the data-rich (22 calls, populated leaderboard) variant; cropped to the top half so the visually-empty Activity Timeline isn't pulling weight in the scroll.
+
 ## [0.5.2] - 2026-05-13
 
 Production-readiness sweep ("Round 9" of the 10-round hardening exercise). Drove the **first-bite path** (GitHub → `npx skillnote start` → web open) and the **Connect page** end-to-end under stressed conditions — bridge daemon missing, ports occupied, corrupted localStorage, killed api, hung locks, podman vs docker, fresh-browser vs returning-user. Catalogued 44 issues; landed 29 fixes. Every silent failure now surfaces an actionable message; every modal has the right ARIA roles; the install-stage UX no longer wedges.
