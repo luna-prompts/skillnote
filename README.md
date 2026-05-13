@@ -437,12 +437,6 @@ Active development happens on [Discord](https://discord.gg/GazU4amU6H).
   <img src="https://contrib.rocks/image?repo=luna-prompts/skillnote" alt="Contributors" />
 </a>
 
-## Star history
-
-<a href="https://star-history.com/#luna-prompts/skillnote&Date">
-  <img src="https://api.star-history.com/svg?repos=luna-prompts/skillnote&type=Date" width="100%" alt="Star history" />
-</a>
-
 ---
 
 ## License
