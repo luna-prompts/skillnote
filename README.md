@@ -2,7 +2,7 @@
   <img src="public/logo.svg" width="88" height="88" alt="SkillNote" />
 </p>
 
-<h1 align="center">SkillNote</h1>
+<h1 align="center">S K I L L N O T E</h1>
 
 <p align="center">
   <strong>The open-source skill registry for AI coding agents.</strong>
@@ -12,6 +12,7 @@
 
 <p align="center">
   <a href="https://www.npmjs.com/package/skillnote"><img src="https://img.shields.io/npm/v/skillnote.svg?label=npm&color=cb3837&logo=npm" alt="npm version" /></a>
+  <a href="https://www.npmjs.com/package/skillnote"><img src="https://img.shields.io/npm/dt/skillnote.svg?label=downloads&color=brightgreen" alt="npm total downloads" /></a>
   <a href="https://github.com/luna-prompts/skillnote/pkgs/container/skillnote-api"><img src="https://img.shields.io/badge/ghcr.io-multi--arch-2496ED?logo=docker&logoColor=white" alt="Docker images on GHCR" /></a>
   <a href="https://clawhub.ai/latentloop07/skillnote"><img src="https://img.shields.io/badge/clawhub-skillnote-F97316" alt="On clawhub" /></a>
   <a href="https://github.com/luna-prompts/skillnote/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License" /></a>
