@@ -214,13 +214,19 @@ If your folder name matches a collection, the plugin recommends it automatically
 
 ### Import from any GitHub repo
 
-The community has already published hundreds of `SKILL.md` files. Paste a GitHub URL, shorthand (`garrytan/gstack`), a tree URL to a subfolder, or a Claude Code marketplace manifest (`anthropic.json`) — SkillNote shallow-clones, scans every `SKILL.md`, validates frontmatter, and opens a workspace where you pick exactly what to install.
+The community has published thousands of `SKILL.md` files since Anthropic released the format. Paste a GitHub URL, shorthand (`garrytan/gstack`), a tree URL to a subfolder, or a Claude Code marketplace manifest (`anthropic.json`) — SkillNote shallow-clones, scans every `SKILL.md`, validates frontmatter, and opens a workspace where you pick exactly what to install.
 
 <p align="center">
   <img src="docs/screenshots/marketplace-workspace.png" width="100%" alt="Marketplace workspace showing skills from garrytan/gstack with select-all, filter, and per-skill preview pane" />
 </p>
 
-Try [`garrytan/gstack`](https://github.com/garrytan/gstack) (23 YC-flavored skills), [`obra/superpowers`](https://github.com/obra/superpowers) (Jesse Vincent's agentic skills framework), or [`anthropics/skills`](https://github.com/anthropics/skills).
+Some popular registries to try:
+
+- [**`anthropics/skills`**](https://github.com/anthropics/skills) — Anthropic's official Agent Skills repository
+- [**`ComposioHQ/awesome-claude-skills`**](https://github.com/ComposioHQ/awesome-claude-skills) — 800+ community skills, the largest curated set
+- [**`alirezarezvani/claude-skills`**](https://github.com/alirezarezvani/claude-skills) — 600+ skills for Claude Code, Codex, Gemini CLI, Cursor, and more
+- [**`garrytan/gstack`**](https://github.com/garrytan/gstack) — Garry Tan's 50+ opinionated YC-flavored tools (CEO, Designer, Eng Manager, etc.)
+- [**`obra/superpowers`**](https://github.com/obra/superpowers) — Jesse Vincent's agentic skills framework
 
 ### Live sync, every agent
 
