@@ -22,36 +22,29 @@ export function SkillNoteMark({ size = 56 }: { size?: number }) {
 }
 
 export function ClaudeCodeMark({ size = 56 }: { size?: number }) {
-  // Anthropic's "A" mark from Bootstrap Icons (MIT). Coral fill matches
-  // Anthropic's brand palette (#cc785c). Renders crisp at any size.
-  // Inner glyph sized to 62% to roughly match the visual weight of the
-  // OpenClaw lobster mark, which fills its own square corner-to-corner.
+  // The actual @ClaudeDevs (Anthropic's Claude Code team) X/Twitter avatar:
+  // pixel-robot mascot in Anthropic coral on a dark plate. Saved verbatim
+  // from pbs.twimg.com to `/claude-mark.png` so the canvas color +
+  // pixel-spacing match the canonical artwork exactly — no hand-redraw
+  // attempt.
   return (
-    <div
-      className="flex items-center justify-center rounded-lg"
-      style={{ width: size, height: size, backgroundColor: '#f4ede4' }}
-    >
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        viewBox="0 0 16 16"
-        width={size * 0.62}
-        height={size * 0.62}
-        aria-label="Claude Code"
-        role="img"
-        style={{ color: '#cc785c' }}
-      >
-        <path
-          fill="currentColor"
-          fillRule="evenodd"
-          d="M9.218 2h2.402L16 12.987h-2.402zM4.379 2h2.512l4.38 10.987H8.82l-.895-2.308h-4.58l-.896 2.307H0L4.38 2.001zm2.755 6.64L5.635 4.777 4.137 8.64z"
-        />
-      </svg>
-    </div>
+    <img
+      src="/claude-mark.png"
+      alt="Claude Code"
+      width={size}
+      height={size}
+      className="block rounded-lg"
+      draggable={false}
+      style={{ imageRendering: 'pixelated' }}
+    />
   )
 }
 
 export function OpenClawMark({ size = 56 }: { size?: number }) {
-  // OpenClaw's pixel-lobster mark from openclaw/openclaw docs/assets.
+  // Canonical OpenClaw mark from the homarr-labs dashboard-icons project
+  // (https://github.com/homarr-labs/dashboard-icons), which mirrors the
+  // OpenClaw project's published brand assets. Replaces the hand-drawn
+  // pixel-lobster placeholder we shipped earlier.
   return (
     <img
       src="/openclaw-mark.svg"
@@ -60,7 +53,6 @@ export function OpenClawMark({ size = 56 }: { size?: number }) {
       height={size}
       className="block rounded-lg"
       draggable={false}
-      style={{ imageRendering: 'pixelated' }}
     />
   )
 }

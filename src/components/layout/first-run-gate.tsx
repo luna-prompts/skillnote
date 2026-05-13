@@ -37,11 +37,22 @@ export function FirstRunGate() {
     const check = async () => {
       try {
         const apiBase = getApiBaseUrl()
-        const res = await fetch(`${apiBase}/v1/setup/agents`, { cache: 'no-store' })
-        if (!res.ok || cancelled) return
-        const rows = (await res.json()) as { state: string }[]
+        // R9 F38: check BOTH the API skill list and localStorage. The prior
+        // version only checked `getSkills().length` (localStorage), which on
+        // a fresh-browser/wiped-cache first paint is always 0. The user got
+        // redirected to /integrations even when the API had 8 seeded skills
+        // — they should have landed on / and seen those skills. Race window:
+        // syncSkillsFromApi() runs after FirstRunGate's effect, so by the
+        // time the gate checked localStorage it was still empty.
+        const [agentsRes, skillsRes] = await Promise.all([
+          fetch(`${apiBase}/v1/setup/agents`, { cache: 'no-store' }),
+          fetch(`${apiBase}/v1/skills`, { cache: 'no-store' }),
+        ])
+        if (!agentsRes.ok || !skillsRes.ok || cancelled) return
+        const rows = (await agentsRes.json()) as { state: string }[]
+        const apiSkills = (await skillsRes.json()) as unknown[]
         const anyConnected = rows.some((r) => r.state !== 'pending')
-        const hasLocalSkills = getSkills().length > 0
+        const hasSkills = apiSkills.length > 0 || getSkills().length > 0
         // Mark onboarded regardless of redirect: the gate has done its job.
         // If a user wipes localStorage they'll see it again — that's OK.
         try {
@@ -49,7 +60,7 @@ export function FirstRunGate() {
         } catch {
           // ignore
         }
-        if (!anyConnected && !hasLocalSkills && !cancelled) {
+        if (!anyConnected && !hasSkills && !cancelled) {
           router.replace('/integrations')
         }
       } catch {

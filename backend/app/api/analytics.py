@@ -114,6 +114,8 @@ def get_skill_calls(
     coll_clause = _collection_filter_clause(collection)
     params = _build_params(days, agent, collection)
 
+    # Cap at 200 — the FE leaderboard never renders more, and an unbounded
+    # query risks OOM on instances with tens of thousands of distinct skills.
     rows = db.execute(
         text(f"""
             SELECT skill_slug AS slug,
@@ -126,6 +128,7 @@ def get_skill_calls(
             {coll_clause}
             GROUP BY skill_slug
             ORDER BY call_count DESC
+            LIMIT 200
         """),
         params,
     ).mappings().all()
@@ -325,9 +328,17 @@ def get_rating_detail(
         {"slug": skill_slug},
     ).mappings().one_or_none()
 
+    # R9 F33: "no ratings yet" is the normal state for a freshly-seeded skill.
+    # Returning 404 here forces the frontend to wear a console error for every
+    # skill page on a fresh install. Return 200 with explicit empty shape so
+    # the client can render "no reviews yet" without log noise.
     if overall is None or overall["rating_count"] == 0:
-        from app.core.errors import api_error
-        raise api_error(404, "SKILL_NOT_RATED", f"No ratings found for skill '{skill_slug}'")
+        return {
+            "slug": skill_slug,
+            "avg_rating": None,
+            "rating_count": 0,
+            "versions": [],
+        }
 
     versions = db.execute(
         text("""

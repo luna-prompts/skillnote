@@ -1,5 +1,5 @@
 'use client'
-import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
+import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { ArrowUp, Check, Copy, Hash, FileText, MessageSquare, Star, Bot } from 'lucide-react'
 import { Skill, type Comment, type SkillRatingDetail, type SkillReview } from '@/lib/mock-data'
 import { fetchSkillReviews } from '@/lib/api/skills'
@@ -14,6 +14,30 @@ import { SkillCommentsTab } from './SkillCommentsTab'
 
 function slugify(text: string) {
   return text.toLowerCase().replace(/[^\w]+/g, '-').replace(/(^-|-$)/g, '')
+}
+
+/** Recursively flatten React children to their text content. Walks into
+ *  inline elements (`<code>`, `<strong>`, `<em>`, …) so that `# \`bar\`` and
+ *  `# foo **bold**` produce useful heading anchors. */
+function extractHeadingText(children: React.ReactNode): string {
+  if (children === null || children === undefined || typeof children === 'boolean') return ''
+  if (typeof children === 'string') return children
+  if (typeof children === 'number') return String(children)
+  if (Array.isArray(children)) return children.map(extractHeadingText).join('')
+  if (React.isValidElement(children)) {
+    const inner = (children.props as { children?: React.ReactNode }).children
+    return extractHeadingText(inner)
+  }
+  return ''
+}
+
+/** Slug for a heading anchor. Returns empty string when the heading has no
+ *  extractable text — caller renders the heading without an anchor in that
+ *  case rather than producing `href="#undefined"` (R5 live-bug L3). */
+function headingId(children: React.ReactNode): string {
+  const text = extractHeadingText(children).trim()
+  if (!text) return ''
+  return slugify(text)
 }
 
 function CopyCodeButton({ code }: { code: string }) {
@@ -234,7 +258,7 @@ export function SkillViewTab({ skill, onAddComment, ratingDetail, reviews: initi
       {/* File header bar */}
       <div className="flex items-center gap-2.5 px-4 sm:px-8 py-2.5 bg-muted/20">
         <FileText className="h-3.5 w-3.5 text-muted-foreground/50 shrink-0" />
-        <span className="font-mono text-[12px] text-muted-foreground/60 shrink-0 tracking-wide">SKILLS.md</span>
+        <span className="font-mono text-[12px] text-muted-foreground/60 shrink-0 tracking-wide">SKILL.md</span>
       </div>
       <hr className="border-border/30 mx-0" />
       <div className="flex gap-8 px-4 sm:px-10 lg:px-14 py-6 sm:py-8 overflow-hidden">
@@ -271,24 +295,40 @@ export function SkillViewTab({ skill, onAddComment, ratingDetail, reviews: initi
                   return <code className={className} {...props}>{children}</code>
                 },
                 h1({ children }) {
-                  const text = String(children)
-                  const id = slugify(text)
-                  return <h1 id={id} className="group/heading scroll-mt-6">{children}<HeadingAnchor id={id} size="h-4 w-4" /></h1>
+                  const id = headingId(children)
+                  return (
+                    <h1 id={id || undefined} className="group/heading scroll-mt-6">
+                      {children}
+                      {id ? <HeadingAnchor id={id} size="h-4 w-4" /> : null}
+                    </h1>
+                  )
                 },
                 h2({ children }) {
-                  const text = String(children)
-                  const id = slugify(text)
-                  return <h2 id={id} className="group/heading scroll-mt-6">{children}<HeadingAnchor id={id} size="h-3.5 w-3.5" /></h2>
+                  const id = headingId(children)
+                  return (
+                    <h2 id={id || undefined} className="group/heading scroll-mt-6">
+                      {children}
+                      {id ? <HeadingAnchor id={id} size="h-3.5 w-3.5" /> : null}
+                    </h2>
+                  )
                 },
                 h3({ children }) {
-                  const text = String(children)
-                  const id = slugify(text)
-                  return <h3 id={id} className="group/heading scroll-mt-6">{children}<HeadingAnchor id={id} size="h-3 w-3" /></h3>
+                  const id = headingId(children)
+                  return (
+                    <h3 id={id || undefined} className="group/heading scroll-mt-6">
+                      {children}
+                      {id ? <HeadingAnchor id={id} size="h-3 w-3" /> : null}
+                    </h3>
+                  )
                 },
                 h4({ children }) {
-                  const text = String(children)
-                  const id = slugify(text)
-                  return <h4 id={id} className="group/heading scroll-mt-6">{children}<HeadingAnchor id={id} size="h-3 w-3" /></h4>
+                  const id = headingId(children)
+                  return (
+                    <h4 id={id || undefined} className="group/heading scroll-mt-6">
+                      {children}
+                      {id ? <HeadingAnchor id={id} size="h-3 w-3" /> : null}
+                    </h4>
+                  )
                 },
                 a({ href, children }) {
                   const isExternal = href?.startsWith('http')

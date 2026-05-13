@@ -3,6 +3,68 @@
 All notable changes to SkillNote will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.5.2] - 2026-05-13
+
+Production-readiness sweep ("Round 9" of the 10-round hardening exercise). Drove the **first-bite path** (GitHub → `npx skillnote start` → web open) and the **Connect page** end-to-end under stressed conditions — bridge daemon missing, ports occupied, corrupted localStorage, killed api, hung locks, podman vs docker, fresh-browser vs returning-user. Catalogued 44 issues; landed 29 fixes. Every silent failure now surfaces an actionable message; every modal has the right ARIA roles; the install-stage UX no longer wedges.
+
+### Added
+
+- **Production `/health` endpoint** — now returns `{status, db, migration}` instead of `{status: "ok"}`. Kubernetes / Prometheus / image-vs-DB-drift detection all work without scraping logs. `status: "ok"` remains the load-bearing field for backwards compat (install.sh wait loop, README curl).
+- **Pre-flight check + `--force` flag on `install.sh` / `skillnote start`** — `install.sh --check` runs only the runtime + binary detection and exits 0/1 (CI-friendly). `skillnote start --force` overrides a stale-but-alive lockfile when a previous start hung.
+- **`<ApiUrlBootstrap />` + synchronous `<head>` script for `?api=<URL>` overrides** — `npx skillnote start --api-port <X>` now auto-opens the web UI with `?api=...`, which a synchronous pre-React script reads + writes to `localStorage['skillnote:api-url']` before the first fetch fires. Same-host-family validation prevents phishing-style cross-origin overrides.
+- **Bridge timeout + actionable error in the Connect modal** — if no `skillnote bridge` daemon claims a dispatched job within 25 seconds, the modal flips from "Waiting for bridge…" to a structured error with the exact remediation copy (start the bridge in another terminal, or use the manual install command).
+- **Skill-list "ghost cleanup"** — `syncSkillsFromApi` now stamps every API-returned skill with `_syncedAt` and drops previously-synced skills that disappear from the API (e.g., after `docker compose down -v`). Genuinely-local skills (no `_syncedAt`) survive intact.
+- **`/skills/<slug>/history` → `/versions` redirect** — old bookmarks keep working; rename-aware slug resolution.
+- **Rich empty state on Connected tab** — first-time users land on a styled prompt explaining what connecting an agent buys them, plus a "Browse agents" primary CTA and a "How it works" docs link.
+- **Two CI smoke scripts** — `scripts/check-readme-links.sh` (link-rot detector, 26+ URLs) and `scripts/check-install-preflight.sh` (asserts `install.sh --check` returns 0).
+- **R9 regression test suite** — `e2e/r9-first-bite-fixes.spec.ts` (11 specs pinning F28 + F30 + F32 + F38 + F40 + F49 + F50 + F52/F53 + F61).
+
+### Changed
+
+- **Connect page revamp** — tabs reordered to `Connected | Browse` (was `Browse | Connected`). "Connected" is now the default landing tab on every visit, even for users with zero agents wired. Pairs with the new empty-state UX.
+- **Canonical Claude Code + OpenClaw marks** — `Claude Code` card now shows the actual `@ClaudeDevs` X/Twitter avatar (pixel-robot mascot, sourced verbatim from `pbs.twimg.com`); `OpenClaw` card shows the canonical claw mark from the `homarr-labs/dashboard-icons` project. Replaces the prior hand-drawn placeholders.
+- **PWA titlebar + dock-icon frame are now neutral black** (`#000000`) instead of teal. The standalone-window chrome no longer reads as a "teal frame around the black icon" — the icon and the titlebar form one continuous mark. In-app accent stays teal (sidebar highlights + focus rings — the SkillNote brand color in functional positions).
+- **`docker-compose.yml` Postgres password is now an env var** — `${SKILLNOTE_DB_PASSWORD:-skillnote}`. Default preserved for backwards compatibility with existing pgdata volumes; override path documented in the header comment.
+- **README prerequisite line lists every supported runtime** — Docker Desktop, OrbStack, Rancher Desktop, Colima, plain Docker Engine on Linux, plus an explicit Podman path for the `install.sh` + raw-`docker compose` flows. Replaces the prior "Docker Desktop only" framing.
+- **Connection banner is `role="status" aria-live="polite"`** — screen readers now announce when the backend goes offline without interrupting the user mid-task.
+- **Delete-skill, Discard-changes, and Disconnect-agent modals are now `role="alertdialog"`** with proper `aria-modal` + `aria-labelledby` + `aria-describedby`. The Disconnect modal also gained an explicit `Cancel` button paired with the destructive action.
+- **API error envelope is now universal** — added a Starlette-level handler so unrouted paths (`/v1/totally-unknown`) return `{error: {code: "NOT_FOUND", message}}` instead of FastAPI's default `{detail: "Not Found"}`. The contract documented in `CLAUDE.md` now holds without exceptions.
+
+### Fixed
+
+- **`getApiBaseUrl()` validates the stored override** — corrupted `localStorage['skillnote:api-url']` values (e.g. `"not-a-url"`) no longer resolve as relative paths against the page origin. Malformed values are silently wiped; the build-time default is restored.
+- **`readStorage()` self-heals corrupted JSON** — non-array shapes and parse failures wipe the key so the next sync writes clean state. Previously the user stayed in a broken-cache state until they manually cleared localStorage.
+- **TipTap editor no longer warns about duplicate `link` extensions** — `StarterKit.configure({ link: false })` so our custom `Link.configure({ openOnClick: false })` wins.
+- **Four pages no longer hit React hydration mismatch on first paint** — `/skills/<slug>/history`, `/skills/<slug>/versions`, `/collections`, and `/collections/<slug>` previously used `useState(() => getSkills())` (a lazy initializer that reads localStorage). Server returned `[]`; client hydrated with the cached array. Switched all four to `useState(empty)` + populate-from-localStorage in `useEffect`.
+- **Stale-but-alive lockfile shows actionable remediation** — `skillnote start` now prints lock age + PID + `ps -p` + `kill` + `--force` instructions when the holder has been alive for ≥ 2 hours.
+- **`/v1/analytics/ratings/<slug>` returns 200 with empty data** instead of 404 for skills that have no ratings yet. Stopped polluting the browser console on every skill-detail page on a fresh install.
+- **`FirstRunGate` checks API skills, not just localStorage** — a fresh-browser user with empty localStorage but seeded backend now lands on `/` (with the seeded skills visible) instead of redirecting to `/integrations`.
+- **PWA install prompt is gated on `visit-count >= 2`** — no more "install our app?" on the very first visit. Strict-mode-double-mount-safe via a `useRef` guard.
+- **PWA install button shows a fallback toast on browsers without `beforeinstallprompt`** — previously a silent no-op. Now: "Use your browser's address-bar Install button, or open the menu and choose 'Install SkillNote'."
+- **CLI `UserFacingError` now prints with full remediation** — the top-level `parseAsync().catch` handler was using bare `console.error('Unexpected error:', err.message)`, dropping the body + remediation list. Now routes through `prettyError` so structured errors render correctly (caught when testing the stale-lock UX).
+- **README boot-banner version no longer drifts** — was hardcoded to `v0.5.0` while `package.json` was `0.5.1`.
+- **README docker-compose curl URL is now pinned to the release tag** (`cli-v0.5.2/deploy/docker-compose.yml`) instead of `master`. Prevents a future master commit from breaking old README readers.
+- **`SKILLS.md` → `SKILL.md`** in the SkillViewTab file-header bar — matched the breadcrumb (singular, the Anthropic convention).
+- **`source ~/.zshrc` README copy now mentions bash fallback** — `or ~/.bashrc if you use bash` so non-zsh users don't follow a broken instruction.
+
+### Security & Deployment
+
+- **New "Security & Deployment" section in `README.md`** — explicitly documents that SkillNote has no API auth layer, lists local-only / LAN-only / internet-exposed deployment shapes, and points at reverse-proxy + auth as the recommended path for any deployment beyond a single dev machine.
+- **`docker-compose.yml` default Postgres password documented as dev-only**, with override path + a one-line note about needing to either rotate via psql or wipe the pgdata volume before a new value takes effect (Postgres only initialises the password from env vars on the very first start).
+
+### Internal
+
+- **Build hygiene retro-deploy** — all earlier-round fixes are now baked into the api + web images, not just the running containers. Container recreation no longer loses transient `docker compose cp` fixes.
+- **Podman build-cache gotcha documented** — Podman's COPY layer cache occasionally fails to invalidate when new alembic migrations are added (image ships with `0001–0016` only while DB is on `0018`, causing a crash loop). Workaround: `docker compose build --no-cache api`. Logged for a proper investigation.
+
+### Notes
+
+- All 33 regression specs pass (`r5-r9` + journey-first-time-user + integrations + connect-modal-a11y).
+- 140/140 CLI unit tests pass.
+- `npx tsc --noEmit` clean.
+- 30/30 README links healthy via the new link-checker.
+- Full audit trail in `ROUND_LOG.md` (R9 section).
+
 ## [0.5.1] - 2026-05-12
 
 Three small UX/correctness fixes filed as followups during the v0.5.0 audit ([#36](https://github.com/luna-prompts/skillnote/issues/36), [#37](https://github.com/luna-prompts/skillnote/issues/37), [#38](https://github.com/luna-prompts/skillnote/issues/38)).

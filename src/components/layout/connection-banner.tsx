@@ -22,7 +22,16 @@ export function ConnectionBanner() {
   if (dismissed || status !== 'offline') return null
 
   return (
-    <div className="bg-red-500/10 border-b border-red-500/20 px-4 py-2 flex items-center gap-2 text-[12px] text-red-700 dark:text-red-400">
+    // R9 F50: `role="status"` + `aria-live="polite"` so screen readers
+    // announce when the backend goes offline without interrupting the user
+    // mid-action. `alert` would be too aggressive for "you might want to
+    // know" connectivity changes.
+    <div
+      role="status"
+      aria-live="polite"
+      aria-label="Backend connection status"
+      className="bg-red-500/10 border-b border-red-500/20 px-4 py-2 flex items-center gap-2 text-[12px] text-red-700 dark:text-red-400"
+    >
       <WifiOff className="h-3.5 w-3.5 shrink-0" />
       <span className="flex-1">Backend unreachable — showing cached data.</span>
       <button
@@ -33,7 +42,13 @@ export function ConnectionBanner() {
         <RefreshCw className={`h-2.5 w-2.5 ${retrying ? 'animate-spin' : ''}`} />
         {retrying ? 'Retrying…' : 'Retry'}
       </button>
-      <button onClick={() => setDismissed(true)} className="p-0.5 hover:opacity-70"><X className="h-3 w-3" /></button>
+      <button
+        onClick={() => setDismissed(true)}
+        aria-label="Dismiss connection banner"
+        className="p-0.5 hover:opacity-70"
+      >
+        <X className="h-3 w-3" />
+      </button>
     </div>
   )
 }

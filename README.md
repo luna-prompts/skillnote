@@ -66,14 +66,16 @@ npx skillnote start
 
 Opens <http://localhost:3000>. That's it.
 
-Requires [Docker Desktop](https://docs.docker.com/get-docker/) and [Node.js 20+](https://nodejs.org/). The CLI pulls the published Docker images from GHCR, brings up the web + API + Postgres stack, waits for healthchecks, and opens the dashboard.
+Requires a container runtime that provides [`docker compose v2`](https://docs.docker.com/compose/install/) — [Docker Desktop](https://docs.docker.com/get-docker/), [OrbStack](https://orbstack.dev/), [Rancher Desktop](https://rancherdesktop.io/), [Colima](https://github.com/abiosoft/colima), or plain Docker Engine on Linux (`sudo apt install docker-compose-plugin` on Debian/Ubuntu). Plus [Node.js 20+](https://nodejs.org/). The runtime must be **running** before you run the command. The CLI pulls the published Docker images from GHCR, brings up the web + API + Postgres stack, waits for healthchecks, and opens the dashboard.
+
+> Podman? `npx skillnote start` is Docker-only (it shells out to `docker compose`), but the **Building from source** and **Docker Compose directly** paths below both work with `podman compose` (Podman 4+) or `podman-compose` — `install.sh` auto-detects.
 
 ### Boot output
 
 ```text
 ┌────────────────────────────────────────────┐
 │  SkillNote ▸  the skill registry for AI    │
-│  v0.5.0 · github.com/luna-prompts/skillnote│
+│  v0.5.2 · github.com/luna-prompts/skillnote│
 └────────────────────────────────────────────┘
 ◇  Prerequisites ok
 ◇  Images pulled
@@ -109,7 +111,7 @@ Requires [Docker Desktop](https://docs.docker.com/get-docker/) and [Node.js 20+]
 If you don't have Node or prefer pure Docker:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/luna-prompts/skillnote/master/deploy/docker-compose.yml -o docker-compose.yml
+curl -fsSL https://raw.githubusercontent.com/luna-prompts/skillnote/cli-v0.5.2/deploy/docker-compose.yml -o docker-compose.yml
 docker compose up -d
 ```
 
@@ -134,6 +136,8 @@ cd skillnote
 
 `./install.sh` builds containers from the local source instead of pulling published images. Use this when you're hacking on SkillNote itself. End users should prefer `npx skillnote start`.
 
+The script auto-detects your container runtime: `docker compose`, `podman compose` (Podman 4+), or `podman-compose`. On macOS/Windows with Podman it'll also start the Podman machine if it's not already running.
+
 </details>
 
 #### Then wire up your AI agent
@@ -146,7 +150,7 @@ cd skillnote
 ```bash
 npx skillnote start
 npx skillnote connect claude-code
-source ~/.zshrc
+source ~/.zshrc      # or ~/.bashrc if you use bash
 ```
 
 The first command boots the backend (pulls published Docker images). The second runs the canonical `/setup/agent` script — registers the plugin marketplace in `~/.claude/settings.json`, installs the SkillNote plugin into `~/.claude/plugins/`, drops picker binaries in `~/.skillnote/bin/`, and adds a shell wrapper to `.zshrc`/`.bashrc`.
@@ -598,6 +602,21 @@ The agent only auto-installs the backend when the resolved host is `http://local
 **Multi-agent OpenClaw setup, all events show as "openclaw-main"**
 
 Fixed in v0.4.0. The log-watcher now derives `agent_name` from the file path (`~/.openclaw/agents/<name>/sessions/...`). If you're on an older skill version, run `clawhub install skillnote@latest` or re-run the curl installer.
+
+---
+
+## Security & Deployment
+
+SkillNote is built for trusted environments: a developer's laptop, a team-shared VM on a private network, or a self-hosted server behind a VPN. Out of the box it has **no authentication layer** on the web UI or API — anything that can reach `:3000` and `:8082` can read and write skills.
+
+Practical guidance:
+
+- **Local-only (default):** `npx skillnote start` binds to `localhost`. Safe.
+- **LAN-only:** set `SKILLNOTE_HOST=<lan-ip>` before `docker compose up -d` to make the UI reachable from teammates on the same network. Assumes the LAN is trusted.
+- **Internet-exposed:** do not point a public port at `:3000` or `:8082` directly. Put it behind a reverse proxy (Caddy, Nginx, Traefik) with basic auth, OAuth, or a Tailscale/Cloudflare Tunnel.
+- **Marketplace imports:** every Marketplace install ultimately writes `SKILL.md` files that your agent will read. Make sure you trust the source before importing — review the skill content in the workspace preview.
+
+Auth on the API itself is on the roadmap — until then, treat reachability as the access boundary.
 
 ---
 

@@ -163,7 +163,7 @@ function CommentInput({ placeholder, onSubmit, onSubmitComment, autoFocus }: { p
   )
 }
 
-function CommentCard({ comment, skillSlug, onDeleted }: { comment: Comment; skillSlug?: string; onDeleted?: () => void }) {
+function CommentCard({ comment, skillSlug, onDeleted, onUpdated }: { comment: Comment; skillSlug?: string; onDeleted?: () => void; onUpdated?: (newBody: string) => void }) {
   const [reactions, setReactions] = useState(comment.reactions)
   const [showMenu, setShowMenu] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
@@ -183,7 +183,11 @@ function CommentCard({ comment, skillSlug, onDeleted }: { comment: Comment; skil
     setEditSaving(true)
     try {
       await updateCommentApi(skillSlug, comment.id, editValue)
-      comment.body = editValue
+      // Notify parent so it re-renders with the new body. The previous
+      // implementation mutated `comment.body` in place, which doesn't trigger
+      // React to re-render — the new text only appeared after the next
+      // unrelated parent render.
+      onUpdated?.(editValue)
       setIsEditing(false)
     } catch {
       // keep editing open on error
@@ -294,6 +298,10 @@ export function SkillCommentsTab({ comments: initialComments, onAddComment, skil
     setLocalComments(prev => prev.filter(c => c.id !== id))
   }
 
+  const handleUpdatedComment = (id: string, newBody: string) => {
+    setLocalComments(prev => prev.map(c => c.id === id ? { ...c, body: newBody } : c))
+  }
+
   const handleSubmitComment = async (body: string): Promise<void> => {
     const newComment = await onAddComment?.(body)
     if (newComment) {
@@ -309,7 +317,7 @@ export function SkillCommentsTab({ comments: initialComments, onAddComment, skil
           <div className="mt-6 space-y-4">
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{localComments.length} Comment{localComments.length !== 1 ? 's' : ''}</p>
             {localComments.map((comment) => (
-              <CommentCard key={comment.id} comment={comment} skillSlug={skillSlug} onDeleted={() => handleDeletedComment(comment.id)} />
+              <CommentCard key={comment.id} comment={comment} skillSlug={skillSlug} onDeleted={() => handleDeletedComment(comment.id)} onUpdated={(newBody) => handleUpdatedComment(comment.id, newBody)} />
             ))}
           </div>
         ) : (

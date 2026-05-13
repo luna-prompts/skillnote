@@ -232,7 +232,7 @@ def test_post_with_linked_usage_id_happy_path(client, db_session, cleanup):
             "author": "claude",
             "body": "linked back to the run",
             "author_type": "agent",
-            "comment_type": "agent_reflection",
+            "comment_type": "agent_observation",
             "linked_usage_id": str(event.id),
         },
     )
@@ -252,7 +252,7 @@ def test_post_with_unknown_linked_usage_id_404(client, db_session, cleanup):
             "author": "claude",
             "body": "x",
             "author_type": "agent",
-            "comment_type": "agent_reflection",
+            "comment_type": "agent_observation",
             "linked_usage_id": str(bogus),
         },
     )
@@ -287,7 +287,7 @@ def test_get_returns_new_fields_for_agent_comment(client, db_session, cleanup):
             "author": "claude",
             "body": "agent body",
             "author_type": "agent",
-            "comment_type": "agent_reflection",
+            "comment_type": "agent_observation",
             "rating": 5,
             "linked_usage_id": str(event.id),
         },
@@ -301,7 +301,7 @@ def test_get_returns_new_fields_for_agent_comment(client, db_session, cleanup):
     assert len(rows) == 1
     row = rows[0]
     assert row["author_type"] == "agent"
-    assert row["comment_type"] == "agent_reflection"
+    assert row["comment_type"] == "agent_observation"
     assert row["rating"] == 5
     assert row["linked_usage_id"] == str(event.id)
 
@@ -444,7 +444,7 @@ def test_post_agent_comment_linked_to_event_with_wrong_skill_422(
             "author": "claude",
             "body": "wrong skill link",
             "author_type": "agent",
-            "comment_type": "agent_reflection",
+            "comment_type": "agent_observation",
             "linked_usage_id": str(event.id),
         },
     )
@@ -468,7 +468,7 @@ def test_post_agent_comment_linked_to_event_with_empty_skill_ids_allowed(
             "author": "claude",
             "body": "no skills recorded in event",
             "author_type": "agent",
-            "comment_type": "agent_reflection",
+            "comment_type": "agent_observation",
             "linked_usage_id": str(event.id),
         },
     )

@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { Sidebar } from '@/components/layout/sidebar'
 import { ConnectionBanner } from '@/components/layout/connection-banner'
 import { FirstRunGate } from '@/components/layout/first-run-gate'
+import { ApiUrlBootstrap } from '@/components/layout/api-url-bootstrap'
 import { PWAInstallPrompt } from '@/components/PWAInstallPrompt'
 import { BookOpen, FolderOpen, Plug2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -42,6 +43,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         {children}
       </div>
 
+      <ApiUrlBootstrap />
       <PWAInstallPrompt />
       <FirstRunGate />
 

@@ -85,8 +85,18 @@ def inspect_source(parsed: Optional[dict], *, token: Optional[str] = None, timeo
             sha = body.get("sha")
     except urllib.error.HTTPError as e:
         if e.code == 404:
-            return InspectResult(error_code="REPO_NOT_FOUND",
-                                 error_message=f"{repo}@{ref} not found")
+            # When `ref` isn't specified, don't include the literal "None" in
+            # the user-facing message. Prior wording: "owner/repo@None not
+            # found" (R7 live-bug L2). Now: "owner/repo not found" if no ref,
+            # "owner/repo@<sha-or-branch> not found" if there is one.
+            location = f"{repo}@{ref}" if ref else repo
+            return InspectResult(
+                error_code="REPO_NOT_FOUND",
+                error_message=(
+                    f"Repository {location} not found. "
+                    "Check the URL, or the repo may be private — add a GitHub token in Settings."
+                ),
+            )
         if e.code == 401 or e.code == 403:
             return InspectResult(error_code="REPO_PRIVATE",
                                  error_message="Add a GitHub token to continue")

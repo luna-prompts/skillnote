@@ -58,6 +58,10 @@
   --secondary-foreground: #111318;
   --muted: #f0f0f2;
   --muted-foreground: #7a7a8a;
+  /* SkillNote teal accent — used for the "Connect" sidebar active item,
+     focus rings, and form-input outlines. Stays as the in-app brand color;
+     the PWA titlebar + dock icon use the neutral black from manifest.ts
+     so the standalone-window chrome doesn't wear the brand band. */
   --accent: #0d9488;
   --accent-foreground: #ffffff;
   --destructive: #dc2626;

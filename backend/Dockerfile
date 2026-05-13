@@ -13,9 +13,13 @@ RUN apt-get update \
 # package on demand into agent bundles.
 
 # Install dependencies first (cached unless pyproject.toml changes).
+# Includes both the runtime `dependencies` and the `[test]` optional-deps
+# (hypothesis, flask, requests) so tests can run inside the container. These
+# dev-deps are tiny relative to the FastAPI surface; not worth a separate
+# image stage for prod.
 COPY backend/pyproject.toml ./
 RUN pip install --no-cache-dir -q -U pip \
-    && pip install --no-cache-dir -q $(python3 -c "import tomllib; print(' '.join(tomllib.load(open('pyproject.toml','rb'))['project']['dependencies']))")
+    && pip install --no-cache-dir -q $(python3 -c "import tomllib; d=tomllib.load(open('pyproject.toml','rb')); print(' '.join(d['project']['dependencies'] + d['project']['optional-dependencies']['test']))")
 
 # Copy backend source.
 COPY backend /app

@@ -3,6 +3,40 @@ set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
+# ── Pre-flight: required tools ────────────────────────────────────
+# Fails fast and clearly if a binary is missing, instead of producing
+# a cryptic "command not found" 200 lines later. The script uses curl,
+# python3, lsof/ss (one of), and a container runtime (docker/podman);
+# the runtime is detected below — this loop catches the rest.
+#
+# A bare `--check` flag runs only this pre-flight and exits 0, so CI
+# or another script can probe the install host without side effects.
+_preflight_missing=""
+for _cmd in curl python3; do
+  command -v "$_cmd" >/dev/null 2>&1 || _preflight_missing="${_preflight_missing} $_cmd"
+done
+if [ -n "$_preflight_missing" ]; then
+  echo ""
+  echo "  Error: missing required tools:${_preflight_missing}"
+  echo "  Install them and retry."
+  echo ""
+  exit 1
+fi
+
+if [ "${1:-}" = "--check" ]; then
+  # The container-runtime detection runs below; do it now for the check.
+  if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+    echo "preflight ok (docker compose v2)"
+    exit 0
+  fi
+  if command -v podman >/dev/null 2>&1 && (command -v podman-compose >/dev/null 2>&1 || podman compose version >/dev/null 2>&1); then
+    echo "preflight ok (podman compose)"
+    exit 0
+  fi
+  echo "preflight failed: no container runtime (need docker compose v2 or podman compose)"
+  exit 1
+fi
+
 # ── Detect container runtime ──────────────────────────────────────
 _detect_compose() {
   if command -v docker &>/dev/null && docker compose version &>/dev/null; then
@@ -259,17 +293,19 @@ for i in $(seq 1 60); do
   fi
   if [ "$i" -eq 60 ]; then
     echo ""
-    echo -e "  ${RED}✗ API didn't become healthy within 120s${NC}"
+    echo -e "  ${RED}✗ API didn't respond to /health after 60 attempts × 2s = 2 minutes${NC}"
     echo ""
     echo -e "  ${DIM}Last 20 lines of API logs:${NC}"
     compose logs --tail 20 api 2>/dev/null | sed 's/^/    /' || true
     echo ""
-    echo -e "  ${BOLD}Common causes:${NC}"
-    echo -e "    ${DIM}•${NC} Database still migrating (wait + retry)"
-    echo -e "    ${DIM}•${NC} Alembic migration error — check logs above"
-    echo -e "    ${DIM}•${NC} Port ${API_PORT} bound by another process on the container-side"
+    echo -e "  ${BOLD}Most common causes (in order):${NC}"
+    echo -e "    ${DIM}1.${NC} Slow first boot — Alembic migrations on first start can take 30-90s"
+    echo -e "       on small hosts; retry once with: ${CYAN}./install.sh${NC}"
+    echo -e "    ${DIM}2.${NC} Alembic migration error — see the logs above for a Python traceback"
+    echo -e "    ${DIM}3.${NC} Disk full — ${CYAN}docker system df${NC} / free up with ${CYAN}docker system prune${NC}"
+    echo -e "    ${DIM}4.${NC} Port ${API_PORT} bound by another process inside the container"
     echo ""
-    echo -e "  ${BOLD}To inspect:${NC}  ${CYAN}$COMPOSE -f docker-compose.yml logs api${NC}"
+    echo -e "  ${BOLD}To inspect further:${NC}  ${CYAN}$COMPOSE -f docker-compose.yml logs api${NC}"
     echo ""
     exit 1
   fi

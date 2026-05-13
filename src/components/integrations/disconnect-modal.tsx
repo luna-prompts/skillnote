@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ArrowRight, ChevronRight, Loader2, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -29,6 +29,17 @@ export function DisconnectModal({
 }: Props) {
   const [showManifest, setShowManifest] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  // Tracks whether the modal is still mounted, so the `finally` block in
+  // handleConfirm doesn't call setState on a dead component when the parent
+  // unmounts us mid-request (e.g. confirmDisconnect's own finally sets
+  // disconnectingAgent = null before our finally runs).
+  const mountedRef = useRef(true)
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
 
   useEffect(() => {
     if (!open) return
@@ -59,7 +70,7 @@ export function DisconnectModal({
     try {
       await onConfirm()
     } finally {
-      setSubmitting(false)
+      if (mountedRef.current) setSubmitting(false)
     }
   }
 
@@ -117,29 +128,48 @@ export function DisconnectModal({
           </button>
         </div>
 
+        {/* R9 F61: explicit Cancel button next to the destructive action.
+            Pre-fix, the only ways to abort were ESC, click-outside, or the
+            tiny X — none of which are discoverable on touch / for keyboard
+            users who don't know ESC closes modals. Standard alert-dialog
+            UX pairs destructive + cancel. */}
         <div className="px-6 pb-5 space-y-3">
-          <button
-            type="button"
-            onClick={handleConfirm}
-            disabled={submitting}
-            className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-md
-                       bg-red-600 hover:bg-red-700 dark:bg-red-600 dark:hover:bg-red-500
-                       text-white text-[13px] font-medium
-                       transition-colors disabled:opacity-70 disabled:cursor-wait
-                       focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
-          >
-            {submitting ? (
-              <>
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                Disconnecting…
-              </>
-            ) : (
-              <>
-                Disconnect {agentLabel}
-                <ArrowRight className="h-3.5 w-3.5" />
-              </>
-            )}
-          </button>
+          <div className="flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => !submitting && onClose()}
+              disabled={submitting}
+              className="inline-flex items-center justify-center px-4 py-2 rounded-md
+                         border border-border bg-background text-[13px] font-medium text-foreground
+                         hover:bg-muted/50 transition-colors
+                         disabled:opacity-50 disabled:cursor-not-allowed
+                         focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleConfirm}
+              disabled={submitting}
+              className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-md
+                         bg-red-600 hover:bg-red-700 dark:bg-red-600 dark:hover:bg-red-500
+                         text-white text-[13px] font-medium
+                         transition-colors disabled:opacity-70 disabled:cursor-wait
+                         focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+            >
+              {submitting ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Disconnecting…
+                </>
+              ) : (
+                <>
+                  Disconnect {agentLabel}
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </>
+              )}
+            </button>
+          </div>
 
           <div className="pt-2 border-t border-border/40">
             <button

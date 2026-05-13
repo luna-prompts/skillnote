@@ -12,9 +12,16 @@ import { SkillVersionsTab } from '@/components/skills/tabs/SkillHistoryTab'
 export default function VersionsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params)
   const router = useRouter()
-  const [skill, setSkill] = useState<Skill | null>(() => getSkills().find(s => s.slug === slug) ?? null)
+  // R9 F36: don't read localStorage in the initial useState — that's the SSR
+  // hydration mismatch trap. Server gets [] (no window), client has the
+  // skill, the two trees diverge. Populate via effect instead.
+  const [skill, setSkill] = useState<Skill | null>(null)
+  const [hydrated, setHydrated] = useState(false)
 
   useEffect(() => {
+    setHydrated(true)
+    const local = getSkills().find(s => s.slug === slug) ?? null
+    setSkill(local)
     fetchSkill(slug)
       .then(setSkill)
       .catch(() => {})
@@ -29,10 +36,10 @@ export default function VersionsPage({ params }: { params: Promise<{ slug: strin
     }
   }, [slug, router])
 
-  if (!skill) {
+  if (!hydrated || !skill) {
     return (
       <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
-        Skill not found.
+        {hydrated ? 'Skill not found.' : 'Loading…'}
       </div>
     )
   }

@@ -43,23 +43,27 @@ test.describe('/integrations — Browse cards + Connected rows', () => {
     ])
     await page.goto('/integrations')
 
-    await expect(page.getByRole('heading', { name: 'Integrations', level: 1 })).toBeVisible()
+    // The page is titled "Connect" (the integrations route is the URL, not the brand).
+    await expect(page.getByRole('heading', { name: 'Connect', level: 1 })).toBeVisible()
     await expect(page.getByText(/Browse the catalog/)).toHaveCount(0)
   })
 
-  test('default tab is Browse when nothing is connected', async ({ page }) => {
+  test('default tab is Connected even when nothing is connected (R9 Connect round)', async ({ page }) => {
+    // Connected is now the primary surface — first-time users land on the
+    // rich empty state that explains what connecting buys them and offers a
+    // Browse-agents CTA. Previously this test asserted Browse-default.
     await mockSetup(page, [
       { agent: 'claude-code', state: 'pending', installed_at: null, last_active_at: null, calls_24h: 0, calls_7d: 0 },
       { agent: 'openclaw', state: 'pending', installed_at: null, last_active_at: null, calls_24h: 0, calls_7d: 0 },
     ])
     await page.goto('/integrations')
 
-    const browseTab = page.getByRole('tab', { name: /Browse/ })
-    await expect(browseTab).toHaveAttribute('data-state', 'active', { timeout: 10_000 })
+    const connectedTab = page.getByRole('tab', { name: /Connected/ })
+    await expect(connectedTab).toHaveAttribute('data-state', 'active', { timeout: 10_000 })
 
-    // Both agents listed in browse grid
-    await expect(page.getByText('Claude Code', { exact: true }).first()).toBeVisible()
-    await expect(page.getByText('OpenClaw', { exact: true }).first()).toBeVisible()
+    // Empty state copy + CTAs
+    await expect(page.getByText(/No agents connected yet/)).toBeVisible()
+    await expect(page.getByRole('button', { name: /Browse agents/ })).toBeVisible()
   })
 
   test('default tab is Connected when at least one agent is wired', async ({ page }) => {
@@ -77,17 +81,17 @@ test.describe('/integrations — Browse cards + Connected rows', () => {
     await expect(page.getByText(/Connected.*ago/).first()).toBeVisible()
   })
 
-  test('Connected tab shows empty state when zero agents wired', async ({ page }) => {
+  test('Connected tab shows rich empty state when zero agents wired (R9 Connect round)', async ({ page }) => {
     await mockSetup(page, [
       { agent: 'claude-code', state: 'pending', installed_at: null, last_active_at: null, calls_24h: 0, calls_7d: 0 },
       { agent: 'openclaw', state: 'pending', installed_at: null, last_active_at: null, calls_24h: 0, calls_7d: 0 },
     ])
     await page.goto('/integrations')
 
-    await page.getByRole('tab', { name: /Connected/ }).click()
-
-    await expect(page.getByText(/Nothing connected/)).toBeVisible()
-    await expect(page.getByRole('button', { name: /^Browse$/ })).toBeVisible()
+    // Already the default tab — no click needed.
+    await expect(page.getByText(/No agents connected yet/)).toBeVisible()
+    await expect(page.getByRole('button', { name: /Browse agents/ })).toBeVisible()
+    await expect(page.getByRole('link', { name: 'How it works' })).toBeVisible()
   })
 
   test('Browse tab shows portrait cards with "Official" badge + Install affordance', async ({ page }) => {
@@ -96,6 +100,9 @@ test.describe('/integrations — Browse cards + Connected rows', () => {
       { agent: 'openclaw', state: 'pending', installed_at: null, last_active_at: null, calls_24h: 0, calls_7d: 0 },
     ])
     await page.goto('/integrations')
+    // R9 Connect round: Connected is the default tab; click Browse to get
+    // to the portrait-cards surface that this test asserts on.
+    await page.getByRole('tab', { name: /Browse/ }).click()
 
     // Badge on each card — uppercase OFFICIAL chip
     const officialBadges = page.getByText('Official', { exact: true })

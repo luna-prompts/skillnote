@@ -62,7 +62,11 @@ export function AgentCard(props: Props) {
   return (
     <button
       type="button"
-      onClick={() => props.onOpenDetail?.()}
+      // Outer chrome click does whatever the inner Install/Connected button
+      // would do for this state. Previously this always called onOpenDetail,
+      // which routed pending agents to the Connected tab (where they don't
+      // appear) — confusing for new users. R5 live-bug L2-R4.
+      onClick={handle}
       className={cn(
         'group/card relative flex flex-col text-left min-h-[260px]',
         'rounded-xl border border-border/60 bg-card overflow-hidden',

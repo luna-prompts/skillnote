@@ -143,6 +143,31 @@ export function ConnectModal({
     }
   }, [state, job, onSuccess])
 
+  // R9 F60: client-side bridge timeout. The job is dispatched successfully
+  // to the API, but if no `skillnote bridge` daemon is running locally,
+  // nothing ever claims it — the modal would otherwise sit at "Waiting for
+  // bridge…" forever with no signal that something is wrong. After 25s of
+  // a still-pending job, surface an actionable error so the user can fall
+  // back to the manual command.
+  //
+  // We depend on `state.kind` + `job?.status` (primitives) rather than the
+  // full `job` object — `useJobPolling` returns a fresh object every poll
+  // tick, which would otherwise clear and restart the timer on each tick
+  // and the timeout would never fire.
+  const jobStatus = job?.status
+  useEffect(() => {
+    if (state.kind !== 'running') return
+    if (jobStatus !== 'pending') return
+    const timer = setTimeout(() => {
+      setState({
+        kind: 'error',
+        reason:
+          'No `skillnote bridge` daemon detected after 25s. Start it in another terminal — or use the Manual install command below.',
+      })
+    }, 25_000)
+    return () => clearTimeout(timer)
+  }, [state.kind, jobStatus])
+
   // ESC to close. Disabled while running to prevent accidental abort.
   useEffect(() => {
     if (!open) return
@@ -154,6 +179,20 @@ export function ConnectModal({
     window.addEventListener('keydown', handle)
     return () => window.removeEventListener('keydown', handle)
   }, [open, state.kind, onClose])
+
+  // Focus the modal container on open so keyboard users see focus move into
+  // the dialog. Without this, focus stays on whatever button triggered the
+  // modal (the AgentCard Install button), and Tab jumps to whatever is next
+  // in the page — not the modal's inner controls. WCAG 2.4.3.
+  const containerRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    if (!open) return
+    // The ref is already attached by the time this effect runs (React's
+    // commit → ref-attach → effects order). The `queueMicrotask` defers
+    // the focus() call past the synchronous CSS animation start so the
+    // visible focus ring isn't painted on a still-collapsing modal.
+    queueMicrotask(() => containerRef.current?.focus())
+  }, [open])
 
   if (!open) return null
 
@@ -175,11 +214,14 @@ export function ConnectModal({
 
   return (
     <div
+      ref={containerRef}
       role="dialog"
       aria-modal="true"
       aria-label={`Install ${agentLabel}`}
+      tabIndex={-1}
       className="fixed inset-0 z-50 flex items-center justify-center p-4
-                 motion-safe:animate-[modal-in_180ms_ease-out]"
+                 motion-safe:animate-[modal-in_180ms_ease-out]
+                 focus:outline-none"
     >
       {/* Backdrop — click outside disabled while running */}
       <div

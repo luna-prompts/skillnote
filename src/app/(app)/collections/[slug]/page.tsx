@@ -17,7 +17,8 @@ import { toast } from 'sonner'
 export default function CollectionDetailPage() {
   const { slug } = useParams<{ slug: string }>()
   const router = useRouter()
-  const [skills, setSkills] = useState(getSkills())
+  // R9 F36: SSR-safe — start empty, populate from localStorage in the effect.
+  const [skills, setSkills] = useState<Skill[]>([])
   const [showAddModal, setShowAddModal] = useState(false)
 
   // Per-row remove state
@@ -44,6 +45,8 @@ export default function CollectionDetailPage() {
   const [confirmDelete, setConfirmDelete] = useState(false)
 
   useEffect(() => {
+    // Local-first paint (R9 F36): show cached skills immediately, then refresh.
+    setSkills(getSkills())
     syncSkillsFromApi().then(setSkills).catch(() => {})
     fetchCollectionsApi().then(setAllCollections).catch(() => {})
     const decodedSlug = decodeCollectionSlug(slug)

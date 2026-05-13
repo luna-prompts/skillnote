@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
+import { ArrowRight, Plug2 } from 'lucide-react'
 import { TopBar } from '@/components/layout/topbar'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { AgentCard } from '@/components/integrations/agent-card'
@@ -20,6 +21,10 @@ interface AgentSnapshot {
   state: ConnectionState
   installedAt?: string
   lastCallAt?: string
+  /** When this row entered `connecting` locally — used to detect a stale
+   *  install that the backend can safely override (e.g. user closed the
+   *  browser mid-install or the bridge daemon died). */
+  connectingSince?: number
 }
 
 interface SetupAgentStatus {
@@ -78,6 +83,13 @@ const AGENTS: AgentMeta[] = [
 
 const ALL_STATES: ConnectionState[] = ['pending', 'connecting', 'active', 'idle']
 const POLL_INTERVAL_MS = 5_000
+// How long a local `connecting` state is trusted before the backend's view
+// is allowed to override it. Without this, killing the browser mid-install
+// or losing the bridge daemon strands the UI in `connecting` forever, because
+// the polling loop refuses to overwrite a `connecting` row. 30s is long
+// enough that a normal install (typically ~10s) won't be visually flipped to
+// `active` before the modal's own success animation completes.
+const CONNECTING_STALE_AFTER_MS = 30_000
 
 export default function IntegrationsPage() {
   const [apiBase, setApiBase] = useState<string>('')
@@ -115,8 +127,21 @@ export default function IntegrationsPage() {
         if (cancelled) return
         setSnapshots((prev) => {
           const next = { ...prev }
+          const now = Date.now()
           for (const row of rows) {
-            if (prev[row.agent]?.state === 'connecting') continue
+            const local = prev[row.agent]
+            // Don't overwrite an in-flight install — UNLESS the local
+            // `connecting` is older than CONNECTING_STALE_AFTER_MS. Without
+            // this escape hatch, killing the browser mid-install or losing
+            // the bridge stranded the row in `connecting` forever.
+            if (local?.state === 'connecting') {
+              // Missing `connectingSince` (`?? 0`) is treated as "always stale"
+              // by design — if a future code path sets `state: 'connecting'`
+              // without stamping the timestamp, we'd rather have backend state
+              // take over on the next poll than freeze the row forever.
+              const since = local.connectingSince ?? 0
+              if (now - since < CONNECTING_STALE_AFTER_MS) continue
+            }
             next[row.agent] = {
               id: row.agent,
               state: row.state as ConnectionState,
@@ -169,7 +194,7 @@ export default function IntegrationsPage() {
       setPendingJob({ agent, jobId: id })
       setSnapshots((prev) => ({
         ...prev,
-        [agent]: { ...prev[agent], state: 'connecting' },
+        [agent]: { ...prev[agent], state: 'connecting', connectingSince: Date.now() },
       }))
       return true
     } catch (err) {
@@ -278,14 +303,18 @@ export default function IntegrationsPage() {
   })
   const connectedCount = connected.length
 
-  // First-load tab resolution. Only set the default once we've actually
-  // heard back from /v1/setup/agents — otherwise we'd default to "Browse"
-  // every time, even for returning users who already have connections.
+  // R9 (Connect-page round): Connected is the primary surface — agents you
+  // already wired in are the thing you most often come back to. Default to
+  // Connected always; the inner empty state for first-time users invites
+  // them to Browse with a one-click button. Previously this branched on
+  // `connectedCount > 0` so a fresh install defaulted to Browse — which made
+  // the tab order feel like Browse-first. Now the tab order is
+  // Connected | Browse and the default lands on Connected.
   useEffect(() => {
     if (activeTab !== null) return
     if (!hydrated) return
-    setActiveTab(connectedCount > 0 ? 'connected' : 'browse')
-  }, [activeTab, hydrated, connectedCount])
+    setActiveTab('connected')
+  }, [activeTab, hydrated])
 
   const renderRow = (agent: AgentMeta) => {
     const snap = effective[agent.id]
@@ -355,19 +384,12 @@ export default function IntegrationsPage() {
           </header>
 
           <Tabs
-            value={activeTab ?? 'browse'}
+            value={activeTab ?? 'connected'}
             onValueChange={(v) => setActiveTab(v as 'browse' | 'connected')}
           >
             <TabsList variant="line" className="mb-5 w-fit">
-              <TabsTrigger
-                value="browse"
-                className="!flex-none px-3 text-[13px]"
-              >
-                Browse
-                <span className="ml-1.5 text-[11px] text-muted-foreground/70 tabular-nums">
-                  {AGENTS.length}
-                </span>
-              </TabsTrigger>
+              {/* Connected first — it's the primary surface for returning
+                  users and the activation-funnel target for new users. */}
               <TabsTrigger
                 value="connected"
                 className="!flex-none px-3 text-[13px]"
@@ -375,6 +397,15 @@ export default function IntegrationsPage() {
                 Connected
                 <span className="ml-1.5 text-[11px] text-muted-foreground/70 tabular-nums">
                   {connectedCount}
+                </span>
+              </TabsTrigger>
+              <TabsTrigger
+                value="browse"
+                className="!flex-none px-3 text-[13px]"
+              >
+                Browse
+                <span className="ml-1.5 text-[11px] text-muted-foreground/70 tabular-nums">
+                  {AGENTS.length}
                 </span>
               </TabsTrigger>
             </TabsList>
@@ -462,24 +493,56 @@ function labelOf(id: AgentId): string {
 
 // ─── Empty state for the Connected tab ────────────────────────────────────
 
+/**
+ * R9 Connect-focused round: Connected is now the default tab even for fresh
+ * installs, so the empty state has to do real onboarding work — explain what
+ * "connecting an agent" buys the user AND give a one-click jump to Browse.
+ * Previous copy was a single muted sentence + a small Browse button; now we
+ * lead with the value prop and give the primary action visual weight.
+ */
 function EmptyConnected({ onBrowse }: { onBrowse: () => void }) {
   return (
-    <div className="rounded-xl border border-dashed border-border/70 bg-card/20 px-6 py-12 text-center">
-      <p className="text-[14px] font-medium text-foreground">
-        Nothing connected
-      </p>
-      <p className="mt-1 text-[13px] text-muted-foreground/80">
-        Pick an agent from Browse to wire it in.
-      </p>
-      <button
-        type="button"
-        onClick={onBrowse}
-        className="mt-5 inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-md
-                   border border-border bg-background text-[13px] font-medium text-foreground
-                   hover:bg-muted/50 transition-colors"
+    <div
+      className="rounded-xl border border-dashed border-border/70 bg-card/20
+                 px-6 py-12 text-center"
+    >
+      <div
+        className="mx-auto mb-4 flex h-10 w-10 items-center justify-center
+                   rounded-full bg-muted/60 text-muted-foreground/80"
+        aria-hidden="true"
       >
-        Browse
-      </button>
+        <Plug2 className="h-5 w-5" />
+      </div>
+      <p className="text-[15px] font-semibold text-foreground tracking-tight">
+        No agents connected yet
+      </p>
+      <p className="mx-auto mt-1.5 max-w-sm text-[12.5px] text-muted-foreground/85 leading-relaxed">
+        Wire in Claude Code or OpenClaw and SkillNote will sync your skills,
+        stream usage analytics, and let you publish skills with one command.
+      </p>
+      <div className="mt-5 flex items-center justify-center gap-2">
+        <button
+          type="button"
+          onClick={onBrowse}
+          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-md
+                     bg-foreground text-background text-[13px] font-medium
+                     hover:opacity-90 transition-opacity
+                     focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+        >
+          Browse agents
+          <ArrowRight className="h-3.5 w-3.5" />
+        </button>
+        <a
+          href="https://github.com/luna-prompts/skillnote#readme"
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-1 px-3 py-2 rounded-md
+                     text-[13px] text-muted-foreground hover:text-foreground
+                     hover:bg-muted/50 transition-colors"
+        >
+          How it works
+        </a>
+      </div>
     </div>
   )
 }

@@ -62,6 +62,13 @@ claude-code-source/
 test-results/
 .playwright-mcp/
 
+# Hardening-round audit artifacts (screenshots, intermediate notes)
+.audit/
+
+# Ad-hoc screenshots dropped at repo root by interactive iteration sessions.
+# Move anything you want to keep into docs/ or screenshots/.
+/*.png
+
 # Claude Code project state (per-machine)
 .claude/
 

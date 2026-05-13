@@ -1,11 +1,15 @@
 import logging
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Depends
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from sqlalchemy import text
+from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.db.session import get_db
 
 # Ensure our application loggers (skillnote.*) propagate to uvicorn's stdout
 # handler. Uvicorn only configures its own loggers by default, so named app
@@ -62,10 +66,21 @@ async def enforce_https(request: Request, call_next):
 
 
 @app.exception_handler(HTTPException)
+@app.exception_handler(StarletteHTTPException)
 async def http_exception_handler(_: Request, exc: HTTPException):
+    """
+    R9 F57: also handle Starlette's HTTPException (raised by routing for
+    unrouted paths) so EVERY 404/405 from this API comes back in the
+    documented `{"error": {"code", "message"}}` shape — clients can rely
+    on `body.error.code` being present.
+    """
     detail = exc.detail
     if isinstance(detail, dict) and "code" in detail and "message" in detail:
         payload = detail
+    elif exc.status_code == 404:
+        payload = {"code": "NOT_FOUND", "message": str(detail) if detail else "Not Found"}
+    elif exc.status_code == 405:
+        payload = {"code": "METHOD_NOT_ALLOWED", "message": str(detail) if detail else "Method Not Allowed"}
     else:
         payload = {"code": "HTTP_ERROR", "message": str(detail)}
     return JSONResponse(status_code=exc.status_code, content={"error": payload})
@@ -129,5 +144,38 @@ app.include_router(cli_router)
 
 
 @app.get("/health")
-def health():
-    return {"status": "ok"}
+def health(db: Session = Depends(get_db)):
+    """
+    R9 F56: production-grade health endpoint.
+
+    Returns:
+      - status:    "ok" if reachable + DB query succeeded, otherwise "degraded"
+      - db:        "ok" if a trivial SELECT succeeds, otherwise the error class
+      - migration: current head from alembic_version (lets ops detect when a
+                   running container is behind the migrations baked into a
+                   newer image — exactly the F44 surface)
+
+    Keeping the response shape backwards-compatible: `status: "ok"` remains
+    the load-bearing field for existing callers (install.sh wait loop,
+    npx skillnote status, README curl examples). New fields are additive.
+    """
+    db_status: str = "ok"
+    migration_version: str | None = None
+    try:
+        # Trivial query — exercises the connection pool + transactional path.
+        db.execute(text("SELECT 1")).scalar_one()
+        try:
+            row = db.execute(text("SELECT version_num FROM alembic_version")).first()
+            migration_version = row[0] if row else None
+        except Exception:  # noqa: BLE001
+            # alembic_version doesn't exist on a freshly-init'd DB before
+            # the first `alembic upgrade head` — that's OK, leave as None.
+            migration_version = None
+    except Exception as exc:  # noqa: BLE001
+        db_status = type(exc).__name__
+
+    return {
+        "status": "ok" if db_status == "ok" else "degraded",
+        "db": db_status,
+        "migration": migration_version,
+    }

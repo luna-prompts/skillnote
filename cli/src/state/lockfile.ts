@@ -36,10 +36,23 @@ function isAlive(pid: number): boolean {
   }
 }
 
+export interface AcquireLockOptions {
+  /** Override an alive-but-stale lock (e.g., a hung process). */
+  force?: boolean
+  /** Override the lockfile path (tests only — production uses getPaths()). */
+  path?: string
+}
+
 export async function acquireLock(
   version: string,
-  path: string = getPaths().lockFile,
+  // Accept a plain string for the second arg to preserve the (version, path)
+  // signature the unit tests have used since the original implementation —
+  // saves a wholesale rewrite of the lockfile tests when adding `force`.
+  pathOrOptions: string | AcquireLockOptions = {},
 ): Promise<() => Promise<void>> {
+  const options: AcquireLockOptions =
+    typeof pathOrOptions === 'string' ? { path: pathOrOptions } : pathOrOptions
+  const path = options.path ?? getPaths().lockFile
   await mkdir(dirname(path), { recursive: true })
 
   // Check for existing lock.
@@ -47,7 +60,12 @@ export async function acquireLock(
     const raw = await readFile(path, 'utf8')
     const existing = JSON.parse(raw) as LockBody
     if (existing.pid && existing.pid !== process.pid && isAlive(existing.pid)) {
-      throw new LockHeldError(existing.pid, existing.startedAt)
+      if (!options.force) {
+        throw new LockHeldError(existing.pid, existing.startedAt)
+      }
+      // R9 F26/F34: caller explicitly opted to override an alive-but-stale lock
+      // (hung process holding lock for hours). The user has accepted the
+      // responsibility of not killing a legitimate concurrent start.
     }
     // Stale lock — owner is dead. Continue and overwrite.
   } catch (err) {

@@ -1,10 +1,14 @@
 # SkillNote — standalone docker-compose for self-hosting
 #
-# For users who want to run SkillNote with Docker directly (no Node / npx).
-# Pinned to v0.5.1; bump the image tags below to upgrade.
+# This is the CANONICAL compose file for end users: pulls pre-built images
+# from GHCR (no local build needed). Pinned to v0.5.2; bump the image tags
+# below to upgrade.
+#
+# Contributors hacking on SkillNote itself should use the root
+# docker-compose.yml (which builds from source).
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/luna-prompts/skillnote/master/deploy/docker-compose.yml -o docker-compose.yml
+#   curl -fsSL https://raw.githubusercontent.com/luna-prompts/skillnote/cli-v0.5.2/deploy/docker-compose.yml -o docker-compose.yml
 #   docker compose up -d
 #
 # Web UI:  http://localhost:3000
@@ -16,6 +20,15 @@
 #
 # To bind to your LAN so other devices can reach the UI:
 #   SKILLNOTE_HOST=<your-lan-ip> docker compose up -d
+#
+# SECURITY: the default Postgres password is "skillnote" — dev-only.
+# Override SKILLNOTE_DB_PASSWORD for any shared deploy. (If you've
+# already booted once, you'll need to either rotate the password via
+# psql or wipe the pgdata volume before the new value takes effect,
+# since Postgres initialises the password from env vars only on the
+# very first start.)
+# Do not expose ports 3000/8082 to the public internet without a reverse
+# proxy + auth — there is no auth layer on the API itself.
 
 name: skillnote
 
@@ -25,7 +38,7 @@ services:
     environment:
       POSTGRES_DB: skillnote
       POSTGRES_USER: skillnote
-      POSTGRES_PASSWORD: skillnote
+      POSTGRES_PASSWORD: ${SKILLNOTE_DB_PASSWORD:-skillnote}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -36,9 +49,9 @@ services:
     restart: unless-stopped
 
   api:
-    image: ghcr.io/luna-prompts/skillnote-api:0.5.1
+    image: ghcr.io/luna-prompts/skillnote-api:0.5.2
     environment:
-      SKILLNOTE_DATABASE_URL: postgresql+psycopg://skillnote:skillnote@postgres:5432/skillnote
+      SKILLNOTE_DATABASE_URL: postgresql+psycopg://skillnote:${SKILLNOTE_DB_PASSWORD:-skillnote}@postgres:5432/skillnote
       SKILLNOTE_BUNDLE_STORAGE_DIR: /app/data/bundles
       SKILLNOTE_CORS_ORIGINS: "http://${SKILLNOTE_HOST:-localhost}:${SKILLNOTE_WEB_PORT:-3000},http://localhost:${SKILLNOTE_WEB_PORT:-3000},http://127.0.0.1:${SKILLNOTE_WEB_PORT:-3000}"
     ports:
@@ -62,7 +75,7 @@ services:
     restart: unless-stopped
 
   web:
-    image: ghcr.io/luna-prompts/skillnote-web:0.5.1
+    image: ghcr.io/luna-prompts/skillnote-web:0.5.2
     ports:
       - "${SKILLNOTE_WEB_PORT:-3000}:3000"
     environment:

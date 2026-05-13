@@ -51,7 +51,10 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
-  themeColor: "#0d9488",
+  // R9: match `src/app/manifest.ts` — drop the teal brand accent from the
+  // standalone-app chrome. Pure black so the titlebar + dock-icon frame
+  // match the icon's own black background.
+  themeColor: "#000000",
 };
 
 export default function RootLayout({
@@ -68,6 +71,33 @@ export default function RootLayout({
             Next's metadata API requires it in the `icons.apple` field rather than
             auto-detecting public/apple-touch-icon.png. */}
         <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+        {/* R9 F40: pre-React, synchronous capture of the `?api=<URL>` query
+            param. Without this, the FIRST API fetch fires before
+            <ApiUrlBootstrap /> mounts → it uses the build-time default
+            (`http://localhost:8082`) → connection refused → "Backend
+            unreachable" flash. Running this in <head> guarantees the
+            override lands in localStorage before any client code reads
+            `skillnote:api-url`. The component still cleans up the URL
+            param + re-validates after hydration. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+(function () {
+  try {
+    var u = new URL(location.href);
+    var raw = u.searchParams.get('api');
+    if (!raw) return;
+    var c;
+    try { c = new URL(raw); } catch (e) { return; }
+    if (c.protocol !== 'http:' && c.protocol !== 'https:') return;
+    var sameHost = c.hostname === 'localhost' || c.hostname === '127.0.0.1' || c.hostname === location.hostname;
+    if (!sameHost) return;
+    try { localStorage.setItem('skillnote:api-url', c.origin); } catch (e) {}
+  } catch (e) {}
+})();
+            `.trim(),
+          }}
+        />
       </head>
       <body
         className={`${dmSans.variable} ${jetbrainsMono.variable} antialiased`}
