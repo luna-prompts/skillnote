@@ -86,6 +86,28 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
           )
         })}
 
+        {/* Analytics — usage data for skills you own. Lives in WORKSPACE
+            because it's a view *of* your skills, not part of the agent
+            wire-up flow. The Connect group below is reserved for agent
+            integration. */}
+        {(() => {
+          const isActive = pathname.startsWith('/analytics')
+          return (
+            <Link
+              href="/analytics"
+              className={cn(
+                'flex items-center gap-2.5 px-2.5 py-2 rounded-md text-[13px] font-medium transition-all duration-150',
+                isActive
+                  ? 'bg-accent/12 text-accent border-l-2 border-accent -ml-px'
+                  : 'text-[var(--muted-foreground)] hover:text-[var(--sidebar-foreground)] hover:bg-[var(--sidebar-accent)]'
+              )}
+            >
+              <BarChart2 className={cn('h-[15px] w-[15px] shrink-0', isActive ? 'text-accent' : '')} />
+              Analytics
+            </Link>
+          )
+        })()}
+
         {/* Marketplace — install skills from Claude Code plugin marketplaces */}
         <div className="pt-3 mt-1.5 border-t border-[var(--sidebar-border)]/40">
           {(() => {
@@ -107,26 +129,9 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
           })()}
         </div>
 
-        {/* Connect section */}
+        {/* Connect section — agent wire-up (Claude Code, OpenClaw). */}
         <div className="pt-3 mt-1.5 border-t border-[var(--sidebar-border)]/40">
           <p className="text-[10px] font-semibold text-[var(--muted-foreground)]/50 uppercase tracking-widest px-2 mb-2">Connect</p>
-          {(() => {
-            const isActive = pathname.startsWith('/analytics')
-            return (
-              <Link
-                href="/analytics"
-                className={cn(
-                  'flex items-center gap-2.5 px-2.5 py-2 rounded-md text-[13px] font-medium transition-all duration-150',
-                  isActive
-                    ? 'bg-accent/12 text-accent border-l-2 border-accent -ml-px'
-                    : 'text-[var(--muted-foreground)] hover:text-[var(--sidebar-foreground)] hover:bg-[var(--sidebar-accent)]'
-                )}
-              >
-                <BarChart2 className={cn('h-[15px] w-[15px] shrink-0', isActive ? 'text-accent' : '')} />
-                Analytics
-              </Link>
-            )
-          })()}
           {(() => {
             const isActive = pathname.startsWith('/integrations')
             return (
