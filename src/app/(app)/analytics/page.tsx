@@ -317,9 +317,11 @@ function SummaryCard({
           {/*
             Numeric values keep the big 22px tabular display. String
             values (e.g. the "Most Called" skill slug) drop to 15px
-            mono with `truncate` so long slugs like
-            `superpowers:brainstorming` don't overflow the card; the
-            full value is preserved as a tooltip via `title`.
+            mono and wrap on word boundaries so the full slug stays
+            visible. We insert a zero-width space (​) after `:`
+            `-` and `/` so the browser prefers breaking at those
+            natural slug separators rather than mid-word. Falls back
+            to `break-words` for any leftover overflow.
           */}
           {numVal !== null ? (
             <p className={cn(
@@ -329,14 +331,13 @@ function SummaryCard({
               {animated.toLocaleString()}
             </p>
           ) : (
-            <p
-              className={cn(
-                'text-[15px] font-mono font-semibold leading-tight truncate',
-                accent ? 'text-accent' : 'text-foreground'
-              )}
-              title={typeof value === 'string' ? value : undefined}
-            >
-              {value ?? '—'}
+            <p className={cn(
+              'text-[15px] font-mono font-semibold leading-snug break-words',
+              accent ? 'text-accent' : 'text-foreground'
+            )}>
+              {typeof value === 'string' && value
+                ? value.replace(/([:/_-])/g, '$1​')
+                : (value ?? '—')}
             </p>
           )}
           {trendPct !== null && trendPct !== undefined && (
