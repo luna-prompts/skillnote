@@ -17,7 +17,7 @@ import { test, expect, type Page, type Route } from '@playwright/test'
 
 async function mockAnalytics(page: Page, overrides: {
   skillCalls?: Array<{ slug: string; call_count: number; last_called_at: string }>
-  topSkills?: Array<{ slug: string; call_count: number; avg_rating: number | null; rating_count: number; review_count: number; completion_rate: number | null }>
+  topSkills?: Array<{ slug: string; call_count: number; avg_rating: number | null; rating_count: number; review_count: number; success_rate: number | null }>
   agents?: Array<{ agent_name: string; call_count: number; pct: number }>
   skills?: Array<{ slug: string; name: string; description: string; collections: string[]; currentVersion: number }>
 } = {}) {
@@ -87,8 +87,8 @@ test.describe('R7 — analytics marks unregistered slugs as (unknown) and disabl
     const now = new Date().toISOString()
     await mockAnalytics(page, {
       topSkills: [
-        { slug: 'real-skill', call_count: 10, avg_rating: null, rating_count: 0, review_count: 0, completion_rate: null },
-        { slug: 'mystery-skill', call_count: 3, avg_rating: null, rating_count: 0, review_count: 0, completion_rate: null },
+        { slug: 'real-skill', call_count: 10, avg_rating: null, rating_count: 0, review_count: 0, success_rate: null },
+        { slug: 'mystery-skill', call_count: 3, avg_rating: null, rating_count: 0, review_count: 0, success_rate: null },
       ],
       skills: [
         { slug: 'real-skill', name: 'real-skill', description: 'A real one.', collections: ['conventions'], currentVersion: 1 },
@@ -105,6 +105,46 @@ test.describe('R7 — analytics marks unregistered slugs as (unknown) and disabl
     // Multiple "(unknown)" tags can appear (leaderboard AND top-skills).
     const unknownTags = page.getByText(/\(unknown\)/i)
     expect(await unknownTags.count()).toBeGreaterThanOrEqual(1)
+  })
+})
+
+test.describe('analytics renders when a rated skill has a null success_rate', () => {
+  // Post-0.5.3 production bug: the /analytics page crashed with
+  // `Cannot read properties of undefined (reading 'toFixed')` whenever the
+  // Top Skills table contained a row with `rating_count > 0` AND
+  // `success_rate: null`. The page was reading `s.completion_rate` (legacy
+  // field name) which was always undefined, then calling `.toFixed(0)` on
+  // it inside the `rating_count > 0` branch. Anchoring this so a future
+  // rename doesn't reopen the same crash.
+  test('Top Skills row with rating_count > 0 and success_rate null renders an em-dash, not a crash', async ({ page }) => {
+    const now = new Date().toISOString()
+    await mockAnalytics(page, {
+      topSkills: [
+        // Exact shape the production API was returning when /analytics crashed.
+        { slug: 'x-engagement', call_count: 1, avg_rating: 3.0, rating_count: 1, review_count: 1, success_rate: null },
+      ],
+      skills: [
+        { slug: 'x-engagement', name: 'x-engagement', description: 'A registered skill.', collections: ['official'], currentVersion: 1 },
+      ],
+    })
+
+    // Wire up a console listener BEFORE navigation so we catch the
+    // toFixed-on-undefined throw even if it crashes the render tree.
+    const consoleErrors: string[] = []
+    page.on('pageerror', (err) => { consoleErrors.push(String(err)) })
+    page.on('console', (msg) => { if (msg.type() === 'error') consoleErrors.push(msg.text()) })
+
+    await page.goto('/analytics')
+
+    // The page must render the heading (not crash).
+    await expect(page.getByRole('heading', { name: 'Top Skills' })).toBeVisible()
+
+    // The skill row should be visible, with an em-dash for the success column.
+    await expect(page.getByText('x-engagement').first()).toBeVisible()
+
+    // No toFixed-on-undefined error.
+    const toFixedErrors = consoleErrors.filter((e) => /toFixed/i.test(e))
+    expect(toFixedErrors, `unexpected toFixed errors: ${toFixedErrors.join('\n')}`).toHaveLength(0)
   })
 })
 

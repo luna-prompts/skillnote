@@ -3,6 +3,26 @@
 All notable changes to SkillNote will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.5.4] - 2026-05-15
+
+Hotfix release for a post-0.5.3 `/analytics` page crash. Single bug, plus an audit pass to verify no related null-safety issues lurking elsewhere.
+
+### Fixed
+
+- **`/analytics` page no longer crashes the Chrome renderer** with `TypeError: Cannot read properties of undefined (reading 'toFixed')`. Root cause was a three-way contract mismatch in the Top Skills table: the backend (`app/api/analytics.py`) returns `success_rate` as `float | None`, but the frontend type (`src/lib/api/analytics.ts`) declared it as `completion_rate: number` (wrong name, non-null), and the page (`src/app/(app)/analytics/page.tsx:1254-1265`) read `s.completion_rate` (always `undefined`) and called `.toFixed(0)` inside a `rating_count > 0` gate. As soon as any skill had `rating_count: 1` with `success_rate: null` (e.g. one rating but no completed-outcome runs yet), the page entered the conditional and threw. Fixed by:
+  1. Renaming the frontend type field to `success_rate: number | null` with a doc comment.
+  2. Updating the three page references and changing the gate from `rating_count > 0` to the actually-meaningful `success_rate != null`.
+- **MOST CALLED card** in the analytics summary row no longer overflows its container when the most-called skill has a long slug (e.g. `superpowers:brainstorming`). String values now render at 15px monospace with `break-words` plus zero-width-space soft-break hints after `:` `-` `/` `_` so the browser breaks at natural slug separators (yields `superpowers:` / `brainstorming` rather than `superpowers:bra` / `instorming`). Numeric values still render at the existing 22px tabular display.
+
+### Tests
+
+- **New regression test** `e2e/r7-workflow-bugs.spec.ts → "Top Skills row with rating_count > 0 and success_rate null renders an em-dash, not a crash"`. Mocks the exact production crash payload (`{ slug, call_count: 1, avg_rating: 3.0, rating_count: 1, success_rate: null }`), asserts the page renders the em-dash fallback, and listens on `pageerror` to catch any future `toFixed` regression. The previous Top Skills e2e test only exercised rows with `rating_count: 0` (which short-circuits the buggy branch), which is why the suite missed this in 0.5.3.
+- **Existing analytics mock updated** to use the correct API field name (`success_rate`) instead of the legacy `completion_rate`, so future tests stay aligned with the real backend shape.
+
+### Internal
+
+- **Audit of similar patterns.** Swept all `.toFixed` / `.toLocaleString` call sites in `src/`. All other ratings call sites (`skill-card.tsx`, `skill-list-item.tsx`, `skill-detail.tsx`, `SkillViewTab.tsx`) were already properly null-guarded. `SkillHistoryTab.tsx:33` declares `versionRating?.avg_rating: number` (non-null) but the backend's GROUP BY-with-AVG SQL guarantees that field is never null for the rows it returns; documented as a latent risk to tighten in a follow-up but not a current crash.
+
 ## [0.5.3] - 2026-05-13
 
 UX polish and discoverability release. Reorganised the sidebar information architecture so each group label predicts its contents, completed R9's "drop teal from PWA chrome" by fixing the maskable icon that was still bleeding teal in dock and home-screen previews, and fully rewrote the README for problem-first resonance with fresh post-R9 screenshots.

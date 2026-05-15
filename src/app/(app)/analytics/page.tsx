@@ -314,12 +314,32 @@ function SummaryCard({
         <Skeleton className="h-7 w-20" />
       ) : (
         <>
-          <p className={cn(
-            'text-[22px] font-semibold tabular-nums leading-none',
-            accent ? 'text-accent' : 'text-foreground'
-          )}>
-            {numVal !== null ? animated.toLocaleString() : (value ?? '—')}
-          </p>
+          {/*
+            Numeric values keep the big 22px tabular display. String
+            values (e.g. the "Most Called" skill slug) drop to 15px
+            mono and wrap on word boundaries so the full slug stays
+            visible. We insert a zero-width space (​) after `:`
+            `-` and `/` so the browser prefers breaking at those
+            natural slug separators rather than mid-word. Falls back
+            to `break-words` for any leftover overflow.
+          */}
+          {numVal !== null ? (
+            <p className={cn(
+              'text-[22px] font-semibold tabular-nums leading-none',
+              accent ? 'text-accent' : 'text-foreground'
+            )}>
+              {animated.toLocaleString()}
+            </p>
+          ) : (
+            <p className={cn(
+              'text-[15px] font-mono font-semibold leading-snug break-words',
+              accent ? 'text-accent' : 'text-foreground'
+            )}>
+              {typeof value === 'string' && value
+                ? value.replace(/([:/_-])/g, '$1​')
+                : (value ?? '—')}
+            </p>
+          )}
           {trendPct !== null && trendPct !== undefined && (
             <p className={cn('text-[11px] font-medium', trendPct >= 0 ? 'text-emerald-500' : 'text-rose-500')}>
               {trendPct >= 0 ? '↑' : '↓'} {Math.abs(trendPct).toFixed(1)}%
@@ -1251,14 +1271,14 @@ function AnalyticsContent() {
                               </td>
                               <td className="px-4 py-2.5 text-right">
                                 <div className="flex items-center justify-end gap-2">
-                                  {s.rating_count > 0 ? (
+                                  {s.success_rate != null ? (
                                     <span className={cn(
                                       'tabular-nums font-medium',
-                                      s.completion_rate >= 60 ? 'text-emerald-500' :
-                                      s.completion_rate >= 30 ? 'text-amber-500' :
+                                      s.success_rate >= 60 ? 'text-emerald-500' :
+                                      s.success_rate >= 30 ? 'text-amber-500' :
                                       'text-muted-foreground/50'
                                     )}>
-                                      {s.completion_rate.toFixed(0)}%
+                                      {s.success_rate.toFixed(0)}%
                                     </span>
                                   ) : (
                                     <span className="text-muted-foreground/30">—</span>

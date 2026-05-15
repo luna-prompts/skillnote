@@ -36,7 +36,14 @@ export type TopSkillStat = {
   last_called_at: string | null
   avg_rating: number | null
   rating_count: number
-  completion_rate: number
+  /**
+   * Percentage of rated runs that completed successfully. NULL when no
+   * runs have completed yet, even if some have been rated (e.g. only
+   * partial/abandoned outcomes recorded). The backend column is named
+   * `success_rate` to match `app/api/analytics.py`; the user-facing label
+   * stays "Completion" in the UI.
+   */
+  success_rate: number | null
 }
 
 export type SkillReview = {
