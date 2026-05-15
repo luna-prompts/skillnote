@@ -85,15 +85,6 @@ Requires **Docker** (running) and **Node.js 20+**. The CLI pulls the published i
 <details>
 <summary><b>Other ways to install</b></summary>
 
-**Homebrew** (macOS / Linux):
-
-```bash
-brew install luna-prompts/tap/skillnote
-skillnote start
-```
-
-The formula pulls the same `skillnote` package from npm but lets `brew` manage it. The Node runtime comes in as a Homebrew dependency, so you don't need a pre-existing Node 20+ install.
-
 **Docker Compose directly** (no Node):
 
 ```bash
