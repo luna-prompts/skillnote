@@ -314,12 +314,31 @@ function SummaryCard({
         <Skeleton className="h-7 w-20" />
       ) : (
         <>
-          <p className={cn(
-            'text-[22px] font-semibold tabular-nums leading-none',
-            accent ? 'text-accent' : 'text-foreground'
-          )}>
-            {numVal !== null ? animated.toLocaleString() : (value ?? '—')}
-          </p>
+          {/*
+            Numeric values keep the big 22px tabular display. String
+            values (e.g. the "Most Called" skill slug) drop to 15px
+            mono with `truncate` so long slugs like
+            `superpowers:brainstorming` don't overflow the card; the
+            full value is preserved as a tooltip via `title`.
+          */}
+          {numVal !== null ? (
+            <p className={cn(
+              'text-[22px] font-semibold tabular-nums leading-none',
+              accent ? 'text-accent' : 'text-foreground'
+            )}>
+              {animated.toLocaleString()}
+            </p>
+          ) : (
+            <p
+              className={cn(
+                'text-[15px] font-mono font-semibold leading-tight truncate',
+                accent ? 'text-accent' : 'text-foreground'
+              )}
+              title={typeof value === 'string' ? value : undefined}
+            >
+              {value ?? '—'}
+            </p>
+          )}
           {trendPct !== null && trendPct !== undefined && (
             <p className={cn('text-[11px] font-medium', trendPct >= 0 ? 'text-emerald-500' : 'text-rose-500')}>
               {trendPct >= 0 ? '↑' : '↓'} {Math.abs(trendPct).toFixed(1)}%
