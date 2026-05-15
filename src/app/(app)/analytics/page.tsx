@@ -1251,14 +1251,14 @@ function AnalyticsContent() {
                               </td>
                               <td className="px-4 py-2.5 text-right">
                                 <div className="flex items-center justify-end gap-2">
-                                  {s.rating_count > 0 ? (
+                                  {s.success_rate != null ? (
                                     <span className={cn(
                                       'tabular-nums font-medium',
-                                      s.completion_rate >= 60 ? 'text-emerald-500' :
-                                      s.completion_rate >= 30 ? 'text-amber-500' :
+                                      s.success_rate >= 60 ? 'text-emerald-500' :
+                                      s.success_rate >= 30 ? 'text-amber-500' :
                                       'text-muted-foreground/50'
                                     )}>
-                                      {s.completion_rate.toFixed(0)}%
+                                      {s.success_rate.toFixed(0)}%
                                     </span>
                                   ) : (
                                     <span className="text-muted-foreground/30">—</span>
