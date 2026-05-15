@@ -49,7 +49,7 @@ services:
     restart: unless-stopped
 
   api:
-    image: ghcr.io/luna-prompts/skillnote-api:0.5.3
+    image: ghcr.io/luna-prompts/skillnote-api:0.5.4
     environment:
       SKILLNOTE_DATABASE_URL: postgresql+psycopg://skillnote:${SKILLNOTE_DB_PASSWORD:-skillnote}@postgres:5432/skillnote
       SKILLNOTE_BUNDLE_STORAGE_DIR: /app/data/bundles
@@ -75,7 +75,7 @@ services:
     restart: unless-stopped
 
   web:
-    image: ghcr.io/luna-prompts/skillnote-web:0.5.3
+    image: ghcr.io/luna-prompts/skillnote-web:0.5.4
     ports:
       - "${SKILLNOTE_WEB_PORT:-3000}:3000"
     environment:

@@ -97,7 +97,7 @@ The formula pulls the same `skillnote` package from npm but lets `brew` manage i
 **Docker Compose directly** (no Node):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/luna-prompts/skillnote/cli-v0.5.3/deploy/docker-compose.yml -o docker-compose.yml
+curl -fsSL https://raw.githubusercontent.com/luna-prompts/skillnote/cli-v0.5.4/deploy/docker-compose.yml -o docker-compose.yml
 docker compose up -d
 ```
 
