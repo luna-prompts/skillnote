@@ -1,7 +1,8 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { ExternalLink } from 'lucide-react'
+import Link from 'next/link'
+import { ChevronRight, ExternalLink } from 'lucide-react'
 import { toast } from 'sonner'
 import { TopBar } from '@/components/layout/topbar'
 import { InstallAppRow } from '@/components/InstallAppRow'
@@ -142,6 +143,25 @@ export default function SettingsPage() {
           )}
 
           <section className="border-t border-border/40 pt-6">
+            <p className="text-[14px] font-medium text-foreground">Integrations</p>
+            <p className="text-[13px] text-muted-foreground mt-0.5 mb-3">
+              Connect SkillNote to other surfaces beyond Claude Code.
+            </p>
+            <Link
+              href="/settings/integrations/claude-ai"
+              className="flex items-center justify-between rounded-md border border-border bg-card px-4 py-3 hover:bg-muted/40 transition-colors"
+            >
+              <div>
+                <p className="text-[14px] font-medium text-foreground">claude.ai</p>
+                <p className="text-[12px] text-muted-foreground mt-0.5">
+                  Two-way sync via a browser extension you install once.
+                </p>
+              </div>
+              <ChevronRight className="h-4 w-4 text-muted-foreground" />
+            </Link>
+          </section>
+
+          <section className="border-t border-border/40 pt-6 mt-8">
             <div className="flex items-center justify-between gap-4">
               <p className="text-[13px] text-muted-foreground">
                 SkillNote <span className="font-mono text-[12px] text-foreground/80">v{APP_VERSION}</span>

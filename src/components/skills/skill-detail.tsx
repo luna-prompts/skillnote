@@ -17,6 +17,7 @@ import Link from 'next/link'
 import { SkillViewTab } from './tabs/SkillViewTab'
 import { SkillEditTab } from './tabs/SkillEditTab'
 import { InstallDialog } from './InstallDialog'
+import { SkillSyncBadge } from '@/components/integrations/claude-ai/skill-sync-badge'
 
 type PaletteAction = {
   icon: React.ComponentType<{ className?: string }>
@@ -546,6 +547,12 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
                       <Clock className="h-3 w-3" />
                       {formatRelative(skill.updated_at)}
                     </span>
+                    {skill.id && (
+                      <SkillSyncBadge
+                        skillId={skill.id}
+                        initialEnabled={skill.claude_ai_sync_enabled ?? true}
+                      />
+                    )}
                     {ratingDetail && ratingDetail.rating_count > 0 && ratingDetail.avg_rating != null && (
                       <button
                         onClick={() => document.getElementById('agent-reviews')?.scrollIntoView({ behavior: 'smooth' })}

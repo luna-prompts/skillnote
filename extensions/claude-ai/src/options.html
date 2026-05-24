@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>SkillNote — Settings</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --fg: #1a1a1a;
+      --muted: #6b7280;
+      --border: #e5e7eb;
+      --bg: #ffffff;
+      --bg-soft: #f9fafb;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --fg: #f4f4f5;
+        --muted: #9ca3af;
+        --border: #27272a;
+        --bg: #18181b;
+        --bg-soft: #1f1f23;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      max-width: 580px;
+      margin: 40px auto;
+      padding: 0 20px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--fg);
+      background: var(--bg);
+    }
+    h1 { font-size: 22px; margin: 0 0 8px; }
+    p.lede { color: var(--muted); margin: 0 0 28px; }
+    .card { background: var(--bg-soft); border: 1px solid var(--border); border-radius: 10px; padding: 22px; margin-bottom: 16px; }
+    label { display: block; margin-bottom: 6px; font-weight: 500; font-size: 13px; }
+    input[type="text"], input[type="url"] {
+      width: 100%;
+      padding: 9px 12px;
+      font-size: 14px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--bg);
+      color: var(--fg);
+    }
+    button {
+      padding: 9px 16px;
+      font-size: 14px;
+      font-weight: 500;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--bg);
+      color: var(--fg);
+      cursor: pointer;
+    }
+    button:hover { background: var(--border); }
+    button.primary {
+      background: #2563eb;
+      color: white;
+      border-color: #2563eb;
+    }
+    button.primary:hover { background: #1d4ed8; border-color: #1d4ed8; }
+    button.danger {
+      background: transparent;
+      border-color: #fca5a5;
+      color: #b91c1c;
+    }
+    .stack > * + * { margin-top: 12px; }
+    .row { display: flex; gap: 8px; align-items: center; }
+    .pill { font-size: 12px; padding: 3px 10px; border-radius: 999px; font-weight: 500; }
+    .pill.ok { background: #d1fae5; color: #065f46; }
+    .pill.warn { background: #fef3c7; color: #78350f; }
+    .pill.err { background: #fee2e2; color: #7f1d1d; }
+    @media (prefers-color-scheme: dark) {
+      .pill.ok { background: #064e3b; color: #d1fae5; }
+      .pill.warn { background: #78350f; color: #fef3c7; }
+      .pill.err { background: #7f1d1d; color: #fee2e2; }
+    }
+    .muted { color: var(--muted); font-size: 13px; }
+    .code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 24px; letter-spacing: 0.08em; padding: 16px 0; text-align: center; background: var(--bg); border: 1px dashed var(--border); border-radius: 8px; }
+    hr { border: none; border-top: 1px solid var(--border); margin: 14px 0; }
+  </style>
+</head>
+<body>
+  <h1>SkillNote</h1>
+  <p class="lede">Sync your self-hosted SkillNote skills to your claude.ai account.</p>
+  <div id="root">Loading…</div>
+  <script type="module" src="./options.ts"></script>
+</body>
+</html>

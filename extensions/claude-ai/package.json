@@ -1,0 +1,25 @@
+{
+  "name": "skillnote-extension",
+  "version": "0.1.0",
+  "private": true,
+  "description": "SkillNote browser extension for claude.ai sync",
+  "scripts": {
+    "build": "vite build",
+    "build:chrome": "vite build",
+    "build:firefox": "SKILLNOTE_TARGET=firefox vite build",
+    "dev": "vite build --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "package": "vite build && cd dist && zip -r ../skillnote-extension-chrome.zip .",
+    "package:firefox": "SKILLNOTE_TARGET=firefox vite build && cd dist && zip -r ../skillnote-extension-firefox.zip ."
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.270",
+    "@vitest/coverage-v8": "^1.5.0",
+    "typescript": "^5.4.0",
+    "vite": "^5.2.0",
+    "vitest": "^1.5.0"
+  }
+}

@@ -18,8 +18,8 @@ router = APIRouter(tags=["setup"])
 
 # Agents the Connect page understands. Keep the canonical names in sync
 # with the frontend's `AgentId` union and with the install scripts below.
-SUPPORTED_AGENTS = ("claude-code", "openclaw")
-AgentLiteral = Literal["claude-code", "openclaw"]
+SUPPORTED_AGENTS = ("claude-code", "openclaw", "claude-ai")
+AgentLiteral = Literal["claude-code", "openclaw", "claude-ai"]
 
 # Buckets for the per-agent state machine on the Connect page.
 ACTIVE_WINDOW_HOURS = 24
@@ -548,6 +548,80 @@ def get_openclaw_setup_script(request: Request):
     return PlainTextResponse(script, media_type="text/plain")
 
 
+_CLAUDE_AI_SETUP_SCRIPT = r'''#!/bin/bash
+set -euo pipefail
+
+API_URL="__API_URL__"
+WEB_URL="__WEB_URL__"
+
+echo ""
+echo "  S K I L L N O T E   ->   C L A U D E . A I"
+echo ""
+
+# Claude.ai's sync is a one-time browser-extension install — there's nothing
+# to install on this machine itself. Print step-by-step instructions and ping
+# the backend so the Connect page knows the user kicked off the flow.
+
+cat <<EOF
+  Sync between SkillNote and claude.ai needs a browser extension. The
+  extension reads your claude.ai session cookies locally and never sends
+  them anywhere except claude.ai itself.
+
+  Setup (one time, ~60 seconds):
+
+    1. Install the SkillNote extension (Chrome Web Store + Firefox AMO
+       listings are pending review — load unpacked for now):
+
+         a. git clone https://github.com/luna-prompts/skillnote
+         b. cd skillnote/extensions/claude-ai && npm install && npm run build
+         c. Open chrome://extensions (or about:debugging on Firefox),
+            enable Developer mode, click "Load unpacked", and select
+            extensions/claude-ai/dist.
+
+    2. Open the SkillNote extension popup and click "Open settings"
+       (or visit chrome://extensions and click Details -> Extension options).
+
+    3. Paste this SkillNote URL into the extension:
+         $API_URL
+
+    4. Click Connect. A SkillNote tab will open with a pairing code.
+
+    5. Approve the code on the SkillNote page.
+         (URL: $WEB_URL/settings/integrations/claude-ai)
+
+    6. Sign in to claude.ai if you aren't already. That's it — sync runs
+       automatically every minute while you're logged into claude.ai.
+
+  Status:
+    $WEB_URL/settings/integrations/claude-ai
+EOF
+
+# ── ping backend so the Connect page tracks the user kicked off this flow ───
+MACHINE_HASH=$(printf '%s' "${HOSTNAME:-host}-${USER:-user}" \
+    | shasum -a 256 2>/dev/null \
+    | awk '{print $1}' \
+    || echo "")
+curl -sf --max-time 5 --retry 2 --retry-delay 1 \
+    -X POST "$API_URL/v1/setup/installs" \
+    -H "Content-Type: application/json" \
+    -d "{\"agent\":\"claude-ai\",\"machine_id_hash\":\"$MACHINE_HASH\"}" \
+    >/dev/null 2>&1 || true
+
+echo ""
+'''
+
+
+@router.get("/setup/claude-ai")
+def get_claude_ai_setup_script(request: Request):
+    """Return the claude.ai 'install' script — really a tutorial that points
+    users at the browser extension."""
+    urls = _derive_urls(request)
+    script = (_CLAUDE_AI_SETUP_SCRIPT
+              .replace("__API_URL__", urls["api"])
+              .replace("__WEB_URL__", urls["web"]))
+    return PlainTextResponse(script, media_type="text/plain")
+
+
 # Unified entry point: parses --agent <name> from $@ and delegates to the
 # right per-agent installer. Keeps each installer's logic isolated (they
 # touch different home dirs, ship different bundles) while giving users one
@@ -618,10 +692,14 @@ case "$AGENT" in
         TARGET_PATH="/setup/openclaw"
         AGENT_LABEL="OpenClaw"
         ;;
+    claude-ai|claude_ai|claudeai|ca)
+        TARGET_PATH="/setup/claude-ai"
+        AGENT_LABEL="claude.ai (browser)"
+        ;;
     *)
         echo "Error: unknown agent '$AGENT'."
         echo ""
-        echo "Supported agents: claude-code, openclaw"
+        echo "Supported agents: claude-code, openclaw, claude-ai"
         exit 2
         ;;
 esac

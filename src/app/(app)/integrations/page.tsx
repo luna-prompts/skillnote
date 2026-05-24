@@ -10,6 +10,11 @@ import { AgentListRow } from '@/components/integrations/agent-list-row'
 import { ConnectModal } from '@/components/integrations/connect-modal'
 import { DisconnectModal } from '@/components/integrations/disconnect-modal'
 import { ClaudeCodeMark, OpenClawMark } from '@/components/integrations/agent-marks'
+import {
+  ClaudeAICard,
+  ClaudeAIConnectedRow,
+} from '@/components/integrations/claude-ai-card'
+import { listIntegrations } from '@/lib/api/claude-ai'
 import type { ConnectionState } from '@/components/integrations/connector'
 import { getApiBaseUrl } from '@/lib/api/client'
 import { dispatchJob, useJobPolling, type JobAgent } from '@/lib/cli-jobs'
@@ -113,6 +118,34 @@ export default function IntegrationsPage() {
 
   useEffect(() => {
     setApiBase(getApiBaseUrl())
+  }, [])
+
+  // claude.ai isn't installed via curl|bash, so it lives outside the
+  // `snapshots` machinery. Track its connected-browser count separately;
+  // 0 means "not set up" and renders the Set-up CTA. The poll uses the
+  // same cadence as the agent status poll to stay in sync.
+  const [claudeAIConnectedCount, setClaudeAIConnectedCount] = useState(0)
+  useEffect(() => {
+    let cancelled = false
+    const tick = async () => {
+      try {
+        const rows = await listIntegrations()
+        if (cancelled) return
+        const live = rows.filter(
+          (r) => r.status === 'active' || r.status === 'cookie_expired',
+        )
+        setClaudeAIConnectedCount(live.length)
+      } catch {
+        // Backend offline — fall back to 0; UI still renders the Set-up CTA.
+        if (!cancelled) setClaudeAIConnectedCount(0)
+      }
+    }
+    void tick()
+    const id = setInterval(tick, POLL_INTERVAL_MS)
+    return () => {
+      cancelled = true
+      clearInterval(id)
+    }
   }, [])
 
   useEffect(() => {
@@ -301,7 +334,10 @@ export default function IntegrationsPage() {
     const s = effective[a.id].state
     return s === 'active' || s === 'idle'
   })
-  const connectedCount = connected.length
+  // claude.ai counts toward the tab badge whenever at least one browser
+  // is paired; it never appears in `AGENTS` because it follows a separate
+  // install path.
+  const connectedCount = connected.length + (claudeAIConnectedCount > 0 ? 1 : 0)
 
   // R9 (Connect-page round): Connected is the primary surface — agents you
   // already wired in are the thing you most often come back to. Default to
@@ -420,6 +456,9 @@ export default function IntegrationsPage() {
                 {AGENTS.map((a) => (
                   <li key={a.id}>{renderCard(a)}</li>
                 ))}
+                <li>
+                  <ClaudeAICard connectedCount={claudeAIConnectedCount} />
+                </li>
               </ul>
             </TabsContent>
 
@@ -428,7 +467,14 @@ export default function IntegrationsPage() {
               {connectedCount === 0 ? (
                 <EmptyConnected onBrowse={() => setActiveTab('browse')} />
               ) : (
-                <ul className="space-y-3">{connected.map(renderRow)}</ul>
+                <ul className="space-y-3">
+                  {connected.map(renderRow)}
+                  {claudeAIConnectedCount > 0 && (
+                    <li>
+                      <ClaudeAIConnectedRow connectedCount={claudeAIConnectedCount} />
+                    </li>
+                  )}
+                </ul>
               )}
             </TabsContent>
           </Tabs>

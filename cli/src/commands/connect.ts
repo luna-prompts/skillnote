@@ -5,7 +5,7 @@ import { UserFacingError, prettyError } from '../ui/errors.js'
 import { c } from '../ui/theme.js'
 
 // Supported agent identifiers, matching the backend's /setup/agent dispatcher.
-export const SUPPORTED_AGENTS = ['claude-code', 'openclaw'] as const
+export const SUPPORTED_AGENTS = ['claude-code', 'openclaw', 'claude-ai'] as const
 export type SupportedAgent = (typeof SUPPORTED_AGENTS)[number]
 
 export interface ConnectOptions {
@@ -15,6 +15,7 @@ export interface ConnectOptions {
 const displayNames: Record<SupportedAgent, string> = {
   'claude-code': 'Claude Code',
   openclaw: 'OpenClaw',
+  'claude-ai': 'claude.ai (browser)',
 }
 
 export async function connectCommand(agent: string, _opts: ConnectOptions = {}): Promise<void> {
@@ -85,6 +86,17 @@ export async function connectCommand(agent: string, _opts: ConnectOptions = {}):
       )
     } else if (agent === 'openclaw') {
       log.info('Restart OpenClaw to pick up the SkillNote skill.')
+    } else if (agent === 'claude-ai') {
+      log.info(
+        [
+          'Next:',
+          '  1. Install the SkillNote browser extension from the Chrome Web Store',
+          '     (or load extensions/claude-ai/dist as unpacked in dev mode)',
+          `  2. Paste this SkillNote URL into the extension:  ${apiBase}`,
+          '  3. Approve the pairing code in SkillNote',
+          '  4. Sign in to claude.ai (the extension reads the session cookies)',
+        ].join('\n'),
+      )
     }
 
     outro(`${c.ok('Done.')} Run ${c.brand('skillnote status')} to see active agents.`)

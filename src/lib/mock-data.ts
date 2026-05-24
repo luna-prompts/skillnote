@@ -55,6 +55,10 @@ export type ContentVersion = {
 }
 
 export type Skill = {
+  /** Server-side UUID. Optional in the type because mockSkills don't have
+   *  one, but every API-returned skill carries this. Required for the
+   *  claude.ai connector's per-skill toggle endpoint. */
+  id?: string
   slug: string
   title: string
   description: string
@@ -89,6 +93,12 @@ export type Skill = {
    * local and survive API resets.
    */
   _syncedAt?: string
+  /**
+   * Per-skill claude.ai connector opt-in. Default true on the backend
+   * for skills created before the connector shipped; users can flip it
+   * to false from the skill detail page to keep specific skills local.
+   */
+  claude_ai_sync_enabled?: boolean
 }
 
 export type SkillOrigin = {

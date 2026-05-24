@@ -50,7 +50,7 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.11.2",
-    "@playwright/test": "^1.58.2",
+    "@playwright/test": "^1.60.0",
     "@tailwindcss/postcss": "^4",
     "@types/js-yaml": "^4.0.9",
     "@types/jszip": "^3.4.0",

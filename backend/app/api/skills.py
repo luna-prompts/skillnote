@@ -91,7 +91,12 @@ def _origin_for_skill(db: Session, skill: Skill) -> Optional[SkillOrigin]:
 
 
 def _create_content_version(db: Session, skill: Skill) -> SkillContentVersion:
-    """Snapshot current skill state as a new content version."""
+    """Snapshot current skill state as a new content version.
+
+    Side effect: enqueues claude.ai sync ops for every active integration.
+    Coalesces against any already-pending upload op for the same skill so
+    rapid republishes don't pile up the queue.
+    """
     next_ver = (skill.current_version or 0) + 1
 
     # Clear is_latest on all existing versions for this skill
@@ -111,8 +116,33 @@ def _create_content_version(db: Session, skill: Skill) -> SkillContentVersion:
         is_latest=True,
     )
     db.add(cv)
+    # Flush so cv.id is available for the sync op payload, but don't commit
+    # yet — the caller owns the transaction boundary.
+    db.flush()
 
     skill.current_version = next_ver
+
+    # Claude.ai connector hook — fan out an upload op per active integration.
+    # Imported locally so this module doesn't take a top-level dependency on
+    # the connector subsystem when it's not configured.
+    # Skipped for skills with claude_ai_sync_enabled=False (per-skill opt-out).
+    if getattr(skill, "claude_ai_sync_enabled", True):
+        try:
+            from app.services.claude_ai_sync import enqueue_skill_upload
+            enqueue_skill_upload(
+                db,
+                skill_id=skill.id,
+                version_id=cv.id,
+                name=skill.name,
+                description=skill.description,
+            )
+        except Exception:  # noqa: BLE001
+            # Sync-op enqueue must never block a skill publish. Log and continue.
+            import logging
+            logging.getLogger("skillnote.claude_ai").exception(
+                "Failed to enqueue claude.ai sync op for skill %s; skill saved", skill.id
+            )
+
     return cv
 
 
@@ -266,6 +296,7 @@ def set_latest_version(
         total_versions=_skill_total_versions(db, skill_row.id),
         extra_frontmatter=skill_row.extra_frontmatter,
         origin=_origin_for_skill(db, skill_row),
+        claude_ai_sync_enabled=skill_row.claude_ai_sync_enabled,
         created_at=skill_row.created_at,
         updated_at=skill_row.updated_at,
     )
@@ -318,6 +349,7 @@ def restore_version(
         total_versions=_skill_total_versions(db, skill_row.id),
         extra_frontmatter=skill_row.extra_frontmatter,
         origin=_origin_for_skill(db, skill_row),
+        claude_ai_sync_enabled=skill_row.claude_ai_sync_enabled,
         created_at=skill_row.created_at,
         updated_at=skill_row.updated_at,
     )
@@ -340,6 +372,7 @@ def get_skill(
         total_versions=_skill_total_versions(db, skill_row.id),
         extra_frontmatter=skill_row.extra_frontmatter,
         origin=_origin_for_skill(db, skill_row),
+        claude_ai_sync_enabled=skill_row.claude_ai_sync_enabled,
         created_at=skill_row.created_at,
         updated_at=skill_row.updated_at,
     )
@@ -418,6 +451,7 @@ def create_skill(
         current_version=skill.current_version or 0,
         total_versions=_skill_total_versions(db, skill.id),
         extra_frontmatter=skill.extra_frontmatter,
+        claude_ai_sync_enabled=skill.claude_ai_sync_enabled,
         created_at=skill.created_at,
         updated_at=skill.updated_at,
     )
@@ -517,6 +551,7 @@ def update_skill(
         total_versions=_skill_total_versions(db, skill_row.id),
         extra_frontmatter=skill_row.extra_frontmatter,
         origin=_origin_for_skill(db, skill_row),
+        claude_ai_sync_enabled=skill_row.claude_ai_sync_enabled,
         created_at=skill_row.created_at,
         updated_at=skill_row.updated_at,
     )
@@ -528,6 +563,20 @@ def delete_skill(
     db: Session = Depends(get_db),
 ):
     skill_row = _get_skill(skill_slug, db)
+    # Claude.ai connector hook — fan out a delete op for every integration
+    # that has this skill linked. Must run BEFORE db.delete: the link rows
+    # are about to cascade and we need their claude_ai_skill_ids to build
+    # the op payload.
+    try:
+        from app.services.claude_ai_sync import enqueue_skill_delete
+        enqueue_skill_delete(db, skill_id=skill_row.id)
+    except Exception:  # noqa: BLE001
+        import logging
+        logging.getLogger("skillnote.claude_ai").exception(
+            "Failed to enqueue claude.ai delete op for skill %s; deleting anyway",
+            skill_row.id,
+        )
+
     db.delete(skill_row)
     # Notify MCP server of tool-list change (delivered on commit)
     db.execute(text("SELECT pg_notify('skillnote_skills_changed', 'deleted')"))

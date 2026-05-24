@@ -46,16 +46,26 @@ def db_session(engine):
 
 @pytest.fixture
 def api_request():
-    """Return a _req(method, path, body) helper that hits BASE_URL.
+    """Return a _req(method, path, body, headers) helper that hits BASE_URL.
 
     Returns (status_code, parsed_json_body_or_none). Skips the test if the
     API is unreachable (e.g. running tests without the backend up).
     """
-    def _req(method: str, path: str, body: Optional[dict] = None):
+    def _req(
+        method: str,
+        path: str,
+        body: Optional[dict] = None,
+        headers: Optional[dict] = None,
+    ):
+        h: dict = {}
+        if body is not None:
+            h["Content-Type"] = "application/json"
+        if headers:
+            h.update(headers)
         req = urllib.request.Request(
             f"{BASE_URL}{path}",
             method=method,
-            headers={"Content-Type": "application/json"} if body else {},
+            headers=h,
             data=(json.dumps(body).encode() if body else None),
         )
         try:

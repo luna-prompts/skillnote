@@ -1,5 +1,14 @@
 from app.db.models.agent_install import AgentInstall
 from app.db.models.analytics_event import AnalyticsEvent
+from app.db.models.claude_ai import (
+    ClaudeAIIntegration,
+    ClaudeAISkillLink,
+    ClaudeAISyncOperation,
+)
+from app.db.models.claude_ai_polish import (
+    ClaudeAIAuditLog,
+    ClaudeAIPairAttempt,
+)
 from app.db.models.collection import Collection
 from app.db.models.comment import Comment
 from app.db.models.import_source import (
@@ -24,6 +33,11 @@ __all__ = [
     "AnalyticsEvent",
     "SkillRating",
     "Collection",
+    "ClaudeAIIntegration",
+    "ClaudeAISkillLink",
+    "ClaudeAISyncOperation",
+    "ClaudeAIAuditLog",
+    "ClaudeAIPairAttempt",
     "ImportSource",
     "SOURCE_TYPES",
     "IMPORT_KINDS",

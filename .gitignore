@@ -75,3 +75,8 @@ test-results/
 # SkillNote per-project state (per-machine; pins active collection)
 .skillnote.json
 .skillnote/
+
+# Personal scratch (marketing posts, draft tweets, release-notes outlines)
+skillnote-release-posts.md
+x-replies-paste.md
+extensions/claude-ai/scripts/captured-endpoints.md

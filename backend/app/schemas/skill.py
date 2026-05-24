@@ -49,6 +49,10 @@ class SkillDetail(BaseModel):
     total_versions: int = 0
     extra_frontmatter: Optional[str] = None
     origin: Optional[SkillOrigin] = None
+    # Per-skill claude.ai connector opt-in. Defaults to True so a skill
+    # created before the connector shipped still syncs once a browser
+    # is paired. The UI surfaces a toggle on the skill detail page.
+    claude_ai_sync_enabled: bool = True
     created_at: datetime
     updated_at: datetime
 

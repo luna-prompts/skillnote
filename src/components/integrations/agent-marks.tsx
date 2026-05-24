@@ -56,3 +56,21 @@ export function OpenClawMark({ size = 56 }: { size?: number }) {
     />
   )
 }
+
+export function ClaudeAIMark({ size = 56 }: { size?: number }) {
+  // claude.ai (the web app) uses the same Anthropic coral as Claude Code,
+  // but on a lighter plate so the Connect page can visually distinguish
+  // "CLI" from "web product" at a glance. Reuses the same source artwork
+  // so we never end up shipping two slightly-different Claude marks.
+  return (
+    <img
+      src="/claude-mark.png"
+      alt="claude.ai"
+      width={size}
+      height={size}
+      className="block rounded-lg ring-1 ring-foreground/5"
+      draggable={false}
+      style={{ imageRendering: 'pixelated' }}
+    />
+  )
+}

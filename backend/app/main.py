@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 from fastapi import FastAPI, HTTPException, Request, Depends
@@ -40,6 +41,7 @@ from app.api.imports import router as imports_router
 from app.api.marketplace import router as marketplace_router
 from app.api.openclaw import router as openclaw_router, skill_router as openclaw_skill_router
 from app.api.cli import router as cli_router
+from app.api.claude_ai import router as claude_ai_router
 
 app = FastAPI(title="SkillNote Backend", version="0.1.0")
 
@@ -141,6 +143,61 @@ app.include_router(marketplace_router)
 app.include_router(openclaw_router)
 app.include_router(openclaw_skill_router)
 app.include_router(cli_router)
+app.include_router(claude_ai_router)
+
+
+# ── Periodic cleanup: claude.ai pending-pairing expiry ─────────────────────
+# Sweep stale pending_approval integrations every 5 minutes. Cheap query
+# (indexed on pairing_expires_at) so this doesn't add measurable load.
+#
+# Kept inside main.py rather than as a separate worker because: (1) the
+# operation is idempotent and stateless, (2) the API process is the only
+# long-lived backend process today (no celery / no rq), (3) running it
+# alongside the API means any deploy automatically picks up the schedule
+# without ops coordination.
+
+_CLEANUP_INTERVAL_SECONDS = 300  # 5 minutes
+
+
+async def _claude_ai_cleanup_loop() -> None:
+    """Background loop that periodically expires stale pending pairings."""
+    from app.db.session import SessionLocal
+    from app.services.claude_ai_sync import expire_stale_pairings
+
+    log = logging.getLogger("skillnote.claude_ai.cleanup")
+    while True:
+        try:
+            await asyncio.sleep(_CLEANUP_INTERVAL_SECONDS)
+            with SessionLocal() as db:
+                expired = expire_stale_pairings(db)
+                db.commit()
+                if expired > 0:
+                    log.info("expired %d stale pending pairing(s)", expired)
+        except asyncio.CancelledError:
+            log.info("cleanup loop cancelled")
+            return
+        except Exception:  # noqa: BLE001
+            log.exception("cleanup loop error; continuing")
+
+
+@app.on_event("startup")
+async def _start_cleanup_loop() -> None:
+    """Launch the claude.ai cleanup loop alongside the API.
+
+    Stored on app.state so the shutdown handler can cancel it.
+    """
+    app.state.claude_ai_cleanup_task = asyncio.create_task(_claude_ai_cleanup_loop())
+
+
+@app.on_event("shutdown")
+async def _stop_cleanup_loop() -> None:
+    task = getattr(app.state, "claude_ai_cleanup_task", None)
+    if task and not task.done():
+        task.cancel()
+        try:
+            await task
+        except (asyncio.CancelledError, Exception):  # noqa: BLE001
+            pass
 
 
 @app.get("/health")

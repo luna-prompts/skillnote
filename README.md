@@ -196,6 +196,20 @@ npx skillnote connect openclaw
 
 </details>
 
+### claude.ai (web app)
+
+Two-way sync between SkillNote and your claude.ai account through a small browser extension. Skills pushed in SkillNote appear in claude.ai; skills authored in claude.ai are imported back into SkillNote — no copy-paste either way.
+
+```bash
+# Install the extension unpacked (Web Store / AMO listings pending review)
+cd extensions/claude-ai && npm install && npm run build
+# Then in chrome://extensions, enable Developer mode → Load unpacked → dist/
+```
+
+Open the extension, paste your SkillNote URL, and approve the pairing code at `<your-skillnote>/settings/integrations/claude-ai`. Sync runs every minute while you're signed in to claude.ai. The extension reads your claude.ai session cookies locally — they never leave your machine.
+
+Connector docs: [`docs/claude-ai-integration.md`](docs/claude-ai-integration.md) · admin runbook: [`docs/claude-ai-admin-runbook.md`](docs/claude-ai-admin-runbook.md).
+
 > Cursor, Codex, Antigravity, and OpenHands are on the roadmap. [Open an issue](https://github.com/luna-prompts/skillnote/issues) if you want to help build an adapter.
 
 ---
