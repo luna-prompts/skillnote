@@ -17,6 +17,7 @@ import Link from 'next/link'
 import { SkillViewTab } from './tabs/SkillViewTab'
 import { SkillEditTab } from './tabs/SkillEditTab'
 import { InstallDialog } from './InstallDialog'
+import { BundlePill } from './BundlePill'
 
 type PaletteAction = {
   icon: React.ComponentType<{ className?: string }>
@@ -546,6 +547,7 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
                       <Clock className="h-3 w-3" />
                       {formatRelative(skill.updated_at)}
                     </span>
+                    <BundlePill skill={skill} size="md" className="rounded-full px-2.5 py-1 max-w-[220px]" />
                     {ratingDetail && ratingDetail.rating_count > 0 && ratingDetail.avg_rating != null && (
                       <button
                         onClick={() => document.getElementById('agent-reviews')?.scrollIntoView({ behavior: 'smooth' })}

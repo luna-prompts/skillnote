@@ -3,6 +3,7 @@ import { useRouter } from 'next/navigation'
 import { FileText, MessageSquare, Paperclip, FolderOpen, Star } from 'lucide-react'
 import { Skill } from '@/lib/mock-data'
 import { cn } from '@/lib/utils'
+import { BundlePill } from './BundlePill'
 
 export function SkillListItem({ skill, rating }: { skill: Skill; rating?: { avg_rating: number | null; rating_count: number } }) {
   const router = useRouter()
@@ -71,6 +72,7 @@ export function SkillListItem({ skill, rating }: { skill: Skill; rating?: { avg_
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
+          <BundlePill skill={skill} className="hidden sm:inline-flex" />
           {rating && rating.rating_count > 0 && rating.avg_rating != null && (
             <span className="flex items-center gap-1 text-[10px] text-amber-600 dark:text-amber-400 hidden sm:flex">
               <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
