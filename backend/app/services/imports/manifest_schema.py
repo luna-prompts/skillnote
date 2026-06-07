@@ -10,7 +10,7 @@ from typing import List, Literal, Optional, Union
 from pydantic import BaseModel, Field, field_validator
 
 
-SKILL_NAME_RE = re.compile(r"^[a-z0-9-]+$")
+SKILL_NAME_RE = re.compile(r"^[a-z0-9_-]+(?::[a-z0-9_-]+)?$")
 RESERVED_WORDS = ("anthropic", "claude")
 
 
@@ -100,7 +100,7 @@ class SkillFrontmatter(BaseModel):
         if len(v) > 64:
             raise ValueError(f"Name must be <=64 chars (got {len(v)})")
         if not SKILL_NAME_RE.match(v):
-            raise ValueError("Name must match ^[a-z0-9-]+$")
+            raise ValueError("Name must use only lowercase letters, numbers, hyphens, and underscores, with an optional namespace prefix (e.g. ns:name)")
         for word in RESERVED_WORDS:
             if word in v:
                 raise ValueError(f"Name cannot contain reserved word '{word}'")
