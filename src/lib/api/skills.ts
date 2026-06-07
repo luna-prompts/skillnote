@@ -19,7 +19,6 @@ type ApiSkillListItem = {
   slug: string
   description: string
   collections?: string[]
-  content_md?: string
   latestVersion?: string
   currentVersion?: number
   extra_frontmatter?: string
@@ -76,7 +75,7 @@ function listItemToSkill(item: ApiSkillListItem): Skill {
     slug: item.slug,
     title: item.name,
     description: item.description,
-    content_md: item.content_md || '',
+    content_md: '',
     collections: item.collections || [],
     current_version: item.currentVersion || 0,
     extra_frontmatter: item.extra_frontmatter ?? undefined,

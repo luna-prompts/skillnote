@@ -62,7 +62,8 @@ export function ImportSheet({ onClose, onImported }: { onClose: () => void; onIm
         skill_selection: [...selection],
         on_conflict: globalConflict,
       })
-      toast.success(`Imported ${r.imported.length} skills from ${state.data.source.owner}/${state.data.source.repo}`)
+      const skippedCount = r.skipped?.length ?? 0
+      toast.success(`Imported ${r.imported.length} skill${r.imported.length === 1 ? '' : 's'} from ${state.data.source.owner}/${state.data.source.repo}${skippedCount ? ` · ${skippedCount} skipped` : ''}`)
       setState({ kind: 'success' })
       onImported()
       setTimeout(onClose, 500)

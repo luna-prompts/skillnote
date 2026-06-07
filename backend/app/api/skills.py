@@ -152,7 +152,6 @@ def list_skills(
                 slug=skill.slug,
                 description=skill.description,
                 collections=skill.collections or [],
-                content_md=skill.content_md or "",
                 latestVersion=latest.version if latest else None,
                 status=latest.status if latest else None,
                 channel=latest.channel if latest else None,

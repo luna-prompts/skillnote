@@ -38,6 +38,7 @@ const MAX_SKILLS_PER_COLLECTION = 15
 type ApplyResult = {
   imported: number
   renamed: number
+  skipped: number
   collection_slug: string
 }
 
@@ -188,12 +189,14 @@ export function ImportWorkspace({
       setProgress(100)
       setProgressLabel('Done')
       const renamed = r.imported.filter((s) => s.renamed_reason).length
+      const skipped = r.skipped?.length ?? 0
       toast.success(
-        `Imported ${r.imported.length} skill${r.imported.length === 1 ? '' : 's'} into ${r.collection_slug}${renamed ? ` · ${renamed} renamed` : ''}`,
+        `Imported ${r.imported.length} skill${r.imported.length === 1 ? '' : 's'} into ${r.collection_slug}${renamed ? ` · ${renamed} renamed` : ''}${skipped ? ` · ${skipped} skipped` : ''}`,
       )
       setResult({
         imported: r.imported.length,
         renamed,
+        skipped,
         collection_slug: r.collection_slug,
       })
       setStage('done')
@@ -1107,6 +1110,11 @@ function DoneCard({
         {result.renamed > 0 && ` · ${result.renamed} renamed to avoid conflicts`}
         . Everything is ready in your library.
       </p>
+      {result.skipped > 0 && (
+        <p className="mt-2 max-w-md text-[12px] text-amber-600 dark:text-amber-400">
+          {result.skipped} skill{result.skipped === 1 ? '' : 's'} skipped — name validation failed. Check that skill names use only lowercase letters, numbers, hyphens, or a namespace prefix (e.g. ns:name).
+        </p>
+      )}
       <div className="mt-7 flex flex-col items-stretch gap-2 sm:flex-row">
         <Button variant="outline" onClick={onAddAnother}>
           <Plus className="mr-1.5 h-3.5 w-3.5" />

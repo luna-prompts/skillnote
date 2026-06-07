@@ -84,10 +84,11 @@ function notifyChanged(): void {
 function commitSkills(skills: Skill[]): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(skills))
-  } catch {
+  } catch (err) {
     // SecurityError on Safari private / QuotaExceededError on full —
     // expected on locked-down browsers. The notify still fires so any
     // optimistic in-memory state gets a chance to reconcile.
+    console.warn('[skillnote] localStorage write failed:', err)
   }
   notifyChanged()
 }
