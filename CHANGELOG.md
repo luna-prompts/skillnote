@@ -3,6 +3,21 @@
 All notable changes to SkillNote will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.5.6] - 2026-06-07
+
+Two import/sync correctness fixes. Namespaced skills (e.g. `ckm:my-skill`) were being silently dropped on import (closes #64), and the skills list endpoint was overflowing the browser's localStorage quota on large libraries, causing the skill count to flash then revert on every sync (closes #65).
+
+No breaking changes and no migration required. The list-endpoint change is a response-shape trim that the frontend sync already tolerates via its localStorage fallback.
+
+### Fixed
+
+- **Namespaced skill names no longer dropped on import** (closes #64). Skills with a namespace prefix like `ckm:my-skill` were silently rejected because the name regex `^[a-z0-9-]+$` disallowed colons. The pattern is now `^[a-z0-9_-]+(?::[a-z0-9_-]+)?$` across all three validation layers — backend validator (`backend/app/validators/skill_validator.py`), manifest schema (`backend/app/services/imports/manifest_schema.py`), and frontend (`src/lib/skill-validation.ts`) — so `ns:local` names (including underscores) are accepted. Both import UIs (`ImportWorkspace`, `ImportSheet`) now also surface the `skipped[]` list from the apply response, which previously reported only the imported count with no indication of failures.
+- **`GET /v1/skills` no longer overflows localStorage** (closes #65). The list endpoint was returning full `content_md` markdown bodies for every skill, producing ~6 MB payloads for large libraries that silently exceeded localStorage's ~5 MB quota — leaving stale data on disk and causing the skill count to flash then revert on every sync. `content_md` is removed from `SkillListItem` (schema + `list_skills` constructor); the detail endpoint `GET /v1/skills/{slug}` still returns the full body, and `syncSkillsFromApi()` preserves previously-cached `content_md` from localStorage across syncs. A `console.warn` was added in `commitSkills()` so quota failures stay visible in DevTools instead of being swallowed.
+
+### Release / packaging
+
+- **CLI version synced to 0.5.6** so the npm publish actually ships. The npm package is published from `cli/`, which carries its own version field; the version bump touched only the root `package.json`, leaving `cli/package.json` at `0.5.5`. The `cli-v0.5.6` tag therefore failed the "Verify version matches tag" guard in `cli-release.yml` and never published. Bumping `cli/package.json` + `cli/package-lock.json` to `0.5.6` (matching the convention from #59) lets the tag fire the publish cleanly.
+
 ## [0.5.5] - 2026-05-26
 
 Visibility fix for bundled skills (closes #57). Skills imported from a marketplace, plugin, or `skill_bundle` import source were indistinguishable from locally-authored skills in the grid/list views — the only origin surface was the right-rail `SourceCard` on the detail page, which required clicking into a skill to see. ozp reported that with many bundled skills loaded, the library became hard to scan. This release adds a single small `BundlePill` component used consistently in three places so bundled-vs-local is identifiable at a glance.
