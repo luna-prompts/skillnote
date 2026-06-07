@@ -33,7 +33,6 @@ class SkillListItem(BaseModel):
     status: Optional[str] = None
     channel: Optional[str] = None
     currentVersion: int = 0
-    content_md: Optional[str] = ""
     extra_frontmatter: Optional[str] = None
     origin: Optional[SkillOrigin] = None
 
