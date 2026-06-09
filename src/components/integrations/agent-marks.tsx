@@ -57,20 +57,35 @@ export function OpenClawMark({ size = 56 }: { size?: number }) {
   )
 }
 
-export function ClaudeAIMark({ size = 56 }: { size?: number }) {
-  // claude.ai (the web app) uses the same Anthropic coral as Claude Code,
-  // but on a lighter plate so the Connect page can visually distinguish
-  // "CLI" from "web product" at a glance. Reuses the same source artwork
-  // so we never end up shipping two slightly-different Claude marks.
+export function OpenAIMark({ size = 56 }: { size?: number }) {
+  // OpenAI's monochrome "blossom" knot logomark on a white plate. Used as a
+  // "coming soon" placeholder for a future OpenAI sync surface — rendered at
+  // reduced opacity by callers, so it reads as not-yet-available.
   return (
     <img
-      src="/claude-mark.png"
+      src="/openai-mark.svg"
+      alt="OpenAI"
+      width={size}
+      height={size}
+      className="block rounded-lg ring-1 ring-foreground/5"
+      draggable={false}
+    />
+  )
+}
+
+export function ClaudeAIMark({ size = 56 }: { size?: number }) {
+  // claude.ai (the web app) is the Claude "spark" — the coral sunburst
+  // logomark on Anthropic's ivory plate — NOT the Claude Code pixel-robot
+  // mascot. `/claude-ai-spark.svg` is our vector rendering of that mark so
+  // the web product is visually distinct from the CLI at a glance.
+  return (
+    <img
+      src="/claude-ai-spark.svg"
       alt="claude.ai"
       width={size}
       height={size}
       className="block rounded-lg ring-1 ring-foreground/5"
       draggable={false}
-      style={{ imageRendering: 'pixelated' }}
     />
   )
 }

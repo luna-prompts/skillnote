@@ -128,6 +128,18 @@ class ClaudeAISkillLink(Base):
         ForeignKey("skill_content_versions.id", ondelete="SET NULL"),
         nullable=True,
     )
+    # The inbound SkillContentVersion staged (is_latest=False) on a
+    # `diverged_ask` outcome, awaiting manual resolve. Set ONLY while
+    # conflict_state='diverged'; cleared (NULL) on resolve/apply. SET NULL on
+    # version delete so keep_skillnote's hard-delete of the staged row doesn't
+    # dangle. Replaces the unsound "newest non-latest" created_at heuristic in
+    # resolve_conflict — an intervening save/restore/re-import would otherwise
+    # make that heuristic promote or delete the WRONG version (see H1).
+    staged_version_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("skill_content_versions.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     claude_ai_skill_id: Mapped[str] = mapped_column(Text, nullable=False)
     claude_ai_version: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     last_seen_at: Mapped[Optional[datetime]] = mapped_column(

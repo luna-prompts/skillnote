@@ -1,9 +1,10 @@
-// Anonymous failure telemetry. OFF by default. The user opts in via the
-// options page. When opted in, we POST short error reports to the user's
-// SkillNote backend (NOT to the SkillNote project) so the operator who
-// runs SkillNote owns the data.
+// Best-effort failure telemetry. Sent ONLY to the SkillNote backend this
+// extension is paired with — i.e. the user's OWN self-hosted instance, never
+// to a third party or the SkillNote project. Pairing the extension to that
+// backend IS the consent point: telemetry is gated on an active pairing
+// (skillnote_url + extension_token) and silently no-ops otherwise.
 //
-// What we send:
+// What we send (low-sensitivity, so the operator can fix a broken connector):
 //   - error category (e.g. "endpoint_changed", "auth_failed")
 //   - claude.ai endpoint that failed (URL path only, no body)
 //   - extension version

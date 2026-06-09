@@ -9,7 +9,7 @@ import { useEffect, useState } from 'react'
 import { Cloud, CloudOff } from 'lucide-react'
 import { toast } from 'sonner'
 import {
-  listIntegrations,
+  listIntegrationsCached,
   toggleSkillSync,
   type IntegrationStatusResponse,
 } from '@/lib/api/claude-ai'
@@ -27,10 +27,19 @@ export function SkillSyncBadge({ skillId, initialEnabled, onChange }: Props) {
   const [hasIntegrations, setHasIntegrations] = useState<boolean | null>(null)
   const [busy, setBusy] = useState(false)
 
+  // Re-sync local state when the page swaps to a different skill without
+  // unmounting this badge (the skill detail page navigates in place via
+  // swipe/keyboard). Without this, the badge keeps showing — and would
+  // write — the PREVIOUS skill's enabled state against the new skillId.
   useEffect(() => {
-    // Cheap probe — list integrations once on mount. Cached on the
-    // server-side, and the result is small.
-    listIntegrations()
+    setEnabled(initialEnabled)
+  }, [skillId, initialEnabled])
+
+  useEffect(() => {
+    // Cached lookup — repeated mounts within 60s reuse the same fetch
+    // (see listIntegrationsCached). Without this, browsing 10 skills
+    // hit the backend 10 times for the exact same response.
+    listIntegrationsCached()
       .then((rows: IntegrationStatusResponse[]) =>
         setHasIntegrations(
           rows.some((r) => r.status === 'active' || r.status === 'cookie_expired'),
@@ -45,6 +54,7 @@ export function SkillSyncBadge({ skillId, initialEnabled, onChange }: Props) {
   if (!hasIntegrations) return null
 
   const toggle = async () => {
+    if (busy) return // guard double-click (disabled only applies post-render)
     setBusy(true)
     const next = !enabled
     setEnabled(next) // optimistic

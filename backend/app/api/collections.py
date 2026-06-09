@@ -8,7 +8,12 @@ from sqlalchemy.orm import Session
 from app.core.errors import api_error
 from app.db.models import Collection
 from app.db.session import get_db
-from app.schemas.collection import CollectionCreate, CollectionDetail, CollectionUpdate
+from app.schemas.collection import (
+    CollectionCreate,
+    CollectionDetail,
+    CollectionPublishUpdate,
+    CollectionUpdate,
+)
 
 router = APIRouter(prefix="/v1/collections", tags=["collections"])
 
@@ -24,7 +29,9 @@ def list_collections(db: Session = Depends(get_db)):
     rows = db.execute(
         text(
             """
-            SELECT u.name, u.count, COALESCE(c.description, '') AS description
+            SELECT u.name, u.count,
+                   COALESCE(c.description, '') AS description,
+                   COALESCE(c.published_to_claude_ai, false) AS published_to_claude_ai
             FROM (
                 SELECT name, COUNT(*) AS count FROM (
                     SELECT unnest(collections) AS name FROM skills
@@ -43,7 +50,12 @@ def list_collections(db: Session = Depends(get_db)):
         )
     ).mappings().all()
     return [
-        {"name": row["name"], "count": row["count"], "description": row["description"]}
+        {
+            "name": row["name"],
+            "count": row["count"],
+            "description": row["description"],
+            "published_to_claude_ai": row["published_to_claude_ai"],
+        }
         for row in rows
     ]
 
@@ -93,7 +105,74 @@ def update_collection(name: str, payload: CollectionUpdate, db: Session = Depend
 
     col.description = payload.description
     col.updated_at = datetime.now(timezone.utc)
+    # The description is shipped into the claude.ai plugin manifest, so a
+    # published collection must re-publish to reflect the edit (otherwise the
+    # claude.ai group keeps the stale description until some other change).
+    if col.published_to_claude_ai:
+        from app.services.claude_ai_sync import enqueue_group_publish
+
+        enqueue_group_publish(db)
     db.commit()
+    return db.query(Collection).filter(Collection.name == col.name).first()
+
+
+@router.put("/{name}/claude-ai", response_model=CollectionDetail)
+def set_collection_claude_ai_publish(
+    name: str, payload: CollectionPublishUpdate, db: Session = Depends(get_db)
+):
+    """Toggle whether a collection is published to claude.ai as its own
+    plugin group.
+
+    Upserts a ``collections`` row if the collection currently exists only as a
+    string in skill arrays (so there's somewhere to store the flag), sets
+    ``published_to_claude_ai``, and enqueues a group republish so the extension
+    rebuilds the claude.ai groups on its next tick. This is the backend behind
+    the per-collection toggle on the collection card.
+    """
+    col = db.query(Collection).filter(
+        func.lower(Collection.name) == name.lower()
+    ).first()
+    if not col:
+        # Collection exists only via skill arrays — materialize a row so the
+        # flag has a home. Use the EXACT casing stored in the skill arrays as
+        # the row name (NOT the raw URL ``name``, whose casing may differ from
+        # what skills store) so the published-group query matches the skills.
+        ref = db.execute(
+            text(
+                "SELECT c FROM skills, unnest(collections) AS c "
+                "WHERE lower(c) = lower(:name) LIMIT 1"
+            ),
+            {"name": name},
+        ).first()
+        if ref is None:
+            raise api_error(404, "COLLECTION_NOT_FOUND", f'Collection "{name}" not found')
+        now = datetime.now(timezone.utc)
+        col = Collection(name=ref[0], description="", created_at=now, updated_at=now)
+        db.add(col)
+
+    col.published_to_claude_ai = payload.published
+    col.updated_at = datetime.now(timezone.utc)
+
+    # Trigger a claude.ai group rebuild on the next extension tick.
+    from app.services.claude_ai_sync import enqueue_group_publish
+
+    enqueue_group_publish(db)
+    try:
+        db.commit()
+    except IntegrityError:
+        # Race: a concurrent request materialized the same collection row
+        # between our lookup and insert. Re-fetch the now-existing row, apply
+        # the flag, and retry once (mirrors create_collection's handling).
+        db.rollback()
+        col = db.query(Collection).filter(
+            func.lower(Collection.name) == name.lower()
+        ).first()
+        if col is None:
+            raise api_error(404, "COLLECTION_NOT_FOUND", f'Collection "{name}" not found')
+        col.published_to_claude_ai = payload.published
+        col.updated_at = datetime.now(timezone.utc)
+        enqueue_group_publish(db)
+        db.commit()
     return db.query(Collection).filter(Collection.name == col.name).first()
 
 

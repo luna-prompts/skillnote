@@ -189,6 +189,66 @@ test('analytics panel renders headline metrics + sparkline + top skills + per-br
   expect(label).toMatch(/7-day sync sparkline/i)
 })
 
+test('usage section shows claude.ai invocations when present', async ({ page }) => {
+  await wireBase(page, [activeIntegration()], {
+    skills_synced_24h: 5,
+    skills_synced_7d: 12,
+    failed_24h: 0,
+    failed_7d: 0,
+    sync_success_rate_7d: 1.0,
+    avg_attempts_per_sync_7d: 1.0,
+    top_skills_7d: [],
+    per_integration: [
+      {
+        integration_id: 'int-1',
+        integration_label: 'Chrome',
+        syncs_24h: 5,
+        failed_24h: 0,
+        last_sync_at: new Date().toISOString(),
+      },
+    ],
+    sparkline_7d: dailySparkline([0, 0, 0, 0, 2, 4, 6]),
+    // Usage data — Claude invoked skills on claude.ai.
+    invocations_24h: 9,
+    invocations_7d: 27,
+    top_used_skills_7d: [
+      { skill_slug: 'secure-migrations', invocations: 14 },
+      { skill_slug: 'testing-guide', invocations: 13 },
+    ],
+  } as any)
+  await page.goto('/settings/integrations/claude-ai')
+
+  const usage = page.getByTestId('usage-breakdown')
+  await expect(usage).toBeVisible()
+  await expect(usage).toContainText('9 in 24h')
+  await expect(usage).toContainText('27 in 7d')
+  const usedList = page.getByTestId('top-used-skills-list')
+  await expect(usedList.getByRole('link', { name: 'secure-migrations' })).toBeVisible()
+  await expect(usedList.getByText('14× used')).toBeVisible()
+})
+
+test('usage section is hidden when there are zero invocations', async ({ page }) => {
+  await wireBase(page, [activeIntegration()], {
+    skills_synced_24h: 5,
+    skills_synced_7d: 12,
+    failed_24h: 0,
+    failed_7d: 0,
+    sync_success_rate_7d: 1.0,
+    avg_attempts_per_sync_7d: 1.0,
+    top_skills_7d: [],
+    per_integration: [
+      { integration_id: 'int-1', integration_label: 'Chrome', syncs_24h: 5, failed_24h: 0, last_sync_at: new Date().toISOString() },
+    ],
+    sparkline_7d: dailySparkline([0, 0, 0, 0, 2, 4, 6]),
+    invocations_24h: 0,
+    invocations_7d: 0,
+    top_used_skills_7d: [],
+  } as any)
+  await page.goto('/settings/integrations/claude-ai')
+  await expect(page.getByTestId('claude-ai-analytics-panel')).toBeVisible()
+  await expect(page.getByTestId('usage-breakdown')).not.toBeVisible()
+})
+
 test('success rate below 95% styles in amber, above stays emerald', async ({
   page,
 }) => {

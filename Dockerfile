@@ -15,6 +15,11 @@ COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 ARG NEXT_PUBLIC_API_BASE_URL=http://localhost:8082
 ENV NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL
+# Server-side target for the /v1 proxy rewrite in next.config.ts. Baked at
+# build time because Next.js evaluates rewrites() during `next build`. In
+# Docker the web server reaches the API over the internal network (api:8080).
+ARG SKILLNOTE_API_PROXY_TARGET=http://localhost:8082
+ENV SKILLNOTE_API_PROXY_TARGET=$SKILLNOTE_API_PROXY_TARGET
 RUN npm run build
 
 # Production image

@@ -20,6 +20,15 @@ export type AgentStat = {
   pct: number
 }
 
+export type RecentSession = {
+  session_id: string
+  session_name: string | null
+  agent_name: string | null
+  call_count: number
+  skill_count: number
+  last_used: string | null
+}
+
 export type TimelinePoint = {
   date: string
   call_count: number
@@ -88,6 +97,19 @@ export function fetchSkillCalls(params: AnalyticsParams = {}) {
 
 export function fetchAgents(params: AnalyticsParams = {}) {
   return apiRequest<AgentStat[]>(`/v1/analytics/agents${buildQuery(params)}`)
+}
+
+export function fetchRecentSessions(
+  params: AnalyticsParams & { limit?: number } = {},
+): Promise<RecentSession[]> {
+  // buildQuery doesn't carry `limit`, so build the query inline here.
+  const q = new URLSearchParams()
+  if (params.days !== undefined) q.set('days', String(params.days))
+  if (params.agent) q.set('agent', params.agent)
+  if (params.collection) q.set('collection', params.collection)
+  if (params.limit !== undefined) q.set('limit', String(params.limit))
+  const s = q.toString()
+  return apiRequest<RecentSession[]>(`/v1/analytics/recent-sessions${s ? `?${s}` : ''}`)
 }
 
 export function fetchTimeline(params: AnalyticsParams = {}) {

@@ -15,6 +15,13 @@ broken at a stitching point.
 """
 from __future__ import annotations
 
+
+import pytest  # noqa: E402
+
+pytestmark = pytest.mark.skip(reason=(
+    'Superseded by the per-collection named-group model: one debounced `publish_group` op rebuilds the whole "SkillNote: <collection>" group, replacing the per-skill upload/delete/conflict op contract this file asserts. New contract is covered by tests/unit/test_claude_ai_service.py and tests/integration/test_claude_ai_plugin_bundle.py.'
+))
+
 import io
 import os
 import uuid

@@ -142,7 +142,7 @@ test.describe('/settings/integrations/claude-ai — main page', () => {
     ).toBeVisible()
   })
 
-  test('renders last_error when an integration has one', async ({ page }) => {
+  test('renders a friendly summary for a raw HTTP error, raw tucked behind details', async ({ page }) => {
     const row: IntegrationRow = {
       id: 'int-2',
       browser_label: 'Test',
@@ -159,9 +159,42 @@ test.describe('/settings/integrations/claude-ai — main page', () => {
     await mockClaudeAI(page, { integrations: [row] })
     await page.goto('/settings/integrations/claude-ai')
 
-    await expect(
-      page.getByText('claude.ai endpoint returned 500'),
-    ).toBeVisible()
+    // Friendly summary shown; raw string is NOT the headline.
+    await expect(page.getByTestId('integration-last-error-summary')).toContainText(
+      'claude.ai returned an error (HTTP 500)',
+    )
+    // Raw detail is hidden until "Show details" is clicked.
+    await expect(page.getByTestId('integration-last-error-detail')).toHaveCount(0)
+    await page.getByTestId('integration-last-error-toggle').click()
+    await expect(page.getByTestId('integration-last-error-detail')).toContainText(
+      'claude.ai endpoint returned 500',
+    )
+  })
+
+  test('translates a raw claude.ai JSON error into a human summary (no JSON dump)', async ({ page }) => {
+    const row: IntegrationRow = {
+      id: 'int-3',
+      browser_label: 'Test',
+      status: 'error',
+      scope: 'both',
+      claude_ai_org_id: null,
+      last_sync_at: null,
+      // The exact shape that previously dumped raw into the UI.
+      last_error:
+        'claude.ai /api/organizations/7d36e9d8/skills/upload-skill?overwrite=true returned 400 [{"type":"error","error":{"type":"invalid_request_error","message":"This skill name is already in use"}}]',
+      conflict_policy: 'ask',
+      pending_op_count: 0,
+      failed_op_count: 1,
+      linked_skill_count: 0,
+    }
+    await mockClaudeAI(page, { integrations: [row] })
+    await page.goto('/settings/integrations/claude-ai')
+
+    const summary = page.getByTestId('integration-last-error-summary')
+    await expect(summary).toContainText('already exists on claude.ai')
+    // The raw JSON must NOT be the visible headline.
+    await expect(summary).not.toContainText('invalid_request_error')
+    await expect(summary).not.toContainText('{')
   })
 
   test('renders a conflict row with three resolution buttons', async ({ page }) => {

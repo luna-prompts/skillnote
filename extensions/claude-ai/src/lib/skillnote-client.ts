@@ -32,7 +32,7 @@ interface KnownSkillIdsResponse {
 
 interface ExtensionSelfStatusResponse {
   integration_id: string;
-  browser_label: string;
+  browser_label: string | null;
   status: string;
   linked_skill_count: number;
   pending_op_count: number;
@@ -125,6 +125,28 @@ export function buildClient(baseUrl: string, extensionToken?: string) {
         `/v1/integrations/claude-ai/extension/pair/status?${q}`,
       );
     },
+    /** Report a skill invocation observed in a claude.ai conversation.
+     *  Hits the SAME analytics hook Claude Code uses, tagged
+     *  agent_name="claude-ai", so usage lands in the shared
+     *  skill_call_events table — true cross-agent parity. Best-effort:
+     *  the hook returns 202 and never blocks sync. */
+    async reportSkillUsed(
+      skill_slug: string,
+      session_id: string,
+      session_name = "",
+    ): Promise<void> {
+      await call<unknown>("/v1/hooks/skill-used", {
+        method: "POST",
+        body: JSON.stringify({
+          skill_slug,
+          agent_name: "claude-ai",
+          session_id,
+          // The claude.ai conversation title (when known), so the dashboard
+          // can show the chat name instead of an opaque conversation id.
+          session_name,
+        }),
+      });
+    },
     /** Fetch next batch of pending sync ops. */
     async fetchOperations(limit = 20): Promise<SyncOperation[]> {
       const q = new URLSearchParams({ limit: String(limit) });
@@ -183,6 +205,49 @@ export function buildClient(baseUrl: string, extensionToken?: string) {
       }
       if (!res.ok) throw new Error(`bundle fetch ${res.status}`);
       return await res.blob();
+    },
+    /** List the claude.ai plugin groups to publish — one per collection the
+     *  user toggled on. Each: { name (plugin slug), display_name, skill_count }.
+     *  The extension uploads each and uninstalls any group no longer listed. */
+    async fetchPluginGroups(): Promise<{
+      marketplace_name: string;
+      groups: { name: string; display_name: string; skill_count: number }[];
+    }> {
+      return call(`/v1/integrations/claude-ai/extension/plugin-groups`);
+    },
+    /** Fetch ONE collection group's plugin ZIP (+ ETag + skill count). */
+    async fetchPluginGroupBundle(
+      group: string,
+      timeoutMs = 60_000,
+    ): Promise<{ bundle: Blob; etag: string | null; skillCount: number }> {
+      const headers = new Headers();
+      if (extensionToken) headers.set("Authorization", `Bearer ${extensionToken}`);
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      const q = new URLSearchParams({ group });
+      let res: Response;
+      try {
+        res = await fetch(
+          `${base}/v1/integrations/claude-ai/extension/plugin-bundle?${q}`,
+          { headers, signal: controller.signal },
+        );
+      } catch (e) {
+        const err = e as Error;
+        if (err.name === "AbortError") {
+          throw new SkillNoteNetworkError(
+            `Plugin bundle fetch timed out after ${timeoutMs}ms`,
+          );
+        }
+        throw new SkillNoteNetworkError(`Plugin bundle fetch network error: ${err.message}`);
+      } finally {
+        clearTimeout(timer);
+      }
+      if (res.status === 401 || res.status === 403) {
+        throw new SkillNoteAuthError(`Auth error (${res.status})`);
+      }
+      if (!res.ok) throw new Error(`plugin bundle fetch ${res.status}`);
+      const skillCount = Number(res.headers.get("X-Skill-Count") ?? "0");
+      return { bundle: await res.blob(), etag: res.headers.get("ETag"), skillCount };
     },
     /** Compact snapshot of THIS integration's counters. Used by the popup. */
     async fetchSelfStatus(): Promise<ExtensionSelfStatusResponse> {

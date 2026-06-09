@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import {
   ArrowDownToLine,
@@ -25,6 +25,7 @@ import {
 } from '@/lib/api/claude-ai'
 import { ActivityRowSkeleton } from './skeleton'
 import { Download } from 'lucide-react'
+import { friendlyIntegrationError } from '@/lib/claude-ai-errors'
 
 interface Props {
   integration_id?: string
@@ -53,6 +54,8 @@ const EVENT_META: Record<AuditEvent, { label: string; icon: React.ElementType; t
   endpoint_changed: { label: 'claude.ai endpoint changed', icon: ShieldAlert, tone: 'text-red-500' },
   token_revoked: { label: 'Token revoked', icon: KeyRound, tone: 'text-red-500' },
   cookie_expired: { label: 'claude.ai session expired', icon: Cookie, tone: 'text-amber-500' },
+  op_retried: { label: 'Sync op retried', icon: ArrowUpFromLine, tone: 'text-blue-500' },
+  sync_triggered: { label: 'Manual sync requested', icon: ArrowUpFromLine, tone: 'text-muted-foreground' },
 }
 
 export function ActivityFeed({
@@ -84,6 +87,10 @@ export function ActivityFeed({
     [integration_id, skill_id, eventFilter, since, until],
   )
 
+  // Once the user loads older pages, pause the poll so it doesn't wipe the
+  // appended history every interval (the poll replaces events with page 1).
+  const paginatedRef = useRef(false)
+
   const load = useCallback(async () => {
     try {
       const rows = await listActivity({ ...baseFilters, limit: pageSize })
@@ -109,6 +116,7 @@ export function ActivityFeed({
       })
       setEvents((prev) => (prev ? [...prev, ...older] : older))
       setHasMore(older.length === pageSize)
+      paginatedRef.current = true
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -117,9 +125,13 @@ export function ActivityFeed({
   }, [events, baseFilters, loadingMore, pageSize])
 
   useEffect(() => {
+    // `load` identity changes when the filters change → treat as a fresh view.
+    paginatedRef.current = false
     void load()
     const id = setInterval(() => {
-      if (document.visibilityState === 'visible') void load()
+      // Skip the poll once the user has paged into older history, so we don't
+      // discard the loaded pages by replacing events with just the first page.
+      if (document.visibilityState === 'visible' && !paginatedRef.current) void load()
     }, pollIntervalMs)
     return () => clearInterval(id)
   }, [load, pollIntervalMs])
@@ -316,26 +328,59 @@ function ActivityRow({ event, compact }: { event: AuditEventOut; compact: boolea
     icon: LinkIcon,
     tone: 'text-muted-foreground',
   }
+  // A "skill_pushed" event whose op is a whole-group publish reads wrong as
+  // "Skill pushed" — relabel it (the detail line carries the group/skill count).
+  const isGroupPublish =
+    event.event === 'skill_pushed' &&
+    (event.detail as Record<string, unknown> | undefined)?.op_kind === 'publish_group'
+  const label = isGroupPublish ? 'Published to claude.ai' : meta.label
   const Icon = meta.icon
   const subtitle = renderDetail(event)
+  const [showDetail, setShowDetail] = useState(false)
+  const hasDetail =
+    !compact && event.detail && Object.keys(event.detail).length > 0
   return (
-    <li className={`flex items-start gap-3 ${compact ? 'py-2 px-3' : 'px-4 py-3'} hover:bg-muted/30`}>
-      <div className={`mt-0.5 rounded-full bg-muted p-1.5 ${meta.tone}`}>
-        <Icon className="h-3 w-3" />
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="text-[13px] text-foreground truncate">{meta.label}</div>
-        {subtitle && (
-          <div className="text-[11px] text-muted-foreground truncate">{subtitle}</div>
+    <li
+      className={`${compact ? 'py-2 px-3' : 'px-4 py-3'} hover:bg-muted/30`}
+      data-testid={`activity-row-${event.id}`}
+    >
+      <div className="flex items-start gap-3">
+        <div className={`mt-0.5 rounded-full bg-muted p-1.5 ${meta.tone}`}>
+          <Icon className="h-3 w-3" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="text-[13px] text-foreground truncate">{label}</div>
+          {subtitle && (
+            <div className="text-[11px] text-muted-foreground truncate">{subtitle}</div>
+          )}
+        </div>
+        {hasDetail && (
+          <button
+            type="button"
+            onClick={() => setShowDetail((v) => !v)}
+            aria-expanded={showDetail}
+            aria-label={showDetail ? 'Hide event details' : 'Show event details'}
+            className="shrink-0 text-[10.5px] text-muted-foreground hover:text-foreground transition-colors px-1.5 py-0.5 rounded border border-border bg-background"
+          >
+            {showDetail ? 'Hide' : 'Details'}
+          </button>
         )}
+        <time
+          dateTime={event.created_at}
+          className="shrink-0 text-[11px] text-muted-foreground tabular-nums"
+          title={new Date(event.created_at).toLocaleString()}
+        >
+          {timeAgo(event.created_at)}
+        </time>
       </div>
-      <time
-        dateTime={event.created_at}
-        className="shrink-0 text-[11px] text-muted-foreground tabular-nums"
-        title={new Date(event.created_at).toLocaleString()}
-      >
-        {timeAgo(event.created_at)}
-      </time>
+      {showDetail && hasDetail && (
+        <pre
+          className="mt-2 ml-8 max-h-48 overflow-auto rounded bg-muted/40 px-2 py-1.5 text-[10.5px] font-mono text-foreground whitespace-pre-wrap break-words"
+          data-testid={`activity-detail-${event.id}`}
+        >
+          {JSON.stringify(event.detail, null, 2)}
+        </pre>
+      )}
     </li>
   )
 }
@@ -348,10 +393,29 @@ function renderDetail(e: AuditEventOut): string | null {
     return String(d.browser_label)
   if (e.event === 'op_failed') {
     const op = d.op_kind ? String(d.op_kind) : 'operation'
-    const err = d.error ? String(d.error).slice(0, 80) : ''
+    // Run the raw error through the same friendly translator the connector
+    // card uses, so the feed shows a human reason — not a raw claude.ai URL.
+    const err = d.error ? friendlyIntegrationError(String(d.error)).summary : ''
     return err ? `${op}: ${err}` : op
   }
   if (e.event === 'skill_pushed' || e.event === 'skill_imported' || e.event === 'skill_delete_pushed') {
+    // Named-group publish: one op covers many skills and carries no single
+    // skill_id, so summarize from the result payload instead of a blank line.
+    if (d.op_kind === 'publish_group') {
+      const r = (d.result ?? {}) as Record<string, unknown>
+      const groups = Number(r.group_count ?? 0)
+      const skills = Number(r.skill_count ?? 0)
+      const retired = Number(r.retired_count ?? 0)
+      const parts = [
+        `${groups} group${groups === 1 ? '' : 's'}`,
+        `${skills} skill${skills === 1 ? '' : 's'}`,
+      ]
+      if (retired > 0) parts.push(`${retired} retired`)
+      return parts.join(' · ')
+    }
+    // Prefer the human skill slug; fall back to the opaque claude.ai id only
+    // if we couldn't resolve the skill (e.g. it was deleted since the event).
+    if (e.skill_slug) return e.skill_slug
     const result = d.result as Record<string, unknown> | undefined
     if (result?.claude_ai_skill_id) return String(result.claude_ai_skill_id)
   }

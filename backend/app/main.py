@@ -45,9 +45,34 @@ from app.api.claude_ai import router as claude_ai_router
 
 app = FastAPI(title="SkillNote Backend", version="0.1.0")
 
+
+def _resolve_cors_origins() -> list[str]:
+    """Resolve allowed CORS origins, refusing a wildcard in prod.
+
+    The connector authenticates with a bearer token in the Authorization
+    header (not cookies), and ``allow_headers="*"`` permits that header
+    cross-origin; the UI endpoints currently have no auth. So a wildcard
+    origin in production would let ANY website the user visits drive the
+    whole connector API from their browser. A wildcard is only acceptable on
+    a local/dev box — refuse it in prod and require explicit origins.
+    """
+    raw = settings.cors_origins
+    if raw == "*":
+        if settings.app_env == "prod":
+            import logging
+
+            logging.getLogger("skillnote").warning(
+                "SKILLNOTE_CORS_ORIGINS='*' is unsafe in production and was "
+                "ignored; set explicit comma-separated origins instead."
+            )
+            return []
+        return ["*"]
+    return [o.strip() for o in raw.split(",") if o.strip()]
+
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins.split(",") if settings.cors_origins != "*" else ["*"],
+    allow_origins=_resolve_cors_origins(),
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -160,9 +185,12 @@ _CLEANUP_INTERVAL_SECONDS = 300  # 5 minutes
 
 
 async def _claude_ai_cleanup_loop() -> None:
-    """Background loop that periodically expires stale pending pairings."""
+    """Background loop: expire stale pending pairings + reclaim orphaned ops."""
     from app.db.session import SessionLocal
-    from app.services.claude_ai_sync import expire_stale_pairings
+    from app.services.claude_ai_sync import (
+        expire_stale_pairings,
+        reclaim_stale_operations,
+    )
 
     log = logging.getLogger("skillnote.claude_ai.cleanup")
     while True:
@@ -170,9 +198,15 @@ async def _claude_ai_cleanup_loop() -> None:
             await asyncio.sleep(_CLEANUP_INTERVAL_SECONDS)
             with SessionLocal() as db:
                 expired = expire_stale_pairings(db)
+                # Reclaim ops left in_progress by a browser that closed or
+                # whose service worker died mid-sync — otherwise they'd stall
+                # forever, invisible to the queue counters.
+                reclaimed = reclaim_stale_operations(db)
                 db.commit()
                 if expired > 0:
                     log.info("expired %d stale pending pairing(s)", expired)
+                if reclaimed > 0:
+                    log.info("reclaimed %d stalled sync op(s)", reclaimed)
         except asyncio.CancelledError:
             log.info("cleanup loop cancelled")
             return

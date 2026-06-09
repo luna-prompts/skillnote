@@ -4,85 +4,163 @@
   <meta charset="UTF-8" />
   <title>SkillNote — Settings</title>
   <style>
+    /* ── Design tokens — mirrors SkillNote globals.css ─────────────────── */
     :root {
       color-scheme: light dark;
-      --fg: #1a1a1a;
-      --muted: #6b7280;
-      --border: #e5e7eb;
-      --bg: #ffffff;
-      --bg-soft: #f9fafb;
+      --fg: #111318;            /* --foreground */
+      --fg-soft: #3a3d47;
+      --muted: #7a7a8a;         /* --muted-foreground */
+      --faint: #a8a8b3;
+      --accent: #0d9488;        /* SkillNote teal */
+      --accent-hover: #0f766e;
+      --primary: #111318;       /* black primary buttons (bg-foreground) */
+      --primary-fg: #ffffff;
+      --ok: #059669;
+      --ok-bg: #d1fae5;
+      --ok-fg: #065f46;
+      --warn: #d97706;
+      --warn-bg: #fef3c7;
+      --warn-fg: #92400e;
+      --err: #dc2626;           /* --destructive */
+      --err-bg: #fee2e2;
+      --err-fg: #991b1b;
+      --info-bg: #ccfbf1;       /* teal-tinted */
+      --info-fg: #115e59;
+      --border: #e4e4e8;        /* --border */
+      --border-strong: #d4d4d8;
+      --bg: #f7f7f8;            /* --background */
+      --bg-soft: #ffffff;       /* --card */
+      --bg-sunken: #f0f0f2;     /* --secondary / --muted */
+      --radius: 12px;
+      --radius-sm: 8px;
+      --shadow: 0 1px 2px rgba(17,19,24,0.04), 0 4px 12px rgba(17,19,24,0.05);
     }
     @media (prefers-color-scheme: dark) {
       :root {
-        --fg: #f4f4f5;
-        --muted: #9ca3af;
-        --border: #27272a;
-        --bg: #18181b;
-        --bg-soft: #1f1f23;
+        --fg: #e8e8ed;
+        --fg-soft: #c4c4cf;
+        --muted: #8b8b9e;
+        --faint: #6a6a78;
+        --accent: #0d9488;
+        --accent-hover: #14b8a6;
+        --primary: #e8e8ed;
+        --primary-fg: #0f1117;
+        --ok: #34d399;
+        --ok-bg: #064e3b;
+        --ok-fg: #a7f3d0;
+        --warn: #fbbf24;
+        --warn-bg: #78350f;
+        --warn-fg: #fde68a;
+        --err: #ef4444;
+        --err-bg: #7f1d1d;
+        --err-fg: #fecaca;
+        --info-bg: #134e4a;
+        --info-fg: #99f6e4;
+        --border: #252832;
+        --border-strong: #3a3d47;
+        --bg: #0f1117;          /* --background */
+        --bg-soft: #16181f;     /* --card */
+        --bg-sunken: #1e2029;   /* --secondary */
+        --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 24px rgba(0,0,0,0.4);
       }
     }
+
     * { box-sizing: border-box; }
+    html { -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
     body {
-      max-width: 580px;
-      margin: 40px auto;
-      padding: 0 20px;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      max-width: 560px;
+      margin: 56px auto;
+      padding: 0 24px;
+      font-family: "DM Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
       color: var(--fg);
       background: var(--bg);
     }
-    h1 { font-size: 22px; margin: 0 0 8px; }
-    p.lede { color: var(--muted); margin: 0 0 28px; }
-    .card { background: var(--bg-soft); border: 1px solid var(--border); border-radius: 10px; padding: 22px; margin-bottom: 16px; }
-    label { display: block; margin-bottom: 6px; font-weight: 500; font-size: 13px; }
+
+    .head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+    .mark { width: 30px; height: 30px; border-radius: 8px; border: 1px solid var(--border); flex: 0 0 auto; background: #fff; }
+    h1 { font-size: 20px; font-weight: 650; margin: 0; letter-spacing: -0.02em; }
+    p.lede { color: var(--muted); margin: 0 0 28px; font-size: 14px; }
+
+    .card { background: var(--bg-soft); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; box-shadow: var(--shadow); }
+
+    .field { margin-bottom: 18px; }
+    .field:last-child { margin-bottom: 0; }
+    label { display: block; margin-bottom: 6px; font-weight: 600; font-size: 13px; }
     input[type="text"], input[type="url"] {
-      width: 100%;
-      padding: 9px 12px;
-      font-size: 14px;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      background: var(--bg);
-      color: var(--fg);
+      width: 100%; padding: 10px 12px; font-size: 14px; font-family: inherit;
+      border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+      background: var(--bg); color: var(--fg); transition: border-color 0.12s ease, box-shadow 0.12s ease;
     }
-    button {
-      padding: 9px 16px;
-      font-size: 14px;
-      font-weight: 500;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      background: var(--bg);
-      color: var(--fg);
-      cursor: pointer;
+    input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+    input[aria-invalid="true"] { border-color: var(--err); }
+    .hint { margin-top: 6px; font-size: 12.5px; color: var(--muted); }
+    .hint code { font-family: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace; font-size: 11.5px; background: var(--bg-sunken); padding: 1px 5px; border-radius: 4px; }
+    .err-text { margin-top: 7px; font-size: 12.5px; color: var(--err); min-height: 1em; }
+
+    /* ── Buttons ───────────────────────────────────────────────────────── */
+    .btn {
+      padding: 9px 16px; font-size: 13.5px; font-weight: 600; font-family: inherit;
+      border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+      background: var(--bg); color: var(--fg); cursor: pointer;
+      display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+      transition: background 0.12s ease, border-color 0.12s ease, opacity 0.12s ease;
     }
-    button:hover { background: var(--border); }
-    button.primary {
-      background: #2563eb;
-      color: white;
-      border-color: #2563eb;
-    }
-    button.primary:hover { background: #1d4ed8; border-color: #1d4ed8; }
-    button.danger {
-      background: transparent;
-      border-color: #fca5a5;
-      color: #b91c1c;
-    }
-    .stack > * + * { margin-top: 12px; }
-    .row { display: flex; gap: 8px; align-items: center; }
-    .pill { font-size: 12px; padding: 3px 10px; border-radius: 999px; font-weight: 500; }
-    .pill.ok { background: #d1fae5; color: #065f46; }
-    .pill.warn { background: #fef3c7; color: #78350f; }
-    .pill.err { background: #fee2e2; color: #7f1d1d; }
-    @media (prefers-color-scheme: dark) {
-      .pill.ok { background: #064e3b; color: #d1fae5; }
-      .pill.warn { background: #78350f; color: #fef3c7; }
-      .pill.err { background: #7f1d1d; color: #fee2e2; }
-    }
+    .btn:hover { background: var(--bg-sunken); }
+    .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+    .btn[disabled] { opacity: 0.55; cursor: default; }
+    .btn-primary { background: var(--primary); color: var(--primary-fg); border-color: var(--primary); }
+    .btn-primary:hover { background: var(--primary); border-color: var(--primary); opacity: 0.9; }
+    .btn-danger { color: var(--err); border-color: color-mix(in srgb, var(--err) 35%, transparent); background: transparent; }
+    .btn-danger:hover { background: var(--err-bg); }
+    .btn-ghost { border-color: transparent; background: transparent; color: var(--muted); }
+    .btn-ghost:hover { background: var(--bg-sunken); color: var(--fg); }
+    .ico { width: 15px; height: 15px; flex: 0 0 auto; }
+    .spin { animation: spin 0.8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+
+    /* ── Pills ─────────────────────────────────────────────────────────── */
+    .pill { font-size: 12px; font-weight: 600; padding: 4px 11px; border-radius: 999px; display: inline-flex; align-items: center; gap: 6px; }
+    .pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+    .pill.ok { background: color-mix(in srgb, var(--ok) 12%, transparent); color: var(--ok); }
+    .pill.warn { background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn); }
+    .pill.info { background: color-mix(in srgb, var(--accent) 13%, transparent); color: var(--accent); }
+
+    /* ── Pairing code ──────────────────────────────────────────────────── */
+    .code-box { display: flex; align-items: stretch; border: 1px solid var(--border-strong); border-radius: var(--radius); overflow: hidden; background: var(--bg); }
+    .code { flex: 1; font-family: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace; font-size: 32px; font-weight: 600; letter-spacing: 0.28em; text-align: center; padding: 20px 0 20px 0.28em; }
+    .copy { flex: 0 0 auto; width: 58px; border: none; border-left: 1px solid var(--border); background: var(--bg-soft); color: var(--muted); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.12s, color 0.12s; }
+    .copy:hover { background: var(--bg-sunken); color: var(--fg); }
+    .copy.copied { color: var(--ok); }
+    .copy svg { width: 18px; height: 18px; }
+    .countdown { text-align: center; font-size: 12.5px; color: var(--muted); margin-top: 10px; }
+    .countdown .t { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--fg-soft); }
+    .countdown.urgent .t { color: var(--warn); }
+    .countdown.expired { color: var(--err); }
+
+    /* ── Notices ───────────────────────────────────────────────────────── */
+    .notice { display: flex; gap: 11px; padding: 13px 14px; border-radius: var(--radius-sm); font-size: 13px; margin-top: 4px; }
+    .notice .ico { margin-top: 1px; }
+    .notice.warn { background: var(--warn-bg); color: var(--warn-fg); }
+    .notice.info { background: var(--bg-sunken); color: var(--fg-soft); }
+    .notice a { color: inherit; font-weight: 600; }
+
+    .meta-row { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+    .browser-label { color: var(--muted); font-size: 13px; }
+    hr { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
     .muted { color: var(--muted); font-size: 13px; }
-    .code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 24px; letter-spacing: 0.08em; padding: 16px 0; text-align: center; background: var(--bg); border: 1px dashed var(--border); border-radius: 8px; }
-    hr { border: none; border-top: 1px solid var(--border); margin: 14px 0; }
+    .stack > * + * { margin-top: 16px; }
+    .confirm { background: var(--bg-sunken); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px; }
+    .confirm p { margin: 0 0 12px; font-size: 13px; }
   </style>
 </head>
 <body>
-  <h1>SkillNote</h1>
+  <div class="head">
+    <img class="mark" src="icons/logo.svg" alt="" />
+    <h1>SkillNote</h1>
+  </div>
   <p class="lede">Sync your self-hosted SkillNote skills to your claude.ai account.</p>
   <div id="root">Loading…</div>
   <script type="module" src="./options.ts"></script>

@@ -77,10 +77,20 @@ export function HealthCard({ pollIntervalMs = 15_000 }: Props) {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Icon className={`h-4 w-4 ${tone}`} aria-hidden="true" data-testid="health-icon" />
-          <h3 className="text-[14px] font-medium text-foreground">Connector health</h3>
+          <h3 className="text-[14px] font-medium text-foreground">claude.ai sync status</h3>
         </div>
-        <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-          schema {data.schema_version}
+        <span
+          data-testid="health-status-chip"
+          className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-medium ${
+            overall === 'ok'
+              ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+              : overall === 'warn'
+                ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
+                : 'bg-red-500/10 text-red-600 dark:text-red-400'
+          }`}
+        >
+          <span className="h-1.5 w-1.5 rounded-full bg-current" aria-hidden="true" />
+          {overall === 'ok' ? 'Healthy' : overall === 'warn' ? 'Degraded' : 'Needs attention'}
         </span>
       </div>
       <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
@@ -108,7 +118,7 @@ export function HealthCard({ pollIntervalMs = 15_000 }: Props) {
           role="status"
         >
           <AlertTriangle className="h-3 w-3" />
-          <span>Metrics may be stale — last refresh: {staleError}</span>
+          <span>Metrics may be stale — last refresh failed: {staleError}</span>
         </div>
       )}
     </div>

@@ -47,7 +47,12 @@ services:
     environment:
       SKILLNOTE_DATABASE_URL: postgresql+psycopg://skillnote:${SKILLNOTE_DB_PASSWORD:-skillnote}@postgres:5432/skillnote
       SKILLNOTE_BUNDLE_STORAGE_DIR: /app/data/bundles
-      SKILLNOTE_CORS_ORIGINS: "http://${SKILLNOTE_HOST:-localhost}:3000,http://${SKILLNOTE_HOST:-localhost}:3001,http://localhost:3000,http://127.0.0.1:3000"
+      SKILLNOTE_CORS_ORIGINS: "http://${SKILLNOTE_HOST:-localhost}:3000,http://${SKILLNOTE_HOST:-localhost}:3001,http://localhost:3000,http://localhost:3001,http://127.0.0.1:3000,http://127.0.0.1:3001"
+      # claude.ai connector: auto-approve browser pairings (skips the manual
+      # 6-char-code approval step). OFF by default — only for trusted
+      # single-user testing. Bring the stack up with
+      # SKILLNOTE_CLAUDE_AI_AUTO_APPROVE=1 to enable.
+      SKILLNOTE_CLAUDE_AI_AUTO_APPROVE: ${SKILLNOTE_CLAUDE_AI_AUTO_APPROVE:-0}
     ports:
       - "${SKILLNOTE_API_PORT:-8082}:8080"
     volumes:
@@ -94,6 +99,10 @@ services:
       context: .
       args:
         NEXT_PUBLIC_API_BASE_URL: "http://${SKILLNOTE_HOST:-localhost}:${SKILLNOTE_API_PORT:-8082}"
+        # The web origin proxies /v1/* to the backend (next.config.ts) so the
+        # connector extension can pair with the WEB URL, not the API port.
+        # Inside Docker that's the internal api service on its container port.
+        SKILLNOTE_API_PROXY_TARGET: "http://api:8080"
     ports:
       - "${SKILLNOTE_WEB_PORT:-3000}:3000"
     environment:

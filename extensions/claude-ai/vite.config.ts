@@ -27,15 +27,18 @@ export default defineConfig({
     rollupOptions: {
       input: {
         background: resolve(__dirname, "src/background.ts"),
+        content: resolve(__dirname, "src/content.ts"),
         popup: resolve(__dirname, "src/popup.html"),
         options: resolve(__dirname, "src/options.html"),
       },
       preserveEntrySignatures: false,
       output: {
-        // Service worker MUST be at the root of /dist as background.js
-        // (matches manifest.json's "background.service_worker" reference).
+        // Service worker MUST be at the root of /dist as background.js, and
+        // the content script as content.js — both referenced by fixed names
+        // (background.js in the manifest; content.js by registerContentScripts).
         entryFileNames: (chunkInfo) => {
           if (chunkInfo.name === "background") return "background.js";
+          if (chunkInfo.name === "content") return "content.js";
           return "[name]-[hash].js";
         },
         chunkFileNames: "chunks/[name]-[hash].js",

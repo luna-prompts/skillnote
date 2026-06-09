@@ -9,7 +9,13 @@ export type IntegrationStatus =
   | "disconnected"
   | "error";
 
-export type OpKind = "upload" | "update" | "delete" | "list" | "fetch_one";
+export type OpKind =
+  | "upload"
+  | "update"
+  | "delete"
+  | "list"
+  | "fetch_one"
+  | "publish_group";
 
 /** Pending sync operation handed to the extension by SkillNote. */
 export interface SyncOperation {
@@ -30,6 +36,9 @@ export interface OperationCompletePayload {
   /** Flag a 401/expired-cookie outcome so the backend can flip the
    *  integration to `cookie_expired` and surface a re-sign-in CTA. */
   auth_expired?: boolean;
+  /** Permanent failure (4xx invalid request) — backend fails the op
+   *  immediately instead of retrying. */
+  permanent?: boolean;
 }
 
 /** Local extension configuration (lives in chrome.storage.local). */
@@ -48,6 +57,12 @@ export interface ExtensionConfig {
   // Last sync metadata for the popup.
   last_sync_at?: string;
   last_error?: string;
+  // Whether the claude.ai session cookie is currently active. Set
+  // authoritatively by the background worker (cookie watcher + each tick)
+  // so the UI can show a calm "Sign in to claude.ai" state instead of
+  // surfacing the signed-out condition as a scary error. `undefined`
+  // means "not yet determined" (fresh pair, before the first tick).
+  claude_session_active?: boolean;
   // Counters mirrored from the last status fetch.
   pending_op_count?: number;
   failed_op_count?: number;
@@ -58,7 +73,7 @@ export interface ExtensionConfig {
 
 export interface ActivityEntry {
   ts: string;            // ISO timestamp
-  kind: "push" | "pull" | "delete" | "error";
+  kind: "push" | "pull" | "delete" | "error" | "used";
   message: string;       // human-readable: "pdf-extractor → claude.ai"
 }
 

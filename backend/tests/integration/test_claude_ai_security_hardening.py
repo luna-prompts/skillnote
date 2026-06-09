@@ -152,7 +152,8 @@ class TestDisconnectCleansQueue:
         integ_id = pair["integration_id"]
         token = status["extension_token"]
 
-        # Create a skill — emits an upload op for this integration.
+        # Create a skill — emits a publish_group op for this integration
+        # (named-group model: one whole-group rebuild op, not a per-skill op).
         slug = f"qclean-{uuid.uuid4().hex[:6]}"
         s, _ = _post(
             "/v1/skills",
@@ -165,14 +166,14 @@ class TestDisconnectCleansQueue:
         )
         assert s == 201
 
-        # Verify the op is pending.
+        # Verify a pending op exists for this integration.
         _, ops_before = _get(
             "/v1/integrations/claude-ai/extension/operations",
             headers={"Authorization": f"Bearer {token}"},
         )
         # The fetch above flips status to in_progress as a side effect — that's
         # the realistic state at disconnect time.
-        assert any(op["payload"].get("name") == slug for op in ops_before)
+        assert any(op["kind"] == "publish_group" for op in ops_before), ops_before
 
         # Now disconnect.
         req = urllib.request.Request(

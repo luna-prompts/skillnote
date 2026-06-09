@@ -293,8 +293,15 @@ def real_skill(db_session):
     # Rolled back by db_session fixture.
 
 
+# NOTE: Under the named-group model, enqueue_skill_upload / enqueue_skill_delete
+# are thin wrappers that delegate to enqueue_group_publish — a skill create,
+# update, or delete all funnel to ONE `publish_group` op that rebuilds and
+# re-uploads the whole "SkillNote" plugin group. They no longer create per-skill
+# upload/delete ops.
+
+
 class TestEnqueueSkillUpload:
-    def test_creates_one_op_per_active_integration(
+    def test_creates_one_group_op_per_active_integration(
         self, db_session, active_integration, real_skill
     ):
         integ, _ = active_integration
@@ -307,20 +314,18 @@ class TestEnqueueSkillUpload:
             description=skill.description,
         )
         db_session.commit()
-        assert len(ops) >= 1
-        # The one for our active integration should be present.
         target = [op for op in ops if op.integration_id == integ.id]
         assert len(target) == 1
-        assert target[0].kind == "upload"
-        assert target[0].payload["version_id"] == str(cv.id)
-        assert target[0].payload["name"] == skill.name
+        assert target[0].kind == "publish_group"
+        # Whole-group op: no per-skill FK, no per-skill payload.
+        assert target[0].skill_id is None
+        assert target[0].payload == {}
 
     def test_no_op_for_disconnected(self, db_session, active_integration, real_skill):
         integ, _ = active_integration
         integ.status = "disconnected"
         db_session.commit()
         skill, cv = real_skill
-        # Pass empty integrations to isolate from any other rows.
         ops = enqueue_skill_upload(
             db_session,
             skill_id=skill.id,
@@ -335,47 +340,35 @@ class TestEnqueueSkillUpload:
     def test_coalesces_repeated_calls(
         self, db_session, active_integration, real_skill
     ):
-        """Rapid republishes should not pile up the queue. The second
-        call must update the existing pending op's payload, not create a
-        new row."""
+        """Rapid republishes must not pile up the queue. A pending
+        publish_group op already covers the latest state, so a second call
+        creates nothing (debounce)."""
         integ, _ = active_integration
         skill, cv = real_skill
         enqueue_skill_upload(
-            db_session,
-            skill_id=skill.id,
-            version_id=cv.id,
-            name=skill.name,
-            description="first version description",
-            integrations=[integ],
+            db_session, skill_id=skill.id, version_id=cv.id,
+            name=skill.name, description="first", integrations=[integ],
         )
         db_session.commit()
-        # Same skill, different description (simulating a republish).
         ops2 = enqueue_skill_upload(
-            db_session,
-            skill_id=skill.id,
-            version_id=cv.id,
-            name=skill.name,
-            description="updated description",
-            integrations=[integ],
+            db_session, skill_id=skill.id, version_id=cv.id,
+            name=skill.name, description="second", integrations=[integ],
         )
         db_session.commit()
-        # No new op created.
-        assert ops2 == []
-        # The existing pending op now has the updated payload.
+        assert ops2 == []  # debounced against the pending publish_group
         pending = db_session.execute(
             select(ClaudeAISyncOperation)
             .where(ClaudeAISyncOperation.integration_id == integ.id)
-            .where(ClaudeAISyncOperation.skill_id == skill.id)
+            .where(ClaudeAISyncOperation.kind == "publish_group")
             .where(ClaudeAISyncOperation.status == "pending")
         ).scalars().all()
-        assert len(pending) == 1
-        assert pending[0].payload["description"] == "updated description"
+        assert len(pending) == 1  # exactly one rebuild queued
 
     def test_creates_new_op_after_previous_completed(
         self, db_session, active_integration, real_skill
     ):
-        """Once an upload finishes, a new publish must enqueue a fresh op
-        (the coalesce window is bounded by 'pending' or 'in_progress')."""
+        """Once a rebuild finishes, a new change must enqueue a fresh op
+        (coalesce window is bounded by the 'pending' state)."""
         integ, _ = active_integration
         skill, cv = real_skill
         ops = enqueue_skill_upload(
@@ -393,46 +386,43 @@ class TestEnqueueSkillUpload:
         )
         db_session.commit()
         assert len(ops2) == 1
+        assert ops2[0].kind == "publish_group"
 
 
 class TestEnqueueSkillDelete:
-    def test_skips_unlinked_skills(self, db_session, active_integration, real_skill):
-        """If the skill was never synced to claude.ai (no link row), no
-        delete op is needed."""
+    def test_delete_enqueues_group_rebuild(
+        self, db_session, active_integration, real_skill
+    ):
+        """A delete is just another reason to rebuild the group (the skill is
+        omitted from the next bundle), so it enqueues a publish_group op for
+        active integrations — no per-skill link required."""
         integ, _ = active_integration
         skill, _ = real_skill
         ops = enqueue_skill_delete(
             db_session, skill_id=skill.id, integrations=[integ]
         )
         db_session.commit()
-        assert ops == []
+        assert len(ops) == 1
+        assert ops[0].integration_id == integ.id
+        assert ops[0].kind == "publish_group"
 
-    def test_creates_op_for_linked_skill(
+    def test_delete_coalesces_with_pending_publish(
         self, db_session, active_integration, real_skill
     ):
+        """If a rebuild is already pending (e.g. from a prior edit), a delete
+        doesn't add a second one."""
         integ, _ = active_integration
-        skill, _ = real_skill
-        # Create a link so the delete enqueue has something to target.
-        link = ClaudeAISkillLink(
-            integration_id=integ.id,
-            skillnote_skill_id=skill.id,
-            claude_ai_skill_id="skill_ext_01ABCDEF",
-            direction="outbound",
+        skill, cv = real_skill
+        enqueue_skill_upload(
+            db_session, skill_id=skill.id, version_id=cv.id,
+            name=skill.name, description="v1", integrations=[integ],
         )
-        db_session.add(link)
         db_session.commit()
-
-        ops = enqueue_skill_delete(db_session, skill_id=skill.id)
-        db_session.commit()
-        # We don't filter by integration here — should match the linked one.
-        assert any(
-            op.integration_id == integ.id and op.kind == "delete"
-            for op in ops
+        ops = enqueue_skill_delete(
+            db_session, skill_id=skill.id, integrations=[integ]
         )
-        # Op payload carries the claude.ai-side ID.
-        for op in ops:
-            if op.integration_id == integ.id:
-                assert op.payload["claude_ai_skill_id"] == "skill_ext_01ABCDEF"
+        db_session.commit()
+        assert ops == []
 
 
 class TestEnqueuePeriodicList:

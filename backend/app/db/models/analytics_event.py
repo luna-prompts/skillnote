@@ -17,6 +17,10 @@ class AnalyticsEvent(Base):
     agent_name: Mapped[str | None] = mapped_column(Text, nullable=True)
     agent_version: Mapped[str | None] = mapped_column(Text, nullable=True)
     session_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Human chat/session title (e.g. a claude.ai conversation name) so the
+    # analytics "Recent chats" panel shows "Refactor auth flow" instead of an
+    # opaque session id. Null for sources that have no title (e.g. CLI runs).
+    session_name: Mapped[str | None] = mapped_column(Text, nullable=True)
     collection_scope: Mapped[str | None] = mapped_column(Text, nullable=True)
     remote_ip: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

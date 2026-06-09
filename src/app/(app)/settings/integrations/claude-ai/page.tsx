@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import {
   AlertTriangle,
@@ -17,6 +17,7 @@ import { TopBar } from '@/components/layout/topbar'
 import { ActivityFeed } from '@/components/integrations/claude-ai/activity-feed'
 import { ConfirmDisconnectDialog } from '@/components/integrations/claude-ai/confirm-disconnect-dialog'
 import { HealthCard } from '@/components/integrations/claude-ai/health-card'
+import { PublishedCollectionsSummary } from '@/components/integrations/claude-ai/published-collections-summary'
 import { IntegrationCardSkeleton } from '@/components/integrations/claude-ai/skeleton'
 import { ClaudeAISetupStepper } from '@/components/integrations/claude-ai/setup-stepper'
 import { SyncQueuePanel } from '@/components/integrations/claude-ai/sync-queue'
@@ -28,11 +29,15 @@ import {
   IntegrationStatusResponse,
   disconnectIntegration,
   fetchConflictPreview,
+  invalidateIntegrationsCache,
   listConflicts,
   listIntegrations,
   patchIntegration,
   resolveConflict,
+  triggerSync,
 } from '@/lib/api/claude-ai'
+import { SkillNoteApiError } from '@/lib/api/client'
+import { friendlyIntegrationError } from '@/lib/claude-ai-errors'
 
 export default function ClaudeAISettingsPage() {
   const [integrations, setIntegrations] = useState<IntegrationStatusResponse[] | null>(null)
@@ -40,14 +45,30 @@ export default function ClaudeAISettingsPage() {
   const [reloading, setReloading] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [pendingDisconnect, setPendingDisconnect] = useState<{ id: string; label: string | null } | null>(null)
+  // IDs of integrations we've optimistically removed from the UI but
+  // whose backend DELETE may still be in flight. Without this set,
+  // a poll firing between the optimistic remove and the DELETE
+  // response makes the row "ghost back in" for a flash. Stored in a
+  // ref because we want the latest value inside refresh() without
+  // causing the effect to re-bind.
+  const inFlightDisconnects = useRef<Set<string>>(new Set())
 
   const refresh = useCallback(async () => {
     setReloading(true)
     try {
       const [ints, cons] = await Promise.all([listIntegrations(), listConflicts()])
-      setIntegrations(ints)
+      // Filter out any integration whose disconnect is mid-flight — the
+      // row may still be in the DB but the UI has already committed to
+      // removing it.
+      const filtered = inFlightDisconnects.current.size
+        ? ints.filter((i) => !inFlightDisconnects.current.has(i.id))
+        : ints
+      setIntegrations(filtered)
       setConflicts(cons)
       setLoadError(null)
+      // Bust the SkillSyncBadge cache so per-skill pages reflect
+      // pair / disconnect events as soon as the settings page does.
+      invalidateIntegrationsCache()
     } catch (e) {
       console.error(e)
       const msg = e instanceof Error ? e.message : 'unknown'
@@ -78,17 +99,22 @@ export default function ClaudeAISettingsPage() {
     if (!pendingDisconnect) return
     const { id, label } = pendingDisconnect
     setPendingDisconnect(null)
+    // Mark in-flight BEFORE the optimistic remove so the next poll
+    // (which can fire while DELETE is still inflight) doesn't undo us.
+    inFlightDisconnects.current.add(id)
     try {
-      // Optimistically remove from the UI immediately so the user sees feedback
-      // — matches Linear's pattern of "act first, retry on failure."
       setIntegrations((prev) => prev?.filter((i) => i.id !== id) ?? null)
       await disconnectIntegration(id)
       toast.success(`Disconnected ${label ?? 'browser'}`)
-      void refresh()
     } catch (e) {
-      // Restore on failure.
-      void refresh()
+      // Restore on failure: clear the in-flight flag so the next refresh
+      // shows the row again with its real backend state.
       toast.error(`Failed to disconnect: ${(e as Error).message}`)
+    } finally {
+      inFlightDisconnects.current.delete(id)
+      // Always re-sync to truth — either to confirm the disconnect landed
+      // (status flipped to 'disconnected') or to restore on failure.
+      void refresh()
     }
   }, [pendingDisconnect, refresh])
 
@@ -97,7 +123,7 @@ export default function ClaudeAISettingsPage() {
   return (
     <>
       <TopBar />
-      <div className="mx-auto max-w-3xl px-6 py-10">
+      <div className="mx-auto w-full min-w-0 max-w-3xl px-6 py-10">
         <Breadcrumbs />
 
         <h1 className="text-[22px] font-semibold tracking-tight text-foreground">
@@ -107,10 +133,22 @@ export default function ClaudeAISettingsPage() {
           Two-way sync between your SkillNote and your claude.ai account, via a browser extension you install once.
         </p>
 
-        {/* Health card — sits at the top so admins see the system pulse. */}
-        <section className="mt-8">
-          <HealthCard />
-        </section>
+        {/* Health card — the system pulse for admins. Hidden on first run
+            (no integrations yet) so the page leads with the setup steps
+            instead of an empty all-zeros dashboard. */}
+        {hasAny && (
+          <section className="mt-8">
+            <HealthCard />
+          </section>
+        )}
+
+        {/* Light status line — which collections publish as claude.ai groups.
+            The per-collection toggle itself lives on the collection cards. */}
+        {hasAny && (
+          <section className="mt-4">
+            <PublishedCollectionsSummary />
+          </section>
+        )}
 
         {/* Interactive setup stepper — replaces the static 4-step card. Renders
             nothing once the user has at least one active integration. */}
@@ -166,6 +204,20 @@ export default function ClaudeAISettingsPage() {
         </section>
 
         {/* Conflicts */}
+        {/* All-clear state: only shows when integrations exist (no point
+            telling the user "no conflicts" before they've paired anything). */}
+        {hasAny && conflicts.length === 0 && (
+          <section
+            className="mt-8 rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-4 py-3 flex items-center gap-2.5"
+            data-testid="conflicts-all-clear"
+          >
+            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 shrink-0" aria-hidden="true" />
+            <p className="text-[12.5px] text-emerald-700 dark:text-emerald-300">
+              No conflicts to resolve — every linked skill is in sync.
+            </p>
+          </section>
+        )}
+
         {conflicts.length > 0 && (
           <section className="mt-8">
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -338,7 +390,7 @@ function IntegrationRow({
       className="rounded-lg border border-border bg-card p-4 hover:border-muted-foreground/30 transition-colors"
       data-testid={`integration-row-${integration.id}`}
     >
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
           <Icon
             className={`h-4 w-4 shrink-0 ${tone} ${integration.status === 'pending_approval' ? 'animate-spin' : ''}`}
@@ -380,6 +432,9 @@ function IntegrationRow({
               Sign in to claude.ai
             </a>
           )}
+          {(integration.status === 'active' || integration.status === 'cookie_expired') && (
+            <SyncNowButton integrationId={integration.id} />
+          )}
           {integration.status !== 'disconnected' && (
             <button
               type="button"
@@ -399,18 +454,43 @@ function IntegrationRow({
           value={integration.pending_op_count}
         />
         <Stat
-          label={integration.failed_op_count === 1 ? 'Failed' : 'Failed'}
+          label="Failed"
           value={integration.failed_op_count}
           tone={integration.failed_op_count > 0 ? 'text-red-500' : undefined}
         />
       </div>
-      {integration.last_error && (
-        <div className="mt-3 rounded-md bg-red-500/10 px-3 py-2 text-[11px] text-red-700 dark:text-red-300">
-          {integration.last_error}
-        </div>
-      )}
+      {integration.last_error && <LastErrorPanel raw={integration.last_error} />}
       <ConflictPolicySwitch integration={integration} onChange={onPolicyChanged} />
     </div>
+  )
+}
+
+function SyncNowButton({ integrationId }: { integrationId: string }) {
+  const [busy, setBusy] = useState(false)
+  const click = async () => {
+    if (busy) return
+    setBusy(true)
+    try {
+      await triggerSync(integrationId)
+      toast.success('Sync queued — runs on the extension’s next tick.')
+    } catch (e) {
+      toast.error(`Could not queue sync: ${(e as Error).message}`)
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <button
+      type="button"
+      onClick={() => void click()}
+      disabled={busy}
+      title="Queue a sync. The extension picks it up on its next minute-aligned tick."
+      data-testid={`sync-now-${integrationId}`}
+      className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2.5 py-1 text-[11px] text-foreground hover:bg-muted transition-colors disabled:opacity-50"
+    >
+      <RefreshCw className={`h-3 w-3 ${busy ? 'animate-spin' : ''}`} aria-hidden="true" />
+      Sync now
+    </button>
   )
 }
 
@@ -440,7 +520,7 @@ function ConflictPolicySwitch({
     }
   }
   return (
-    <div className="mt-3 flex items-center gap-2 text-[11px]">
+    <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1.5 text-[11px]">
       <span className="text-muted-foreground">When both sides change a skill:</span>
       <div className="inline-flex rounded-md border border-border bg-background p-0.5" role="radiogroup" aria-label="Conflict resolution policy">
         {(['ask', 'skillnote_wins', 'claude_ai_wins'] as const).map((opt) => {
@@ -602,7 +682,11 @@ function ConflictRow({
       toast.success(kind === 'skip' ? 'Skipped' : 'Resolved')
       onResolved()
     } catch (e) {
-      toast.error(`Failed to resolve: ${(e as Error).message}`)
+      // Translate known backend error codes into actionable, plain-English
+      // toasts. Falls back to the raw message for anything we haven't
+      // anticipated yet.
+      const friendly = friendlyResolveError(e, kind)
+      toast.error(friendly)
       setBusy(false)
     }
   }
@@ -658,6 +742,86 @@ function ConflictRow({
       )}
     </div>
   )
+}
+
+function LastErrorPanel({ raw }: { raw: string }) {
+  const [open, setOpen] = useState(false)
+  const { summary, detail } = friendlyIntegrationError(raw)
+  return (
+    <div
+      className="mt-3 rounded-md border border-red-500/20 bg-red-500/5 px-3 py-2 text-[12px] text-red-700 dark:text-red-300"
+      data-testid="integration-last-error"
+    >
+      <div className="flex items-start gap-2">
+        <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+        <div className="min-w-0 flex-1">
+          <p data-testid="integration-last-error-summary">{summary}</p>
+          {detail && (
+            <>
+              <button
+                type="button"
+                onClick={() => setOpen((v) => !v)}
+                aria-expanded={open}
+                className="mt-1 text-[11px] text-red-700/70 dark:text-red-300/70 hover:text-red-700 dark:hover:text-red-300 underline-offset-2 hover:underline"
+                data-testid="integration-last-error-toggle"
+              >
+                {open ? 'Hide details' : 'Show details'}
+              </button>
+              {open && (
+                <pre
+                  className="mt-1.5 max-h-32 overflow-auto rounded bg-red-500/10 p-2 text-[10.5px] font-mono whitespace-pre-wrap break-words"
+                  data-testid="integration-last-error-detail"
+                >
+                  {detail}
+                </pre>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function friendlyResolveError(
+  e: unknown,
+  kind: 'keep_skillnote' | 'keep_claude_ai' | 'skip',
+): string {
+  if (e instanceof SkillNoteApiError) {
+    switch (e.code) {
+      case 'SKILL_NOT_FOUND':
+        // Happens when the user picks "Keep SkillNote" but the local
+        // skill has been deleted since the conflict was detected.
+        return (
+          'The SkillNote-side skill was deleted, so it can’t be ' +
+          'pushed back. Pick Keep claude.ai or Skip instead.'
+        )
+      case 'NO_SKILLNOTE_SIDE':
+        return (
+          'This conflict has no SkillNote side (inbound-only). ' +
+          '“Keep SkillNote” isn’t applicable — pick Keep claude.ai ' +
+          'or Skip.'
+        )
+      case 'INTEGRATION_INACTIVE':
+        return (
+          'That browser has been disconnected. Re-pair it before ' +
+          'resolving conflicts on it.'
+        )
+      case 'LINK_NOT_IN_CONFLICT':
+        // Race: another tab/user resolved the same conflict first.
+        return 'This conflict was already resolved — refresh to update the list.'
+      case 'LINK_NOT_FOUND':
+        return 'This conflict no longer exists — refresh to see the current list.'
+      case 'NO_LATEST_VERSION':
+        return (
+          'The SkillNote skill has no current version to push. ' +
+          'Save a new version of the skill before picking Keep SkillNote.'
+        )
+    }
+  }
+  const msg = e instanceof Error ? e.message : 'unknown error'
+  const action = kind === 'skip' ? 'skip' : 'resolve'
+  return `Failed to ${action}: ${msg}`
 }
 
 function ConflictPreviewPanel({

@@ -173,13 +173,13 @@ test('full journey: install → pair → see active → cause conflict → resol
   const state = makeState()
   await wireMocks(page, state)
 
-  // 1. Empty state — user just opened the page.
+  // 1. Empty state — user just opened the page. First run leads with the
+  // setup stepper; the health card is hidden until a browser is connected
+  // (no empty all-zeros dashboard).
   await page.goto('/settings/integrations/claude-ai')
   await expect(page.getByRole('heading', { name: 'Sync to claude.ai' })).toBeVisible()
   await expect(page.getByText('No browsers connected yet')).toBeVisible()
-  // Health card shows zeros.
-  await expect(page.getByText('Connector health')).toBeVisible()
-  await expect(page.getByText('schema 0020_claude_ai_polish')).toBeVisible()
+  await expect(page.getByTestId('health-card')).toHaveCount(0)
 
   // 2. User visits the pair page (simulating opening the link from extension).
   state.pendingPairingCode = '5XT3WZ'

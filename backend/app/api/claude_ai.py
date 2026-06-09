@@ -60,6 +60,9 @@ from app.schemas.claude_ai import (
     DiagnosticCheck,
     DiagnosticResponse,
     ExtensionSelfStatusResponse,
+    SkillSyncLinkStat,
+    SkillSyncStatusResponse,
+    TokenRotateResponse,
     IntegrationActivityStat,
     PairingStartRequest,
     PairingStartResponse,
@@ -71,6 +74,7 @@ from app.schemas.claude_ai import (
     SyncQueueResponse,
     TelemetryEvent,
     TopSkillStat,
+    TopUsedSkillStat,
 )
 from app.services.claude_ai_sync import (
     PairRateLimitExceeded,
@@ -190,6 +194,29 @@ def start_pairing(
         detail={"browser_label": body.browser_label or ""},
         source_ip=source_ip,
     )
+
+    # ── Auto-approve (testing / trusted single-user self-host) ──────────────
+    # When SKILLNOTE_CLAUDE_AI_AUTO_APPROVE=1, skip the manual "confirm the
+    # 6-char code in SkillNote" step: mark the pairing approved immediately
+    # so the extension's first /pair/status poll redeems the token. The user
+    # just pastes the URL and hits Connect — no approval click.
+    #
+    # SECURITY: this removes the human-in-the-loop check that prevents a
+    # malicious page from silently pairing a browser. Only enable on a
+    # trusted, single-user, LAN/localhost instance. Default OFF so production
+    # always keeps the approval step.
+    import os as _os
+    if _os.environ.get("SKILLNOTE_CLAUDE_AI_AUTO_APPROVE") == "1":
+        from datetime import timezone as _tz
+        integ.pairing_approved_at = datetime.now(_tz.utc)
+        write_audit(
+            db,
+            event="pair_approved",
+            integration_id=integ.id,
+            detail={"auto": True},
+            source_ip=source_ip,
+        )
+
     db.commit()
     db.refresh(integ)
 
@@ -254,6 +281,42 @@ def approve_pairing(
     return Response(status_code=204)
 
 
+@router.get("/pairings/pending")
+def list_pending_pairings(db: Session = Depends(get_db)):
+    """Pending browser-pairing requests awaiting user approval.
+
+    Powers the notifications bell so the user can approve a pairing from
+    anywhere in the app (the code is returned for them to verify against their
+    extension), instead of a full-page approval interstitial. Excludes expired
+    and already-approved requests.
+    """
+    from datetime import datetime, timezone
+
+    now = datetime.now(timezone.utc)
+    rows = db.execute(
+        select(ClaudeAIIntegration)
+        .where(ClaudeAIIntegration.status == "pending_approval")
+        .where(ClaudeAIIntegration.pairing_approved_at.is_(None))
+        .order_by(ClaudeAIIntegration.created_at.desc())
+    ).scalars().all()
+    out = []
+    for r in rows:
+        if r.pairing_expires_at and r.pairing_expires_at < now:
+            continue  # expired — don't surface stale requests
+        out.append(
+            {
+                "integration_id": str(r.id),
+                "browser_label": r.browser_label,
+                "pairing_code": r.pairing_code,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+                "expires_at": r.pairing_expires_at.isoformat()
+                if r.pairing_expires_at
+                else None,
+            }
+        )
+    return out
+
+
 @router.get("/extension/pair/status", response_model=PairingStatusResponse)
 def pairing_status(
     pairing_token: str,
@@ -316,6 +379,21 @@ def pairing_status(
     integ.pairing_expires_at = None
 
     write_audit(db, event="pair_redeemed", integration_id=integ.id)
+
+    # Backfill: enqueue upload ops for every existing sync-enabled skill so
+    # a freshly-paired browser actually receives the current catalog. Without
+    # this, skills created before the integration existed never get ops and
+    # the browser shows "0 skills synced" forever.
+    from app.services.claude_ai_sync import backfill_uploads_for_integration
+    n = backfill_uploads_for_integration(db, integ)
+    if n:
+        write_audit(
+            db,
+            event="sync_triggered",
+            integration_id=integ.id,
+            detail={"reason": "pair_backfill", "enqueued": n},
+        )
+
     db.commit()
     return PairingStatusResponse(approved=True, extension_token=raw_extension_token)
 
@@ -488,6 +566,200 @@ def fetch_operations(
     return [SyncOperationOut.model_validate(r) for r in rows]
 
 
+@router.post("/integrations/{integration_id}/trigger-sync", status_code=204)
+def trigger_sync(
+    integration_id: UUID,
+    db: Session = Depends(get_db),
+) -> Response:
+    """Nudge the extension to do something on its next tick.
+
+    Enqueues a `list` op against the integration. The extension picks
+    it up on its next minute-aligned alarm and performs a reverse-sync
+    scan, which pulls any claude.ai-side updates and pushes any local
+    pending changes the queue had backed up.
+
+    Useful from the UI as a "Sync now" button — the user clicks it,
+    the next extension tick fires, and the queue counters update.
+    Idempotent: if a list op is already pending, this is a no-op.
+    """
+    from datetime import timezone as _tz
+    integ = db.get(ClaudeAIIntegration, integration_id)
+    if integ is None:
+        raise api_error(404, "INTEGRATION_NOT_FOUND", f"Integration {integration_id} not found")
+    if integ.status not in ("active", "cookie_expired"):
+        raise api_error(
+            409,
+            "INTEGRATION_NOT_ACTIVE",
+            f"Cannot trigger sync on integration in '{integ.status}' state",
+        )
+
+    # Coalesce the reverse-sync (pull) op: if there's already a pending
+    # list op, don't pile on.
+    existing = db.execute(
+        select(ClaudeAISyncOperation.id)
+        .where(ClaudeAISyncOperation.integration_id == integ.id)
+        .where(ClaudeAISyncOperation.kind == "list")
+        .where(ClaudeAISyncOperation.status.in_(("pending", "in_progress")))
+        .limit(1)
+    ).scalar_one_or_none()
+    if existing is None:
+        db.add(
+            ClaudeAISyncOperation(
+                integration_id=integ.id,
+                kind="list",
+                skill_id=None,
+                payload={"reason": "user_triggered"},
+            )
+        )
+
+    # Also PUSH: backfill upload ops for any sync-enabled skill not yet
+    # synced to this browser. "Sync now" should make local skills appear
+    # on claude.ai, not just pull remote ones.
+    from app.services.claude_ai_sync import (
+        backfill_uploads_for_integration,
+        write_audit,
+    )
+    pushed = backfill_uploads_for_integration(db, integ)
+
+    write_audit(
+        db,
+        event="sync_triggered",
+        integration_id=integ.id,
+        detail={"reason": "user_triggered", "uploads_enqueued": pushed},
+    )
+    db.commit()
+    return Response(status_code=204)
+
+
+@router.post(
+    "/integrations/{integration_id}/rotate-token",
+    response_model=TokenRotateResponse,
+)
+def rotate_extension_token(
+    integration_id: UUID,
+    db: Session = Depends(get_db),
+) -> TokenRotateResponse:
+    # Per-integration rate limit. Without auth on the SkillNote UI an
+    # attacker who briefly accesses the page could rotate tokens
+    # repeatedly to lock the real user out. 5 rotations / hour is
+    # plenty for any legitimate "I think it leaked again" recovery
+    # while preventing DoS. The bypass env flag mirrors the pair
+    # rate-limit pattern so the test suite can still exercise the
+    # endpoint hundreds of times against a single integration.
+    import os as _rl_os
+    if _rl_os.environ.get("SKILLNOTE_DISABLE_PAIR_RATE_LIMIT") != "1":
+        from datetime import timedelta as _rl_td, timezone as _rl_tz
+        from sqlalchemy import func as _rl_func
+        from app.db.models.claude_ai_polish import ClaudeAIAuditLog
+        cutoff = datetime.now(_rl_tz.utc) - _rl_td(hours=1)
+        recent = int(
+            db.execute(
+                select(_rl_func.count(ClaudeAIAuditLog.id))
+                .where(ClaudeAIAuditLog.integration_id == integration_id)
+                .where(ClaudeAIAuditLog.event == "token_revoked")
+                .where(ClaudeAIAuditLog.created_at >= cutoff)
+            ).scalar_one()
+        )
+        if recent >= 5:
+            raise api_error(
+                429,
+                "RATE_LIMITED",
+                "Too many token rotations on this integration — wait an hour.",
+            )
+    """Mint a new extension_token without un-pairing.
+
+    Use case: the user thinks the existing token has leaked (shared
+    screenshot, accidentally copied into a paste site, lost laptop).
+    Rotating issues a new token, hashes it onto the integration row,
+    invalidates the old one — the user must paste the new token into
+    the extension's options page.
+
+    The cleartext token is returned ONCE in the response. We can't
+    show it again later; the row only stores the hash.
+    """
+    from datetime import timezone as _tz
+    from app.services.claude_ai_sync import (
+        generate_token,
+        hash_token,
+        write_audit,
+    )
+
+    integ = db.get(ClaudeAIIntegration, integration_id)
+    if integ is None:
+        raise api_error(404, "INTEGRATION_NOT_FOUND", f"Integration {integration_id} not found")
+    if integ.status == "disconnected":
+        raise api_error(
+            409,
+            "INTEGRATION_DISCONNECTED",
+            "Disconnected integrations can't have their tokens rotated — re-pair instead.",
+        )
+
+    new_token = generate_token()
+    integ.extension_token_hash = hash_token(new_token)
+    now = datetime.now(_tz.utc)
+    # We also clear last_error since the operator presumably just
+    # accepted a rotated token; nothing else "broken" should be sticky.
+    integ.last_error = None
+
+    write_audit(
+        db,
+        event="token_revoked",
+        integration_id=integ.id,
+        detail={
+            "action": "rotate",
+            "browser_label": integ.browser_label or "",
+        },
+    )
+    db.commit()
+    return TokenRotateResponse(
+        integration_id=integ.id,
+        new_extension_token=new_token,
+        rotated_at=now,
+    )
+
+
+@router.post("/operations/{op_id}/retry", status_code=204)
+def retry_failed_operation(
+    op_id: UUID,
+    db: Session = Depends(get_db),
+) -> Response:
+    """Re-queue a failed sync operation.
+
+    Resets status to pending, clears attempts + last_error, lets the
+    extension pick it up on its next tick. Only valid for ops in the
+    'failed' terminal state — re-queueing pending/in_progress would
+    let the user fork the queue, and re-queueing completed ops would
+    fire duplicate side effects.
+
+    Emits an audit row so operators can see who retried what.
+    """
+    op = db.get(ClaudeAISyncOperation, op_id)
+    if op is None:
+        raise api_error(404, "OPERATION_NOT_FOUND", f"Operation {op_id} not found")
+    if op.status != "failed":
+        raise api_error(
+            409,
+            "OPERATION_NOT_RETRYABLE",
+            f"Operation is in '{op.status}' state — only 'failed' ops can be retried",
+        )
+    op.status = "pending"
+    op.attempts = 0
+    op.last_error = None
+    op.started_at = None
+    op.completed_at = None
+
+    from app.services.claude_ai_sync import write_audit
+    write_audit(
+        db,
+        event="op_retried",
+        integration_id=op.integration_id,
+        skill_id=op.skill_id,
+        detail={"op_id": str(op.id), "op_kind": op.kind},
+    )
+    db.commit()
+    return Response(status_code=204)
+
+
 @router.post("/extension/operations/{op_id}/complete", status_code=204)
 def complete_operation(
     op_id: UUID,
@@ -508,6 +780,13 @@ def complete_operation(
     if op is None or op.integration_id != integ.id:
         raise api_error(404, "OPERATION_NOT_FOUND", "Operation not found for this integration")
     if op.status not in ("in_progress", "pending"):
+        # Idempotency: the extension may re-report a completion if its first
+        # /complete response was lost (network blip, or the MV3 service worker
+        # was killed right after the claude.ai upload). Re-reporting success on
+        # an already-completed op is a no-op, NOT an error — otherwise the
+        # extension treats a genuinely-successful op as failed and re-drives it.
+        if op.status == "completed" and body.success:
+            return Response(status_code=204)
         raise api_error(
             409,
             "OPERATION_ALREADY_FINAL",
@@ -565,14 +844,29 @@ def complete_operation(
                             "claude_ai complete_operation: invalid version_id payload %r on op %s",
                             version_id, op.id,
                         )
-        elif op.kind == "delete" and op.skill_id is not None:
-            # Drop the link — the claude.ai skill no longer exists.
-            db.execute(
-                ClaudeAISkillLink.__table__.delete().where(
-                    ClaudeAISkillLink.integration_id == integ.id,
-                    ClaudeAISkillLink.skillnote_skill_id == op.skill_id,
+        elif op.kind == "delete":
+            # Drop the link — the claude.ai skill no longer exists. Delete ops
+            # carry skill_id=None on purpose (the local skill is usually gone,
+            # and the skills→ops FK is ondelete=CASCADE), so the link key lives
+            # in the payload. Match on the claude.ai skill id (the stable link
+            # identifier); fall back to the recorded skillnote_skill_id.
+            ca_id = (op.payload or {}).get("claude_ai_skill_id")
+            sn_id = (op.payload or {}).get("skillnote_skill_id")
+            cond = None
+            if ca_id:
+                cond = ClaudeAISkillLink.claude_ai_skill_id == ca_id
+            elif sn_id:
+                try:
+                    cond = ClaudeAISkillLink.skillnote_skill_id == UUID(str(sn_id))
+                except (ValueError, TypeError):
+                    cond = None
+            if cond is not None:
+                db.execute(
+                    ClaudeAISkillLink.__table__.delete().where(
+                        ClaudeAISkillLink.integration_id == integ.id,
+                        cond,
+                    )
                 )
-            )
         # Audit log the successful op outcome. Includes the op kind so the
         # activity feed can render a meaningful row.
         write_audit(
@@ -591,7 +885,10 @@ def complete_operation(
         op.last_error = body.error or "unknown error"
         # Retry budget: 3 attempts total. The fetch path increments attempts
         # at dispatch time, so attempts==3 here means we've used all 3.
-        if op.attempts >= 3:
+        # `permanent` short-circuits the budget — a 400 "name already in use"
+        # can never succeed by retrying, so we fail it on the first report
+        # instead of logging three identical red lines.
+        if body.permanent or op.attempts >= 3:
             op.status = "failed"
             op.completed_at = now
             integ.last_error = op.last_error
@@ -600,7 +897,12 @@ def complete_operation(
                 event="op_failed",
                 integration_id=integ.id,
                 skill_id=op.skill_id,
-                detail={"op_kind": op.kind, "attempts": op.attempts, "error": op.last_error or ""},
+                detail={
+                    "op_kind": op.kind,
+                    "attempts": op.attempts,
+                    "error": op.last_error or "",
+                    "permanent": bool(body.permanent),
+                },
             )
         else:
             op.status = "pending"
@@ -648,6 +950,31 @@ def get_skill_bundle(
     if skill is None:
         raise api_error(404, "SKILL_NOT_FOUND", "Skill not found")
 
+    # Authorization scoping: a bearer token must not be able to download any
+    # skill on the instance. The fetch is legitimate only when THIS integration
+    # is already linked to the skill, or has a queued upload/update op for it
+    # (the normal "fetch bundle to push it" flow). Also honor the per-skill
+    # opt-out — a sync-disabled skill is never served.
+    if not getattr(skill, "claude_ai_sync_enabled", True):
+        raise api_error(404, "SKILL_NOT_FOUND", "Skill not found")
+    authorized = db.execute(
+        select(ClaudeAISkillLink.id).where(
+            ClaudeAISkillLink.integration_id == integ.id,
+            ClaudeAISkillLink.skillnote_skill_id == skill_id,
+        ).limit(1)
+    ).first() is not None
+    if not authorized:
+        authorized = db.execute(
+            select(ClaudeAISyncOperation.id).where(
+                ClaudeAISyncOperation.integration_id == integ.id,
+                ClaudeAISyncOperation.skill_id == skill_id,
+                ClaudeAISyncOperation.kind.in_(("upload", "update")),
+                ClaudeAISyncOperation.status.in_(("pending", "in_progress")),
+            ).limit(1)
+        ).first() is not None
+    if not authorized:
+        raise api_error(404, "SKILL_NOT_FOUND", "Skill not found")
+
     # Compose SKILL.md from frontmatter + content_md. Use yaml.safe_dump
     # so a description containing newlines, quotes, or yaml-special chars
     # (---, : at start) doesn't break the frontmatter parser on the
@@ -672,6 +999,79 @@ def get_skill_bundle(
         media_type="application/zip",
         headers={
             "Content-Disposition": f'attachment; filename="{skill.slug}-v{version.version}.zip"',
+        },
+    )
+
+
+@router.get("/extension/plugin-groups")
+def list_plugin_groups(
+    integ: ClaudeAIIntegration = Depends(require_extension),
+    db: Session = Depends(get_db),
+) -> dict:
+    """List the claude.ai plugin groups to publish — one per collection the
+    user toggled ``published_to_claude_ai`` (with at least one skill).
+
+    The extension uses this to know which groups to (re)upload and, by diffing
+    against what's already in the SkillNote marketplace, which to uninstall.
+    Each entry: ``name`` (plugin slug), ``display_name`` ("SkillNote: X"),
+    ``skill_count``. Connector-page status reads the count from here too.
+    """
+    from app.services.claude_ai_marketplace import (
+        PluginAuthor,
+        collect_published_collection_plugins,
+    )
+
+    plugins = collect_published_collection_plugins(db, author=PluginAuthor(name="SkillNote"))
+    return {
+        "marketplace_name": "SkillNote",
+        "groups": [
+            {
+                "name": cp.manifest.name,
+                "display_name": cp.manifest.display_name,
+                "skill_count": len(cp.skills),
+            }
+            for cp in plugins
+        ],
+    }
+
+
+@router.get("/extension/plugin-bundle")
+def get_plugin_bundle(
+    group: str,
+    integ: ClaudeAIIntegration = Depends(require_extension),
+    db: Session = Depends(get_db),
+) -> Response:
+    """Return the plugin ZIP for ONE published collection group.
+
+    ``group`` is the plugin slug from ``/extension/plugin-groups`` (the
+    kebab-slug of the collection name). The extension uploads this via
+    claude.ai's ``account-upload`` to create/refresh the "SkillNote: <name>"
+    group. The group is replace-as-a-whole, so the ZIP always reflects the
+    collection's complete current skill set. An ETag over the bytes lets the
+    extension skip a no-op re-upload (the generator is deterministic).
+    """
+    import hashlib
+
+    from app.services.claude_ai_marketplace import (
+        PluginAuthor,
+        build_plugin_zip,
+        collect_published_collection_plugins,
+    )
+
+    plugins = collect_published_collection_plugins(db, author=PluginAuthor(name="SkillNote"))
+    match = next((cp for cp in plugins if cp.manifest.name == group), None)
+    if match is None:
+        raise api_error(404, "GROUP_NOT_FOUND", "No published collection group by that name")
+
+    data = build_plugin_zip(match.skills, match.manifest)
+    etag = '"' + hashlib.sha256(data).hexdigest()[:32] + '"'
+    return Response(
+        content=data,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{group}-plugin.zip"',
+            "ETag": etag,
+            "X-Skill-Count": str(len(match.skills)),
         },
     )
 
@@ -870,16 +1270,30 @@ def resolve_conflict(
 
     from app.services.claude_ai_sync import (
         enqueue_skill_upload,
-        active_integrations_for_sync,
+        write_audit,
     )
 
+    # The inbound version staged on a diverged_ask outcome — located by the
+    # explicit marker on the link, NOT a "newest non-latest" heuristic. An
+    # intervening save/restore/re-import creates newer non-latest rows, so the
+    # old heuristic would promote/delete the WRONG version (silent loss). H1.
+    staged_inbound: Optional[SkillContentVersion] = None
+    if link.staged_version_id is not None:
+        staged_inbound = db.get(SkillContentVersion, link.staged_version_id)
+
+    audit_detail: dict = {
+        "link_id": str(link.id),
+        "resolution": body.resolution,
+        "claude_ai_skill_id": link.claude_ai_skill_id,
+    }
+
     if body.resolution == "skip":
-        # Nothing to do — just clear the flag. Conflict may re-appear on
-        # next divergence event.
+        # User wants to defer. Clear the flag but DON'T touch content on
+        # either side. The next divergence event can re-flag.
+        link.staged_version_id = None
         link.conflict_state = "resolved"
+
     elif body.resolution == "keep_skillnote":
-        # Re-upload the SkillNote-side version to claude.ai. The link's
-        # outbound op will overwrite the claude.ai-side change.
         if link.skillnote_skill_id is None:
             raise api_error(
                 422,
@@ -889,7 +1303,6 @@ def resolve_conflict(
         skill = db.get(Skill, link.skillnote_skill_id)
         if skill is None:
             raise api_error(404, "SKILL_NOT_FOUND", "Linked skill was deleted")
-        # Find the integration to scope the enqueue.
         integ = db.get(ClaudeAIIntegration, link.integration_id)
         if integ is None or integ.status == "disconnected":
             raise api_error(
@@ -897,7 +1310,6 @@ def resolve_conflict(
                 "INTEGRATION_INACTIVE",
                 "Cannot push — integration is disconnected",
             )
-        # Get current latest version_id.
         latest = db.execute(
             select(SkillContentVersion.id)
             .where(SkillContentVersion.skill_id == skill.id)
@@ -913,19 +1325,72 @@ def resolve_conflict(
             description=skill.description,
             integrations=[integ],
         )
+        # Discard the staged inbound version — it was the rejected branch.
+        # Hard-delete keeps the version history clean; the audit row
+        # below preserves the fact that it existed for compliance.
+        if staged_inbound is not None:
+            audit_detail["discarded_staged_version_id"] = str(staged_inbound.id)
+            db.delete(staged_inbound)
+        link.staged_version_id = None
+        # A2: re-anchor the baseline to the version we just pushed so the
+        # rejected remote is recorded — otherwise the next inbound import
+        # compares against a stale skillnote_version_id and re-diverges.
+        link.skillnote_version_id = latest
         link.conflict_state = "resolved"
+
     elif body.resolution == "keep_claude_ai":
-        # Trigger a fetch_one op so the extension pulls the current claude.ai
-        # contents and the next inbound import overwrites the SkillNote side.
-        from app.db.models.claude_ai import ClaudeAISyncOperation
-        op = ClaudeAISyncOperation(
-            integration_id=link.integration_id,
-            kind="fetch_one",
-            skill_id=link.skillnote_skill_id,
-            payload={"claude_ai_skill_id": link.claude_ai_skill_id, "overwrite": True},
-        )
-        db.add(op)
+        # If we have a staged inbound version (the new post-22d path),
+        # promote it directly — no need to wait for a fetch_one
+        # round-trip via the extension. Falls back to fetch_one ONLY
+        # when no staged version exists, which can happen if the
+        # divergence was flagged on an older code path.
+        if staged_inbound is not None and link.skillnote_skill_id is not None:
+            skill = db.get(Skill, link.skillnote_skill_id)
+            if skill is None:
+                raise api_error(404, "SKILL_NOT_FOUND", "Linked skill was deleted")
+            # Flip current latest → not-latest, promote staged → latest.
+            db.execute(
+                SkillContentVersion.__table__.update()
+                .where(SkillContentVersion.skill_id == skill.id)
+                .where(SkillContentVersion.is_latest.is_(True))
+                .values(is_latest=False)
+            )
+            staged_inbound.is_latest = True
+            # Apply the staged content + metadata to the parent Skill row.
+            skill.content_md = staged_inbound.content_md
+            skill.name = staged_inbound.title
+            skill.description = staged_inbound.description
+            # A5: never move current_version backwards — an intervening save
+            # may have advanced it past the staged version's number; reusing a
+            # lower number would collide on the next save.
+            skill.current_version = max(skill.current_version or 0, staged_inbound.version)
+            link.skillnote_version_id = staged_inbound.id
+            link.staged_version_id = None
+            audit_detail["promoted_version_id"] = str(staged_inbound.id)
+        else:
+            # No staged inbound version (divergence flagged on an older code
+            # path). Under the named-group model there is no per-skill "fetch_one"
+            # op the extension can run — enqueuing one would just fail three
+            # times and leave the conflict unresolved. Surface a clear,
+            # actionable error instead so the user knows to re-sync first.
+            raise api_error(
+                409,
+                "CONFLICT_NEEDS_RESYNC",
+                "Can't keep the claude.ai version: its content isn't staged "
+                "locally yet. Run a sync to import it, then resolve again.",
+            )
         link.conflict_state = "resolved"
+
+    # 27d: emit audit row for every successful resolve so the activity
+    # feed shows who picked what and (when relevant) which staged
+    # version was promoted or discarded.
+    write_audit(
+        db,
+        event="conflict_resolved",
+        integration_id=link.integration_id,
+        skill_id=link.skillnote_skill_id,
+        detail=audit_detail,
+    )
 
     db.commit()
     return Response(status_code=204)
@@ -951,6 +1416,12 @@ _VALID_AUDIT_EVENTS = frozenset(
         # complete_operation call; integration.status transitions to
         # cookie_expired and this row explains why in the activity feed.
         "cookie_expired",
+        # Iter 28c: dedicated kinds for op retry + manual sync nudge so
+        # the activity feed can label them distinctly. Without these we
+        # were piggybacking on `integration_updated` which conflated
+        # everything.
+        "op_retried",
+        "sync_triggered",
     }
 )
 
@@ -969,7 +1440,24 @@ def list_sync_queue(
 
     Excludes `completed` and `failed` ops — those belong in the activity
     feed, not the queue.
+
+    Cross-integration scope: by default, omitting integration_id returns
+    queue items for ALL integrations on this SkillNote instance. The
+    single-tenant self-hosted topology that SkillNote ships with treats
+    this as expected behavior. Operators running a shared instance can
+    set SKILLNOTE_REQUIRE_QUEUE_SCOPE=1 to require integration_id and
+    reject unscoped queries with 400.
     """
+    import os as _os
+    if (
+        integration_id is None
+        and _os.environ.get("SKILLNOTE_REQUIRE_QUEUE_SCOPE") == "1"
+    ):
+        raise api_error(
+            400,
+            "INTEGRATION_ID_REQUIRED",
+            "This SkillNote instance requires integration_id on /queue requests.",
+        )
     from sqlalchemy import desc as _desc, func as _func, or_ as _or
     from app.db.models.skill import Skill
 
@@ -1116,7 +1604,27 @@ def list_activity(
         limit=limit,
         before=before,
     )
-    return [AuditEventOut.model_validate(r) for r in rows]
+    # Bulk-resolve skill slugs so the feed renders human names instead of
+    # opaque claude.ai IDs. One query for the whole page.
+    skill_ids = {r.skill_id for r in rows if r.skill_id is not None}
+    slugs_by_id: dict[UUID, str] = {}
+    if skill_ids:
+        slugs_by_id = {
+            s.id: s.slug
+            for s in db.execute(select(Skill).where(Skill.id.in_(skill_ids))).scalars()
+        }
+    return [
+        AuditEventOut(
+            id=r.id,
+            integration_id=r.integration_id,
+            event=r.event,
+            skill_id=r.skill_id,
+            skill_slug=slugs_by_id.get(r.skill_id) if r.skill_id else None,
+            detail=r.detail or {},
+            created_at=r.created_at,
+        )
+        for r in rows
+    ]
 
 
 @router.get("/activity/export.csv")
@@ -1196,7 +1704,7 @@ def connector_analytics(db: Session = Depends(get_db)) -> AnalyticsResponse:
     are queue depth (already covered by /queue and /health).
     """
     from datetime import timedelta as _td, timezone as _tz
-    from sqlalchemy import case, cast, Date, func as _func
+    from sqlalchemy import case, cast, Date, func as _func, text as _sql_text
     from app.db.models.skill import Skill
 
     now = datetime.now(_tz.utc)
@@ -1206,8 +1714,14 @@ def connector_analytics(db: Session = Depends(get_db)) -> AnalyticsResponse:
     op = ClaudeAISyncOperation
     integ = ClaudeAIIntegration
 
-    completed_filter = (op.status == "completed") & (op.completed_at != None)  # noqa: E711
-    failed_filter = (op.status == "failed") & (op.completed_at != None)  # noqa: E711
+    # Under the named-group model the only forward-sync op is publish_group
+    # (one per group rebuild/push). `list` ops are reverse-sync polls — not
+    # "syncs" — so counting all op kinds inflated these numbers. Scope the
+    # sync metrics to publish_group so "N syncs" reflects real pushes to
+    # claude.ai (and the success rate / avg-tries reflect forward sync only).
+    forward = op.kind == "publish_group"
+    completed_filter = (op.status == "completed") & (op.completed_at != None) & forward  # noqa: E711
+    failed_filter = (op.status == "failed") & (op.completed_at != None) & forward  # noqa: E711
 
     counts_24h = db.execute(
         select(
@@ -1229,7 +1743,7 @@ def connector_analytics(db: Session = Depends(get_db)) -> AnalyticsResponse:
             _func.coalesce(
                 _func.sum(case((failed_filter, 1), else_=0)), 0
             ),
-            _func.coalesce(_func.avg(op.attempts), 0.0),
+            _func.coalesce(_func.avg(case((forward, op.attempts), else_=None)), 0.0),
         ).where(op.completed_at >= cutoff_7d)
     ).one()
     syncs_7d = int(counts_7d[0])
@@ -1239,7 +1753,11 @@ def connector_analytics(db: Session = Depends(get_db)) -> AnalyticsResponse:
     success_rate_7d = 1.0 if total_7d == 0 else syncs_7d / total_7d
 
     # Top 5 most-synced skills over 7d. Joins Skill so we return
-    # human-readable name/slug. Skips ops with NULL skill_id (list ops).
+    # human-readable name/slug. This is keyed on op.skill_id, which the
+    # forward-scoped `completed_filter` (publish_group, skill_id IS NULL) would
+    # always exclude — so use a dedicated skill-scoped filter here instead of
+    # reusing completed_filter (which would force this list permanently empty).
+    top_completed = (op.status == "completed") & (op.completed_at != None) & (op.skill_id != None)  # noqa: E711
     top_rows = db.execute(
         select(
             Skill.id,
@@ -1248,7 +1766,7 @@ def connector_analytics(db: Session = Depends(get_db)) -> AnalyticsResponse:
             _func.count(op.id).label("sync_count"),
         )
         .join(op, op.skill_id == Skill.id)
-        .where(completed_filter)
+        .where(top_completed)
         .where(op.completed_at >= cutoff_7d)
         .group_by(Skill.id, Skill.slug, Skill.name)
         .order_by(_func.count(op.id).desc())
@@ -1339,6 +1857,52 @@ def connector_analytics(db: Session = Depends(get_db)) -> AnalyticsResponse:
         s, f = spark_by_date.get(str(day), (0, 0))
         sparkline.append(SparklinePoint(date=str(day), syncs=s, failed=f))
 
+    # ── Usage: how often Claude actually invoked skills on claude.ai ────────
+    # Read from skill_call_events (the shared cross-agent usage table) where
+    # agent_name='claude-ai'. The extension's usage scanner writes these via
+    # /v1/hooks/skill-used. Wrapped in try/except so a missing table or
+    # column never breaks the (sync-focused) analytics response.
+    invocations_24h = 0
+    invocations_7d = 0
+    top_used: list[TopUsedSkillStat] = []
+    try:
+        inv_counts = db.execute(
+            _sql_text(
+                """
+                SELECT
+                  count(*) FILTER (WHERE created_at >= :c24) AS c24,
+                  count(*) FILTER (WHERE created_at >= :c7d) AS c7d
+                FROM skill_call_events
+                WHERE agent_name = 'claude-ai' AND event_type = 'called'
+                """
+            ),
+            {"c24": cutoff_24h, "c7d": cutoff_7d},
+        ).one()
+        invocations_24h = int(inv_counts[0] or 0)
+        invocations_7d = int(inv_counts[1] or 0)
+
+        top_rows = db.execute(
+            _sql_text(
+                """
+                SELECT skill_slug, count(*) AS n
+                FROM skill_call_events
+                WHERE agent_name = 'claude-ai' AND event_type = 'called'
+                  AND created_at >= :c7d
+                GROUP BY skill_slug
+                ORDER BY n DESC
+                LIMIT 5
+                """
+            ),
+            {"c7d": cutoff_7d},
+        ).all()
+        top_used = [
+            TopUsedSkillStat(skill_slug=r[0], invocations=int(r[1])) for r in top_rows
+        ]
+    except Exception:  # noqa: BLE001
+        # skill_call_events may not exist in some deployments — usage is
+        # additive, never load-bearing for the sync analytics.
+        pass
+
     return AnalyticsResponse(
         skills_synced_24h=syncs_24h,
         skills_synced_7d=syncs_7d,
@@ -1349,6 +1913,9 @@ def connector_analytics(db: Session = Depends(get_db)) -> AnalyticsResponse:
         top_skills_7d=top_skills,
         per_integration=per_integration,
         sparkline_7d=sparkline,
+        invocations_24h=invocations_24h,
+        invocations_7d=invocations_7d,
+        top_used_skills_7d=top_used,
     )
 
 
@@ -1399,7 +1966,23 @@ def run_diagnostic(db: Session = Depends(get_db)) -> DiagnosticResponse:
         )
 
     # 2. schema_migrated — read alembic_version current head.
-    EXPECTED_HEAD = "0021_audit_cookie_expired"
+    # EXPECTED head is computed from the shipped Alembic scripts at runtime so
+    # it never drifts as new migrations land. (It previously hardcoded an old
+    # revision, so every correctly-migrated DB reported "schema out of date"
+    # and the overall diagnostic verdict was permanently "warn".)
+    EXPECTED_HEAD = "0025_collection_publish_ca"  # fallback if script dir unreadable
+    try:
+        from pathlib import Path as _Path
+
+        from alembic.script import ScriptDirectory as _ScriptDir
+
+        _head = _ScriptDir(
+            str(_Path(__file__).resolve().parents[2] / "alembic")
+        ).get_current_head()
+        if _head:
+            EXPECTED_HEAD = _head
+    except Exception:  # pragma: no cover - keep the hardcoded fallback
+        pass
     try:
         head = db.execute(
             _sql_text("SELECT version_num FROM alembic_version")
@@ -1410,7 +1993,10 @@ def run_diagnostic(db: Session = Depends(get_db)) -> DiagnosticResponse:
                     id="schema_migrated",
                     label="Database schema up to date",
                     status="pass",
-                    detail=f"Schema at expected head: {EXPECTED_HEAD}.",
+                    # Customer-facing copy — no internal migration revision in
+                    # the happy path. (The drift case below keeps the revision
+                    # ids because operators need them to run the upgrade.)
+                    detail="Your SkillNote database is on the latest version.",
                 )
             )
         else:
@@ -1629,6 +2215,43 @@ def run_diagnostic(db: Session = Depends(get_db)) -> DiagnosticResponse:
             )
         )
 
+    # 9. extension_endpoint_stable — if the extension reported an
+    # endpoint_changed event recently, claude.ai's REST surface
+    # probably moved and the extension needs an update before any sync
+    # will work again. The previous diagnostic missed this entirely so
+    # ops could be stuck for days with no clear signal.
+    from app.db.models.claude_ai_polish import ClaudeAIAuditLog
+    endpoint_changed_count = int(
+        db.execute(
+            select(_func.count(ClaudeAIAuditLog.id))
+            .where(ClaudeAIAuditLog.event == "endpoint_changed")
+            .where(ClaudeAIAuditLog.created_at >= now - _td(hours=24))
+        ).scalar_one()
+    )
+    if endpoint_changed_count == 0:
+        checks.append(
+            DiagnosticCheck(
+                id="extension_endpoint_stable",
+                label="claude.ai REST surface stable",
+                status="pass",
+                detail="No endpoint-change reports in the last 24 hours.",
+            )
+        )
+    else:
+        checks.append(
+            DiagnosticCheck(
+                id="extension_endpoint_stable",
+                label="claude.ai REST surface stable",
+                status="fail",
+                detail=(
+                    f"{endpoint_changed_count} endpoint-change report(s) in "
+                    "the last 24 hours. The SkillNote extension needs an "
+                    "update — sync will stay broken until you reinstall the "
+                    "latest version from the extensions/claude-ai source tree."
+                ),
+            )
+        )
+
     # Overall verdict — fail dominates warn dominates pass.
     statuses = {c.status for c in checks}
     overall: str
@@ -1708,9 +2331,86 @@ class _SkillSyncToggleRequest(_BaseModel):
     enabled: bool
 
 
-@router.patch("/skills/{skill_id}/sync", status_code=204)
+@router.get(
+    "/skills/{skill_slug}/sync-status",
+    response_model=SkillSyncStatusResponse,
+)
+def get_skill_sync_status(
+    skill_slug: str,
+    db: Session = Depends(get_db),
+) -> SkillSyncStatusResponse:
+    """Per-skill claude.ai sync snapshot for the skill-detail page.
+
+    Returns:
+      - the per-skill toggle state (claude_ai_sync_enabled)
+      - every ClaudeAISkillLink touching this skill, with the linked
+        integration's label + status + last-seen + direction +
+        conflict state
+      - count of in-flight (pending or in_progress) ops for the skill
+
+    Keyed by slug (canonical user-facing identifier). Returns 404 if
+    the slug doesn't exist.
+    """
+    from sqlalchemy import func as _f
+    skill = db.execute(
+        select(Skill).where(Skill.slug == skill_slug)
+    ).scalar_one_or_none()
+    if skill is None:
+        raise api_error(404, "SKILL_NOT_FOUND", f"Skill {skill_slug!r} not found")
+
+    link_rows = db.execute(
+        select(
+            ClaudeAISkillLink.integration_id,
+            ClaudeAIIntegration.browser_label,
+            ClaudeAIIntegration.status,
+            ClaudeAISkillLink.claude_ai_skill_id,
+            ClaudeAISkillLink.claude_ai_version,
+            ClaudeAISkillLink.conflict_state,
+            ClaudeAISkillLink.last_seen_at,
+            ClaudeAISkillLink.direction,
+        )
+        .join(
+            ClaudeAIIntegration,
+            ClaudeAIIntegration.id == ClaudeAISkillLink.integration_id,
+        )
+        .where(ClaudeAISkillLink.skillnote_skill_id == skill.id)
+        .order_by(ClaudeAISkillLink.last_seen_at.desc().nullslast())
+    ).all()
+
+    links = [
+        SkillSyncLinkStat(
+            integration_id=row[0],
+            integration_label=row[1],
+            integration_status=row[2],  # type: ignore[arg-type]
+            claude_ai_skill_id=row[3],
+            claude_ai_version=row[4],
+            conflict_state=row[5],  # type: ignore[arg-type]
+            last_seen_at=row[6],
+            direction=row[7],  # type: ignore[arg-type]
+        )
+        for row in link_rows
+    ]
+
+    pending_count = int(
+        db.execute(
+            select(_f.count(ClaudeAISyncOperation.id))
+            .where(ClaudeAISyncOperation.skill_id == skill.id)
+            .where(ClaudeAISyncOperation.status.in_(("pending", "in_progress")))
+        ).scalar_one()
+    )
+
+    return SkillSyncStatusResponse(
+        skill_id=skill.id,
+        skill_slug=skill.slug,
+        claude_ai_sync_enabled=bool(getattr(skill, "claude_ai_sync_enabled", True)),
+        links=links,
+        pending_op_count=pending_count,
+    )
+
+
+@router.patch("/skills/{skill_ref}/sync", status_code=204)
 def toggle_skill_sync(
-    skill_id: UUID,
+    skill_ref: str,
     body: _SkillSyncToggleRequest,
     db: Session = Depends(get_db),
 ) -> Response:
@@ -1720,10 +2420,22 @@ def toggle_skill_sync(
     dev experiments, sensitive content) from the connector. Disabling a
     skill that's already synced does NOT delete it from claude.ai — that
     requires an explicit delete. Future uploads simply stop firing.
+
+    Accepts either the skill UUID or its slug. The frontend's offline-first
+    store often holds a skill record without its backend UUID, so resolving
+    by slug lets the per-skill toggle work in that common case too.
     """
-    skill = db.get(Skill, skill_id)
+    skill = None
+    try:
+        skill = db.get(Skill, UUID(skill_ref))
+    except (ValueError, AttributeError):
+        skill = None
     if skill is None:
-        raise api_error(404, "SKILL_NOT_FOUND", f"Skill {skill_id} not found")
+        skill = db.execute(
+            select(Skill).where(Skill.slug == skill_ref)
+        ).scalar_one_or_none()
+    if skill is None:
+        raise api_error(404, "SKILL_NOT_FOUND", f"Skill {skill_ref} not found")
     skill.claude_ai_sync_enabled = body.enabled
     db.commit()
     return Response(status_code=204)
@@ -1787,7 +2499,15 @@ def import_skill_from_claude_ai(
         validate_zip_and_extract_metadata,
     )
 
-    raw = bundle.file.read()
+    # Bounded read: cap the in-memory buffer at the configured bundle limit
+    # so a malicious/large upload can't OOM the worker (the manual publish
+    # path enforces the same cap). Read one byte past the limit to detect
+    # oversize without buffering the whole body.
+    from app.core.config import settings as _settings
+    _max = _settings.max_bundle_size_bytes
+    raw = bundle.file.read(_max + 1)
+    if len(raw) > _max:
+        raise api_error(413, "BUNDLE_TOO_LARGE", "Bundle exceeds size limit")
     if not raw:
         raise api_error(422, "EMPTY_BUNDLE", "Bundle upload is empty")
 
@@ -1864,6 +2584,26 @@ def import_skill_from_claude_ai(
         db.flush()
         created_new_skill = True
 
+    # Per-skill opt-out: if the operator disabled claude.ai sync for this
+    # EXISTING skill, the reverse-sync import must not overwrite it — that
+    # opt-out is a product promise (honored on the outbound path too). Ack
+    # the op as handled (created=False, no mutation) so it isn't retried.
+    if not created_new_skill and not getattr(skill, "claude_ai_sync_enabled", True):
+        from app.services.claude_ai_sync import write_audit as _write_audit
+        _write_audit(
+            db,
+            event="skill_imported",
+            integration_id=integ.id,
+            skill_id=skill.id,
+            detail={
+                "claude_ai_skill_id": claude_ai_skill_id,
+                "applied": False,
+                "reason": "sync_disabled",
+            },
+        )
+        db.commit()
+        return ImportedSkillResponse(skillnote_skill_id=skill.id, created=False)
+
     # Capture the local "latest version BEFORE this import" so we can
     # distinguish "local was changed by user between syncs" from "local
     # change was caused by this import itself." Used by the conflict
@@ -1874,17 +2614,159 @@ def import_skill_from_claude_ai(
         .where(SkillContentVersion.is_latest.is_(True))
     ).scalar_one_or_none()
 
+    # 4. Look up the existing link FIRST so the conflict check can run
+    #    BEFORE we mutate local skill state.
+    from app.services.claude_ai_sync import (
+        detect_link_divergence,
+        enqueue_skill_upload,
+        write_audit,
+    )
+
+    existing_link = db.execute(
+        select(ClaudeAISkillLink).where(
+            ClaudeAISkillLink.integration_id == integ.id,
+            ClaudeAISkillLink.claude_ai_skill_id == claude_ai_skill_id,
+        )
+    ).scalar_one_or_none()
+
+    # C2: an inbound import that collides on slug with a PRE-EXISTING local
+    # skill that has NO link to this claude.ai skill must NOT silently
+    # overwrite it. Without a link we have no evidence the local skill is the
+    # same thing — just a slug coincidence — so a sync-scoped bearer could
+    # otherwise clobber arbitrary local skills by colliding on their slug.
+    # Refuse; the operator can rename one side or opt in explicitly.
+    if existing_link is None and not created_new_skill:
+        write_audit(
+            db,
+            event="skill_imported",
+            integration_id=integ.id,
+            skill_id=skill.id,
+            detail={
+                "claude_ai_skill_id": claude_ai_skill_id,
+                "applied": False,
+                "reason": "slug_collision_unlinked",
+            },
+        )
+        db.commit()
+        raise api_error(
+            409,
+            "SLUG_COLLISION_UNLINKED",
+            f"A local skill '{skill.slug}' already exists and isn't linked to "
+            "this claude.ai skill. Rename one side, or enable sync for it first.",
+        )
+
+    outcome = "no_conflict"
+    if existing_link is not None and not created_new_skill:
+        # Pass the integration so policy ('ask' | 'skillnote_wins' |
+        # 'claude_ai_wins') decides the right behavior.
+        outcome = detect_link_divergence(
+            db,
+            link=existing_link,
+            incoming_claude_ai_version=claude_ai_version,
+            skillnote_version_id=pre_import_latest_id,
+            conflict_policy=integ.conflict_policy or "ask",
+        )
+
+    # 5. Apply the inbound content based on the outcome.
+    #
+    # auto_keep_skillnote: discard the inbound entirely (local wins).
+    # Enqueue an outbound push so claude.ai picks up the local content
+    # next tick — this is what makes the policy actually self-heal.
+    if outcome == "auto_keep_skillnote":
+        assert existing_link is not None
+        existing_link.last_seen_at = now
+        # Re-push the local latest. This is fire-and-forget; the next
+        # tick of the extension picks it up.
+        if pre_import_latest_id is not None:
+            enqueue_skill_upload(
+                db,
+                skill_id=skill.id,
+                version_id=pre_import_latest_id,
+                name=skill.name,
+                description=skill.description,
+                integrations=[integ],
+            )
+        write_audit(
+            db,
+            event="skill_imported",
+            integration_id=integ.id,
+            skill_id=skill.id,
+            detail={
+                "claude_ai_skill_id": claude_ai_skill_id,
+                "new_skill": False,
+                "applied": False,
+                "auto_resolution": "keep_skillnote",
+            },
+        )
+        db.commit()
+        return ImportedSkillResponse(skillnote_skill_id=skill.id, created=False)
+
+    # diverged_ask: stash the inbound version as non-latest so the user
+    # can pick a winner via the UI. CRITICAL: don't overwrite local skill
+    # CONTENT (content_md / latest row) — pre-fix behavior silently clobbered
+    # local edits at this point.
+    if outcome == "diverged_ask":
+        # A4: if this link was already diverged with a staged version (a
+        # re-import while a resolution is still pending), drop the prior staged
+        # row before staging the new one — otherwise every re-import orphans a
+        # version and leaks (skill_id, version) numbers.
+        if existing_link is not None and existing_link.staged_version_id is not None:
+            prior_staged = db.get(SkillContentVersion, existing_link.staged_version_id)
+            if prior_staged is not None and not prior_staged.is_latest:
+                db.delete(prior_staged)
+                db.flush()
+        next_ver = (skill.current_version or 0) + 1
+        new_version = SkillContentVersion(
+            id=_uuid.uuid4(),
+            skill_id=skill.id,
+            version=next_ver,
+            title=parsed_name,
+            description=parsed_description,
+            content_md=content_md,
+            collections=[],
+            is_latest=False,  # staged — user resolves via /resolve
+        )
+        db.add(new_version)
+        # Reserve the version NUMBER (counter only — not the latest-content
+        # pointer) so a later apply or a second inbound import can't allocate
+        # the same version and create two rows sharing (skill_id, version),
+        # which would make version history / restore ambiguous. The latest
+        # content row is left untouched; keep_claude_ai's promotion later sets
+        # current_version to this same number (a no-op), and keep_skillnote's
+        # discard leaves it advanced (monotonic, gap-tolerant — fine).
+        skill.current_version = next_ver
+        db.flush()
+        # Mark the link as diverged but keep skillnote_version_id pointing
+        # at the LOCAL pre-import latest so "Keep SkillNote" pushes the
+        # untouched local content back. Track the staged inbound version
+        # via claude_ai_version (already updated by the detector).
+        assert existing_link is not None
+        existing_link.last_seen_at = now
+        existing_link.claude_ai_version = claude_ai_version
+        existing_link.direction = "both"
+        existing_link.staged_version_id = new_version.id
+        write_audit(
+            db,
+            event="skill_imported",
+            integration_id=integ.id,
+            skill_id=skill.id,
+            detail={
+                "claude_ai_skill_id": claude_ai_skill_id,
+                "new_skill": False,
+                "applied": False,
+                "staged_version_id": str(new_version.id),
+            },
+        )
+        db.commit()
+        return ImportedSkillResponse(skillnote_skill_id=skill.id, created=False)
+
+    # no_conflict / auto_keep_claude_ai / brand-new skill: normal apply.
+    # Inbound becomes the new latest; local skill fields are updated.
     if not created_new_skill:
-        # Refresh in-place. Bumps current_version via _create_content_version below.
         skill.name = parsed_name
         skill.description = parsed_description
         skill.content_md = content_md
 
-    # 4. Create a SkillContentVersion snapshot. Cannot call
-    # skills.py's _create_content_version helper directly because it
-    # would re-trigger enqueue_skill_upload — instead we mark the
-    # incoming content as the new latest manually and avoid the
-    # outbound-op echo (the data already lives on claude.ai).
     next_ver = (skill.current_version or 0) + 1
     db.execute(
         SkillContentVersion.__table__.update()
@@ -1904,19 +2786,9 @@ def import_skill_from_claude_ai(
     )
     db.add(new_version)
     skill.current_version = next_ver
-    # Flush so the link's FK to skill_content_versions.id resolves.
     db.flush()
 
-    # 5. Upsert the link + run conflict detection.
-    from app.services.claude_ai_sync import detect_link_divergence
-
-    existing_link = db.execute(
-        select(ClaudeAISkillLink).where(
-            ClaudeAISkillLink.integration_id == integ.id,
-            ClaudeAISkillLink.claude_ai_skill_id == claude_ai_skill_id,
-        )
-    ).scalar_one_or_none()
-
+    # 6. Upsert the link.
     if existing_link is None:
         link = ClaudeAISkillLink(
             integration_id=integ.id,
@@ -1929,29 +2801,23 @@ def import_skill_from_claude_ai(
         )
         db.add(link)
     else:
-        # Conflict check BEFORE we update the link's recorded version.
-        # Use the PRE-IMPORT local latest (captured above) — not the
-        # version we're about to create — so we don't false-positive on
-        # the import itself being a local change.
-        detect_link_divergence(
-            db,
-            link=existing_link,
-            incoming_claude_ai_version=claude_ai_version,
-            skillnote_version_id=pre_import_latest_id,
-        )
         existing_link.skillnote_skill_id = skill.id
         existing_link.skillnote_version_id = new_version.id
         existing_link.claude_ai_version = claude_ai_version
         existing_link.last_seen_at = now
         existing_link.direction = "both"
 
-    from app.services.claude_ai_sync import write_audit
     write_audit(
         db,
         event="skill_imported",
         integration_id=integ.id,
         skill_id=skill.id,
-        detail={"claude_ai_skill_id": claude_ai_skill_id, "new_skill": created_new_skill},
+        detail={
+            "claude_ai_skill_id": claude_ai_skill_id,
+            "new_skill": created_new_skill,
+            "applied": True,
+            **({"auto_resolution": "keep_claude_ai"} if outcome == "auto_keep_claude_ai" else {}),
+        },
     )
     db.commit()
     return ImportedSkillResponse(skillnote_skill_id=skill.id, created=created_new_skill)
@@ -1962,12 +2828,18 @@ def import_skill_from_claude_ai(
 
 @router.post("/admin/cleanup-expired-pairings", status_code=200)
 def cleanup_expired_pairings(db: Session = Depends(get_db)) -> dict:
-    """Periodic cleanup of pending_approval rows past their expiry.
+    """Periodic maintenance: expire stale pending pairings + reclaim orphaned
+    `in_progress` sync ops.
 
-    Safe to call from a cron job (e.g. every 5 minutes). Returns the
-    number of rows expired so monitoring can graph the rate.
+    Safe to call from a cron job (e.g. every 5 minutes); the same work runs
+    automatically in the API's background loop. Returns counts so monitoring
+    can graph the rates.
     """
-    from app.services.claude_ai_sync import expire_stale_pairings
+    from app.services.claude_ai_sync import (
+        expire_stale_pairings,
+        reclaim_stale_operations,
+    )
     expired = expire_stale_pairings(db)
+    reclaimed = reclaim_stale_operations(db)
     db.commit()
-    return {"expired": expired}
+    return {"expired": expired, "reclaimed": reclaimed}

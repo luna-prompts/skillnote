@@ -125,14 +125,18 @@ export function AnalyticsPanel({ pollIntervalMs = 30_000 }: Props) {
             />
             <Metric
               label="Success"
-              value={`${(data.sync_success_rate_7d * 100).toFixed(1)}%`}
+              value={`${((data.sync_success_rate_7d ?? 0) * 100).toFixed(1)}%`}
               sublabel="7-day"
-              tone={data.sync_success_rate_7d < 0.95 ? 'text-amber-600' : 'text-emerald-600'}
+              tone={
+                (data.sync_success_rate_7d ?? 0) < 0.95
+                  ? 'text-amber-600 dark:text-amber-400'
+                  : 'text-emerald-600 dark:text-emerald-400'
+              }
               testid="metric-success"
             />
             <Metric
               label="Avg tries"
-              value={data.avg_attempts_per_sync_7d.toFixed(2)}
+              value={(data.avg_attempts_per_sync_7d ?? 0).toFixed(2)}
               sublabel="per op"
               testid="metric-avg-tries"
             />
@@ -207,7 +211,7 @@ export function AnalyticsPanel({ pollIntervalMs = 30_000 }: Props) {
                         {p.syncs_24h}
                       </td>
                       <td
-                        className={`py-1.5 text-right tabular-nums ${p.failed_24h > 0 ? 'text-red-600' : 'text-muted-foreground'}`}
+                        className={`py-1.5 text-right tabular-nums ${p.failed_24h > 0 ? 'text-red-600 dark:text-red-400' : 'text-muted-foreground'}`}
                       >
                         {p.failed_24h}
                       </td>
@@ -218,6 +222,49 @@ export function AnalyticsPanel({ pollIntervalMs = 30_000 }: Props) {
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+
+          {/* Usage — how often Claude actually invoked skills on claude.ai.
+              Distinct from sync (push) counts above. Only shows once there's
+              real invocation data so synced-but-never-used skills don't read
+              as a wall of zeros. */}
+          {data.invocations_7d > 0 && (
+            <div
+              className="px-4 py-3 border-t border-border bg-muted/10"
+              data-testid="usage-breakdown"
+            >
+              <p className="mb-2 text-[11.5px] font-medium text-foreground">
+                Used on claude.ai
+                <span className="ml-1.5 text-muted-foreground/70 font-normal">
+                  {data.invocations_24h} in 24h · {data.invocations_7d} in 7d
+                </span>
+              </p>
+              {data.top_used_skills_7d.length > 0 && (
+                <ul className="space-y-1.5" data-testid="top-used-skills-list">
+                  {data.top_used_skills_7d.map((s, i) => (
+                    <li
+                      key={s.skill_slug}
+                      className="flex items-center justify-between text-[12px]"
+                    >
+                      <span className="flex items-center gap-2 min-w-0">
+                        <span className="text-muted-foreground/60 font-mono tabular-nums shrink-0 w-4">
+                          {i + 1}.
+                        </span>
+                        <Link
+                          href={`/skills/${s.skill_slug}`}
+                          className="text-foreground hover:underline truncate"
+                        >
+                          {s.skill_slug}
+                        </Link>
+                      </span>
+                      <span className="ml-3 shrink-0 inline-flex items-center gap-1 rounded bg-emerald-500/10 px-1.5 py-0.5 text-[11px] tabular-nums text-emerald-700 dark:text-emerald-400">
+                        {s.invocations}× used
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           )}
         </>
@@ -250,7 +297,7 @@ function Metric({
         <span>{label}</span>
         <span className="text-muted-foreground/60">{sublabel}</span>
         {failed !== undefined && failed > 0 && (
-          <span className="ml-1 text-red-600 tabular-nums">
+          <span className="ml-1 text-red-600 dark:text-red-400 tabular-nums">
             · {failed} failed
           </span>
         )}
@@ -290,6 +337,9 @@ function Sparkline({
         const x = i * (colW + gap)
         return (
           <g key={p.date}>
+            {/* Faint column track so a week of mostly-zero days still reads
+                as a bar chart instead of one lone bar on a blank canvas. */}
+            <rect x={x} y={2} width={colW} height={H - 2} rx={2.5} className="fill-muted" />
             {/* Failed (red) sits below the success bar so the eye reads
                 them as a fraction of the column. */}
             {fh > 0 && (
@@ -298,17 +348,21 @@ function Sparkline({
                 y={H - fh}
                 width={colW}
                 height={fh}
-                className="fill-red-500/70"
+                rx={2.5}
+                className="fill-red-500/80"
               />
             )}
-            <rect
-              x={x}
-              y={H - fh - h}
-              width={colW}
-              height={h}
-              className="fill-foreground/70"
-              data-syncs={p.syncs}
-            />
+            {h > 0 && (
+              <rect
+                x={x}
+                y={H - fh - h}
+                width={colW}
+                height={h}
+                rx={2.5}
+                className="fill-[var(--accent)]"
+                data-syncs={p.syncs}
+              />
+            )}
             <title>{`${p.date}: ${p.syncs} synced${p.failed > 0 ? `, ${p.failed} failed` : ''}`}</title>
           </g>
         )

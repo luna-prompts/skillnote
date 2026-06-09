@@ -46,10 +46,10 @@ export function DiagnosticButton() {
 
   const click = () => {
     setOpen(true)
-    if (!result || result.overall === 'fail' || result.overall === 'warn') {
-      // Re-run on every open so the verdict is always fresh.
-      void run()
-    }
+    // Re-run on EVERY open so the verdict is always fresh. The previous code
+    // skipped the re-run when the last result was 'pass', so reopening could
+    // show a stale "All checks passed" even after the setup had since broken.
+    if (!running) void run()
   }
 
   return (

@@ -44,7 +44,7 @@ export function ConfirmDisconnectDialog({ open, browserLabel, onCancel, onConfir
       aria-modal="true"
       aria-labelledby="disconnect-dialog-title"
       aria-describedby="disconnect-dialog-body"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in-0 duration-150"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/30 backdrop-blur-sm animate-in fade-in-0 duration-150"
       onClick={onCancel}
     >
       <div

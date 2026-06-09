@@ -91,7 +91,10 @@ export function SyncQueuePanel({
 
   // Render-priority empty state: never show the panel if there's nothing
   // to show AND nothing has been pending recently. Save vertical space.
-  if (data && data.total === 0) {
+  // BUT fall through when there's a poll error so the error banner (below) is
+  // reachable — otherwise an outage after an initially-empty queue keeps
+  // showing the reassuring "queue is clear" while polls silently fail.
+  if (data && data.total === 0 && !error) {
     return (
       <div
         className="rounded-lg border border-border bg-card px-4 py-3"

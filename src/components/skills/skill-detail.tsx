@@ -547,9 +547,12 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
                       <Clock className="h-3 w-3" />
                       {formatRelative(skill.updated_at)}
                     </span>
-                    {skill.id && (
+                    {(skill.id || skill.slug) && (
                       <SkillSyncBadge
-                        skillId={skill.id}
+                        // Offline-first records often lack the backend UUID;
+                        // fall back to the slug, which the toggle endpoint
+                        // resolves the same way.
+                        skillId={skill.id || skill.slug}
                         initialEnabled={skill.claude_ai_sync_enabled ?? true}
                       />
                     )}

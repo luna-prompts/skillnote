@@ -8,12 +8,18 @@
 import {
   ClaudeAIEndpointChangedError,
   ClaudeAINotLoggedInError,
+  ClaudeAIPermanentError,
   deleteOrgSkill,
   downloadSkillBundle,
+  ensureSkillNoteMarketplace,
   getOrgId,
   isLoggedIn,
+  listAccountPlugins,
+  listConversationSkillInvocations,
   listOrgSkills,
+  setPluginEnabled,
   uploadOrgSkill,
+  uploadPluginBundle,
   watchSessionCookie,
 } from "./lib/claude-ai-client";
 import {
@@ -22,7 +28,12 @@ import {
   SkillNoteNetworkError,
   type SkillNoteClient,
 } from "./lib/skillnote-client";
-import { appendActivity, loadConfig, saveConfig } from "./lib/storage";
+import {
+  appendActivity,
+  filterAndMarkNewInvocations,
+  loadConfig,
+  saveConfig,
+} from "./lib/storage";
 import { reportTelemetry } from "./lib/telemetry";
 import type { OperationCompletePayload, SyncOperation } from "./lib/types";
 
@@ -34,7 +45,18 @@ void initialize();
 
 async function initialize(): Promise<void> {
   await chrome.alarms.create(ALARM_SYNC, { periodInMinutes: 1 });
+  // Re-register the web→SW sync bridge on every worker start (idempotent), so
+  // the SkillNote web app can trigger an immediate sync when already paired.
+  void registerWebBridge();
+  // Drain any pending ops on worker start (reload / wake) rather than waiting
+  // for the first 1-min alarm — `tick()` no-ops when unpaired and is guarded
+  // against overlapping runs.
+  void tick();
   watchSessionCookie(async (loggedIn) => {
+    // Record the session state authoritatively so the popup/options can
+    // render a calm "Sign in to claude.ai" affordance rather than treating
+    // a signed-out session as an error.
+    await saveConfig({ claude_session_active: loggedIn });
     if (loggedIn) {
       // User just logged into claude.ai — kick a sync immediately.
       void tick();
@@ -51,6 +73,59 @@ chrome.alarms.onAlarm.addListener(async ({ name }) => {
     await pollPairOnce();
   }
 });
+
+/** Register (idempotently) a content script on the paired SkillNote web origin
+ *  that relays a "sync now" window-message from the web app to this worker.
+ *  This is what lets a "Sync to claude.ai" toggle in the web UI trigger an
+ *  IMMEDIATE sync (waking the dormant MV3 worker) instead of the change
+ *  sitting in the queue until the 1-minute alarm fires. Also injects into any
+ *  already-open SkillNote tabs so it works without a page reload. */
+async function registerWebBridge(skillnoteUrl?: string): Promise<void> {
+  if (!chrome.scripting?.registerContentScripts) return;
+  let url = skillnoteUrl;
+  if (!url) {
+    const cfg = await loadConfig();
+    url = cfg.skillnote_url;
+  }
+  if (!url) return;
+  let origin: string;
+  try {
+    origin = new URL(url).origin;
+  } catch {
+    return;
+  }
+  const pattern = `${origin}/*`;
+  // Only register where we actually hold host permission (granted at pairing).
+  const hasPerm = await chrome.permissions
+    .contains({ origins: [pattern] })
+    .catch(() => false);
+  if (!hasPerm) return;
+  try {
+    await chrome.scripting
+      .unregisterContentScripts({ ids: ["skillnote-web-bridge"] })
+      .catch(() => {});
+    await chrome.scripting.registerContentScripts([
+      {
+        id: "skillnote-web-bridge",
+        matches: [pattern],
+        js: ["content.js"],
+        runAt: "document_idle",
+      },
+    ]);
+    // registerContentScripts only covers FUTURE loads — inject into currently
+    // open SkillNote tabs too so the bridge works without a reload.
+    const tabs = await chrome.tabs.query({ url: pattern });
+    for (const t of tabs) {
+      if (t.id != null) {
+        chrome.scripting
+          .executeScript({ target: { tabId: t.id }, files: ["content.js"] })
+          .catch(() => {});
+      }
+    }
+  } catch (e) {
+    console.warn("registerWebBridge failed", e);
+  }
+}
 
 // ── Pairing flow (extension side) ─────────────────────────────────────────────
 
@@ -100,6 +175,7 @@ async function pollPairOnce(): Promise<void> {
       });
       await chrome.alarms.clear(ALARM_PAIR_POLL);
       await notify("SkillNote connected", "Syncing skills to claude.ai now.");
+      void registerWebBridge(cfg.skillnote_url); // let the web UI trigger syncs
       void tick(); // first sync immediately
     }
   } catch (e) {
@@ -109,17 +185,122 @@ async function pollPairOnce(): Promise<void> {
   }
 }
 
+// ── Usage analytics ─────────────────────────────────────────────────────────
+
+const CONV_URL_RE = /^https:\/\/claude\.ai\/chat\/([0-9a-f-]{8,})/i;
+const MAX_CONVS_PER_SCAN = 10;
+
+/** Scan open claude.ai conversation tabs for skill invocations (skill-file
+ *  reads) and report each one ONCE to SkillNote's shared usage hook. The
+ *  background can reach claude.ai with the session cookie (same path that
+ *  uploads skills), and tabs.query exposes conversation URLs because we hold
+ *  host_permissions for claude.ai. */
+async function scanUsage(client: SkillNoteClient): Promise<void> {
+  // Discover the chat-capable org once. If discovery fails (not signed in,
+  // shape drift) there's nothing to scan.
+  let orgId: string;
+  try {
+    orgId = await getOrgId();
+  } catch {
+    return;
+  }
+
+  let tabs: chrome.tabs.Tab[] = [];
+  try {
+    tabs = await chrome.tabs.query({ url: "https://claude.ai/chat/*" });
+  } catch {
+    return; // tabs API unavailable (rare) — skip.
+  }
+
+  // Unique conversation ids from the open tabs, most-recent first, bounded.
+  const convIds: string[] = [];
+  for (const t of tabs) {
+    const m = t.url ? CONV_URL_RE.exec(t.url) : null;
+    const id = m?.[1];
+    if (id && !convIds.includes(id)) convIds.push(id);
+  }
+  const scanList = convIds.slice(0, MAX_CONVS_PER_SCAN);
+
+  for (const convId of scanList) {
+    let invocations;
+    let chatTitle = "";
+    try {
+      const res = await listConversationSkillInvocations(orgId, convId);
+      invocations = res.invocations;
+      chatTitle = res.title;
+    } catch (e) {
+      // claude.ai endpoint drift / network — skip this conversation, keep going.
+      console.warn(`usage scan: conversation ${convId} failed`, e);
+      continue;
+    }
+    if (invocations.length === 0) continue;
+
+    // Dedup: only report invocations we haven't reported before.
+    const freshKeys = await filterAndMarkNewInvocations(
+      invocations.map((i) => i.dedupKey),
+    );
+    if (freshKeys.length === 0) continue;
+    const freshSet = new Set(freshKeys);
+
+    for (const inv of invocations) {
+      if (!freshSet.has(inv.dedupKey)) continue;
+      try {
+        await client.reportSkillUsed(inv.slug, convId, chatTitle);
+        await appendActivity({
+          ts: new Date().toISOString(),
+          kind: "used",
+          message: `${inv.slug} used in claude.ai`,
+        });
+      } catch (e) {
+        // Reporting failed — the dedup key is already marked seen, so we
+        // won't retry this exact invocation. Acceptable: usage analytics is
+        // best-effort, not a billing ledger.
+        console.warn(`report skill-used ${inv.slug} failed`, e);
+      }
+    }
+  }
+}
+
 // ── Sync engine ───────────────────────────────────────────────────────────────
 
+let _ticking = false;
+
+/** Re-entrancy guard around the sync engine. The 1-min alarm and the popup/
+ *  options "Sync now" message both drive a tick and can overlap. A second
+ *  concurrent run would double-scan usage (extra claude.ai conversation-tree
+ *  fetches) and let the two end-of-tick saveConfig writes race, flickering the
+ *  last_error / session state. Skip the re-entrant run if one is in flight. */
 async function tick(): Promise<void> {
+  if (_ticking) return;
+  _ticking = true;
+  try {
+    await _runTick();
+  } finally {
+    _ticking = false;
+  }
+}
+
+async function _runTick(): Promise<void> {
   const cfg = await loadConfig();
   if (!cfg.skillnote_url || !cfg.extension_token) return;
   if (!(await isLoggedIn())) {
-    await saveConfig({ last_error: "claude.ai session not active" });
+    // Signed out of claude.ai is a normal, recoverable state — not an error.
+    // Record it as such and clear any stale error so the UI shows the calm
+    // "Sign in to claude.ai" CTA instead of a red error banner.
+    await saveConfig({ claude_session_active: false, last_error: undefined });
     return;
   }
 
   const client = buildClient(cfg.skillnote_url, cfg.extension_token);
+
+  // Usage analytics: scan open claude.ai conversations for skill
+  // invocations and report them. Independent of the sync queue so it runs
+  // even when there's nothing to sync. Best-effort — never breaks sync.
+  try {
+    await scanUsage(client);
+  } catch (e) {
+    console.warn("usage scan failed", e);
+  }
 
   let ops: SyncOperation[];
   try {
@@ -129,10 +310,15 @@ async function tick(): Promise<void> {
     return;
   }
   if (ops.length === 0) {
-    // No pending work — opportunistically force a list-op to drive reverse
-    // sync (the helper is coalesced on the backend so this is cheap).
-    // TODO Phase 3: add a /trigger-list endpoint and call it here.
-    await saveConfig({ last_sync_at: new Date().toISOString() });
+    // No pending work — but reaching this branch IS a successful tick.
+    // Clear any stale last_error from prior auth/network failures so
+    // the UI stops showing "claude.ai session expired" after the user
+    // has signed back in.
+    await saveConfig({
+      last_sync_at: new Date().toISOString(),
+      last_error: undefined,
+      claude_session_active: true,
+    });
     return;
   }
 
@@ -150,7 +336,9 @@ async function tick(): Promise<void> {
     await releaseInFlightOps(client, ops, (e as Error).message, isAuthExpired);
 
     if (isAuthExpired) {
-      await saveConfig({ last_error: "claude.ai session expired" });
+      // Mid-sync 401 — the cookie lapsed. Mark the session inactive (calm
+      // "Sign in" CTA) rather than leaving a raw error string in the UI.
+      await saveConfig({ claude_session_active: false, last_error: undefined });
       await notify("claude.ai sign-in required", "Open claude.ai and sign in to resume sync.");
       return;
     }
@@ -158,12 +346,24 @@ async function tick(): Promise<void> {
       await reportEndpointChange(e.message);
       return;
     }
-    await saveConfig({ last_error: (e as Error).message });
+    // Non-auth failure (e.g. org-scope 403, org-discovery miss). The cookie
+    // is present (isLoggedIn passed above), so assert the session is healthy
+    // — otherwise a stale `false` from a prior signed-out tick would wrongly
+    // render "Sign in" instead of surfacing the real error.
+    await saveConfig({ claude_session_active: true, last_error: (e as Error).message });
     return;
   }
 
+  // Execute each op; track whether the claude.ai cookie lapsed mid-loop so we
+  // don't end the tick reporting a healthy session while ops are 401-failing.
+  let authExpiredDuringOps = false;
   for (const op of ops) {
-    await executeOp(op, client, orgId);
+    if (await executeOp(op, client, orgId)) authExpiredDuringOps = true;
+  }
+  if (authExpiredDuringOps) {
+    await saveConfig({ claude_session_active: false, last_error: undefined });
+    await notify("claude.ai sign-in required", "Open claude.ai and sign in to resume sync.");
+    return;
   }
 
   // Refresh popup-facing counters once per tick. Failures here are
@@ -187,15 +387,19 @@ async function tick(): Promise<void> {
   await saveConfig({
     last_sync_at: new Date().toISOString(),
     last_error: undefined,
+    claude_session_active: true,
     ...counterPatch,
   });
 }
 
+/** Execute one op. Returns true if it failed because the claude.ai cookie
+ *  lapsed (401) — the caller uses that to mark the session inactive instead
+ *  of ending the tick reporting a healthy "connected" session. */
 async function executeOp(
   op: SyncOperation,
   client: SkillNoteClient,
   orgId: string,
-): Promise<void> {
+): Promise<boolean> {
   try {
     switch (op.kind) {
       case "upload":
@@ -229,6 +433,100 @@ async function executeOp(
           ts: new Date().toISOString(),
           kind: "delete",
           message: `removed ${claude_ai_skill_id}`,
+        });
+        break;
+      }
+      case "publish_group": {
+        // Git-free named-group sync. Each published SkillNote collection is
+        // its own claude.ai plugin group ("SkillNote: <name>") under one
+        // "SkillNote" marketplace. This op reconciles the whole set:
+        //   1. fetch the desired groups (published collections) from SkillNote
+        //   2. ensure the marketplace exists
+        //   3. upload (overwrite) each group's bundle
+        //   4. uninstall any existing group whose collection was toggled off
+        // Each group is replace-as-a-whole, so re-upload handles add/edit/del
+        // of skills within it.
+        const { groups } = await client.fetchPluginGroups();
+        const marketplaceId = await ensureSkillNoteMarketplace(orgId);
+
+        let uploaded = 0;
+        let totalSkills = 0;
+        let failedGroups = 0;
+        const wantNames = new Set<string>();
+        for (const g of groups) {
+          wantNames.add(g.name);
+          try {
+            const { bundle, skillCount } = await client.fetchPluginGroupBundle(g.name);
+            const up = await uploadPluginBundle(orgId, marketplaceId, bundle);
+            // Re-enable in case this group's plugin was previously retired
+            // (collection toggled off, then back on). An overwrite-upload
+            // refreshes content but does NOT itself re-enable a disabled
+            // plugin, so a re-published collection would stay invisible.
+            // setPluginEnabled(true) is idempotent for already-enabled plugins.
+            if (up.plugin_id) await setPluginEnabled(orgId, up.plugin_id, true);
+            uploaded++;
+            totalSkills += skillCount;
+          } catch (e) {
+            // A logged-out error aborts the whole op (no point continuing).
+            if (e instanceof ClaudeAINotLoggedInError) throw e;
+            // Otherwise one bad group must NOT abort the batch — if it did, the
+            // retire pass below would be skipped and a collection toggled off
+            // would stay live on claude.ai forever (never disabled).
+            failedGroups++;
+            console.warn(`publish_group: group "${g.name}" failed`, e);
+          }
+        }
+
+        // Retire groups for collections turned off: disable any plugin in the
+        // SkillNote marketplace that isn't in the desired set. Runs
+        // UNCONDITIONALLY (even when some uploads failed) so retirements are
+        // never silently dropped by an unrelated group's upload error.
+        let retired = 0;
+        try {
+          const existing = await listAccountPlugins(orgId, marketplaceId);
+          for (const p of existing) {
+            if (!wantNames.has(p.name)) {
+              await setPluginEnabled(orgId, p.id, false);
+              retired++;
+            }
+          }
+        } catch (e) {
+          // Reconciliation of removals is best-effort; the uploads above are
+          // the critical path. Log and continue.
+          console.warn("publish_group: uninstall-removed pass failed", e);
+        }
+
+        if (failedGroups > 0) {
+          // Some groups didn't upload — report failure so the op retries on a
+          // later tick (overwrite-upload makes re-uploading the good ones a
+          // no-op). The retire pass already ran, so removals aren't lost.
+          await client.completeOperation(op.id, {
+            success: false,
+            error: `${failedGroups} of ${groups.length} group(s) failed to upload`,
+            claude_ai_org_id: orgId,
+          });
+          await appendActivity({
+            ts: new Date().toISOString(),
+            kind: "error",
+            message: `SkillNote → claude.ai: ${failedGroups} group(s) failed to sync`,
+          });
+          return false; // retry next tick; not an auth abort
+        }
+
+        await client.completeOperation(op.id, {
+          success: true,
+          result: {
+            group_count: uploaded,
+            skill_count: totalSkills,
+            retired_count: retired,
+            marketplace_id: marketplaceId,
+          },
+          claude_ai_org_id: orgId,
+        });
+        await appendActivity({
+          ts: new Date().toISOString(),
+          kind: "push",
+          message: `SkillNote → claude.ai (${uploaded} group${uploaded === 1 ? "" : "s"}, ${totalSkills} skills)`,
         });
         break;
       }
@@ -268,8 +566,12 @@ async function executeOp(
         break;
       }
       default:
-        throw new Error(`unsupported op kind: ${op.kind}`);
+        // Unknown op kind can never succeed by retrying — fail it permanently
+        // so it doesn't burn the 3-attempt budget and spam identical errors.
+        // (The backend no longer enqueues the unhandled "fetch_one" kind.)
+        throw new ClaudeAIPermanentError(`unsupported op kind: ${op.kind}`);
     }
+    return false;
   } catch (e) {
     const payload: OperationCompletePayload = {
       success: false,
@@ -281,6 +583,12 @@ async function executeOp(
     // rows and no hint that the fix is "sign in to claude.ai."
     if (e instanceof ClaudeAINotLoggedInError) {
       payload.auth_expired = true;
+    }
+    // A permanent rejection (e.g. duplicate skill name) can't be fixed by
+    // retrying — tell the backend to fail it immediately instead of
+    // burning the 3-attempt budget and logging repeated red lines.
+    if (e instanceof ClaudeAIPermanentError) {
+      payload.permanent = true;
     }
     try {
       await client.completeOperation(op.id, payload);
@@ -295,6 +603,7 @@ async function executeOp(
     if (e instanceof ClaudeAIEndpointChangedError) {
       await reportEndpointChange(e.message);
     }
+    return e instanceof ClaudeAINotLoggedInError;
   }
 }
 
@@ -375,6 +684,9 @@ async function notify(title: string, message: string): Promise<void> {
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg?.type === "skillnote.sync-now") {
+    // Visible in the service-worker console — confirms the web-bridge (or
+    // popup) reached the worker and a sync is running.
+    console.info("[SkillNote] sync-now received → syncing");
     void tick().then(() => sendResponse({ ok: true })).catch((e) => sendResponse({ ok: false, error: String(e) }));
     return true; // async response
   }

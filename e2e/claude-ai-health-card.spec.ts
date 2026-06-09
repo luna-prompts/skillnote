@@ -16,14 +16,67 @@
 import { test, expect, type Page } from '@playwright/test'
 
 async function wireBaseRoutes(page: Page) {
+  // The HealthCard renders only once at least one integration exists (first
+  // run leads with the setup stepper instead of an empty dashboard), so wire
+  // one active integration row for these card-focused tests.
   await page.route('**/v1/integrations/claude-ai/integrations', (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([
+        {
+          id: 'hc-int-1',
+          browser_label: 'Chrome',
+          status: 'active',
+          scope: 'both',
+          claude_ai_org_id: null,
+          last_sync_at: new Date().toISOString(),
+          last_error: null,
+          conflict_policy: 'ask',
+          pending_op_count: 0,
+          failed_op_count: 0,
+          linked_skill_count: 3,
+        },
+      ]),
+    }),
   )
   await page.route('**/v1/integrations/claude-ai/conflicts', (route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
   )
   await page.route('**/v1/integrations/claude-ai/activity**', (route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
+  )
+  // Gated panels that now render alongside the card — mock so they don't make
+  // unmocked calls.
+  await page.route('**/v1/integrations/claude-ai/queue**', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        items: [],
+        total: 0,
+        pending_count: 0,
+        in_progress_count: 0,
+        oldest_age_seconds: null,
+      }),
+    }),
+  )
+  await page.route('**/v1/integrations/claude-ai/analytics', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        skills_synced_24h: 0,
+        skills_synced_7d: 0,
+        failed_24h: 0,
+        failed_7d: 0,
+        sync_success_rate_7d: 1,
+        avg_attempts_per_sync_7d: 0,
+        top_skills_7d: [],
+        per_integration: [],
+        sparkline_7d: [],
+      }),
+    }),
   )
 }
 

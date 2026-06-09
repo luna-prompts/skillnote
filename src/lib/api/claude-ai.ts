@@ -48,6 +48,21 @@ export function approvePairing(pairing_code: string): Promise<void> {
   })
 }
 
+/** A browser-pairing request awaiting approval — surfaced in the notifications
+ *  bell so the user can approve from anywhere (verifying the code against their
+ *  extension) instead of a full-page interstitial. */
+export interface PendingPairing {
+  integration_id: string
+  browser_label: string | null
+  pairing_code: string
+  created_at: string | null
+  expires_at: string | null
+}
+
+export function fetchPendingPairings(): Promise<PendingPairing[]> {
+  return apiRequest<PendingPairing[]>('/v1/integrations/claude-ai/pairings/pending')
+}
+
 export function disconnectIntegration(id: string): Promise<void> {
   return apiRequest(`/v1/integrations/claude-ai/integrations/${id}`, {
     method: 'DELETE',
@@ -96,12 +111,17 @@ export type AuditEvent =
   | 'conflict_resolved'
   | 'endpoint_changed'
   | 'token_revoked'
+  | 'op_retried'
+  | 'sync_triggered'
 
 export interface AuditEventOut {
   id: string
   integration_id: string | null
   event: AuditEvent
   skill_id: string | null
+  /** Human-readable skill slug resolved from skill_id (when the event
+   *  concerns a specific skill), so the feed shows a name not an opaque ID. */
+  skill_slug: string | null
   detail: Record<string, unknown>
   created_at: string
 }
@@ -161,6 +181,45 @@ export function fetchHealth(): Promise<HealthMetrics> {
   return apiRequest('/v1/integrations/claude-ai/health')
 }
 
+// ── Integration list cache (iter 29a) ───────────────────────────────────────
+//
+// SkillSyncBadge calls listIntegrations() on every mount. Without
+// caching, browsing 10 skills in 30s issues 10 identical fetches.
+// 60s TTL keyed by base URL — short enough to pick up a new pairing
+// when the user opens settings → pairs → comes back, long enough to
+// elide drive-by mount thrash.
+
+interface CachedIntegrations {
+  fetchedAt: number
+  promise: Promise<IntegrationStatusResponse[]>
+}
+const _integrationsCache = new Map<string, CachedIntegrations>()
+const _INTEGRATIONS_CACHE_TTL_MS = 60_000
+
+export function listIntegrationsCached(): Promise<IntegrationStatusResponse[]> {
+  const key = getApiBaseUrl()
+  const hit = _integrationsCache.get(key)
+  const now = Date.now()
+  if (hit && now - hit.fetchedAt < _INTEGRATIONS_CACHE_TTL_MS) {
+    return hit.promise
+  }
+  const p = listIntegrations().catch((e) => {
+    // Evict on error so the next caller re-fetches instead of getting
+    // the cached rejection forever.
+    _integrationsCache.delete(key)
+    throw e
+  })
+  _integrationsCache.set(key, { fetchedAt: now, promise: p })
+  return p
+}
+
+/** Explicit cache invalidation hook for places that just paired or
+ *  disconnected an integration and want the next badge mount to
+ *  see fresh data. */
+export function invalidateIntegrationsCache(): void {
+  _integrationsCache.clear()
+}
+
 // ── Sync queue (iter 17) ─────────────────────────────────────────────────────
 
 export type SyncOpKind = 'upload' | 'update' | 'delete' | 'list' | 'fetch_one'
@@ -212,6 +271,11 @@ export interface SparklinePoint {
   failed: number
 }
 
+export interface TopUsedSkillStat {
+  skill_slug: string
+  invocations: number
+}
+
 export interface AnalyticsResponse {
   skills_synced_24h: number
   skills_synced_7d: number
@@ -222,6 +286,10 @@ export interface AnalyticsResponse {
   top_skills_7d: TopSkillStat[]
   per_integration: IntegrationActivityStat[]
   sparkline_7d: SparklinePoint[]
+  // Usage: how often Claude invoked the skill on claude.ai.
+  invocations_24h: number
+  invocations_7d: number
+  top_used_skills_7d: TopUsedSkillStat[]
 }
 
 export function fetchAnalytics(): Promise<AnalyticsResponse> {
@@ -272,12 +340,71 @@ export function runDiagnostic(): Promise<DiagnosticResponse> {
   return apiRequest('/v1/integrations/claude-ai/diagnostic')
 }
 
+// ── Failed-op retry (iter 23a) ───────────────────────────────────────────────
+
+export function retryFailedOperation(op_id: string): Promise<void> {
+  return apiRequest(`/v1/integrations/claude-ai/operations/${op_id}/retry`, {
+    method: 'POST',
+  })
+}
+
+// ── Token rotation (iter 23b) ───────────────────────────────────────────────
+
+export interface TokenRotateResponse {
+  integration_id: string
+  new_extension_token: string
+  rotated_at: string
+}
+
+export function rotateExtensionToken(integration_id: string): Promise<TokenRotateResponse> {
+  return apiRequest(
+    `/v1/integrations/claude-ai/integrations/${integration_id}/rotate-token`,
+    { method: 'POST' },
+  )
+}
+
+// ── Trigger sync (iter 25a) ─────────────────────────────────────────────────
+
+export function triggerSync(integration_id: string): Promise<void> {
+  return apiRequest(
+    `/v1/integrations/claude-ai/integrations/${integration_id}/trigger-sync`,
+    { method: 'POST' },
+  )
+}
+
 export function fetchSyncQueue(opts: { integration_id?: string; limit?: number } = {}): Promise<SyncQueueResponse> {
   const q = new URLSearchParams()
   if (opts.integration_id) q.set('integration_id', opts.integration_id)
   if (opts.limit) q.set('limit', String(opts.limit))
   const qs = q.toString()
   return apiRequest(`/v1/integrations/claude-ai/queue${qs ? `?${qs}` : ''}`)
+}
+
+// ── Per-skill sync status (iter 29c) ────────────────────────────────────────
+
+export interface SkillSyncLinkStat {
+  integration_id: string
+  integration_label: string | null
+  integration_status: IntegrationStatus
+  claude_ai_skill_id: string
+  claude_ai_version: string | null
+  conflict_state: 'none' | 'diverged' | 'resolved'
+  last_seen_at: string | null
+  direction: 'outbound' | 'inbound' | 'both'
+}
+
+export interface SkillSyncStatusResponse {
+  skill_id: string
+  skill_slug: string
+  claude_ai_sync_enabled: boolean
+  links: SkillSyncLinkStat[]
+  pending_op_count: number
+}
+
+export function fetchSkillSyncStatus(skill_slug: string): Promise<SkillSyncStatusResponse> {
+  return apiRequest(
+    `/v1/integrations/claude-ai/skills/${encodeURIComponent(skill_slug)}/sync-status`,
+  )
 }
 
 // ── Per-skill sync toggle ────────────────────────────────────────────────────

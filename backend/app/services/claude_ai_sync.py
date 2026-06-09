@@ -207,7 +207,82 @@ def expire_stale_pairings(db: Session) -> int:
     return len(stale)
 
 
+# Ops are leased to one extension at fetch time (status flips to in_progress).
+# If that extension never reports a result — browser closed, service worker
+# killed, machine slept — the op would otherwise sit in_progress forever:
+# the fetch path only returns `pending`, so it's never retried, and it's
+# invisible to `pending_op_count`. The lease window is generous (the extension
+# ticks every 60s and ops complete in seconds) so we never reclaim an op that
+# is legitimately still being worked.
+_OP_LEASE = timedelta(minutes=10)
+_MAX_OP_ATTEMPTS = 3  # must match complete_operation's retry budget
+
+
+def reclaim_stale_operations(db: Session, *, now: Optional[datetime] = None) -> int:
+    """Reclaim orphaned `in_progress` ops whose lease has expired.
+
+    Ops still under the retry budget go back to `pending` (the next fetch
+    retries them); ops that have exhausted their attempts are marked `failed`
+    so they surface in the UI instead of silently stalling. Returns the
+    number of ops reclaimed. Caller commits.
+    """
+    now = now or datetime.now(timezone.utc)
+    cutoff = now - _OP_LEASE
+    stale = list(
+        db.execute(
+            select(ClaudeAISyncOperation).where(
+                ClaudeAISyncOperation.status == "in_progress",
+                ClaudeAISyncOperation.started_at.is_not(None),
+                ClaudeAISyncOperation.started_at < cutoff,
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for op in stale:
+        if op.attempts >= _MAX_OP_ATTEMPTS:
+            op.status = "failed"
+            op.completed_at = now
+            op.last_error = (
+                "Timed out — the browser didn't report a result within the "
+                "sync window. Re-pair the browser or use Retry."
+            )
+            write_audit(
+                db,
+                event="op_failed",
+                integration_id=op.integration_id,
+                skill_id=op.skill_id,
+                detail={"op_id": str(op.id), "kind": op.kind, "reason": "lease_timeout"},
+            )
+        else:
+            # Back to pending — the next fetch picks it up and retries.
+            op.status = "pending"
+            op.started_at = None
+            op.last_error = "Reclaimed after a stalled attempt; will retry."
+            write_audit(
+                db,
+                event="op_retried",
+                integration_id=op.integration_id,
+                skill_id=op.skill_id,
+                detail={"op_id": str(op.id), "kind": op.kind, "reason": "lease_timeout"},
+            )
+    return len(stale)
+
+
 # ── Conflict auto-detection ───────────────────────────────────────────────────
+
+
+# Outcome of running conflict detection against an inbound import.
+#  - "no_conflict" : either no divergence OR the link was already diverged
+#  - "diverged_ask": both sides changed, policy=ask → stash inbound
+#                     as non-latest, leave local untouched
+#  - "auto_keep_skillnote": both sides changed, policy=skillnote_wins →
+#                     DROP the inbound import (local wins). Caller must
+#                     also enqueue an outbound push so claude.ai picks
+#                     up the local content.
+#  - "auto_keep_claude_ai": both sides changed, policy=claude_ai_wins →
+#                     apply inbound import as latest (overwrites local).
+ConflictOutcome = str  # one of the literals above
 
 
 def detect_link_divergence(
@@ -216,18 +291,39 @@ def detect_link_divergence(
     link: ClaudeAISkillLink,
     incoming_claude_ai_version: Optional[str],
     skillnote_version_id: Optional[UUID] = None,
-) -> bool:
-    """Mark a link as 'diverged' when both sides have changed since last sync.
+    conflict_policy: str = "ask",
+) -> ConflictOutcome:
+    """Detect divergence and decide what to do based on the integration's
+    `conflict_policy`.
 
     Called during inbound import. If the link already has a recorded
     claude_ai_version that differs from the incoming version, AND the
     SkillNote-side version has advanced beyond what we last recorded,
     both sides changed → conflict.
 
-    Returns True if the link was newly marked diverged.
+    Returns one of:
+      - 'no_conflict'           : caller proceeds with normal inbound apply
+      - 'diverged_ask'          : caller MUST NOT overwrite local; stash
+                                   the inbound version as non-latest so
+                                   the user can pick a winner manually
+      - 'auto_keep_skillnote'   : caller must DISCARD the inbound (don't
+                                   create the version, don't update skill
+                                   fields) AND enqueue an outbound push
+      - 'auto_keep_claude_ai'   : caller proceeds with normal inbound
+                                   apply (local gets overwritten — that
+                                   IS the user's chosen policy)
+
+    The conflict_resolved audit event is emitted for both auto outcomes
+    so the activity feed reflects what the policy decided.
     """
     if link.conflict_state == "diverged":
-        return False
+        # Already flagged and awaiting manual resolution. Re-stage the inbound
+        # (diverged_ask) rather than returning "no_conflict" — "no_conflict"
+        # routes the caller to the NORMAL APPLY path, which overwrites the
+        # local content the divergence was protecting (silent data loss). The
+        # diverged_ask path stashes the inbound as a non-latest version and
+        # leaves local untouched, preserving the user's pending decision.
+        return "diverged_ask"
     remote_changed = (
         link.claude_ai_version is not None
         and incoming_claude_ai_version is not None
@@ -238,21 +334,48 @@ def detect_link_divergence(
         and skillnote_version_id is not None
         and link.skillnote_version_id != skillnote_version_id
     )
-    if remote_changed and local_changed:
-        link.conflict_state = "diverged"
+    if not (remote_changed and local_changed):
+        return "no_conflict"
+
+    # ── Both sides changed — policy decides. ────────────────────────────
+    detail_base = {
+        "claude_ai_skill_id": link.claude_ai_skill_id,
+        "local_version": str(skillnote_version_id) if skillnote_version_id else None,
+        "remote_version": incoming_claude_ai_version,
+    }
+
+    if conflict_policy == "skillnote_wins":
         write_audit(
             db,
-            event="conflict_detected",
+            event="conflict_resolved",
             integration_id=link.integration_id,
             skill_id=link.skillnote_skill_id,
-            detail={
-                "claude_ai_skill_id": link.claude_ai_skill_id,
-                "local_version": str(skillnote_version_id) if skillnote_version_id else None,
-                "remote_version": incoming_claude_ai_version,
-            },
+            detail={**detail_base, "resolution": "auto_keep_skillnote"},
         )
-        return True
-    return False
+        return "auto_keep_skillnote"
+
+    if conflict_policy == "claude_ai_wins":
+        write_audit(
+            db,
+            event="conflict_resolved",
+            integration_id=link.integration_id,
+            skill_id=link.skillnote_skill_id,
+            detail={**detail_base, "resolution": "auto_keep_claude_ai"},
+        )
+        return "auto_keep_claude_ai"
+
+    # Default policy 'ask' — flag for manual resolution. Critical: the
+    # caller MUST NOT overwrite local content. Pre-fix behavior silently
+    # lost local edits whenever an inbound import landed during a divergence.
+    link.conflict_state = "diverged"
+    write_audit(
+        db,
+        event="conflict_detected",
+        integration_id=link.integration_id,
+        skill_id=link.skillnote_skill_id,
+        detail=detail_base,
+    )
+    return "diverged_ask"
 
 
 # ── Audit log ─────────────────────────────────────────────────────────────────
@@ -385,6 +508,67 @@ def record_pair_attempt(
 # ── Sync op enqueueing ────────────────────────────────────────────────────────
 
 
+def enqueue_group_publish(
+    db: Session,
+    integrations: Optional[Iterable[ClaudeAIIntegration]] = None,
+) -> list[ClaudeAISyncOperation]:
+    """Enqueue (coalescing) one ``publish_group`` op per active integration.
+
+    This is the single forward-sync op for the git-free named-group model:
+    SkillNote no longer pushes individual skills, it asks the extension to
+    rebuild the whole "SkillNote" plugin group (all sync-enabled skills) and
+    re-upload it (account-upload, overwrite=true). The group is
+    replace-as-a-whole, so ONE op reconciles every add / edit / removal —
+    which is why a create, an update, and a delete all funnel here.
+
+    Coalesces against a still-``pending`` publish_group op (debounce): the op
+    carries no per-skill payload, so a pending one already covers the latest
+    state and we just skip. We do NOT coalesce against an ``in_progress`` op
+    — that upload is mid-flight with an older bundle, so a fresh pending op is
+    enqueued to capture changes made after it started. Caller commits.
+    """
+    candidates = (
+        list(integrations) if integrations is not None else active_integrations_for_sync(db)
+    )
+    # Lock integration rows in a stable (id) order so concurrent enqueues can
+    # never deadlock against each other (see the FOR UPDATE inside the loop).
+    candidates = sorted(candidates, key=lambda i: str(i.id))
+    created: list[ClaudeAISyncOperation] = []
+    for integ in candidates:
+        if integ.status not in _SYNCABLE_STATUSES:
+            continue
+        # Serialize concurrent enqueues for this integration. Without a lock,
+        # two requests (e.g. a skill save racing a collection toggle) can both
+        # pass the "no pending op" check below and INSERT duplicate
+        # publish_group ops — making the extension rebuild and re-upload the
+        # whole group twice. The row lock is held until the caller commits, so
+        # a second concurrent request blocks here, then sees the first's
+        # pending op and skips.
+        db.execute(
+            select(ClaudeAIIntegration.id)
+            .where(ClaudeAIIntegration.id == integ.id)
+            .with_for_update()
+        ).first()
+        pending = db.execute(
+            select(ClaudeAISyncOperation.id).where(
+                ClaudeAISyncOperation.integration_id == integ.id,
+                ClaudeAISyncOperation.kind == "publish_group",
+                ClaudeAISyncOperation.status == "pending",
+            ).limit(1)
+        ).first()
+        if pending is not None:
+            continue  # a pending rebuild already covers the latest state
+        op = ClaudeAISyncOperation(
+            integration_id=integ.id,
+            kind="publish_group",
+            skill_id=None,  # whole-group op, not tied to one skill
+            payload={},
+        )
+        db.add(op)
+        created.append(op)
+    return created
+
+
 def enqueue_skill_upload(
     db: Session,
     skill_id: UUID,
@@ -393,53 +577,49 @@ def enqueue_skill_upload(
     description: str,
     integrations: Optional[Iterable[ClaudeAIIntegration]] = None,
 ) -> list[ClaudeAISyncOperation]:
-    """Fan out one upload op per active integration with matching scope.
+    """Skill created/updated → rebuild & re-publish the SkillNote group.
 
-    Returns the freshly-created ops (or empty list if all were coalesced).
-    Caller is responsible for db.commit() — keeps this composable with
-    larger transactions in the publish endpoint.
-
-    Defense in depth: even when a caller passes a specific integration list
-    (e.g. resolve_conflict), this helper still filters by status so a
-    disconnected integration never receives ops by accident.
+    Kept as a thin wrapper (callers in skills.py / claude_ai.py are unchanged)
+    that now delegates to :func:`enqueue_group_publish`. The per-skill args are
+    accepted for signature compatibility but ignored — the group bundle is
+    rebuilt fresh from the DB at execution time, so there's no per-skill
+    payload to thread through.
     """
-    candidates = list(integrations) if integrations is not None else active_integrations_for_sync(db)
-    created: list[ClaudeAISyncOperation] = []
-    for integ in candidates:
-        if integ.status not in _SYNCABLE_STATUSES:
-            continue
-        if _has_pending_op(db, integ.id, skill_id, "upload"):
-            # Replace the in-flight op's payload with the latest version
-            # so when it does run, it pushes the current content (not the
-            # stale one queued earlier).
-            existing = db.execute(
-                select(ClaudeAISyncOperation).where(
-                    ClaudeAISyncOperation.integration_id == integ.id,
-                    ClaudeAISyncOperation.skill_id == skill_id,
-                    ClaudeAISyncOperation.kind == "upload",
-                    ClaudeAISyncOperation.status == "pending",
-                )
-            ).scalar_one_or_none()
-            if existing is not None:
-                existing.payload = {
-                    "version_id": str(version_id),
-                    "name": name,
-                    "description": description,
-                }
-            continue
-        op = ClaudeAISyncOperation(
-            integration_id=integ.id,
-            kind="upload",
-            skill_id=skill_id,
-            payload={
-                "version_id": str(version_id),
-                "name": name,
-                "description": description,
-            },
-        )
-        db.add(op)
-        created.append(op)
-    return created
+    return enqueue_group_publish(db, integrations)
+
+
+def backfill_uploads_for_integration(
+    db: Session,
+    integ: ClaudeAIIntegration,
+) -> int:
+    """Enqueue a group-publish op so this integration syncs the SkillNote
+    plugin group.
+
+    Called when a browser first pairs and from the "Sync now" button. Under
+    the named-group model there's nothing per-skill to backfill — one
+    ``publish_group`` op rebuilds the whole group (all sync-enabled skills)
+    from the DB. Only enqueues when there's actually something to publish, so
+    a freshly-paired browser with zero sync-enabled skills doesn't get a
+    pointless empty-bundle op. Returns the number of ops enqueued. Caller
+    commits.
+    """
+    from app.db.models import Skill, SkillContentVersion
+
+    if integ.status not in _SYNCABLE_STATUSES:
+        return 0
+
+    # Anything to publish? (at least one sync-enabled skill with a version)
+    has_publishable = db.execute(
+        select(Skill.id)
+        .join(SkillContentVersion, SkillContentVersion.skill_id == Skill.id)
+        .where(Skill.claude_ai_sync_enabled.is_(True))
+        .where(SkillContentVersion.is_latest.is_(True))
+        .limit(1)
+    ).first() is not None
+    if not has_publishable:
+        return 0
+
+    return len(enqueue_group_publish(db, [integ]))
 
 
 def enqueue_skill_delete(
@@ -447,51 +627,17 @@ def enqueue_skill_delete(
     skill_id: UUID,
     integrations: Optional[Iterable[ClaudeAIIntegration]] = None,
 ) -> list[ClaudeAISyncOperation]:
-    """Fan out one delete op per integration that has this skill linked.
+    """Skill deleted → rebuild & re-publish the SkillNote group without it.
 
-    Only enqueues for integrations with an existing link — there's no point
-    asking claude.ai to delete a skill it never knew about.
-
-    Important: delete ops are enqueued WITHOUT a skill_id FK. The skill is
-    typically deleted in the same transaction as the enqueue, and the
-    skills→sync_operations FK is ondelete=CASCADE — so a delete op with
-    skill_id set would be wiped out by the cascade in the same commit,
-    making the delete a no-op. The claude.ai-side ID lives in the payload
-    where the extension can read it.
-
-    The original skill_id is preserved in the payload as
-    `skillnote_skill_id` for forensics / dedup, but not as an FK.
+    Under the named-group model there is no per-skill delete on claude.ai
+    (plugin skills aren't individually addressable — verified live). A removed
+    skill is simply omitted from the next group bundle, so a delete funnels to
+    the same :func:`enqueue_group_publish` as a create/update. ``skill_id`` is
+    accepted for signature compatibility; the rebuild reads the current DB
+    state (the row is typically gone by execution time, which is exactly the
+    desired result).
     """
-    rows = db.execute(
-        select(ClaudeAISkillLink.integration_id, ClaudeAISkillLink.claude_ai_skill_id)
-        .where(ClaudeAISkillLink.skillnote_skill_id == skill_id)
-    ).all()
-    created: list[ClaudeAISyncOperation] = []
-    for integration_id, claude_ai_skill_id in rows:
-        # Dedup against existing pending delete ops for the same claude.ai
-        # skill — without skill_id we can't use _has_pending_op directly.
-        existing = db.execute(
-            select(ClaudeAISyncOperation.id).where(
-                ClaudeAISyncOperation.integration_id == integration_id,
-                ClaudeAISyncOperation.kind == "delete",
-                ClaudeAISyncOperation.status.in_(("pending", "in_progress")),
-                ClaudeAISyncOperation.payload["claude_ai_skill_id"].astext == claude_ai_skill_id,
-            )
-        ).first()
-        if existing is not None:
-            continue
-        op = ClaudeAISyncOperation(
-            integration_id=integration_id,
-            kind="delete",
-            skill_id=None,  # see docstring
-            payload={
-                "claude_ai_skill_id": claude_ai_skill_id,
-                "skillnote_skill_id": str(skill_id),  # forensics only
-            },
-        )
-        db.add(op)
-        created.append(op)
-    return created
+    return enqueue_group_publish(db, integrations)
 
 
 def enqueue_periodic_list(

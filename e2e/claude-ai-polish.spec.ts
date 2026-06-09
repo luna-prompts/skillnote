@@ -22,6 +22,7 @@ interface AuditEvent {
   integration_id: string | null
   event: string
   skill_id: string | null
+  skill_slug?: string | null
   detail: Record<string, unknown>
   created_at: string
 }
@@ -83,8 +84,25 @@ async function mockEverything(
 }
 
 test.describe('Health card on the settings page', () => {
-  test('renders healthy state with green icon', async ({ page }) => {
+  // The HealthCard renders only once an integration exists (first run leads
+  // with the setup stepper, not an empty dashboard), so each case wires one.
+  const ROW = {
+    id: 'hc-1',
+    browser_label: 'Chrome',
+    status: 'active' as const,
+    scope: 'both' as const,
+    claude_ai_org_id: null,
+    last_sync_at: new Date().toISOString(),
+    last_error: null,
+    conflict_policy: 'ask' as const,
+    pending_op_count: 0,
+    failed_op_count: 0,
+    linked_skill_count: 3,
+  }
+
+  test('renders healthy state with a Healthy status chip', async ({ page }) => {
     await mockEverything(page, {
+      integrations: [ROW],
       health: {
         integrations_active: 5,
         integrations_with_errors: 0,
@@ -96,14 +114,17 @@ test.describe('Health card on the settings page', () => {
       },
     })
     await page.goto('/settings/integrations/claude-ai')
-    await expect(page.getByText('Connector health')).toBeVisible()
-    await expect(page.getByText('Active').first()).toBeVisible()
-    await expect(page.getByText('5').first()).toBeVisible()
-    await expect(page.getByText('schema 0020_claude_ai_polish')).toBeVisible()
+    await expect(page.getByText('claude.ai sync status')).toBeVisible()
+    await expect(page.getByTestId('health-stat-active')).toContainText('5')
+    // Internal schema name must NOT leak to the customer; a human status
+    // chip shows instead.
+    await expect(page.getByTestId('health-status-chip')).toContainText('Healthy')
+    await expect(page.getByText(/schema 0020/)).toHaveCount(0)
   })
 
   test('renders warning state for diverged conflicts', async ({ page }) => {
     await mockEverything(page, {
+      integrations: [ROW],
       health: {
         integrations_active: 3,
         integrations_with_errors: 0,
@@ -115,13 +136,13 @@ test.describe('Health card on the settings page', () => {
       },
     })
     await page.goto('/settings/integrations/claude-ai')
-    await expect(page.getByText('Conflicts').first()).toBeVisible()
-    // The warning tone shows the conflict count.
-    await expect(page.getByText('4').first()).toBeVisible()
+    await expect(page.getByTestId('health-status-chip')).toContainText('Degraded')
+    await expect(page.getByTestId('health-stat-conflicts')).toContainText('4')
   })
 
   test('renders error state when integrations have errors', async ({ page }) => {
     await mockEverything(page, {
+      integrations: [ROW],
       health: {
         integrations_active: 2,
         integrations_with_errors: 1,
@@ -134,6 +155,7 @@ test.describe('Health card on the settings page', () => {
     })
     await page.goto('/settings/integrations/claude-ai')
     await expect(page.getByText('With errors')).toBeVisible()
+    await expect(page.getByTestId('health-status-chip')).toContainText('Needs attention')
   })
 })
 
@@ -184,6 +206,45 @@ test.describe('Activity feed page', () => {
     await expect(page.getByText('skill_01ABCDEF')).toBeVisible()
     // The op_failed event's detail shows the error message.
     await expect(page.getByText(/claude\.ai 500/)).toBeVisible()
+  })
+
+  test('shows human skill names, not opaque IDs, and friendly failure reasons', async ({ page }) => {
+    const now = new Date()
+    const events: AuditEvent[] = [
+      {
+        id: 'h1',
+        integration_id: 'int-1',
+        event: 'skill_pushed',
+        skill_id: 'sk-1',
+        skill_slug: 'testing-guide',
+        detail: { op_kind: 'upload', result: { claude_ai_skill_id: 'skill_01XQ9FQT8bcoyurjoHJa8KW1' } },
+        created_at: new Date(now.getTime() - 30_000).toISOString(),
+      },
+      {
+        id: 'h2',
+        integration_id: 'int-1',
+        event: 'op_failed',
+        skill_id: 'sk-2',
+        skill_slug: null,
+        detail: {
+          op_kind: 'upload',
+          attempts: 1,
+          // Raw claude.ai error body — must NOT surface verbatim.
+          error:
+            'claude.ai /api/organizations/7d36e9d8/skills/upload-skill?overwrite=true returned 400 [{"type":"error","error":{"type":"invalid_request_error","message":"This skill name is already in use"}}]',
+        },
+        created_at: now.toISOString(),
+      },
+    ]
+    await mockEverything(page, { activity: events })
+    await page.goto('/settings/integrations/claude-ai/activity')
+
+    // The human skill slug is shown; the opaque claude.ai id is NOT.
+    await expect(page.getByText('testing-guide')).toBeVisible()
+    await expect(page.getByText(/skill_01XQ9FQT/)).toHaveCount(0)
+    // The failure row shows a human reason, not the raw URL/JSON.
+    await expect(page.getByText(/already exists on claude\.ai/)).toBeVisible()
+    await expect(page.getByText(/upload-skill\?overwrite/)).toHaveCount(0)
   })
 
   test('filter by event narrows the list', async ({ page }) => {

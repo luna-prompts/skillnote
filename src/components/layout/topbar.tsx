@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils'
 import { getSkills, syncSkillsFromApi } from '@/lib/skills-store'
 import { useSidebar } from '@/lib/sidebar-context'
 import { ImportModal } from '@/components/import/ImportModal'
+import { NotificationsBell } from '@/components/layout/notifications-bell'
 
 type TopBarProps = {
   view?: 'list' | 'grid'
@@ -196,6 +197,8 @@ export function TopBar({ view = 'list', onViewChange, showViewToggle = false, se
                   </Button>
                 </>
               )}
+
+              <NotificationsBell />
 
               <button
                 className="h-8 w-8 flex items-center justify-center rounded-lg border border-border/60 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"

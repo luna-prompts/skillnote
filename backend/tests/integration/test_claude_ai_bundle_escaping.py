@@ -12,6 +12,13 @@ yielding extra keys.
 """
 from __future__ import annotations
 
+
+import pytest  # noqa: E402
+
+pytestmark = pytest.mark.skip(reason=(
+    'Legacy per-skill /extension/skill-bundle path. The named-group model uses /extension/plugin-bundle; YAML frontmatter escaping is now covered by tests/unit/test_claude_ai_marketplace.py::test_skill_md_has_safe_frontmatter (shared compose_skill_md).'
+))
+
 import io
 import json
 import os

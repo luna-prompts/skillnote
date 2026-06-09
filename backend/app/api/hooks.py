@@ -21,6 +21,9 @@ class SkillUsedPayload(BaseModel):
     skill_slug: Optional[str] = Field(default=None, max_length=128)
     agent_name: str = Field(default="claude-code", max_length=128, alias="agentName")
     session_id: Optional[str] = Field(default="", max_length=256, alias="sessionId")
+    # Human chat/session title (e.g. claude.ai conversation name). Optional —
+    # surfaced in the analytics "Recent chats" panel.
+    session_name: Optional[str] = Field(default=None, max_length=256, alias="sessionName")
     # HTTP hook format (PostToolUse event) — camelCase from Claude Code
     tool_name: Optional[str] = Field(default=None, alias="toolName")
     tool_input: Optional[dict] = Field(default=None, alias="toolInput")
@@ -62,14 +65,15 @@ def skill_used(payload: SkillUsedPayload, db: Session = Depends(get_db)):
     db.execute(
         text(
             "INSERT INTO skill_call_events "
-            "(id, skill_slug, event_type, agent_name, agent_version, session_id, collection_scope, remote_ip) "
-            "VALUES (:id, :slug, 'called', :agent, '', :session, NULL, 'plugin-hook')"
+            "(id, skill_slug, event_type, agent_name, agent_version, session_id, session_name, collection_scope, remote_ip) "
+            "VALUES (:id, :slug, 'called', :agent, '', :session, :session_name, NULL, 'plugin-hook')"
         ),
         {
             "id": str(uuid.uuid4()),
             "slug": slug[:128],
             "agent": payload.agent_name[:128],
             "session": session[:256],
+            "session_name": ((payload.session_name or "").strip()[:256]) or None,
         },
     )
     db.commit()

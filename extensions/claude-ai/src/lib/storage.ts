@@ -54,3 +54,29 @@ export async function appendActivity(entry: ActivityEntry): Promise<void> {
     await chrome.storage.local.set({ [KEY]: { ...cfg, recent_activity: ring } });
   });
 }
+
+// ── Usage dedup ──────────────────────────────────────────────────────────────
+// Skill invocations are detected by scanning conversation trees, which return
+// the FULL history every time — so the same invocation appears on every scan.
+// We persist the set of already-reported dedup keys (bounded ring) so each
+// invocation is reported to SkillNote exactly once.
+
+const SEEN_KEY = "skillnote:seen-invocations";
+const MAX_SEEN = 1000;
+
+/** Return only the dedup keys not seen before, and mark them seen.
+ *  Atomic via the same write queue so concurrent ticks don't double-report. */
+export async function filterAndMarkNewInvocations(keys: string[]): Promise<string[]> {
+  if (keys.length === 0) return [];
+  return enqueue(async () => {
+    const stored = await chrome.storage.local.get(SEEN_KEY);
+    const seen: string[] = (stored[SEEN_KEY] as string[] | undefined) ?? [];
+    const seenSet = new Set(seen);
+    const fresh = keys.filter((k) => !seenSet.has(k));
+    if (fresh.length === 0) return [];
+    // Append fresh keys, keep the most recent MAX_SEEN.
+    const next = [...seen, ...fresh].slice(-MAX_SEEN);
+    await chrome.storage.local.set({ [SEEN_KEY]: next });
+    return fresh;
+  });
+}

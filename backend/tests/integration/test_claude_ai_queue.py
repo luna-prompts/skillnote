@@ -105,25 +105,22 @@ def paired_with_seeded_op():
 
 class TestQueueContract:
     def test_returns_pending_op_after_seeding_a_skill(self, paired_with_seeded_op):
-        integ_id, _token, name = paired_with_seeded_op
+        integ_id, _token, _name = paired_with_seeded_op
         # Scope to THIS integration — global queue can hold ops from
-        # other tests / past runs. Without the filter our seeded op
-        # could be buried below the page limit.
+        # other tests / past runs.
         s, body = _get(
             f"/v1/integrations/claude-ai/queue?integration_id={integ_id}"
         )
         assert s == 200, body
         assert body["pending_count"] + body["in_progress_count"] >= 1
-        ours = [it for it in body["items"] if it["skill_name"] == name]
-        assert len(ours) == 1, ours
+        # Named-group model: creating a skill enqueues ONE whole-group
+        # `publish_group` op (skill_id None), not a per-skill upload op.
+        ours = [it for it in body["items"] if it["kind"] == "publish_group"]
+        assert len(ours) >= 1, body["items"]
         item = ours[0]
         assert item["integration_id"] == integ_id
-        assert item["kind"] == "upload"
         assert item["status"] in ("pending", "in_progress")
-        assert item["skill_slug"] == name
         assert item["integration_label"] == "queue-test"
-        assert item["attempts"] == 0
-        assert item["last_error"] is None
 
     def test_oldest_age_seconds_is_populated_when_queue_nonempty(
         self, paired_with_seeded_op

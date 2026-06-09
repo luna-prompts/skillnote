@@ -109,7 +109,7 @@ class SyncOperationOut(BaseModel):
     """One pending operation handed to the extension to execute."""
 
     id: UUID
-    kind: Literal["upload", "update", "delete", "list", "fetch_one"]
+    kind: Literal["upload", "update", "delete", "list", "fetch_one", "publish_group"]
     skill_id: Optional[UUID]
     payload: dict[str, Any]
     attempts: int
@@ -138,6 +138,12 @@ class SyncOperationCompleteRequest(BaseModel):
     # write a `cookie_expired` audit event so the user sees an explanation
     # in the activity feed instead of just a generic op failure.
     auth_expired: bool = False
+    # When true, the failure is permanent — retrying won't help (e.g. a
+    # claude.ai 400 "skill name already in use", or any 4xx invalid-request).
+    # The backend marks the op `failed` immediately instead of burning the
+    # 3-attempt retry budget, which is what produced repeated red "upload
+    # failed" lines in the activity feed for an unfixable error.
+    permanent: bool = False
 
 
 # ── Reverse sync (claude.ai-authored skill imports) ───────────────────────────
@@ -180,7 +186,10 @@ class ExtensionSelfStatusResponse(BaseModel):
     reveals this integration's counters."""
 
     integration_id: UUID
-    browser_label: str
+    # Nullable: the DB column is nullable and a browser may pair without a
+    # label (allowed by PairingStartRequest). Non-null here caused a 500 on
+    # the extension's own status poll for label-less integrations.
+    browser_label: Optional[str] = None
     status: Literal[
         "pending_approval", "active", "cookie_expired", "disconnected", "error"
     ]
@@ -224,6 +233,9 @@ class AuditEventOut(BaseModel):
     integration_id: Optional[UUID]
     event: str
     skill_id: Optional[UUID]
+    # Human-readable skill slug resolved from skill_id, so the activity feed
+    # can show "testing-guide" instead of an opaque claude.ai skill ID.
+    skill_slug: Optional[str] = None
     detail: dict[str, Any]
     created_at: datetime
 
@@ -268,7 +280,7 @@ class SyncQueueItem(BaseModel):
     so the UI can render a meaningful row without N+1 fetches."""
 
     id: UUID
-    kind: Literal["upload", "update", "delete", "list", "fetch_one"]
+    kind: Literal["upload", "update", "delete", "list", "fetch_one", "publish_group"]
     status: Literal["pending", "in_progress"]
     attempts: int
     last_error: Optional[str]
@@ -307,6 +319,14 @@ class TopSkillStat(BaseModel):
     sync_count: int
 
 
+class TopUsedSkillStat(BaseModel):
+    """A skill ranked by how often Claude actually INVOKED it on claude.ai
+    (distinct from sync_count, which is how often we pushed it)."""
+
+    skill_slug: str
+    invocations: int
+
+
 class IntegrationActivityStat(BaseModel):
     integration_id: UUID
     integration_label: Optional[str]
@@ -329,6 +349,47 @@ class DiagnosticCheck(BaseModel):
     label: str  # human-readable
     status: Literal["pass", "warn", "fail"]
     detail: str  # explanatory text + remediation hint when not pass
+
+
+class TokenRotateResponse(BaseModel):
+    """Returned ONCE after a successful token rotation. The new token is
+    the only place the cleartext value appears; subsequent reads can
+    only get its hash. UI must surface it immediately for the user to
+    copy into the extension."""
+
+    integration_id: UUID
+    new_extension_token: str
+    rotated_at: datetime
+
+
+class SkillSyncLinkStat(BaseModel):
+    """One claude.ai integration's link state for a given local skill."""
+
+    integration_id: UUID
+    integration_label: Optional[str]
+    integration_status: Literal[
+        "pending_approval", "active", "cookie_expired", "disconnected", "error"
+    ]
+    claude_ai_skill_id: str
+    claude_ai_version: Optional[str]
+    conflict_state: Literal["none", "diverged", "resolved"]
+    last_seen_at: Optional[datetime]
+    direction: Literal["outbound", "inbound", "both"]
+
+
+class SkillSyncStatusResponse(BaseModel):
+    """Per-skill sync status surfaced on the skill detail page.
+
+    Tells the user which claude.ai integrations have this skill linked,
+    when it was last seen on each, and whether any are in a diverged
+    state. The skill itself is identified by slug (URL-friendly).
+    """
+
+    skill_id: UUID
+    skill_slug: str
+    claude_ai_sync_enabled: bool
+    links: list[SkillSyncLinkStat]
+    pending_op_count: int  # this-skill ops in pending or in_progress
 
 
 class DiagnosticResponse(BaseModel):
@@ -398,3 +459,10 @@ class AnalyticsResponse(BaseModel):
     top_skills_7d: list[TopSkillStat]
     per_integration: list[IntegrationActivityStat]
     sparkline_7d: list[SparklinePoint]
+    # ── Usage (Claude actually invoked the skill on claude.ai) ──────────
+    # Sourced from skill_call_events where agent_name='claude-ai', written
+    # by the extension's usage scanner. This is the parity metric with the
+    # other connectors (Claude Code / OpenClaw also write skill_call_events).
+    invocations_24h: int = 0
+    invocations_7d: int = 0
+    top_used_skills_7d: list[TopUsedSkillStat] = []

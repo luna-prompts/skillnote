@@ -149,6 +149,40 @@ describe("buildClient — bearer-authed endpoints", () => {
     expect(blob.size).toBe(3);
   });
 
+  it("fetchPluginGroups returns the published collection groups", async () => {
+    const client = buildClient("https://example.com", "tok");
+    (globalThis.fetch as any).mockResolvedValueOnce(
+      mockResponse(200, {
+        marketplace_name: "SkillNote",
+        groups: [
+          { name: "frontend", display_name: "SkillNote: frontend", skill_count: 3 },
+          { name: "backend", display_name: "SkillNote: backend", skill_count: 5 },
+        ],
+      }),
+    );
+    const out = await client.fetchPluginGroups();
+    expect(out.marketplace_name).toBe("SkillNote");
+    expect(out.groups.map((g) => g.name)).toEqual(["frontend", "backend"]);
+    expect((globalThis.fetch as any).mock.calls[0][0]).toContain(
+      "/v1/integrations/claude-ai/extension/plugin-groups",
+    );
+  });
+
+  it("fetchPluginGroupBundle returns bytes + etag + skill count for a group", async () => {
+    const client = buildClient("https://example.com", "tok");
+    (globalThis.fetch as any).mockResolvedValueOnce(
+      new Response(new Blob([new Uint8Array([1, 2, 3, 4])]), {
+        headers: { ETag: '"abc123"', "X-Skill-Count": "4" },
+      }),
+    );
+    const { bundle, etag, skillCount } = await client.fetchPluginGroupBundle("frontend");
+    expect(bundle).toBeInstanceOf(Blob);
+    expect(bundle.size).toBe(4);
+    expect(etag).toBe('"abc123"');
+    expect(skillCount).toBe(4);
+    expect((globalThis.fetch as any).mock.calls[0][0]).toContain("group=frontend");
+  });
+
   it("importSkill sends multipart with all required fields", async () => {
     const client = buildClient("https://example.com", "tok");
     (globalThis.fetch as any).mockResolvedValueOnce(

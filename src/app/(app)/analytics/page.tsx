@@ -11,7 +11,7 @@ import { getSkills } from '@/lib/skills-store'
 import {
   Zap, BookOpen, Users, Activity, TrendingUp, Radio, WifiOff,
   ChevronDown, ChevronRight, RefreshCw, BarChart2, PieChart as PieChartIcon,
-  Star, Info, Award,
+  Star, Info, Award, MessageSquare,
 } from 'lucide-react'
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid,
@@ -21,6 +21,7 @@ import {
   fetchAnalyticsSummary,
   fetchSkillCalls,
   fetchAgents,
+  fetchRecentSessions,
   fetchTimeline,
   fetchCollections,
   fetchTopSkills,
@@ -28,6 +29,7 @@ import {
   type AnalyticsSummary,
   type SkillCallStat,
   type AgentStat,
+  type RecentSession,
   type TimelinePoint,
   type CollectionStat,
   type TopSkillStat,
@@ -60,6 +62,7 @@ type McpStatus = {
 // ─── Agent catalog ────────────────────────────────────────────────────────────
 
 const AGENT_CATALOG: Record<string, { label: string; color: string }> = {
+  'claude-ai':   { label: 'claude.ai',   color: '#D97757' },
   'claude-code': { label: 'Claude Code', color: '#8B5CF6' },
   openclaw:      { label: 'OpenClaw',    color: '#A855F7' },
   cursor:        { label: 'Cursor',      color: '#06B6D4' },
@@ -77,6 +80,10 @@ const TILE_COLORS = ['#8B5CF6', '#06B6D4', '#10B981', '#F59E0B', '#EF4444', '#EC
 
 function categorize(s: string): string {
   const n = s.toLowerCase()
+  // claude.ai (web chat, via the connector extension) is a DISTINCT surface
+  // from Claude Code (the CLI) — keep them separate so the breakdown shows
+  // WHERE skills are used. Must be checked before the generic 'claude' rule.
+  if (n.includes('claude-ai') || n.includes('claude_ai') || n === 'claude.ai') return 'claude-ai'
   if (n.includes('claude'))    return 'claude-code'
   if (n.includes('openclaw'))  return 'openclaw'
   if (n.includes('cursor'))    return 'cursor'
@@ -464,6 +471,7 @@ function AnalyticsContent() {
   const [summary, setSummary] = useState<AnalyticsSummary | null>(null)
   const [skillCalls, setSkillCalls] = useState<SkillCallStat[]>([])
   const [agents, setAgents] = useState<AgentStat[]>([])
+  const [recentSessions, setRecentSessions] = useState<RecentSession[]>([])
   const [timeline, setTimeline] = useState<TimelinePoint[]>([])
   const [collections, setCollections] = useState<CollectionStat[]>([])
   const [topSkills, setTopSkills] = useState<TopSkillStat[]>([])
@@ -503,7 +511,7 @@ function AnalyticsContent() {
   const fetchAll = useCallback(async () => {
     try {
       setError(null)
-      const [s, sc, ag, tl, col, ts, rs] = await Promise.all([
+      const [s, sc, ag, tl, col, ts, rs, sess] = await Promise.all([
         fetchAnalyticsSummary(params),
         fetchSkillCalls(params),
         fetchAgents(params),
@@ -511,6 +519,7 @@ function AnalyticsContent() {
         fetchCollections(params),
         fetchTopSkills({ days: params.days, limit: 10 }).catch(() => [] as TopSkillStat[]),
         fetchRatingSummary({ days: params.days }).catch(() => null),
+        fetchRecentSessions({ ...params, limit: 8 }).catch(() => [] as RecentSession[]),
       ])
       setSummary(s)
       setSkillCalls(sc)
@@ -519,6 +528,7 @@ function AnalyticsContent() {
       setCollections(col)
       setTopSkills(ts)
       setRatingSummary(rs)
+      setRecentSessions(sess)
       setLastUpdatedAt(new Date().toISOString())
       setFetchedAt(Date.now())
 
@@ -1101,6 +1111,56 @@ function AnalyticsContent() {
               )}
             </section>
           </div>
+
+          {/* ── Recent chats / sessions ─────────────────────────────────────── */}
+          <section className="group rounded-xl border border-border/50 border-l-2 border-l-transparent hover:border-l-accent/50 bg-card overflow-hidden transition-colors">
+            <div className="px-4 py-3 border-b border-border/40 flex items-center gap-2 bg-gradient-to-r from-card to-muted/10">
+              <MessageSquare className="h-4 w-4 text-muted-foreground" />
+              <h2 className="text-[13px] font-semibold tracking-tight text-foreground">Recent chats</h2>
+              {!loading && recentSessions.length > 0 && (
+                <span className="ml-auto text-[11px] text-muted-foreground/50">{recentSessions.length} sessions</span>
+              )}
+            </div>
+
+            {loading ? (
+              <div className="p-5"><Skeleton className="h-24 w-full" /></div>
+            ) : recentSessions.length === 0 ? (
+              <div className="px-5 py-10 text-center">
+                <MessageSquare className="h-6 w-6 mx-auto text-muted-foreground/25 mb-2" />
+                <p className="text-[12px] text-muted-foreground/50">No chats or sessions have used skills yet.</p>
+                <p className="text-[11px] text-muted-foreground/40 mt-0.5">claude.ai chats appear here by name; CLI runs show as a session id.</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-border/40">
+                {recentSessions.map((sess) => {
+                  const cat = categorize(sess.agent_name ?? '')
+                  const meta = AGENT_CATALOG[cat] ?? { label: sess.agent_name ?? 'Unknown', color: '#6B7280' }
+                  const isClaudeAi = cat === 'claude-ai'
+                  const shortId = (sess.session_id ?? '').slice(0, 8)
+                  const name = sess.session_name
+                    ? sess.session_name
+                    : isClaudeAi ? 'Untitled chat' : `Session ${shortId}`
+                  return (
+                    <div
+                      key={`${sess.agent_name}:${sess.session_id}`}
+                      className="flex items-center justify-between gap-3 px-4 py-2.5 hover:bg-muted/20 transition-colors"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: meta.color }} aria-hidden />
+                        <div className="min-w-0">
+                          <p className="text-[13px] text-foreground truncate">{name}</p>
+                          <p className="text-[11px] text-muted-foreground/60 truncate">
+                            {meta.label} · {sess.skill_count} skill{sess.skill_count === 1 ? '' : 's'} · {sess.call_count} call{sess.call_count === 1 ? '' : 's'}
+                          </p>
+                        </div>
+                      </div>
+                      <span className="text-[11px] text-muted-foreground/50 shrink-0 tabular-nums">{fmtRelative(sess.last_used)}</span>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </section>
 
           {/* ── Activity Timeline ───────────────────────────────────────────── */}
           <section className="group rounded-xl border border-border/50 border-l-2 border-l-transparent hover:border-l-accent/50 bg-card overflow-hidden transition-colors">

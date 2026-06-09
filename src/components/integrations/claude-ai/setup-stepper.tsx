@@ -36,10 +36,7 @@ import {
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { detectBrowser, type BrowserInfo } from '@/lib/browser-detect'
-import {
-  approvePairing,
-  type IntegrationStatusResponse,
-} from '@/lib/api/claude-ai'
+import { type IntegrationStatusResponse } from '@/lib/api/claude-ai'
 import { getApiBaseUrl } from '@/lib/api/client'
 
 const EXTENSION_SOURCE_URL =
