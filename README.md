@@ -220,13 +220,14 @@ The community has published thousands of `SKILL.md` files since Anthropic releas
   <img src="docs/screenshots/marketplace-workspace.png" width="100%" alt="Marketplace workspace showing skills from garrytan/gstack with select-all, filter, and per-skill preview pane" />
 </p>
 
-Some popular registries to try:
+Some registries and focused skill repos to try:
 
 - [**`anthropics/skills`**](https://github.com/anthropics/skills): Anthropic's official Agent Skills repository
 - [**`ComposioHQ/awesome-claude-skills`**](https://github.com/ComposioHQ/awesome-claude-skills): 800+ community skills, the largest curated set
 - [**`alirezarezvani/claude-skills`**](https://github.com/alirezarezvani/claude-skills): 600+ skills for Claude Code, Codex, Gemini CLI, Cursor, and more
 - [**`garrytan/gstack`**](https://github.com/garrytan/gstack): Garry Tan's 50+ opinionated YC-flavored tools (CEO, Designer, Eng Manager, etc.)
 - [**`obra/superpowers`**](https://github.com/obra/superpowers): Jesse Vincent's agentic skills framework
+- [**`Xquik-dev/tweetclaw/skills/tweetclaw`**](https://github.com/Xquik-dev/tweetclaw/tree/master/skills/tweetclaw): focused OpenClaw skill for tweet scraping, search, posting, monitors, and media workflows
 
 ### Live sync, every agent
 
