@@ -62,8 +62,13 @@ def list_collections(
     where: list[str] = []
     params: dict = {}
     if q:
-        where.append("lower(u.name) LIKE '%' || lower(:q) || '%'")
-        params["q"] = q
+        # Escape LIKE metacharacters so a literal `%` or `_` in the search term
+        # matches itself instead of acting as a wildcard — `q="_"` otherwise
+        # matches every collection, and the same wrong match inflates the
+        # X-Total-Count header. Backslash is the escape char (escape it first).
+        escaped_q = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        where.append(r"lower(u.name) LIKE '%' || lower(:q) || '%' ESCAPE '\'")
+        params["q"] = escaped_q
     if published is not None:
         where.append("COALESCE(c.published_to_claude_ai, false) = :published")
         params["published"] = published

@@ -249,6 +249,7 @@ def start_pairing(
 @router.post("/pair/approve", status_code=204)
 def approve_pairing(
     body: PairingApproveRequest,
+    request: Request,
     db: Session = Depends(get_db),
 ) -> Response:
     """Step 2 — user-side approval (SkillNote frontend posts here).
@@ -262,7 +263,18 @@ def approve_pairing(
          pairing_token (which is opaque and never displayed).
       2. The token lifecycle stays atomic with the row-state transition,
          eliminating the need to stash raw tokens anywhere.
+
+    Rate-limited per source IP on its own bucket: this is the endpoint that
+    actually *consumes* a guessed 6-char code (flipping pairing_approved_at),
+    so without a throttle here an attacker could enumerate codes unbounded —
+    /pair/start's limiter doesn't cover the guess-and-approve path.
     """
+    source_ip = _client_ip(request)
+    try:
+        record_pair_attempt(db, source_ip=source_ip, endpoint="approve")
+    except PairRateLimitExceeded as e:
+        raise api_error(429, "RATE_LIMITED", str(e))
+
     integ = find_pending_pairing_by_code(db, body.pairing_code)
     if integ is None:
         raise api_error(404, "PAIRING_NOT_FOUND", "Pairing code not recognized or already used")
@@ -776,7 +788,15 @@ def complete_operation(
     On failure: writes last_error, sets status=failed if attempts>=3,
     otherwise re-queues as pending so a transient failure auto-retries.
     """
-    op = db.get(ClaudeAISyncOperation, op_id)
+    # FOR UPDATE: take the row lock before reading status so we serialize with
+    # the stale-op reaper (which locks the same row with FOR UPDATE SKIP LOCKED).
+    # Otherwise an unlocked read here could complete an op the reaper is
+    # concurrently failing/requeuing, or vice-versa — a lost-update race.
+    op = db.execute(
+        select(ClaudeAISyncOperation)
+        .where(ClaudeAISyncOperation.id == op_id)
+        .with_for_update()
+    ).scalar_one_or_none()
     if op is None or op.integration_id != integ.id:
         raise api_error(404, "OPERATION_NOT_FOUND", "Operation not found for this integration")
     if op.status not in ("in_progress", "pending"):

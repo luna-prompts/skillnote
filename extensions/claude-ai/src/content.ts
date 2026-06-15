@@ -24,21 +24,34 @@ if (window.__skillnoteContentLoaded) {
 } else {
   window.__skillnoteContentLoaded = true;
 
-window.addEventListener("message", (event: MessageEvent) => {
-  // Only accept messages from this page's own window (not iframes/other origins).
-  if (event.source !== window) return;
-  const data = event.data as { __skillnote?: unknown } | null;
-  if (!data || data.__skillnote !== "sync-now") return;
-  try {
-    // Visible in the WEB PAGE's console so the user can confirm the bridge is
-    // installed on this origin and firing on a "Sync to claude.ai" toggle.
-    console.info("[SkillNote] sync-now → waking the extension to sync");
-    // Fire-and-forget; the SW handles `skillnote.sync-now` (same as the popup).
-    void chrome.runtime?.sendMessage?.({ type: "skillnote.sync-now" });
-  } catch {
-    // SW waking / transient — the alarm-driven tick will catch up regardless.
-  }
-});
+// SECURITY: the sync-now bridge must run ONLY on the user's SkillNote web
+// origin (where this script is injected dynamically after pairing) — NEVER on
+// claude.ai, where the static manifest injects this same script purely for
+// theme detection. The `event.source !== window` check below only blocks
+// cross-frame spoofing, not the top page's own scripts; so on claude.ai any
+// first-party script (or an XSS there) could post `sync-now` and force the
+// worker to drive the user's SkillNote backend + claude.ai (a free
+// sync-amplification/DoS trigger). Registering the relay only off-claude.ai
+// removes that surface. The theme observer further down is safe everywhere and
+// stays unconditional.
+const __onClaudeAi = /(^|\.)claude\.(ai|com)$/i.test(location.hostname);
+if (!__onClaudeAi) {
+  window.addEventListener("message", (event: MessageEvent) => {
+    // Only accept messages from this page's own window (not iframes/other origins).
+    if (event.source !== window) return;
+    const data = event.data as { __skillnote?: unknown } | null;
+    if (!data || data.__skillnote !== "sync-now") return;
+    try {
+      // Visible in the WEB PAGE's console so the user can confirm the bridge is
+      // installed on this origin and firing on a "Sync to claude.ai" toggle.
+      console.info("[SkillNote] sync-now → waking the extension to sync");
+      // Fire-and-forget; the SW handles `skillnote.sync-now` (same as the popup).
+      void chrome.runtime?.sendMessage?.({ type: "skillnote.sync-now" });
+    } catch {
+      // SW waking / transient — the alarm-driven tick will catch up regardless.
+    }
+  });
+}
 
 // ── Real-time theme observer ────────────────────────────────────────────────
 //

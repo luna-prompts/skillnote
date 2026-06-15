@@ -69,18 +69,10 @@ async function initialize(): Promise<void> {
   // for the first 1-min alarm — `tick()` no-ops when unpaired and is guarded
   // against overlapping runs.
   void tick();
-  watchSessionCookie(async (loggedIn) => {
-    // Record the session state authoritatively so the popup/options can
-    // render a calm "Sign in to claude.ai" affordance rather than treating
-    // a signed-out session as an error.
-    await saveConfig({ claude_session_active: loggedIn });
-    if (loggedIn) {
-      // User just logged into claude.ai — kick a sync immediately.
-      void tick();
-    } else {
-      await notify("Sign in to claude.ai to keep syncing", "");
-    }
-  });
+  // NOTE: the claude.ai session cookie watcher is registered at the TOP LEVEL
+  // (below), NOT here. MV3 only routes wake-up events to listeners added
+  // synchronously during top-level script evaluation; registering it after the
+  // awaits above would silently miss login/logout while the worker is dormant.
 }
 
 chrome.alarms.onAlarm.addListener(async ({ name }) => {
@@ -88,6 +80,22 @@ chrome.alarms.onAlarm.addListener(async ({ name }) => {
     await tick();
   } else if (name === ALARM_PAIR_POLL) {
     await pollPairOnce();
+  }
+});
+
+// Watch the claude.ai session cookie at TOP LEVEL (synchronous registration) so
+// a dormant MV3 worker still wakes on login/logout. Inside initialize() — after
+// its awaits — this listener wouldn't be guaranteed to wake the worker, so
+// instant sign-in/out detection would silently fall back to the 1-min tick.
+watchSessionCookie(async (loggedIn) => {
+  // Record the session state authoritatively so the popup/options can render a
+  // calm "Sign in to claude.ai" affordance rather than treating a signed-out
+  // session as an error.
+  await saveConfig({ claude_session_active: loggedIn });
+  if (loggedIn) {
+    void tick(); // just logged in → sync immediately
+  } else {
+    await notify("Sign in to claude.ai to keep syncing", "");
   }
 });
 
@@ -218,11 +226,36 @@ export async function startPairing(skillnoteUrl: string, browserLabel: string): 
     },
   });
   await chrome.alarms.create(ALARM_PAIR_POLL, { periodInMinutes: 0.1 });
+  // The 0.1-min alarm is the durable fallback, but Chrome clamps alarm periods
+  // to 30s in packed (Web Store) builds — so approval would lag up to ~30s and
+  // read as broken. The side panel stays open right after Connect (worker
+  // awake), so also run a fast ~2s poll to catch a quick approval near-instantly.
+  void fastPollPairing();
   return {
     pairing_code: res.pairing_code,
     redemption_url: res.redemption_url,
     expires_at: res.expires_at,
   };
+}
+
+// Fast pairing poll: while a pairing is pending and the worker is awake (the
+// side panel keeps it alive for a stretch after Connect), re-check every ~2s so
+// approval is detected without waiting on the 30s-clamped alarm. Self-stops as
+// soon as the pairing resolves (pollPairOnce clears cfg.pairing on approve or
+// expiry); if the worker sleeps the loop dies and the alarm takes over. The
+// module-level timer guards against stacking loops across repeated startPairing.
+let _fastPairTimer: ReturnType<typeof setTimeout> | null = null;
+async function fastPollPairing(): Promise<void> {
+  if (_fastPairTimer) return; // a loop is already running
+  const step = async (): Promise<void> => {
+    _fastPairTimer = null;
+    const cfg = await loadConfig();
+    if (!cfg.pairing) return; // resolved (token saved) or cleared — stop
+    await pollPairOnce();
+    const after = await loadConfig();
+    if (after.pairing) _fastPairTimer = setTimeout(() => void step(), 2000);
+  };
+  _fastPairTimer = setTimeout(() => void step(), 1500);
 }
 
 async function pollPairOnce(): Promise<void> {
@@ -910,6 +943,24 @@ async function notify(title: string, message: string): Promise<void> {
 
 // ── Message bridge for the popup / options page ───────────────────────────────
 
+// A "UI sender" is one of THIS extension's own pages (popup / options page):
+// it carries our extension id and has NO `sender.tab`. Content scripts always
+// carry `sender.tab`; ordinary web pages can't reach chrome.runtime at all (no
+// `externally_connectable`). Config-changing flows must be UI-only so an
+// injected/compromised content script can never repoint the SkillNote URL or
+// revoke the token.
+function _isExtensionUiSender(sender: chrome.runtime.MessageSender | undefined): boolean {
+  return !!sender && sender.id === chrome.runtime.id && !sender.tab;
+}
+
+function _senderHostname(sender: chrome.runtime.MessageSender | undefined): string {
+  try {
+    return sender?.origin ? new URL(sender.origin).hostname : "";
+  } catch {
+    return "";
+  }
+}
+
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg?.type === "skillnote.theme") {
     // Real-time theme push from a content script (claude.ai / paired app).
@@ -926,6 +977,14 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     return false; // no response needed
   }
   if (msg?.type === "skillnote.sync-now") {
+    // Defense-in-depth with content.ts (which already declines to relay on
+    // claude.ai): never let a claude.ai content script drive a sync — only the
+    // SkillNote web bridge or our own UI may. A claude.ai-origin sender is
+    // rejected outright.
+    if (_sender.tab && /(^|\.)claude\.(ai|com)$/i.test(_senderHostname(_sender))) {
+      sendResponse({ ok: false, error: "forbidden" });
+      return false;
+    }
     // Visible in the service-worker console — confirms the web-bridge (or
     // popup) reached the worker and a sync is running.
     console.info("[SkillNote] sync-now received → reconcile + sync");
@@ -938,12 +997,23 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     return true;
   }
   if (msg?.type === "skillnote.start-pair") {
+    // Privileged: accepts a caller-supplied URL and persists pairing state.
+    // Only our own popup/options page may initiate pairing.
+    if (!_isExtensionUiSender(_sender)) {
+      sendResponse({ ok: false, error: "forbidden" });
+      return false;
+    }
     void startPairing(msg.skillnote_url, msg.browser_label)
       .then((res) => sendResponse({ ok: true, ...res }))
       .catch((e) => sendResponse({ ok: false, error: String(e) }));
     return true;
   }
   if (msg?.type === "skillnote.disconnect") {
+    // Privileged: revokes the bearer token + clears config. UI-only.
+    if (!_isExtensionUiSender(_sender)) {
+      sendResponse({ ok: false, error: "forbidden" });
+      return false;
+    }
     // Promise-chain with a catch — the async-IIFE form could throw before
     // sendResponse, leaving the caller's "Disconnecting…" spinner hung (or,
     // worse, options.ts treats an undefined response as success).

@@ -229,13 +229,23 @@ def reclaim_stale_operations(db: Session, *, now: Optional[datetime] = None) -> 
     """
     now = now or datetime.now(timezone.utc)
     cutoff = now - _OP_LEASE
+    # FOR UPDATE SKIP LOCKED: row-lock the stale candidates so we don't race a
+    # concurrent complete_operation()/report_operation_failure() (both take the
+    # same row lock before mutating). Without this the reaper could read an op
+    # as in_progress, then a just-finishing extension commits status=completed
+    # in between, and the reaper's blind ORM UPDATE would resurrect it to
+    # pending (re-publish) or stamp a spurious "failed after N attempts" +
+    # op_failed audit over an op that actually succeeded. SKIP LOCKED means an
+    # op currently being completed is simply left for the next tick.
     stale = list(
         db.execute(
-            select(ClaudeAISyncOperation).where(
+            select(ClaudeAISyncOperation)
+            .where(
                 ClaudeAISyncOperation.status == "in_progress",
                 ClaudeAISyncOperation.started_at.is_not(None),
                 ClaudeAISyncOperation.started_at < cutoff,
             )
+            .with_for_update(skip_locked=True)
         )
         .scalars()
         .all()

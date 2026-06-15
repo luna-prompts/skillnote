@@ -23,7 +23,7 @@
  * shows op_failed events for the hard-failure case.
  */
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import {
   ArrowDownToLine,
@@ -67,8 +67,15 @@ export function SyncQueuePanel({
   const [data, setData] = useState<SyncQueueResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
+  // In-flight guard: the 5s poll and the manual Refresh button share load();
+  // without this two can overlap on a slow backend, stacking requests and
+  // flickering the spinner (the first to finish flips `refreshing` off while
+  // the second is still running). A ref, not state, so the check isn't stale.
+  const inFlightRef = useRef(false)
 
   const load = useCallback(async () => {
+    if (inFlightRef.current) return
+    inFlightRef.current = true
     setRefreshing(true)
     try {
       const r = await fetchSyncQueue({ integration_id, limit: 50 })
@@ -77,6 +84,7 @@ export function SyncQueuePanel({
     } catch (e) {
       setError((e as Error).message)
     } finally {
+      inFlightRef.current = false
       setRefreshing(false)
     }
   }, [integration_id])

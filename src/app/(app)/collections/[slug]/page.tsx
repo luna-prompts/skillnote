@@ -154,6 +154,10 @@ export default function CollectionDetailPage() {
       await new Promise(r => setTimeout(r, Math.max(0, 2000 - elapsed)))
       // Trust the value the API actually persisted, not what we requested.
       setPublishedToClaudeAi(updated.published_to_claude_ai ?? true)
+      // Publishing a skill-derived collection materializes a real collections
+      // row server-side (the PUT upserts). Adopt its canonical name so the row
+      // now exists in the UI's eyes and later edit/unpublish target it.
+      setCanonicalName(updated.name)
       setModalStage('done')
     } catch (err) {
       setModalStage('closed')
@@ -169,6 +173,7 @@ export default function CollectionDetailPage() {
       const updated = await setCollectionClaudeAiPublishApi(collectionName, false)
       pokeExtensionSync() // wake the extension to retire the group on claude.ai now
       setPublishedToClaudeAi(updated.published_to_claude_ai ?? false)
+      setCanonicalName(updated.name)
       toast.success(`Removed “${collectionName}” from claude.ai`)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Could not unpublish')

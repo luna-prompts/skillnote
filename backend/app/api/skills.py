@@ -52,10 +52,26 @@ def _log_activity(db: Session, event: str, *, skill_id=None, detail: Optional[di
 
     Never raises: notifications must never block the CRUD they describe. The
     row is added to the caller's session and committed with the main change.
+
+    The write runs inside a SAVEPOINT. `write_audit` only does `db.add()`, and
+    the session is `autoflush=False`, so without the nested transaction the
+    INSERT flushes at the caller's `db.commit()` — *outside* this try/except.
+    A bad/unknown `event` would then hit the `claude_ai_audit_log.event` CHECK
+    constraint at commit time, 500-ing AND rolling back the very CRUD this row
+    is meant to describe. `begin_nested()` + an explicit flush confine any audit
+    failure to the savepoint so the CRUD always commits.
     """
+    from app.services.claude_ai_sync import write_audit
+    # Flush any pending CRUD BEFORE opening the savepoint, so rolling back a
+    # failed audit insert can never also undo the change this row describes
+    # (e.g. delete_skill's pending DELETE, which is unflushed at call time).
+    # A genuine CRUD error surfaced by this flush propagates — only the audit
+    # write itself is guarded.
+    db.flush()
     try:
-        from app.services.claude_ai_sync import write_audit
-        write_audit(db, event=event, skill_id=skill_id, detail=detail or {})
+        with db.begin_nested():
+            write_audit(db, event=event, skill_id=skill_id, detail=detail or {})
+            db.flush()
     except Exception:  # noqa: BLE001
         import logging
         logging.getLogger("skillnote.activity").exception(

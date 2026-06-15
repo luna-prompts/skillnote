@@ -90,16 +90,17 @@ export function NotificationsBell() {
     prevPending.current = visible.length
   }, [])
 
-  // Opening the panel marks everything seen — the badge clears, matching the
-  // convention every notification UI follows.
+  // An *explicit* user-open marks everything seen — the badge clears, matching
+  // the convention every notification UI follows. NOTE: this must NOT run on
+  // the programmatic auto-open in load() (a new pairing pops the panel), or a
+  // pairing would silently clear the unread count for unrelated activity the
+  // user never looked at. So markSeen is called from the bell's onClick only,
+  // not from an effect keyed on `open`.
   const markSeen = useCallback(() => {
     seenAt.current = Date.now()
     localStorage.setItem(SEEN_KEY, String(seenAt.current))
     setUnread(0)
   }, [])
-  useEffect(() => {
-    if (open) markSeen()
-  }, [open, markSeen])
 
   // Poll while the tab is visible (pending pairings are time-sensitive).
   useEffect(() => {
@@ -154,7 +155,11 @@ export function NotificationsBell() {
     <div ref={ref} className="relative">
       <button
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => {
+          const next = !open
+          setOpen(next)
+          if (next) markSeen() // explicit open clears unread; the pairing auto-open does not
+        }}
         aria-label={badge > 0 ? `Notifications (${badge} unread)` : 'Notifications'}
         aria-haspopup="menu"
         aria-expanded={open}

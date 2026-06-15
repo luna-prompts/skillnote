@@ -111,7 +111,14 @@ export function ActivityFeed({
         limit: pageSize,
         before: cursor,
       })
-      setEvents((prev) => (prev ? [...prev, ...older] : older))
+      // Dedupe by id when appending: the `before: created_at` cursor isn't
+      // unique when several events share a timestamp (a group publish logs
+      // multiple rows at once), so a boundary sibling can come back twice.
+      setEvents((prev) => {
+        if (!prev) return older
+        const seen = new Set(prev.map((e) => e.id))
+        return [...prev, ...older.filter((e) => !seen.has(e.id))]
+      })
       setHasMore(older.length === pageSize)
       paginatedRef.current = true
     } catch (e) {
