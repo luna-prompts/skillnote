@@ -47,6 +47,17 @@ breaking changes to existing skill/collection/version APIs.
   collection publish flag, staged version links, session names, skill-event
   audit constraint). Single linear head.
 
+### Security
+
+- **Cleared all 20 open Dependabot alerts** across the web app, CLI, and
+  extension (2 critical, several high). `hono` → 4.12.25, `esbuild` → 0.28.1,
+  `undici` → ^6.26.0, `uuid` → ^11.1.1, `postcss` → 8.5.15 (pinned via npm
+  `overrides`); `vitest` → ^3.2.6 and `vite` → ^6.4.3 (dev tooling). No
+  runtime API changes; all builds and the full test suites (CLI 143,
+  extension 153) stay green. `tsup`/`dockerode`/`testcontainers` were flagged
+  only for bundling a vulnerable `esbuild`/`undici` and are fixed by the
+  overrides without major-bumping them.
+
 ### Notes
 
 - The extension is not yet on the Chrome Web Store (listing pending review);
