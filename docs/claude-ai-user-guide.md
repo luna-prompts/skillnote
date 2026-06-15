@@ -53,10 +53,17 @@ settings page to hunt for.
 
 ## What happens next
 
-- Pick what to sync: on any **collection** in SkillNote, open
-  **Sync ▾ → claude.ai**. Those skills appear in your claude.ai
-  **Customize → Plugins** (as a "SkillNote: &lt;collection&gt;" plugin
-  group) within seconds, and re-sync automatically on every change.
+**Pick what to sync.** On any **collection** in SkillNote, open the
+**Sync** menu and toggle **claude.ai** on:
+
+<div align="center">
+  <img src="screenshots/collection-sync-claude-ai.png" width="100%" alt="A SkillNote collection's Sync menu open with the claude.ai connector toggled on — the collection is live on claude.ai as the plugin group 'SkillNote: conventions'" />
+</div>
+
+- Those skills appear in your claude.ai **Customize → Plugins** (as a
+  "SkillNote: &lt;collection&gt;" plugin group) within seconds, and
+  re-sync automatically on every change. Toggle it off and the connector
+  retires that plugin group.
 - Skills you author directly in claude.ai are pulled back into SkillNote
   on the next reverse-sync cycle (when claude.ai is open in your browser).
 - The panel shows **how often your skills get used** on claude.ai this

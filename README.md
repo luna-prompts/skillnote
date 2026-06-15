@@ -33,7 +33,7 @@
 <br />
 
 <p align="center">
-  <img src="docs/screenshots/connect-browse-r9.png" width="100%" alt="SkillNote Connect page browsing Claude Code and OpenClaw as official agent integrations, each shown with its canonical mark" />
+  <img src="docs/screenshots/connect-browse.png" width="100%" alt="SkillNote Connect page browsing Claude Code, OpenClaw, and claude.ai as official agent integrations, each shown with its canonical mark" />
 </p>
 
 ---
@@ -216,7 +216,13 @@ cd extensions/claude-ai && npm install && npm run build
 1. Click the SkillNote toolbar icon to open the side panel.
 2. Enter your SkillNote URL — the same address you open in your browser (e.g. `http://localhost:3000`) — and click **Connect**. (Chrome asks once for permission to reach that address.)
 3. In SkillNote, the **notifications bell** (top-right) shows the pairing request — confirm the code matches and click **Approve**.
-4. Choose what to sync: on any collection in SkillNote, open **Sync ▾ → claude.ai**. Those skills appear in claude.ai within seconds, and re-sync automatically.
+4. Choose what to sync: on any collection in SkillNote, open **Sync ▾ → claude.ai** and flip the toggle. Those skills appear in claude.ai within seconds (as the plugin group `SkillNote: <collection>`), and re-sync automatically on every change.
+
+<div align="center">
+  <img src="docs/screenshots/collection-sync-claude-ai.png" width="100%" alt="A SkillNote collection's Sync menu open, showing the claude.ai connector toggled on — the collection is live on claude.ai as the plugin group 'SkillNote: conventions', with OpenAI listed as coming soon" />
+</div>
+
+You stay in control of what leaves SkillNote: the **Sync** menu is per-collection, so dev-only or sensitive collections simply stay off. Toggle one on and it's live on claude.ai; toggle it off and the connector retires that plugin group.
 
 Sync runs automatically while you're signed in to claude.ai. The extension reads your claude.ai session cookies **locally only** — they never leave your machine, and it only ever talks to claude.ai and the SkillNote URL you entered.
 
