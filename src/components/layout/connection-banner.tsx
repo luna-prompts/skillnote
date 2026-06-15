@@ -18,7 +18,9 @@ export function ConnectionBanner() {
     setRetrying(false)
   }
 
-  // Only show banner for actual connectivity problems — local mode is the normal default
+  // Only render on a CONFIRMED failed sync. The initial page-load state is
+  // 'checking' (first sync still in flight) — rendering anything there made a
+  // scary "backend unreachable" banner flash on every single load.
   if (dismissed || status !== 'offline') return null
 
   return (
@@ -30,14 +32,16 @@ export function ConnectionBanner() {
       role="status"
       aria-live="polite"
       aria-label="Backend connection status"
-      className="bg-red-500/10 border-b border-red-500/20 px-4 py-2 flex items-center gap-2 text-[12px] text-red-700 dark:text-red-400"
+      className="bg-amber-500/10 border-b border-amber-500/20 px-4 py-2 flex items-center gap-2 text-[12px] text-amber-800 dark:text-amber-300"
     >
       <WifiOff className="h-3.5 w-3.5 shrink-0" />
-      <span className="flex-1">Backend unreachable — showing cached data.</span>
+      <span className="flex-1">
+        Can&apos;t reach the SkillNote server — your work is saved on this device and syncs when it&apos;s back.
+      </span>
       <button
         onClick={handleRetry}
         disabled={retrying}
-        className="flex items-center gap-1 px-2 py-0.5 rounded border border-red-400/40 hover:bg-red-500/10 disabled:opacity-50 transition-colors"
+        className="flex items-center gap-1 px-2 py-0.5 rounded border border-amber-500/40 hover:bg-amber-500/10 disabled:opacity-50 transition-colors"
       >
         <RefreshCw className={`h-2.5 w-2.5 ${retrying ? 'animate-spin' : ''}`} />
         {retrying ? 'Retrying…' : 'Retry'}

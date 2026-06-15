@@ -8,8 +8,12 @@ import { getDisplayName } from './profile'
 
 const STORAGE_KEY = 'skillnote:skills'
 
-type ConnectionStatus = 'online' | 'offline'
-let _connectionStatus: ConnectionStatus = 'offline'
+// 'checking' = no sync attempt has finished yet (page just loaded). It is NOT
+// offline — starting at 'offline' made the red "backend unreachable" banner
+// flash on every load until the first sync landed. 'offline' now always means
+// a sync actually FAILED.
+type ConnectionStatus = 'checking' | 'online' | 'offline'
+let _connectionStatus: ConnectionStatus = 'checking'
 const _listeners: Array<(s: ConnectionStatus) => void> = []
 
 export function getConnectionStatus(): ConnectionStatus {

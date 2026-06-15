@@ -1,0 +1,156 @@
+# Claude.ai Sync — User Guide
+
+SkillNote can keep your skills in sync with your [claude.ai](https://claude.ai)
+account so a skill you publish in SkillNote shows up in claude.ai's
+**Customize → Skills** section automatically, and a skill you author
+directly on claude.ai flows back into SkillNote.
+
+This guide walks you through setup. **One-time, ~60 seconds.**
+
+> **Requirements**
+>
+> - A self-hosted SkillNote instance reachable from your browser.
+> - A paid claude.ai account (Pro, Max, Team, or Enterprise).
+> - Chrome, Edge, Brave, Arc, or any Chromium browser (Firefox AMO version
+>   in beta).
+
+## Setup in three steps
+
+### 1. Install the SkillNote browser extension
+
+- **Chrome / Edge / Brave / Arc** —
+  [Chrome Web Store listing](https://chrome.google.com/webstore/category/extensions)
+  *(replace with real URL after submission)*
+- **Firefox** —
+  [Firefox Add-ons listing](https://addons.mozilla.org/) *(beta)*
+- **Local dev** — clone the repo, run `npm run build` in
+  `extensions/claude-ai/`, then load `dist/` as an unpacked extension at
+  `chrome://extensions`.
+
+### 2. Connect the extension to your SkillNote
+
+1. Click the SkillNote icon in your browser toolbar — it opens the
+   SkillNote **side panel** on the right (it stays open beside claude.ai
+   while you work).
+2. In the panel, enter your **SkillNote URL** — the same address you
+   open in your browser (e.g. `http://localhost:3000` or
+   `https://skillnote.acme.com`) — and a label for this browser.
+3. Click **Connect**. Chrome asks once for permission to reach that
+   address — click **Allow**. (It only ever connects to that URL.)
+
+The panel then shows a 6-character **pairing code** — right there, no new
+tab.
+
+### 3. Approve the pairing in SkillNote
+
+Open SkillNote in another tab. The **notifications bell** (top-right)
+pops a pairing request showing the same 6-character code.
+
+**Verify the codes match**, then click **Approve**.
+
+Within a second the panel flips to **Connected** — no redirects, no
+settings page to hunt for.
+
+## What happens next
+
+**Pick what to sync.** On any **collection** in SkillNote, open the
+**Sync** menu and toggle **claude.ai** on:
+
+<div align="center">
+  <img src="screenshots/collection-sync-claude-ai.png" width="100%" alt="A SkillNote collection's Sync menu open with the claude.ai connector toggled on — the collection is live on claude.ai as the plugin group 'SkillNote: conventions'" />
+</div>
+
+- Those skills appear in your claude.ai **Customize → Plugins** (as a
+  "SkillNote: &lt;collection&gt;" plugin group) within seconds, and
+  re-sync automatically on every change. Toggle it off and the connector
+  retires that plugin group.
+- Skills you author directly in claude.ai are pulled back into SkillNote
+  on the next reverse-sync cycle (when claude.ai is open in your browser).
+- The panel shows **how often your skills get used** on claude.ai this
+  week, and which collections are currently live.
+- It matches claude.ai's **light/dark** appearance in real time.
+- The extension reads your existing claude.ai session cookies — it
+  never asks for a separate API key.
+
+## Granular control
+
+### Per-skill sync toggle
+
+Some skills are dev-only or contain sensitive content you don't want on
+claude.ai. On any skill's detail page, look for the
+**Syncing to claude.ai** badge in the header. Click to toggle off — that
+skill stops syncing immediately. Skills already pushed to claude.ai stay
+there until you delete them; future updates simply stop firing.
+
+### Conflict resolution
+
+If you edit the same skill on both sides since the last sync, the
+connector marks it **diverged** instead of guessing which version wins.
+You'll see a **Conflicts** section on the connector settings page with
+three options per skill:
+
+- **Keep SkillNote** — overwrites claude.ai with your SkillNote version.
+- **Keep claude.ai** — overwrites SkillNote with the claude.ai version.
+- **Skip** — clear the warning; you can resolve manually later.
+
+### Notifications & activity
+
+Every action the connector takes (pairings, pushes, imports, conflicts,
+errors) — plus skill create/edit/delete — is logged. See it three ways:
+
+- The extension panel's **Activity** tab — recent events at a glance.
+- The **notifications bell** in SkillNote (top-right) — a quick popover.
+- The full, searchable history at **Notifications** in the SkillNote
+  sidebar. Entries are kept for 3 days.
+
+## Common issues
+
+### "Sign in to claude.ai to keep syncing"
+
+The extension lost your claude.ai session. Open
+[claude.ai](https://claude.ai), sign back in, and the extension picks up
+the new cookies automatically. No re-pairing needed.
+
+### Connection status shows "Error"
+
+Check the **Last error** message on the connector settings page. The most
+common causes:
+
+- **claude.ai endpoint changed** — Anthropic redesigned an internal
+  endpoint. The extension auto-updates via the Chrome Web Store; if
+  Auto-update is disabled, manually update from
+  `chrome://extensions` → SkillNote → "Update."
+- **SkillNote unreachable** — verify the URL in the extension's options
+  matches your SkillNote backend.
+
+### "Pairing code has expired"
+
+Pairing codes are valid for 10 minutes. Restart the pairing flow from
+the extension's settings.
+
+### Disconnecting
+
+On the connector settings page, click **Disconnect** next to a browser.
+This revokes the extension's bearer token. Skills already synced to
+claude.ai stay there until you delete them individually — disconnect
+does *not* sweep claude.ai's side.
+
+## Privacy
+
+The extension uses your browser's existing claude.ai session cookies
+to authenticate requests **to claude.ai only**. Cookies never leave your
+browser except as part of normal claude.ai requests. The SkillNote
+project never sees your skill content — data flows
+**your SkillNote → your browser → your claude.ai**, end to end.
+
+Full policy: [`extensions/claude-ai/PRIVACY.md`](../extensions/claude-ai/PRIVACY.md).
+
+## Architecture reference (for the curious)
+
+See [`docs/claude-ai-integration.md`](claude-ai-integration.md) for the
+full design rationale: data model, sync queue, pairing handshake,
+conflict detection, audit log, and rate limits.
+
+## Support
+
+Open an issue: <https://github.com/luna-prompts/skillnote/issues>.

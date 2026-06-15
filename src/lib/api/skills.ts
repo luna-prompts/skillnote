@@ -26,6 +26,7 @@ type ApiSkillListItem = {
   forked_from_source?: boolean
   source_path?: string | null
   origin?: ApiSkillOrigin | null
+  claude_ai_sync_enabled?: boolean
 }
 
 type ApiSkillDetail = {
@@ -43,6 +44,7 @@ type ApiSkillDetail = {
   forked_from_source?: boolean
   source_path?: string | null
   origin?: ApiSkillOrigin | null
+  claude_ai_sync_enabled?: boolean
 }
 
 function toOrigin(o: ApiSkillOrigin | null | undefined): SkillOrigin | null {
@@ -85,6 +87,9 @@ function listItemToSkill(item: ApiSkillListItem): Skill {
     forked_from_source: item.forked_from_source ?? false,
     source_path: item.source_path ?? null,
     origin: toOrigin(item.origin),
+    // Preserve the per-skill claude.ai sync opt-out so the sync badge
+    // reflects the real state instead of always defaulting to "enabled".
+    claude_ai_sync_enabled: item.claude_ai_sync_enabled ?? true,
   }
 }
 
@@ -104,6 +109,7 @@ function detailToSkill(item: ApiSkillDetail, existingComments?: Comment[]): Skil
     forked_from_source: item.forked_from_source ?? false,
     source_path: item.source_path ?? null,
     origin: toOrigin(item.origin),
+    claude_ai_sync_enabled: item.claude_ai_sync_enabled ?? true,
   }
 }
 

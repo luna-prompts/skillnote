@@ -6,6 +6,15 @@ export const DESC_MAX = 1024
 const NAME_PATTERN = /^[a-z0-9_-]+(?::[a-z0-9_-]+)?$/
 const RESERVED_WORDS = ['anthropic', 'claude']
 const XML_TAG_RE = /<\/?[a-zA-Z][^>]*>/
+// Windows-reserved device names — a skill folder named one of these can't be
+// created on Windows (CLI installs to ~/.claude/skills/<slug>/...). EXACT
+// match (not substring) so "icons"/"control" stay valid. Mirrors the backend
+// validator — keep the two in lockstep.
+const WINDOWS_RESERVED_NAMES = new Set([
+  'con', 'prn', 'aux', 'nul',
+  ...Array.from({ length: 9 }, (_, i) => `com${i + 1}`),
+  ...Array.from({ length: 9 }, (_, i) => `lpt${i + 1}`),
+])
 
 export type ValidationError = { field: string; message: string }
 
@@ -25,6 +34,9 @@ export function validateSkillName(name: string): ValidationError[] {
     if (name.includes(word)) {
       errors.push({ field: 'name', message: `Name cannot contain reserved word "${word}"` })
     }
+  }
+  if (WINDOWS_RESERVED_NAMES.has(name.toLowerCase())) {
+    errors.push({ field: 'name', message: `"${name}" is a reserved name on Windows — choose another` })
   }
   if (XML_TAG_RE.test(name)) {
     errors.push({ field: 'name', message: 'Name cannot contain XML tags' })

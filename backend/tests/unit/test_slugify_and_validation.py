@@ -128,6 +128,28 @@ class TestValidateSkillName:
     def test_underscores_allowed(self):
         assert validate_skill_name("my_skill") == []
 
+    # ── Windows reserved device names (cross-OS install safety) ──────────
+    @pytest.mark.parametrize(
+        "name", ["con", "prn", "aux", "nul", "com1", "com9", "lpt1", "lpt9"]
+    )
+    def test_windows_reserved_name_rejected(self, name):
+        errors = validate_skill_name(name)
+        assert any("reserved name on windows" in e.lower() for e in errors), errors
+
+    def test_windows_reserved_is_case_insensitive(self):
+        # The slug pattern forbids uppercase, but the reserved check should be
+        # case-insensitive on its own so the message is right regardless.
+        assert any(
+            "reserved name on windows" in e.lower() for e in validate_skill_name("nul")
+        )
+
+    @pytest.mark.parametrize("name", ["icons", "control", "beacon", "com", "lpt", "com10", "console"])
+    def test_reserved_lookalikes_are_allowed(self, name):
+        # EXACT match only — names that merely CONTAIN a reserved token, or are
+        # adjacent ("com" without a digit, "com10" out of the 1-9 range), are
+        # perfectly valid. Guards against a substring over-match.
+        assert validate_skill_name(name) == [], name
+
     def test_special_chars_specific_error(self):
         errors = validate_skill_name("my@skill!")
         assert any("lowercase" in e.lower() or "hyphens" in e.lower() for e in errors)

@@ -1,7 +1,7 @@
 'use client'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { BookOpen, FolderOpen, Settings, HelpCircle, X, Plug2, BarChart2, Store } from 'lucide-react'
+import { BookOpen, FolderOpen, Settings, HelpCircle, X, Plug2, BarChart2, Store, Bell } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useEffect, useMemo, useState } from 'react'
 import { getSkills, syncSkillsFromApi, getConnectionStatus, onConnectionStatusChange } from '@/lib/skills-store'
@@ -129,7 +129,7 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
             from "Connect" so the group label is distinct from the item
             label and doesn't read "CONNECT > Connect". */}
         <div className="pt-3 mt-1.5 border-t border-[var(--sidebar-border)]/40">
-          <p className="text-[10px] font-semibold text-[var(--muted-foreground)]/50 uppercase tracking-widest px-2 mb-2">Integrations</p>
+          <p className="text-[10px] font-semibold text-[var(--muted-foreground)] uppercase tracking-widest px-2 mb-2">Integrations</p>
           {(() => {
             const isActive = pathname.startsWith('/integrations')
             return (
@@ -156,6 +156,24 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
           <Settings className="h-[15px] w-[15px] shrink-0" />
           Settings
         </Link>
+        {(() => {
+          const isActive = pathname.startsWith('/notifications')
+          return (
+            <Link
+              href="/notifications"
+              aria-label="Notifications"
+              className={cn(
+                'w-full flex items-center gap-2.5 px-2.5 py-2 rounded-md text-[13px] font-medium transition-all duration-150',
+                isActive
+                  ? 'bg-accent/12 text-accent'
+                  : 'text-[var(--muted-foreground)] hover:text-[var(--sidebar-foreground)] hover:bg-[var(--sidebar-accent)]'
+              )}
+            >
+              <Bell className={cn('h-[15px] w-[15px] shrink-0', isActive ? 'text-accent' : '')} />
+              Notifications
+            </Link>
+          )
+        })()}
         <a
           href="https://github.com/luna-prompts/skillnote#readme"
           target="_blank"
@@ -166,10 +184,10 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
           <HelpCircle className="h-[15px] w-[15px] shrink-0" />
           Help
         </a>
-        <div className="flex items-center gap-1.5 px-2.5 pt-2" title={connStatus === 'online' ? 'Connected to backend' : connStatus === 'offline' ? 'Backend offline' : 'Running locally'}>
-          <div className={cn('w-1.5 h-1.5 rounded-full shrink-0', connStatus === 'online' ? 'bg-emerald-500' : connStatus === 'offline' ? 'bg-red-500' : 'bg-teal-500')} />
+        <div className="flex items-center gap-1.5 px-2.5 pt-2" title={connStatus === 'online' ? 'Connected to backend' : connStatus === 'offline' ? 'Backend offline' : 'Checking connection'}>
+          <div className={cn('w-1.5 h-1.5 rounded-full shrink-0', connStatus === 'online' ? 'bg-emerald-500' : connStatus === 'offline' ? 'bg-red-500' : 'bg-zinc-400 animate-pulse')} />
           <p className="text-[10px] text-[var(--muted-foreground)]/40">
-            {connStatus === 'online' ? 'Connected' : connStatus === 'offline' ? 'Offline' : 'Admin'}
+            {connStatus === 'online' ? 'Connected' : connStatus === 'offline' ? 'Offline' : 'Connecting…'}
           </p>
           <span className="ml-auto text-[9px] font-mono text-[var(--muted-foreground)]/30">v{process.env.NEXT_PUBLIC_APP_VERSION || '0.3.0'}</span>
         </div>

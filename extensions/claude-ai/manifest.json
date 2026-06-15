@@ -1,0 +1,53 @@
+{
+  "manifest_version": 3,
+  "name": "SkillNote",
+  "version": "0.1.0",
+  "description": "Sync your SkillNote skills to claude.ai automatically.",
+  "permissions": [
+    "cookies",
+    "storage",
+    "alarms",
+    "notifications",
+    "scripting",
+    "sidePanel"
+  ],
+  "host_permissions": [
+    "https://claude.ai/*",
+    "https://claude.com/*"
+  ],
+  "optional_host_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://claude.ai/*", "https://claude.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "side_panel": {
+    "default_path": "popup.html"
+  },
+  "action": {
+    "default_title": "SkillNote",
+    "default_icon": {
+      "16": "icons/16.png",
+      "48": "icons/48.png",
+      "128": "icons/128.png"
+    }
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
+  "icons": {
+    "16": "icons/16.png",
+    "48": "icons/48.png",
+    "128": "icons/128.png"
+  }
+}

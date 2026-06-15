@@ -31,3 +31,6 @@ test = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+
+[tool.pytest.ini_options.markers]
+slow = "tests that intentionally make many requests (e.g. rate-limit flood tests)"

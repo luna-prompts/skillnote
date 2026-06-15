@@ -17,6 +17,7 @@ import Link from 'next/link'
 import { SkillViewTab } from './tabs/SkillViewTab'
 import { SkillEditTab } from './tabs/SkillEditTab'
 import { InstallDialog } from './InstallDialog'
+import { SkillSyncBadge } from '@/components/integrations/claude-ai/skill-sync-badge'
 import { BundlePill } from './BundlePill'
 
 type PaletteAction = {
@@ -548,6 +549,15 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
                       {formatRelative(skill.updated_at)}
                     </span>
                     <BundlePill skill={skill} size="md" className="rounded-full px-2.5 py-1 max-w-[220px]" />
+                    {(skill.id || skill.slug) && (
+                      <SkillSyncBadge
+                        // Offline-first records often lack the backend UUID;
+                        // fall back to the slug, which the toggle endpoint
+                        // resolves the same way.
+                        skillId={skill.id || skill.slug}
+                        initialEnabled={skill.claude_ai_sync_enabled ?? true}
+                      />
+                    )}
                     {ratingDetail && ratingDetail.rating_count > 0 && ratingDetail.avg_rating != null && (
                       <button
                         onClick={() => document.getElementById('agent-reviews')?.scrollIntoView({ behavior: 'smooth' })}

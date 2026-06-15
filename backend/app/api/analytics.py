@@ -182,6 +182,58 @@ def get_agents(
     ]
 
 
+@router.get("/recent-sessions")
+def get_recent_sessions(
+    days: int = Query(default=7, ge=1),
+    agent: str | None = Query(default=None),
+    collection: str | None = Query(default=None),
+    limit: int = Query(default=8, ge=1, le=50),
+    db: Session = Depends(get_db),
+):
+    """Recent chats/sessions that used skills — powers the analytics
+    "Recent chats" panel. One row per session (e.g. a claude.ai conversation),
+    with its human title when known (``session_name``), the agent, distinct
+    skills used, total calls, and when it was last active.
+    """
+    date_clause = _date_filter_clause(days)
+    agent_clause = _agent_filter_clause(agent)
+    coll_clause = _collection_filter_clause(collection)
+    params = _build_params(days, agent, collection)
+    params["limit"] = limit
+
+    rows = db.execute(
+        text(f"""
+            SELECT session_id,
+                   MAX(session_name) AS session_name,
+                   agent_name,
+                   COUNT(*) AS call_count,
+                   COUNT(DISTINCT skill_slug) AS skill_count,
+                   MAX(created_at) AS last_used
+            FROM skill_call_events
+            WHERE session_id IS NOT NULL AND session_id <> ''
+            {date_clause}
+            {agent_clause}
+            {coll_clause}
+            GROUP BY session_id, agent_name
+            ORDER BY last_used DESC
+            LIMIT :limit
+        """),
+        params,
+    ).mappings().all()
+
+    return [
+        {
+            "session_id": row["session_id"],
+            "session_name": row["session_name"] or None,
+            "agent_name": row["agent_name"],
+            "call_count": row["call_count"],
+            "skill_count": row["skill_count"],
+            "last_used": row["last_used"].isoformat() if row["last_used"] else None,
+        }
+        for row in rows
+    ]
+
+
 @router.get("/timeline")
 def get_timeline(
     days: int = Query(default=7, ge=1),

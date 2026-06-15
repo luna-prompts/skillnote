@@ -1,6 +1,6 @@
 {
   "name": "skillnote",
-  "version": "0.5.6",
+  "version": "0.6.0",
   "description": "Self-hosted skill registry for AI coding agents",
   "license": "MIT",
   "homepage": "https://github.com/luna-prompts/skillnote",
@@ -70,11 +70,16 @@
     "@types/graceful-fs": "^4.1.9",
     "@types/node": "^22.10.0",
     "@types/write-file-atomic": "^4.0.3",
-    "@vitest/coverage-v8": "^2.1.0",
+    "@vitest/coverage-v8": "^3.2.6",
     "strip-ansi": "^7.1.2",
     "testcontainers": "^10.16.0",
     "tsup": "^8.3.0",
     "typescript": "^5.7.0",
-    "vitest": "^2.1.0"
+    "vitest": "^3.2.6"
+  },
+  "overrides": {
+    "esbuild": "0.28.1",
+    "undici": "^6.26.0",
+    "uuid": "^11.1.1"
   }
 }

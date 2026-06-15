@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 from fastapi import FastAPI, HTTPException, Request, Depends
@@ -40,12 +41,38 @@ from app.api.imports import router as imports_router
 from app.api.marketplace import router as marketplace_router
 from app.api.openclaw import router as openclaw_router, skill_router as openclaw_skill_router
 from app.api.cli import router as cli_router
+from app.api.claude_ai import router as claude_ai_router
 
 app = FastAPI(title="SkillNote Backend", version="0.1.0")
 
+
+def _resolve_cors_origins() -> list[str]:
+    """Resolve allowed CORS origins, refusing a wildcard in prod.
+
+    The connector authenticates with a bearer token in the Authorization
+    header (not cookies), and ``allow_headers="*"`` permits that header
+    cross-origin; the UI endpoints currently have no auth. So a wildcard
+    origin in production would let ANY website the user visits drive the
+    whole connector API from their browser. A wildcard is only acceptable on
+    a local/dev box — refuse it in prod and require explicit origins.
+    """
+    raw = settings.cors_origins
+    if raw == "*":
+        if settings.app_env == "prod":
+            import logging
+
+            logging.getLogger("skillnote").warning(
+                "SKILLNOTE_CORS_ORIGINS='*' is unsafe in production and was "
+                "ignored; set explicit comma-separated origins instead."
+            )
+            return []
+        return ["*"]
+    return [o.strip() for o in raw.split(",") if o.strip()]
+
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins.split(",") if settings.cors_origins != "*" else ["*"],
+    allow_origins=_resolve_cors_origins(),
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -141,6 +168,76 @@ app.include_router(marketplace_router)
 app.include_router(openclaw_router)
 app.include_router(openclaw_skill_router)
 app.include_router(cli_router)
+app.include_router(claude_ai_router)
+
+
+# ── Periodic cleanup: claude.ai pending-pairing expiry ─────────────────────
+# Sweep stale pending_approval integrations every 5 minutes. Cheap query
+# (indexed on pairing_expires_at) so this doesn't add measurable load.
+#
+# Kept inside main.py rather than as a separate worker because: (1) the
+# operation is idempotent and stateless, (2) the API process is the only
+# long-lived backend process today (no celery / no rq), (3) running it
+# alongside the API means any deploy automatically picks up the schedule
+# without ops coordination.
+
+_CLEANUP_INTERVAL_SECONDS = 120  # 2 minutes — reclaims killed-SW ops promptly
+
+
+async def _claude_ai_cleanup_loop() -> None:
+    """Background loop: expire stale pending pairings + reclaim orphaned ops."""
+    from app.db.session import SessionLocal
+    from app.services.claude_ai_sync import (
+        expire_stale_pairings,
+        prune_expired_activity,
+        reclaim_stale_operations,
+    )
+
+    log = logging.getLogger("skillnote.claude_ai.cleanup")
+    while True:
+        try:
+            await asyncio.sleep(_CLEANUP_INTERVAL_SECONDS)
+            with SessionLocal() as db:
+                expired = expire_stale_pairings(db)
+                # Reclaim ops left in_progress by a browser that closed or
+                # whose service worker died mid-sync — otherwise they'd stall
+                # forever, invisible to the queue counters.
+                reclaimed = reclaim_stale_operations(db)
+                # Notifications have a 3-day life — drop anything older so the
+                # feed stays a recent-activity surface, not an archive.
+                pruned = prune_expired_activity(db)
+                db.commit()
+                if expired > 0:
+                    log.info("expired %d stale pending pairing(s)", expired)
+                if reclaimed > 0:
+                    log.info("reclaimed %d stalled sync op(s)", reclaimed)
+                if pruned > 0:
+                    log.info("pruned %d expired notification(s)", pruned)
+        except asyncio.CancelledError:
+            log.info("cleanup loop cancelled")
+            return
+        except Exception:  # noqa: BLE001
+            log.exception("cleanup loop error; continuing")
+
+
+@app.on_event("startup")
+async def _start_cleanup_loop() -> None:
+    """Launch the claude.ai cleanup loop alongside the API.
+
+    Stored on app.state so the shutdown handler can cancel it.
+    """
+    app.state.claude_ai_cleanup_task = asyncio.create_task(_claude_ai_cleanup_loop())
+
+
+@app.on_event("shutdown")
+async def _stop_cleanup_loop() -> None:
+    task = getattr(app.state, "claude_ai_cleanup_task", None)
+    if task and not task.done():
+        task.cancel()
+        try:
+            await task
+        except (asyncio.CancelledError, Exception):  # noqa: BLE001
+            pass
 
 
 @app.get("/health")

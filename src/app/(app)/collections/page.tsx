@@ -1,7 +1,7 @@
 'use client'
 import Link from 'next/link'
 import { TopBar } from '@/components/layout/topbar'
-import { FolderOpen, Plus, ArrowRight, Info, Search } from 'lucide-react'
+import { FolderOpen, Plus, ArrowRight, Info, Search, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -291,12 +291,22 @@ export default function CollectionsPage() {
 
                   {/* Card footer */}
                   <div className="px-5 py-3 border-t border-border/30 flex flex-col gap-2 bg-muted/20">
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between gap-2">
                       <span className={`text-[11px] tabular-nums ${col.skill_count >= 15 ? 'text-red-500' : col.skill_count >= 12 ? 'text-amber-500' : 'text-muted-foreground/60'}`}>
                         <span className="font-semibold">{col.skill_count}</span>
                         {' / 15 skills'}
                       </span>
-                      <ArrowRight className="h-3 w-3 text-muted-foreground/20 group-hover:text-muted-foreground/60 group-hover:translate-x-0.5 transition-all duration-150" />
+                      <div className="flex items-center gap-2">
+                        {/* Read-only at-a-glance badge; the toggle lives inside
+                            the collection (Integrations section). */}
+                        {col.published_to_claude_ai && (
+                          <span className="inline-flex items-center gap-1 text-[10.5px] font-medium text-accent" title="Published to claude.ai">
+                            <Sparkles className="h-3 w-3" />
+                            claude.ai
+                          </span>
+                        )}
+                        <ArrowRight className="h-3 w-3 text-muted-foreground/20 group-hover:text-muted-foreground/60 group-hover:translate-x-0.5 transition-all duration-150" />
+                      </div>
                     </div>
                     {/* Progress bar */}
                     <div className="h-1 w-full rounded-full bg-border/40 overflow-hidden">

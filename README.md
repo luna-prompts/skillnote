@@ -33,7 +33,7 @@
 <br />
 
 <p align="center">
-  <img src="docs/screenshots/connect-browse-r9.png" width="100%" alt="SkillNote Connect page browsing Claude Code and OpenClaw as official agent integrations, each shown with its canonical mark" />
+  <img src="docs/screenshots/connect-browse.png" width="100%" alt="SkillNote Connect page browsing Claude Code, OpenClaw, and claude.ai as official agent integrations, each shown with its canonical mark" />
 </p>
 
 ---
@@ -195,6 +195,38 @@ npx skillnote connect openclaw
 ```
 
 </details>
+
+### claude.ai (web app)
+
+A small Chrome extension syncs your SkillNote collections to your claude.ai account as plugin groups — skills you publish in SkillNote appear in claude.ai's **Customize → Plugins**, and claude.ai-authored skills import back. No copy-paste either way. The extension opens as a **side panel** beside claude.ai, matches its light/dark theme, and shows how often your skills actually get used.
+
+<div align="center">
+  <img src="docs/screenshots/claude-ai-connector.png" width="360" alt="SkillNote claude.ai connector side panel: Connected status, a 'This week on claude.ai' usage card (42 skill uses, most used code-review-checklist), and the collections currently live on claude.ai" />
+</div>
+
+**Install** (Chrome Web Store listing pending review — load unpacked for now):
+
+```bash
+cd extensions/claude-ai && npm install && npm run build
+# chrome://extensions → enable Developer mode → Load unpacked → select dist/
+```
+
+**Connect** — everything happens in the panel, no separate tab:
+
+1. Click the SkillNote toolbar icon to open the side panel.
+2. Enter your SkillNote URL — the same address you open in your browser (e.g. `http://localhost:3000`) — and click **Connect**. (Chrome asks once for permission to reach that address.)
+3. In SkillNote, the **notifications bell** (top-right) shows the pairing request — confirm the code matches and click **Approve**.
+4. Choose what to sync: on any collection in SkillNote, open **Sync ▾ → claude.ai** and flip the toggle. Those skills appear in claude.ai within seconds (as the plugin group `SkillNote: <collection>`), and re-sync automatically on every change.
+
+<div align="center">
+  <img src="docs/screenshots/collection-sync-claude-ai.png" width="100%" alt="A SkillNote collection's Sync menu open, showing the claude.ai connector toggled on — the collection is live on claude.ai as the plugin group 'SkillNote: conventions', with OpenAI listed as coming soon" />
+</div>
+
+You stay in control of what leaves SkillNote: the **Sync** menu is per-collection, so dev-only or sensitive collections simply stay off. Toggle one on and it's live on claude.ai; toggle it off and the connector retires that plugin group.
+
+Sync runs automatically while you're signed in to claude.ai. The extension reads your claude.ai session cookies **locally only** — they never leave your machine, and it only ever talks to claude.ai and the SkillNote URL you entered.
+
+Full walkthrough: [`docs/claude-ai-user-guide.md`](docs/claude-ai-user-guide.md) · architecture: [`docs/claude-ai-integration.md`](docs/claude-ai-integration.md) · admin runbook: [`docs/claude-ai-admin-runbook.md`](docs/claude-ai-admin-runbook.md) · privacy: [`extensions/claude-ai/PRIVACY.md`](extensions/claude-ai/PRIVACY.md).
 
 > Cursor, Codex, Antigravity, and OpenHands are on the roadmap. [Open an issue](https://github.com/luna-prompts/skillnote/issues) if you want to help build an adapter.
 

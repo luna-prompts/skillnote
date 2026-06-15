@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils'
 import { getSkills, syncSkillsFromApi } from '@/lib/skills-store'
 import { useSidebar } from '@/lib/sidebar-context'
 import { ImportModal } from '@/components/import/ImportModal'
+import { NotificationsBell } from '@/components/layout/notifications-bell'
 
 type TopBarProps = {
   view?: 'list' | 'grid'
@@ -100,7 +101,10 @@ export function TopBar({ view = 'list', onViewChange, showViewToggle = false, se
 
   return (
     <>
-      <header className="h-14 border-b border-border/60 bg-card/80 backdrop-blur-sm flex items-center pl-3 pr-3 lg:pl-5 sm:pr-5 gap-2 sm:gap-3 sticky top-0 z-10">
+      {/* z-20: above page-content sticky sub-headers (z-10) so TopBar dropdowns
+          — notably the notifications bell — always paint over page UI. Stays
+          below mobile backdrops (z-30), drawers/FABs (z-40), and modals (z-50). */}
+      <header className="h-14 border-b border-border/60 bg-card/80 backdrop-blur-sm flex items-center pl-3 pr-3 lg:pl-5 sm:pr-5 gap-2 sm:gap-3 sticky top-0 z-20">
         {/* Mobile hamburger — inside header, first item */}
         <button
           onClick={() => setSidebarOpen(true)}
@@ -196,6 +200,8 @@ export function TopBar({ view = 'list', onViewChange, showViewToggle = false, se
                   </Button>
                 </>
               )}
+
+              <NotificationsBell />
 
               <button
                 className="h-8 w-8 flex items-center justify-center rounded-lg border border-border/60 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"

@@ -128,21 +128,13 @@ def main():
         seed_collections(db)
         print("Seeding skills...")
 
-        # 1. Skill Creator (from Anthropic's official skills repo)
-        skill_creator_path = SEEDS_DIR / "skill-creator.md"
-        if skill_creator_path.exists():
-            raw = skill_creator_path.read_text()
-            fm, body = parse_frontmatter(raw)
-            seed_skill(
-                db,
-                slug="skill-creator",
-                name="skill-creator",
-                description=fm.get("description", "Create new skills, modify and improve existing skills, and measure skill performance."),
-                content_md=body,
-                collections=["official"],
-            )
+        # NOTE: we intentionally do NOT seed "skill-creator". It's Anthropic's
+        # own built-in skill (shipped with claude.ai), so seeding a copy is
+        # redundant AND it collides with the claude.ai connector — the
+        # protected "skill-creator" name can't be uploaded (400 "name already
+        # in use"). Removed so the sample catalog syncs cleanly end-to-end.
 
-        # 2. Skill Push (from seeds/ file)
+        # Skill Push (from seeds/ file)
         skill_push_path = SEEDS_DIR / "skill-push.md"
         if skill_push_path.exists():
             raw = skill_push_path.read_text()

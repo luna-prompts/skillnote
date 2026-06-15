@@ -31,6 +31,13 @@ class Skill(Base):
     forked_from_source: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=sa_false()
     )
+    # Per-skill opt-in for the claude.ai connector. Defaults to True so
+    # existing skills sync once the connector is paired; flip to False to
+    # exclude a skill (e.g. local dev experiments) from sync. The UI
+    # surfaces this toggle on the skill detail page.
+    claude_ai_sync_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 

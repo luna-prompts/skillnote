@@ -10,6 +10,11 @@ class CollectionListItem(BaseModel):
     name: str
     count: int
     description: str = ""
+    published_to_claude_ai: bool = False
+
+
+class CollectionPublishUpdate(BaseModel):
+    published: bool
 
 
 class CollectionCreate(BaseModel):
@@ -56,5 +61,6 @@ class CollectionDetail(BaseModel):
 
     name: str
     description: str
+    published_to_claude_ai: bool = False
     created_at: datetime
     updated_at: datetime

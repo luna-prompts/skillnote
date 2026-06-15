@@ -72,6 +72,7 @@ export function deriveCollectionsFromApi(
     name: c.name,
     description: c.description || `${c.name} skills`,
     skill_count: c.count,
+    published_to_claude_ai: c.published_to_claude_ai ?? false,
     updated_at: updatedAtBySkill.get(c.name) || new Date().toISOString(),
   }))
 }

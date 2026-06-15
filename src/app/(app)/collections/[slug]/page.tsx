@@ -2,17 +2,19 @@
 import { TopBar } from '@/components/layout/topbar'
 import { SkillListItem } from '@/components/skills/skill-list-item'
 import { AddSkillsModal } from '@/components/collections/AddSkillsModal'
-import { ArrowLeft, ChevronLeft, ChevronRight, FolderOpen, Info, Minus, Plus, Loader2, Pencil, Trash2, Check, X } from 'lucide-react'
+import { ArrowLeft, ChevronLeft, ChevronRight, ChevronDown, FolderOpen, Info, Minus, Plus, Loader2, Pencil, Trash2, Check, X, Share2 } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { getSkills, syncSkillsFromApi, saveSkillEdit } from '@/lib/skills-store'
-import { fetchCollectionApi, fetchCollectionsApi, updateCollectionApi, deleteCollectionApi, createCollectionApi, type CollectionListItem } from '@/lib/api/collections'
+import { fetchCollectionApi, fetchCollectionsApi, updateCollectionApi, deleteCollectionApi, createCollectionApi, setCollectionClaudeAiPublishApi, type CollectionListItem } from '@/lib/api/collections'
 import { collectionSlug, decodeCollectionSlug } from '@/lib/derived'
 import { type Skill } from '@/lib/mock-data'
 import { toast } from 'sonner'
+import { Connector, type ConnectionState } from '@/components/integrations/connector'
+import { SkillNoteMark, ClaudeAIMark, OpenAIMark } from '@/components/integrations/agent-marks'
 
 export default function CollectionDetailPage() {
   const { slug } = useParams<{ slug: string }>()
@@ -35,6 +37,20 @@ export default function CollectionDetailPage() {
   // API-backed collection metadata (canonical name from API overrides slug decode)
   const [apiDescription, setApiDescription] = useState('')
   const [canonicalName, setCanonicalName] = useState<string | null>(null)
+  // Per-collection claude.ai publishing — banner toggle + popup confirm +
+  // "flying to claude.ai" sync animation.
+  const [publishedToClaudeAi, setPublishedToClaudeAi] = useState(false)
+  type ModalStage = 'closed' | 'confirm' | 'syncing' | 'done'
+  const [modalStage, setModalStage] = useState<ModalStage>('closed')
+  const [unpublishing, setUnpublishing] = useState(false)
+  // Synchronous re-entrancy guard for the publish confirm — blocks a
+  // double-click on "Yes, sync" from firing two publish ops (disabled only
+  // takes effect after React re-renders).
+  const publishingRef = useRef(false)
+  // Connectors dropdown (header "Sync" button) — lists claude.ai + future
+  // connectors. Scales to N connectors without cluttering the header.
+  const [syncOpen, setSyncOpen] = useState(false)
+  const syncMenuRef = useRef<HTMLDivElement>(null)
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
 
@@ -56,18 +72,115 @@ export default function CollectionDetailPage() {
       .then(col => {
         setCanonicalName(col.name)
         setApiDescription(col.description || '')
+        setPublishedToClaudeAi(!!col.published_to_claude_ai)
         setLoading(false)
       })
       .catch(() => {
         // Not in collections table — may be a skill-derived collection
         // Fall back to the decoded slug as the name
         setCanonicalName(null)
+        setPublishedToClaudeAi(false)
         setLoading(false)
       })
   }, [slug])
 
+  // Close the publish modal on Escape — except mid-sync, which must finish
+  // (matches the app's other dialogs, which all support Escape).
+  useEffect(() => {
+    if (modalStage === 'closed') return
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape' && modalStage !== 'syncing') setModalStage('closed')
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [modalStage])
+
+  // Close the connectors dropdown on outside-click / Escape.
+  useEffect(() => {
+    if (!syncOpen) return
+    function onDocClick(e: MouseEvent) {
+      if (syncMenuRef.current && !syncMenuRef.current.contains(e.target as Node)) {
+        setSyncOpen(false)
+      }
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') setSyncOpen(false)
+    }
+    document.addEventListener('mousedown', onDocClick)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDocClick)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [syncOpen])
+
   // Use canonical API name if available, else fall back to decoded slug
   const collectionName = canonicalName || decodeCollectionSlug(slug)
+
+  // Nudge the connector browser extension (if installed + paired on this
+  // origin) to sync NOW instead of waiting for its 1-minute alarm. The
+  // extension injects a content-script bridge on this origin that relays this
+  // window-message to its service worker (same effect as "Sync now" in the
+  // popup). Harmless no-op when the extension isn't installed.
+  function pokeExtensionSync() {
+    try {
+      window.postMessage({ __skillnote: 'sync-now' }, window.location.origin)
+    } catch {
+      /* ignore */
+    }
+  }
+
+  // Toggle clicked: turning ON opens the confirm popup; turning OFF unpublishes.
+  function onPublishToggle() {
+    if (unpublishing || modalStage !== 'closed') return
+    if (publishedToClaudeAi) void unpublish()
+    else {
+      setSyncOpen(false) // close the dropdown so the confirm modal is unobstructed
+      setModalStage('confirm')
+    }
+  }
+
+  // Confirm → run the sync (with the "flying to claude.ai" animation) → done.
+  async function confirmPublish() {
+    if (publishingRef.current) return // guard double-click (see publishingRef)
+    publishingRef.current = true
+    setModalStage('syncing')
+    const started = Date.now()
+    try {
+      const updated = await setCollectionClaudeAiPublishApi(collectionName, true)
+      pokeExtensionSync() // wake the extension to push to claude.ai immediately
+      // let the animation play for a beat so it reads as a real transfer
+      const elapsed = Date.now() - started
+      await new Promise(r => setTimeout(r, Math.max(0, 2000 - elapsed)))
+      // Trust the value the API actually persisted, not what we requested.
+      setPublishedToClaudeAi(updated.published_to_claude_ai ?? true)
+      // Publishing a skill-derived collection materializes a real collections
+      // row server-side (the PUT upserts). Adopt its canonical name so the row
+      // now exists in the UI's eyes and later edit/unpublish target it.
+      setCanonicalName(updated.name)
+      setModalStage('done')
+    } catch (err) {
+      setModalStage('closed')
+      toast.error(err instanceof Error ? err.message : 'Could not publish to claude.ai')
+    } finally {
+      publishingRef.current = false
+    }
+  }
+
+  async function unpublish() {
+    setUnpublishing(true)
+    try {
+      const updated = await setCollectionClaudeAiPublishApi(collectionName, false)
+      pokeExtensionSync() // wake the extension to retire the group on claude.ai now
+      setPublishedToClaudeAi(updated.published_to_claude_ai ?? false)
+      setCanonicalName(updated.name)
+      toast.success(`Removed “${collectionName}” from claude.ai`)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not unpublish')
+    } finally {
+      setUnpublishing(false)
+    }
+  }
 
   const filtered = useMemo(
     () => skills.filter(s => (s.collections || []).some(c => c.toLowerCase() === collectionName.toLowerCase())),
@@ -330,7 +443,7 @@ export default function CollectionDetailPage() {
                   {apiDescription ? (
                     <p className="text-[12px] text-muted-foreground/70 mt-0.5 leading-relaxed">{apiDescription}</p>
                   ) : null}
-                  <div className="mt-0.5 flex items-center gap-1.5 text-[12px]">
+                  <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-1.5 text-[12px]">
                     {(() => {
                       const total = filtered.length
                       const MAX = 15
@@ -370,7 +483,9 @@ export default function CollectionDetailPage() {
                         </TooltipContent>
                       </Tooltip>
                     </TooltipProvider>
+
                   </div>
+
                 </div>
               </div>
 
@@ -404,6 +519,86 @@ export default function CollectionDetailPage() {
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
+                )}
+
+                {/* Connectors — one "Sync" button opening a dropdown of all
+                    connectors (claude.ai now, OpenAI soon, room for more).
+                    Keeps the header clean and scales to N connectors. */}
+                {filtered.length > 0 && (
+                  <div ref={syncMenuRef} className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setSyncOpen(o => !o)}
+                      aria-haspopup="menu"
+                      aria-expanded={syncOpen}
+                      title="Sync this collection to connected apps"
+                      className="relative flex items-center gap-1.5 h-8 pl-2.5 pr-2 rounded-lg text-[13px] font-medium text-foreground/80 border border-border hover:bg-muted/60 transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                    >
+                      <Share2 className="h-3.5 w-3.5" />
+                      Sync
+                      {publishedToClaudeAi && (
+                        <span className="absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-background" />
+                      )}
+                      <ChevronDown className={cn('h-3 w-3 text-muted-foreground/60 transition-transform', syncOpen && 'rotate-180')} />
+                    </button>
+
+                    {syncOpen && (
+                      <div className="absolute right-0 top-full mt-1.5 z-30 w-64 rounded-xl border border-border bg-card shadow-xl p-1.5 animate-in fade-in zoom-in-95 duration-100">
+                        <p className="px-2 pt-1 pb-1.5 text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground/55">
+                          Send this collection to
+                        </p>
+
+                        {/* claude.ai — live */}
+                        <div className="flex items-center justify-between gap-3 rounded-lg px-2 py-1.5 hover:bg-muted/50">
+                          <span className="flex items-center gap-2 min-w-0">
+                            <ClaudeAIMark size={18} />
+                            <span className="min-w-0">
+                              <span className="block text-[12.5px] font-medium text-foreground leading-tight">claude.ai</span>
+                              <span className="block text-[10.5px] text-muted-foreground/70 leading-tight truncate">
+                                {publishedToClaudeAi ? <>Live as “SkillNote: {collectionName}”</> : 'Not synced'}
+                              </span>
+                            </span>
+                          </span>
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-checked={publishedToClaudeAi}
+                            aria-label={`${publishedToClaudeAi ? 'Remove from' : 'Sync to'} claude.ai`}
+                            disabled={unpublishing}
+                            onClick={onPublishToggle}
+                            className={cn(
+                              'relative inline-flex h-[18px] w-8 shrink-0 rounded-full transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+                              publishedToClaudeAi ? 'bg-accent' : 'bg-border',
+                              unpublishing && 'opacity-50 cursor-not-allowed',
+                            )}
+                          >
+                            <span className={cn(
+                              'absolute top-0.5 h-3.5 w-3.5 rounded-full bg-white shadow transition-transform duration-200',
+                              publishedToClaudeAi ? 'translate-x-[15px]' : 'translate-x-0.5',
+                            )} />
+                          </button>
+                        </div>
+
+                        {/* OpenAI — coming soon */}
+                        <div className="flex items-center justify-between gap-3 rounded-lg px-2 py-1.5 opacity-60 select-none">
+                          <span className="flex items-center gap-2 min-w-0">
+                            <OpenAIMark size={18} />
+                            <span className="min-w-0">
+                              <span className="block text-[12.5px] font-medium text-foreground leading-tight">OpenAI</span>
+                              <span className="block text-[10.5px] text-muted-foreground/70 leading-tight">Coming soon</span>
+                            </span>
+                          </span>
+                          <span className="rounded-full bg-muted px-1.5 py-px text-[9px] font-semibold uppercase tracking-wide text-muted-foreground/70">
+                            Soon
+                          </span>
+                        </div>
+
+                        <p className="px-2 pt-1.5 pb-1 text-[10.5px] text-muted-foreground/45">
+                          More connectors coming soon.
+                        </p>
+                      </div>
+                    )}
+                  </div>
                 )}
 
                 <button
@@ -500,6 +695,97 @@ export default function CollectionDetailPage() {
           onClose={() => setShowAddModal(false)}
           onAdded={refresh}
         />
+      )}
+
+      {/* ── claude.ai publish popup: confirm → flying-to-claude.ai → done ── */}
+      {modalStage !== 'closed' && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-in fade-in duration-150"
+          onClick={() => { if (modalStage === 'confirm') setModalStage('closed') }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Sync collection to claude.ai"
+            className="w-full max-w-[420px] rounded-2xl border border-border bg-card shadow-2xl p-6 break-words animate-in zoom-in-95 duration-150"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Brand transfer row: SkillNote collection ──wire──▶ claude.ai */}
+            <div className="flex items-center gap-1">
+              <div className="flex flex-col items-center gap-2 shrink-0 w-[76px]">
+                <SkillNoteMark size={46} />
+                <span className="text-[10.5px] font-medium text-foreground max-w-[76px] truncate capitalize">{collectionName}</span>
+              </div>
+              <Connector
+                state={
+                  (modalStage === 'syncing'
+                    ? 'connecting'
+                    : modalStage === 'done'
+                      ? 'active'
+                      : 'pending') as ConnectionState
+                }
+              />
+              <div className="flex flex-col items-center gap-2 shrink-0 w-[76px]">
+                <ClaudeAIMark size={46} />
+                <span className="text-[10.5px] text-muted-foreground/80">claude.ai</span>
+              </div>
+            </div>
+
+            {modalStage === 'confirm' && (
+              <div className="mt-4 text-center">
+                <h3 className="text-[15px] font-semibold text-foreground">
+                  Sync <span className="capitalize">“{collectionName}”</span> to claude.ai?
+                </h3>
+                <p className="mt-1.5 text-[12.5px] text-muted-foreground leading-relaxed">
+                  {filtered.length} skill{filtered.length === 1 ? '' : 's'} will appear as the{' '}
+                  <span className="font-medium text-foreground">“SkillNote: {collectionName}”</span> plugin group.
+                </p>
+                <div className="mt-5 flex items-center gap-2">
+                  <button
+                    onClick={() => setModalStage('closed')}
+                    className="flex-1 h-9 rounded-lg text-[13px] text-muted-foreground bg-muted/50 hover:bg-muted hover:text-foreground transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={confirmPublish}
+                    className="flex-1 h-9 rounded-lg text-[13px] font-medium bg-accent text-white hover:bg-accent/90 active:scale-95 transition-all"
+                  >
+                    Yes, sync
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {modalStage === 'syncing' && (
+              <p className="mt-4 text-center text-[13px] font-medium text-foreground">
+                Syncing to claude.ai…
+              </p>
+            )}
+
+            {modalStage === 'done' && (
+              <div className="mt-4">
+                <h3 className="text-center text-[15px] font-semibold text-foreground">Synced to claude.ai</h3>
+                <div className="mt-3 rounded-lg bg-muted/40 border border-border/50 px-3.5 py-3">
+                  <p className="text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground/55 mb-1.5">
+                    How to check it
+                  </p>
+                  <ol className="text-[11.5px] text-muted-foreground/85 leading-relaxed space-y-1 list-decimal pl-4">
+                    <li>Open <a href="https://claude.ai/customize" target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">claude.ai</a> → <span className="font-medium">Customize → Plugins</span></li>
+                    <li>Find <span className="font-medium">“SkillNote: {collectionName}”</span> under Personal plugins</li>
+                    <li>Type <span className="font-mono bg-background px-1 rounded text-[11px]">/</span> in any chat to use a skill</li>
+                  </ol>
+                </div>
+                <button
+                  onClick={() => setModalStage('closed')}
+                  className="mt-4 w-full h-9 rounded-lg text-[13px] font-medium bg-foreground text-background hover:bg-foreground/90 active:scale-95 transition-all"
+                >
+                  Done
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
       )}
     </>
   )
