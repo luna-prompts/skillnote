@@ -18,6 +18,7 @@ import { SkillViewTab } from './tabs/SkillViewTab'
 import { SkillEditTab } from './tabs/SkillEditTab'
 import { InstallDialog } from './InstallDialog'
 import { SkillSyncBadge } from '@/components/integrations/claude-ai/skill-sync-badge'
+import { BundlePill } from './BundlePill'
 
 type PaletteAction = {
   icon: React.ComponentType<{ className?: string }>
@@ -547,6 +548,7 @@ export function SkillDetail({ skill, onSkillUpdated }: { skill: Skill; onSkillUp
                       <Clock className="h-3 w-3" />
                       {formatRelative(skill.updated_at)}
                     </span>
+                    <BundlePill skill={skill} size="md" className="rounded-full px-2.5 py-1 max-w-[220px]" />
                     {(skill.id || skill.slug) && (
                       <SkillSyncBadge
                         // Offline-first records often lack the backend UUID;

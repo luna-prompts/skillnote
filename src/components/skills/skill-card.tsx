@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { Skill } from '@/lib/mock-data'
 import { MessageSquare, Paperclip, Star } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { BundlePill } from './BundlePill'
 
 const CARD_ACCENTS = [
   { bg: 'bg-violet-500/10 dark:bg-violet-500/15', text: 'text-violet-600 dark:text-violet-400', border: 'border-violet-500/15', dot: 'bg-violet-400' },
@@ -61,12 +62,13 @@ export function SkillCard({ skill, rating }: { skill: Skill; rating?: { avg_rati
           {skill.description}
         </p>
         <div className="flex items-center justify-between pt-3 border-t border-border/30">
-          <div className="flex gap-1.5 flex-wrap items-center">
+          <div className="flex gap-1.5 flex-wrap items-center min-w-0">
             {skill.current_version > 0 && (
               <span className="text-[10px] font-mono font-medium text-accent/70 bg-accent/10 px-1.5 py-0.5 rounded-md">
                 v{skill.current_version}
               </span>
             )}
+            <BundlePill skill={skill} />
           </div>
           {rating && rating.rating_count > 0 && rating.avg_rating != null && (
             <span className="flex items-center gap-1 text-[10px] text-amber-600 dark:text-amber-400">

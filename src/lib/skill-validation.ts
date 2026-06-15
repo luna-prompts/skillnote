@@ -3,7 +3,7 @@
 export const NAME_MAX = 64
 export const DESC_MAX = 1024
 
-const NAME_PATTERN = /^[a-z0-9-]+$/
+const NAME_PATTERN = /^[a-z0-9_-]+(?::[a-z0-9_-]+)?$/
 const RESERVED_WORDS = ['anthropic', 'claude']
 const XML_TAG_RE = /<\/?[a-zA-Z][^>]*>/
 // Windows-reserved device names — a skill folder named one of these can't be
@@ -28,7 +28,7 @@ export function validateSkillName(name: string): ValidationError[] {
     errors.push({ field: 'name', message: `Name must be ${NAME_MAX} characters or fewer (currently ${name.length})` })
   }
   if (!NAME_PATTERN.test(name)) {
-    errors.push({ field: 'name', message: 'Only lowercase letters, numbers, and hyphens allowed' })
+    errors.push({ field: 'name', message: 'Only lowercase letters, numbers, hyphens, underscores, and an optional namespace prefix allowed (e.g. ns:name)' })
   }
   for (const word of RESERVED_WORDS) {
     if (name.includes(word)) {
@@ -72,18 +72,25 @@ export function validateCollections(collections: string[]): ValidationError[] {
  * Use on every keystroke in name inputs so the user sees the result live.
  */
 export function normalizeSkillName(raw: string): string {
-  return raw
+  const s = raw
     .toLowerCase()
-    .replace(/\s+/g, '-')       // spaces → hyphens (Slack-style)
-    .replace(/[^a-z0-9-]/g, '') // strip anything invalid
-    .replace(/-+/g, '-')        // collapse consecutive hyphens
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9_:-]/g, '')
+    .replace(/-+/g, '-')
+  // Enforce at most one colon in ns:local form; strip any extra colons
+  const [ns, ...rest] = s.split(':')
+  if (rest.length === 0) return ns
+  return `${ns}:${rest.join('').replace(/:/g, '')}`
 }
 
 export function slugFromName(name: string): string {
-  return name
+  const s = name
     .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/[^a-z0-9\s_:-]/g, '')
     .replace(/\s+/g, '-')
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '')
+  const [ns, ...rest] = s.split(':')
+  if (rest.length === 0) return ns
+  return `${ns}:${rest.join('').replace(/:/g, '')}`
 }

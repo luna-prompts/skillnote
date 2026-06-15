@@ -3,6 +3,29 @@
 All notable changes to SkillNote will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.5.5] - 2026-05-26
+
+Visibility fix for bundled skills (closes #57). Skills imported from a marketplace, plugin, or `skill_bundle` import source were indistinguishable from locally-authored skills in the grid/list views — the only origin surface was the right-rail `SourceCard` on the detail page, which required clicking into a skill to see. ozp reported that with many bundled skills loaded, the library became hard to scan. This release adds a single small `BundlePill` component used consistently in three places so bundled-vs-local is identifiable at a glance.
+
+No API changes, no schema changes, no breaking changes. The pill detects bundled state from fields the backend already returns (`origin`, `source_path`, `import_source_id`); no migration required.
+
+### Added
+
+- **`BundlePill` component** (`src/components/skills/BundlePill.tsx`). Renders a small `📦 owner/repo` pill when a skill carries an import source. Label fallback chain: `origin.owner/repo` → `source_path` head (before `@`) → `origin.host` → literal `"Bundled"`. Two size variants (`sm` for cards/list rows, `md` for the detail header meta row) and a forked/edited variant (amber background + `·edited` suffix) when the user has diverged from the upstream. Truncates at `max-w-[160px]` for `sm` and `220px` for `md`, with native `title` tooltip exposing the full source path.
+- **`BundlePill` wired into `SkillCard`** (grid view): footer row next to the `v{N}` chip. Flex-wraps below the version chip on narrow cards so the right-side rating star never gets compressed.
+- **`BundlePill` wired into `SkillListItem`** (list view): right-side group before the rating + version chips. Follows the existing `hidden sm:inline-flex` pattern so it shares mobile-hiding behavior with the other meta chips in list rows. Mobile users still see the pill on the grid view, which is the default cards layout at narrow widths.
+- **`BundlePill` wired into `SkillDetail`** header: in the meta pill row immediately after the `Clock | <relative time>` chip and before any collection chips, so source provenance reads with the skill-intrinsic chips rather than after categorization chips. The right-rail `SourceCard` is preserved untouched — it still carries the full repo/branch/sha/path breakdown for users who want the detail.
+
+### Deferred (intentionally out of scope)
+
+- **Sources management page.** Could list every `import_source` with its skills, last-synced status, and drift indicators. Held back until users actually have enough bundled skills to need a management surface — premature dashboarding tends to clutter.
+- **Bulk actions on bundled skills.** Multi-select to refresh / unpin / delete an entire bundle at once. Same reasoning — wait for the pain to be reported.
+- **Filter facet for `Source` on the home page.** A "Local / Bundled / per-source" filter axis alongside Collections would solve organization-at-scale, but #57's reported problem is scannability (a visual identity gap), not filtering. Shipping the pill first lets us see whether the filter is still wanted once bundled skills are visually distinct.
+
+### Internal
+
+- **Frontend-only release.** Touched files: `src/components/skills/BundlePill.tsx` (new, 70 LOC), `src/components/skills/skill-card.tsx` (+2 LOC), `src/components/skills/skill-list-item.tsx` (+2 LOC), `src/components/skills/skill-detail.tsx` (+2 LOC). No backend changes; the `origin` object on `SkillListItem` / `SkillDetail` API responses already carried everything the pill needs.
+
 ## [0.5.4] - 2026-05-15
 
 Hotfix release for a post-0.5.3 `/analytics` page crash. Single bug, plus an audit pass to verify no related null-safety issues lurking elsewhere.

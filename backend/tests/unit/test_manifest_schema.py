@@ -97,3 +97,34 @@ def test_skill_description_too_long():
 def test_skill_name_too_long():
     with pytest.raises(ValidationError):
         SkillFrontmatter.model_validate({"name": "a" * 65, "description": "fine"})
+
+
+# namespace prefix (ns:name) cases
+def test_skill_frontmatter_namespaced_name_valid():
+    fm = SkillFrontmatter.model_validate({"name": "ckm:my-skill", "description": "Does stuff."})
+    assert fm.name == "ckm:my-skill"
+
+def test_skill_frontmatter_namespaced_hyphens_valid():
+    fm = SkillFrontmatter.model_validate({"name": "a-b:c-d", "description": "Fine."})
+    assert fm.name == "a-b:c-d"
+
+def test_skill_frontmatter_multiple_colons_rejected():
+    with pytest.raises(ValidationError):
+        SkillFrontmatter.model_validate({"name": "a:b:c", "description": "bad"})
+
+def test_skill_frontmatter_leading_colon_rejected():
+    with pytest.raises(ValidationError):
+        SkillFrontmatter.model_validate({"name": ":name", "description": "bad"})
+
+def test_skill_frontmatter_trailing_colon_rejected():
+    with pytest.raises(ValidationError):
+        SkillFrontmatter.model_validate({"name": "ns:", "description": "bad"})
+
+def test_skill_frontmatter_namespaced_max_length_boundary():
+    name = "a" * 31 + ":" + "b" * 32  # 64 chars total
+    fm = SkillFrontmatter.model_validate({"name": name, "description": "Fine."})
+    assert fm.name == name
+
+def test_skill_frontmatter_namespaced_max_length_exceeded():
+    with pytest.raises(ValidationError):
+        SkillFrontmatter.model_validate({"name": "a" * 32 + ":" + "b" * 32, "description": "fine"})

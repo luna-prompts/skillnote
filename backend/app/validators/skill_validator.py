@@ -3,7 +3,7 @@ import re
 NAME_MAX = 64
 DESC_MAX = 1024
 MAX_SKILLS_PER_COLLECTION = 15
-NAME_PATTERN = re.compile(r"^[a-z0-9-]+$")
+NAME_PATTERN = re.compile(r"^[a-z0-9_-]+(?::[a-z0-9_-]+)?$")
 XML_TAG_RE = re.compile(r"</?[a-zA-Z][^>]*>")
 RESERVED_WORDS = ["anthropic", "claude"]
 # Windows reserves these device names — a directory/file with one of these
@@ -28,7 +28,7 @@ def validate_skill_name(name: str) -> list[str]:
     if len(name) > NAME_MAX:
         errors.append(f"Name must be {NAME_MAX} characters or fewer")
     if not NAME_PATTERN.match(name):
-        errors.append("Name must contain only lowercase letters, numbers, and hyphens")
+        errors.append("Name must use only lowercase letters, numbers, hyphens, and underscores, with an optional namespace prefix (e.g. ns:name)")
     for word in RESERVED_WORDS:
         if word in name:
             errors.append(f'Name cannot contain reserved word "{word}"')

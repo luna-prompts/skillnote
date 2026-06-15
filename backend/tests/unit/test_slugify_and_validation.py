@@ -125,9 +125,8 @@ class TestValidateSkillName:
         errors = validate_skill_name("<script>alert</script>")
         assert len(errors) > 0
 
-    def test_underscores_rejected(self):
-        errors = validate_skill_name("my_skill")
-        assert any("lowercase" in e.lower() or "hyphens" in e.lower() for e in errors)
+    def test_underscores_allowed(self):
+        assert validate_skill_name("my_skill") == []
 
     # ── Windows reserved device names (cross-OS install safety) ──────────
     @pytest.mark.parametrize(
@@ -154,6 +153,40 @@ class TestValidateSkillName:
     def test_special_chars_specific_error(self):
         errors = validate_skill_name("my@skill!")
         assert any("lowercase" in e.lower() or "hyphens" in e.lower() for e in errors)
+
+    # namespace prefix (ns:name) cases
+    def test_namespaced_name_valid(self):
+        assert validate_skill_name("ckm:my-skill") == []
+
+    def test_namespaced_name_with_hyphens_valid(self):
+        assert validate_skill_name("a-b:c-d") == []
+
+    def test_namespaced_name_max_length_boundary(self):
+        # 31 chars ns + colon + 32 chars local = 64 total
+        assert validate_skill_name("a" * 31 + ":" + "b" * 32) == []
+
+    def test_namespaced_name_max_length_exceeded(self):
+        errors = validate_skill_name("a" * 32 + ":" + "b" * 32)
+        assert any("64" in e or "fewer" in e.lower() for e in errors)
+
+    def test_multiple_colons_rejected(self):
+        errors = validate_skill_name("a:b:c")
+        assert len(errors) > 0
+
+    def test_leading_colon_rejected(self):
+        errors = validate_skill_name(":name")
+        assert len(errors) > 0
+
+    def test_trailing_colon_rejected(self):
+        errors = validate_skill_name("ns:")
+        assert len(errors) > 0
+
+    def test_namespaced_uppercase_rejected(self):
+        errors = validate_skill_name("NS:name")
+        assert len(errors) > 0
+
+    def test_namespaced_underscore_allowed(self):
+        assert validate_skill_name("ns:my_skill") == []
 
 
 # ── validate_skill_description tests ─────────────────────────────────
