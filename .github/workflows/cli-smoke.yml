@@ -42,5 +42,9 @@ jobs:
       - name: Run skillnote --version
         run: cd /tmp/sn-smoke && npx skillnote --version
       - name: Run smoke tests
-        run: npm run test -- tests/smoke
+        # tests/smoke/ is currently empty (and excluded from the default vitest
+        # run). vitest 3 exits 1 on "no test files found" (vitest 2 passed), so
+        # pass explicitly until smoke specs exist. The real smoke validation is
+        # the npm-pack + `skillnote --version` steps above.
+        run: npm run test -- tests/smoke --passWithNoTests
         timeout-minutes: 15
