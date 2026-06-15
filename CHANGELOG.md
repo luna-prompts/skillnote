@@ -3,6 +3,56 @@
 All notable changes to SkillNote will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.6.0] - 2026-06-15
+
+**The claude.ai connector.** SkillNote now syncs your collections to your
+claude.ai account and pulls claude.ai-authored skills back — no copy-paste
+either way. A self-hosted browser extension reads your existing claude.ai
+session locally and talks only to claude.ai and your own SkillNote URL; the
+SkillNote project never sees your data.
+
+Minor version bump (not a patch): this adds a new distribution surface, new
+backend endpoints, eight database migrations, and a browser extension. No
+breaking changes to existing skill/collection/version APIs.
+
+### Added
+
+- **claude.ai browser extension** (`extensions/claude-ai/`, versioned `0.1.0`
+  for the Chrome Web Store / Firefox AMO). Opens as a **side panel** beside
+  claude.ai, pairs in-panel (6-char code approved via the SkillNote
+  notifications bell — no separate tab), and matches claude.ai's light/dark
+  appearance in real time. Surfaces how often your skills get used and which
+  collections are live. 153 unit tests.
+- **Per-collection publishing to claude.ai.** A collection's **Sync** menu
+  toggles it on; it appears in claude.ai's **Customize → Plugins** as the
+  plugin group `SkillNote: <collection>` and re-syncs on every change. You
+  choose what leaves SkillNote per-collection; dev-only or sensitive
+  collections simply stay off. Backed by `published_to_claude_ai` on
+  collections.
+- **Per-skill sync toggle** (`Syncing to claude.ai` badge) and **conflict
+  resolution** (keep-SkillNote / keep-claude.ai / skip) when the same skill
+  diverges on both sides.
+- **Notifications** (renamed from Activity). A unified feed of connector and
+  skill-lifecycle events (create / edit / delete / restore), kept for 3 days,
+  reachable from the sidebar, the top-right bell, and the extension panel.
+- **Backend sync engine**: pairing handshake, an idempotent sync queue with
+  coalescing, a stalled-op reaper, conflict detection, an audit log, a
+  `POST /v1/claude-ai/extension/reconcile` recovery endpoint, and
+  filtering/pagination on `GET /v1/collections` (`q`, `published`, `limit` +
+  `X-Total-Count`).
+- **Validation hardening**: Windows-reserved skill names (`con`, `nul`,
+  `com1`…) are rejected, and namespaced skill names (`owner:skill`) are
+  accepted — mirrored frontend and backend.
+- **Migrations 0021–0028** (cookie-expired audit, sync-op indexes/columns,
+  collection publish flag, staged version links, session names, skill-event
+  audit constraint). Single linear head.
+
+### Notes
+
+- The extension is not yet on the Chrome Web Store (listing pending review);
+  load it unpacked from `extensions/claude-ai/dist` for now. See
+  `docs/claude-ai-user-guide.md` and `extensions/claude-ai/STORE_LISTING.md`.
+
 ## [0.5.5] - 2026-05-26
 
 Visibility fix for bundled skills (closes #57). Skills imported from a marketplace, plugin, or `skill_bundle` import source were indistinguishable from locally-authored skills in the grid/list views — the only origin surface was the right-rail `SourceCard` on the detail page, which required clicking into a skill to see. ozp reported that with many bundled skills loaded, the library became hard to scan. This release adds a single small `BundlePill` component used consistently in three places so bundled-vs-local is identifiable at a glance.
