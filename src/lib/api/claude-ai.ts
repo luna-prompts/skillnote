@@ -113,6 +113,12 @@ export type AuditEvent =
   | 'token_revoked'
   | 'op_retried'
   | 'sync_triggered'
+  // General (non-connector) notifications — skill lifecycle. The feed is a
+  // unified stream; pairing/sync is just one source among these.
+  | 'skill_created'
+  | 'skill_updated'
+  | 'skill_deleted'
+  | 'skill_restored'
 
 export interface AuditEventOut {
   id: string

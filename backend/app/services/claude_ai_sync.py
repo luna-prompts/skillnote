@@ -209,12 +209,13 @@ def expire_stale_pairings(db: Session) -> int:
 
 # Ops are leased to one extension at fetch time (status flips to in_progress).
 # If that extension never reports a result — browser closed, service worker
-# killed, machine slept — the op would otherwise sit in_progress forever:
-# the fetch path only returns `pending`, so it's never retried, and it's
-# invisible to `pending_op_count`. The lease window is generous (the extension
-# ticks every 60s and ops complete in seconds) so we never reclaim an op that
-# is legitimately still being worked.
-_OP_LEASE = timedelta(minutes=10)
+# killed mid-op (the common MV3 case), machine slept — the op would otherwise
+# sit in_progress forever: the fetch path only returns `pending`, so it's never
+# retried, and it's invisible to `pending_op_count`. Lease = 3 min: ops complete
+# in seconds (claude.ai calls cap at 60s), so this is comfortably above a real
+# op yet "fails fast" — a killed-SW op is reclaimed and retried within ~3 min
+# instead of stalling for 10. The cleanup loop also runs more often (see main).
+_OP_LEASE = timedelta(minutes=3)
 _MAX_OP_ATTEMPTS = 3  # must match complete_operation's retry budget
 
 
@@ -243,16 +244,32 @@ def reclaim_stale_operations(db: Session, *, now: Optional[datetime] = None) -> 
         if op.attempts >= _MAX_OP_ATTEMPTS:
             op.status = "failed"
             op.completed_at = now
-            op.last_error = (
-                "Timed out — the browser didn't report a result within the "
-                "sync window. Re-pair the browser or use Retry."
+            msg = (
+                f"Sync failed after {op.attempts} attempts — the browser didn't "
+                "finish the push (it may have signed out of claude.ai, or the tab "
+                "or background worker closed mid-sync). Use Retry."
             )
+            op.last_error = msg
+            # Surface on the integration too: this op was never reported by the
+            # extension (its worker was killed), so ONLY the server knows it
+            # failed. Without this the popup's error state never fires and the
+            # user is left guessing — exactly the "tell me after the attempts"
+            # gap. The extension reads integ.last_error on its next tick.
+            integ = db.get(ClaudeAIIntegration, op.integration_id)
+            if integ is not None and integ.status == "active":
+                integ.last_error = msg
             write_audit(
                 db,
                 event="op_failed",
                 integration_id=op.integration_id,
                 skill_id=op.skill_id,
-                detail={"op_id": str(op.id), "kind": op.kind, "reason": "lease_timeout"},
+                detail={
+                    "op_id": str(op.id),
+                    "kind": op.kind,
+                    "attempts": op.attempts,
+                    "reason": "lease_timeout",
+                    "error": msg,
+                },
             )
         else:
             # Back to pending — the next fetch picks it up and retries.
@@ -406,6 +423,12 @@ def write_audit(
     return row
 
 
+# Notifications have a short life: the feed is a "what happened recently"
+# surface, not an archive. Rows older than this are never returned (and are
+# pruned by the scheduled cleanup), so the page and bell stay glanceable.
+_ACTIVITY_TTL = timedelta(days=3)
+
+
 def query_audit(
     db: Session,
     *,
@@ -417,15 +440,19 @@ def query_audit(
     until: Optional[datetime] = None,
     skill_id: Optional[UUID] = None,
 ) -> list[ClaudeAIAuditLog]:
-    """Paginated audit-log query for the activity feed UI.
+    """Paginated notifications query for the activity feed UI.
 
-    ``since`` / ``until`` define an inclusive date window for compliance
-    queries ("show me everything between Mar 1 and Mar 14"). ``skill_id``
-    scopes to events that involved a specific skill — useful for
-    debugging "why did this skill keep failing?" without scrolling the
-    entire log. All filters AND together.
+    The feed has a 3-day life (``_ACTIVITY_TTL``): rows older than that are
+    never returned regardless of other filters. ``skill_id`` scopes to
+    events that involved a specific skill. ``before`` is a created_at cursor
+    for "load older" within the window. All filters AND together.
     """
-    stmt = select(ClaudeAIAuditLog).order_by(desc(ClaudeAIAuditLog.created_at))
+    floor = datetime.now(timezone.utc) - _ACTIVITY_TTL
+    stmt = (
+        select(ClaudeAIAuditLog)
+        .where(ClaudeAIAuditLog.created_at >= floor)
+        .order_by(desc(ClaudeAIAuditLog.created_at))
+    )
     if integration_id is not None:
         stmt = stmt.where(ClaudeAIAuditLog.integration_id == integration_id)
     if event is not None:
@@ -440,6 +467,21 @@ def query_audit(
         stmt = stmt.where(ClaudeAIAuditLog.skill_id == skill_id)
     stmt = stmt.limit(min(max(limit, 1), 500))
     return list(db.execute(stmt).scalars().all())
+
+
+def prune_expired_activity(db: Session) -> int:
+    """Delete notification rows past their 3-day life. Returns rows removed.
+
+    Called by the background cleanup loop. The display query already hides
+    older rows (see ``query_audit``); this keeps the table from growing
+    unbounded. Caller commits.
+    """
+    floor = datetime.now(timezone.utc) - _ACTIVITY_TTL
+    return (
+        db.query(ClaudeAIAuditLog)
+        .filter(ClaudeAIAuditLog.created_at < floor)
+        .delete(synchronize_session=False)
+    ) or 0
 
 
 # ── Rate limiting (pair endpoint) ─────────────────────────────────────────────
@@ -673,6 +715,39 @@ def enqueue_periodic_list(
 # ── Integration counters (for the status response) ────────────────────────────
 
 
+def published_skill_count(db: Session) -> int:
+    """Count distinct skills currently synced to claude.ai via the named-group
+    model — skills whose *latest* content version belongs to a collection
+    toggled ``published_to_claude_ai`` (case-insensitive, mirroring the publish
+    manifest in claude_ai_marketplace.collect_published_collection_plugins).
+
+    This is what "Skills synced" means now. The legacy per-skill
+    ``claude_ai_skill_links`` table is NOT populated by the group model, so
+    counting it always returned 0 — making a successful sync look like it did
+    nothing. The publish state is global (a collection toggle, not per-browser),
+    so every paired integration reports the same synced-skill total.
+    """
+    from sqlalchemy import text
+
+    return int(
+        db.execute(
+            text(
+                "SELECT COUNT(DISTINCT s.id) FROM skills s "
+                "JOIN skill_content_versions scv "
+                "  ON scv.skill_id = s.id AND scv.is_latest = true "
+                "WHERE EXISTS ("
+                "  SELECT 1 FROM collections col "
+                "  WHERE col.published_to_claude_ai = true "
+                "    AND EXISTS ("
+                "      SELECT 1 FROM unnest(scv.collections) AS c "
+                "      WHERE lower(c) = lower(col.name)"
+                "    )"
+                ")"
+            )
+        ).scalar_one()
+    )
+
+
 def integration_counters(db: Session, integration_id: UUID) -> dict[str, int]:
     """Compose pending/failed/linked counts for a single integration.
 
@@ -695,10 +770,10 @@ def integration_counters(db: Session, integration_id: UUID) -> dict[str, int]:
             ClaudeAISyncOperation.status == "failed",
         )
     ).scalar_one()
-    linked = db.execute(
-        select(_func.count(ClaudeAISkillLink.id))
-        .where(ClaudeAISkillLink.integration_id == integration_id)
-    ).scalar_one()
+    # "Skills synced" = skills live on claude.ai via published collections, NOT
+    # skill_links (the group model never creates those, so it always read 0 and
+    # made a working sync look broken).
+    linked = published_skill_count(db)
     return {
         "pending_op_count": int(pending),
         "failed_op_count": int(failed),
@@ -742,22 +817,16 @@ def bulk_integration_counters(
         .group_by(ClaudeAISyncOperation.integration_id)
     ).all()
 
-    link_rows = db.execute(
-        select(
-            ClaudeAISkillLink.integration_id,
-            _func.count(ClaudeAISkillLink.id).label("linked"),
-        )
-        .where(ClaudeAISkillLink.integration_id.in_(integration_ids))
-        .group_by(ClaudeAISkillLink.integration_id)
-    ).all()
+    # Skills synced is a GLOBAL value in the named-group model (publish is a
+    # collection toggle, not per-browser) — one count, applied to every row.
+    # Replaces the old per-integration skill_links count, which is always 0 now.
+    linked = published_skill_count(db)
 
     out: dict[UUID, dict[str, int]] = {
-        i: {"pending_op_count": 0, "failed_op_count": 0, "linked_skill_count": 0}
+        i: {"pending_op_count": 0, "failed_op_count": 0, "linked_skill_count": linked}
         for i in integration_ids
     }
     for row in op_rows:
         out[row.integration_id]["pending_op_count"] = int(row.pending or 0)
         out[row.integration_id]["failed_op_count"] = int(row.failed or 0)
-    for row in link_rows:
-        out[row.integration_id]["linked_skill_count"] = int(row.linked or 0)
     return out

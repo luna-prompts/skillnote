@@ -6,6 +6,17 @@ MAX_SKILLS_PER_COLLECTION = 15
 NAME_PATTERN = re.compile(r"^[a-z0-9-]+$")
 XML_TAG_RE = re.compile(r"</?[a-zA-Z][^>]*>")
 RESERVED_WORDS = ["anthropic", "claude"]
+# Windows reserves these device names — a directory/file with one of these
+# names (any case, with or without extension) can't be created. Skills sync to
+# per-agent folders named after the slug (CLI: ~/.claude/skills/<slug>/...), so
+# a skill named exactly "con"/"nul"/"com1" would be uninstallable on Windows.
+# Reject them at the source (EXACT match — unlike RESERVED_WORDS' substring
+# check, so legitimate names like "icons" or "control" are unaffected).
+WINDOWS_RESERVED_NAMES = frozenset(
+    ["con", "prn", "aux", "nul"]
+    + [f"com{i}" for i in range(1, 10)]
+    + [f"lpt{i}" for i in range(1, 10)]
+)
 
 
 def validate_skill_name(name: str) -> list[str]:
@@ -21,6 +32,8 @@ def validate_skill_name(name: str) -> list[str]:
     for word in RESERVED_WORDS:
         if word in name:
             errors.append(f'Name cannot contain reserved word "{word}"')
+    if name.lower() in WINDOWS_RESERVED_NAMES:
+        errors.append(f'"{name}" is a reserved name on Windows — choose another')
     if XML_TAG_RE.search(name):
         errors.append("Name cannot contain XML tags")
     return errors

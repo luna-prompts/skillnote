@@ -79,7 +79,11 @@ describe("options render", () => {
     document.getElementById("pair")!.click();
     await Promise.resolve();
     expect(document.getElementById("error")!.textContent).toMatch(/valid http/i);
-    expect(sendMessage).not.toHaveBeenCalled();
+    // Only the on-open health ping is allowed — no pairing message.
+    const pairCalls = sendMessage.mock.calls.filter(
+      (c) => c[0]?.type === "skillnote.start-pair",
+    );
+    expect(pairCalls).toHaveLength(0);
   });
 
   it("pairing: shows code, copy button, countdown, and cancel", async () => {
@@ -135,7 +139,11 @@ describe("options render", () => {
       document.getElementById("cancel-disconnect")!.click();
       expect(document.getElementById("confirm-slot")!.innerHTML).toBe("");
       expect((document.getElementById("primary-actions") as HTMLElement).style.display).toBe("");
-      expect(sendMessage).not.toHaveBeenCalled();
+      // No disconnect message — the on-open health ping doesn't count.
+      const calls = sendMessage.mock.calls.filter(
+        (c) => c[0]?.type === "skillnote.disconnect",
+      );
+      expect(calls).toHaveLength(0);
     });
 
     it("Escape cancels the confirmation", async () => {
@@ -143,7 +151,10 @@ describe("options render", () => {
       document.getElementById("disconnect")!.click();
       document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
       expect(document.getElementById("confirm-slot")!.innerHTML).toBe("");
-      expect(sendMessage).not.toHaveBeenCalled();
+      const calls = sendMessage.mock.calls.filter(
+        (c) => c[0]?.type === "skillnote.disconnect",
+      );
+      expect(calls).toHaveLength(0);
     });
 
     it("Confirm sends the disconnect message", async () => {

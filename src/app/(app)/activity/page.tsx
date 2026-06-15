@@ -4,10 +4,9 @@ import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { TopBar } from '@/components/layout/topbar'
 
-// Activity was renamed to Notifications and moved to the top-level
-// /notifications route (sidebar footer + the bell). This deep settings path
-// now just redirects there so any existing links keep working.
-export default function ClaudeAIActivityRedirect() {
+// "Activity" was renamed to "Notifications" and moved to /notifications.
+// This route just redirects so any existing links/bookmarks keep working.
+export default function ActivityRedirect() {
   const router = useRouter()
   useEffect(() => {
     router.replace('/notifications')

@@ -8,7 +8,8 @@
     "storage",
     "alarms",
     "notifications",
-    "scripting"
+    "scripting",
+    "sidePanel"
   ],
   "host_permissions": [
     "https://claude.ai/*",
@@ -22,8 +23,17 @@
     "service_worker": "background.js",
     "type": "module"
   },
+  "content_scripts": [
+    {
+      "matches": ["https://claude.ai/*", "https://claude.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "side_panel": {
+    "default_path": "popup.html"
+  },
   "action": {
-    "default_popup": "popup.html",
     "default_title": "SkillNote",
     "default_icon": {
       "16": "icons/16.png",

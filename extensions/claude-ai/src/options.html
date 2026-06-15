@@ -6,65 +6,57 @@
   <style>
     /* ── Design tokens — mirrors SkillNote globals.css ─────────────────── */
     :root {
-      color-scheme: light dark;
-      --fg: #111318;            /* --foreground */
-      --fg-soft: #3a3d47;
-      --muted: #7a7a8a;         /* --muted-foreground */
-      --faint: #a8a8b3;
+      /* Light mode only — matches the popup; the plugin is a fixed, branded
+         surface that should always look like the SkillNote app. Token values
+         are shared with popup.html — keep the two in lockstep. */
+      color-scheme: light;
+      --fg: #1d1c18;            /* warm near-black (matches claude.ai) */
+      --fg-soft: #45433c;
+      --muted: #75726a;
+      --faint: #a3a097;
       --accent: #0d9488;        /* SkillNote teal */
       --accent-hover: #0f766e;
-      --primary: #111318;       /* black primary buttons (bg-foreground) */
+      --primary: #1d1c18;       /* warm near-black buttons */
       --primary-fg: #ffffff;
-      --ok: #059669;
-      --ok-bg: #d1fae5;
+      --ok: #0f9d6e;
+      --ok-bg: #d8f3e6;
       --ok-fg: #065f46;
       --warn: #d97706;
-      --warn-bg: #fef3c7;
+      --warn-bg: #fbf2dd;
       --warn-fg: #92400e;
       --err: #dc2626;           /* --destructive */
-      --err-bg: #fee2e2;
+      --err-bg: #fdeceb;
       --err-fg: #991b1b;
       --info-bg: #ccfbf1;       /* teal-tinted */
       --info-fg: #115e59;
-      --border: #e4e4e8;        /* --border */
-      --border-strong: #d4d4d8;
-      --bg: #f7f7f8;            /* --background */
-      --bg-soft: #ffffff;       /* --card */
-      --bg-sunken: #f0f0f2;     /* --secondary / --muted */
+      --border: #eae8e1;        /* warm hairline */
+      --border-strong: #ddd9cf;
+      --bg: #f7f6f1;            /* warm paper canvas (matches claude.ai) */
+      --bg-soft: #ffffff;       /* card */
+      --bg-sunken: #efede6;     /* secondary / muted — warm */
       --radius: 12px;
       --radius-sm: 8px;
       --shadow: 0 1px 2px rgba(17,19,24,0.04), 0 4px 12px rgba(17,19,24,0.05);
     }
-    @media (prefers-color-scheme: dark) {
-      :root {
-        --fg: #e8e8ed;
-        --fg-soft: #c4c4cf;
-        --muted: #8b8b9e;
-        --faint: #6a6a78;
-        --accent: #0d9488;
-        --accent-hover: #14b8a6;
-        --primary: #e8e8ed;
-        --primary-fg: #0f1117;
-        --ok: #34d399;
-        --ok-bg: #064e3b;
-        --ok-fg: #a7f3d0;
-        --warn: #fbbf24;
-        --warn-bg: #78350f;
-        --warn-fg: #fde68a;
-        --err: #ef4444;
-        --err-bg: #7f1d1d;
-        --err-fg: #fecaca;
-        --info-bg: #134e4a;
-        --info-fg: #99f6e4;
-        --border: #252832;
-        --border-strong: #3a3d47;
-        --bg: #0f1117;          /* --background */
-        --bg-soft: #16181f;     /* --card */
-        --bg-sunken: #1e2029;   /* --secondary */
-        --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 24px rgba(0,0,0,0.4);
-      }
+    /* Dark theme — applied via data-theme="dark" to match claude.ai. */
+    [data-theme="dark"] {
+      color-scheme: dark;
+      --fg: #ece9e1;
+      --fg-soft: #c2bdb1;
+      --muted: #98938a;
+      --faint: #6b675e;
+      --accent: #2dd4bf;
+      --accent-hover: #5fe3d4;
+      --primary: #ece9e1;
+      --primary-fg: #232220;
+      --ok: #34d399; --ok-bg: #16352a; --ok-fg: #a7f3d0;
+      --warn: #fbbf24; --warn-bg: #3a3115; --warn-fg: #fde68a;
+      --err: #f87171; --err-bg: #3a2422; --err-fg: #fecaca;
+      --info-bg: #163b38; --info-fg: #99f6e4;
+      --border: #3b3934; --border-strong: #4a473f;
+      --bg: #262522; --bg-soft: #302f2c; --bg-sunken: #3a3833;
+      --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 4px 12px rgba(0,0,0,0.3);
     }
-
     * { box-sizing: border-box; }
     html { -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
     body {
@@ -149,6 +141,19 @@
 
     .meta-row { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
     .browser-label { color: var(--muted); font-size: 13px; }
+
+    /* ── Connection details (moved here from the popup main tab) ───────── */
+    .conn { border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; background: var(--bg); }
+    .conn-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; }
+    .conn-row + .conn-row { border-top: 1px solid var(--border); }
+    .conn-row .k { color: var(--muted); font-size: 13px; }
+    .conn-row .v { font-size: 13px; font-weight: 550; color: var(--fg); display: inline-flex; align-items: center; gap: 7px; }
+    .conn-row .v.plain { font-weight: 500; color: var(--muted); }
+    .conn-row .v .dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; }
+    .dot.ok { background: var(--ok); }
+    .dot.warn { background: var(--warn); }
+    .dot.err { background: var(--err); }
+    .section-h { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; color: var(--faint); margin: 0 0 8px; }
     hr { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
     .muted { color: var(--muted); font-size: 13px; }
     .stack > * + * { margin-top: 16px; }
@@ -159,7 +164,10 @@
 <body>
   <div class="head">
     <img class="mark" src="icons/logo.svg" alt="" />
-    <h1>SkillNote</h1>
+    <div>
+      <h1>SkillNote</h1>
+      <div style="font-size:11.5px; color:var(--faint); letter-spacing:0.01em; margin-top:1px;">claude.ai connector</div>
+    </div>
   </div>
   <p class="lede">Sync your self-hosted SkillNote skills to your claude.ai account.</p>
   <div id="root">Loading…</div>

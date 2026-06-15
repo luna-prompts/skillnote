@@ -16,11 +16,19 @@ function SkillsPageInner() {
   const [searchQuery, setSearchQuery] = useState('')
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false)
   const [skills, setSkills] = useState<Skill[]>([])
+  // First sync attempt finished (success OR failure). Until then an empty
+  // list means "still loading" → skeleton rows, not the "No skills" empty
+  // state (which used to flash on every fresh load before the API answered).
+  const [synced, setSynced] = useState(false)
   const [ratingsMap, setRatingsMap] = useState<Map<string, SkillRating>>(new Map())
 
   // Load skills on mount + re-sync on focus, periodic, and when skills-store changes
   useEffect(() => {
-    const sync = () => syncSkillsFromApi().then(setSkills).catch(() => {})
+    const sync = () =>
+      syncSkillsFromApi()
+        .then(setSkills)
+        .catch(() => {})
+        .finally(() => setSynced(true))
     const refresh = () => setSkills(getSkills())
     setSkills(getSkills())
     sync()
@@ -139,7 +147,23 @@ function SkillsPageInner() {
           </div>
 
           {/* Skill list / grid */}
-          {filtered.length === 0 ? (
+          {!synced && skills.length === 0 ? (
+            /* First load, nothing local yet — skeleton rows while the initial
+               sync is in flight. Replaces the old flash of "No skills found"
+               + offline banner before the API had even answered. */
+            <div className="pb-24 lg:pb-0" aria-busy="true" aria-label="Loading skills">
+              {[0, 1, 2, 3, 4, 5].map(i => (
+                <div key={i} className="flex items-center gap-4 px-5 py-4 border-b border-border/40">
+                  <div className="h-9 w-9 rounded-lg bg-foreground/[0.04] animate-pulse shrink-0" />
+                  <div className="flex-1 min-w-0 space-y-2">
+                    <div className="h-3.5 w-44 max-w-[50%] rounded bg-foreground/[0.06] animate-pulse" />
+                    <div className="h-3 w-80 max-w-[85%] rounded bg-foreground/[0.04] animate-pulse" />
+                  </div>
+                  <div className="h-5 w-9 rounded bg-foreground/[0.04] animate-pulse shrink-0 hidden sm:block" />
+                </div>
+              ))}
+            </div>
+          ) : filtered.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-28 px-6">
               <div className="w-14 h-14 rounded-2xl bg-foreground/[0.03] border border-foreground/[0.05] flex items-center justify-center mb-5">
                 <SearchX className="h-6 w-6 text-muted-foreground/30" />

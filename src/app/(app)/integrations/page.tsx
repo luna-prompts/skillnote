@@ -441,7 +441,10 @@ export default function IntegrationsPage() {
               >
                 Browse
                 <span className="ml-1.5 text-[11px] text-muted-foreground/70 tabular-nums">
-                  {AGENTS.length}
+                  {/* +1 = the claude.ai card, which renders alongside AGENTS
+                      but lives outside the catalog (separate install path).
+                      Must match the actual number of cards in the grid. */}
+                  {AGENTS.length + 1}
                 </span>
               </TabsTrigger>
             </TabsList>

@@ -36,6 +36,10 @@ const EVENT_LABEL: Record<string, string> = {
   token_revoked: 'Token revoked',
   op_retried: 'Sync retried',
   sync_triggered: 'Sync triggered',
+  skill_created: 'Skill created',
+  skill_updated: 'Skill updated',
+  skill_deleted: 'Skill deleted',
+  skill_restored: 'Skill restored',
 }
 
 function timeAgo(iso: string): string {
@@ -48,10 +52,16 @@ function timeAgo(iso: string): string {
   return `${Math.floor(h / 24)}d`
 }
 
+// localStorage key for the unread watermark — events newer than this count
+// toward the badge, like any mail/notification UI. Persisted so a reload
+// doesn't resurrect already-seen notifications.
+const SEEN_KEY = 'skillnote:notifications-seen-at'
+
 export function NotificationsBell() {
   const [open, setOpen] = useState(false)
   const [pending, setPending] = useState<PendingPairing[]>([])
   const [activity, setActivity] = useState<AuditEventOut[]>([])
+  const [unread, setUnread] = useState(0)
   const [approving, setApproving] = useState<string | null>(null)
   const ref = useRef<HTMLDivElement>(null)
   // Track the prior pending count so a NEW request auto-opens the dropdown
@@ -60,19 +70,36 @@ export function NotificationsBell() {
   // Pairing ids the user dismissed this session — kept hidden so a still-
   // pending request doesn't reappear (and re-pop) on the next 8s poll.
   const dismissed = useRef<Set<string>>(new Set())
+  // Unread watermark (ms epoch). Reading localStorage lazily keeps SSR happy.
+  const seenAt = useRef<number>(0)
+  useEffect(() => {
+    seenAt.current = Number(localStorage.getItem(SEEN_KEY) ?? 0)
+  }, [])
 
   const load = useCallback(async () => {
     const [p, a] = await Promise.all([
       fetchPendingPairings().catch(() => [] as PendingPairing[]),
-      listActivity({ limit: 6 }).catch(() => [] as AuditEventOut[]),
+      listActivity({ limit: 20 }).catch(() => [] as AuditEventOut[]),
     ])
     const visible = p.filter((x) => !dismissed.current.has(x.integration_id))
     setPending(visible)
-    setActivity(a)
+    setActivity(a.slice(0, 6))
+    setUnread(a.filter((ev) => new Date(ev.created_at).getTime() > seenAt.current).length)
     // A new (non-dismissed) request appeared → pop the dropdown open.
     if (visible.length > prevPending.current) setOpen(true)
     prevPending.current = visible.length
   }, [])
+
+  // Opening the panel marks everything seen — the badge clears, matching the
+  // convention every notification UI follows.
+  const markSeen = useCallback(() => {
+    seenAt.current = Date.now()
+    localStorage.setItem(SEEN_KEY, String(seenAt.current))
+    setUnread(0)
+  }, [])
+  useEffect(() => {
+    if (open) markSeen()
+  }, [open, markSeen])
 
   // Poll while the tab is visible (pending pairings are time-sensitive).
   useEffect(() => {
@@ -119,14 +146,16 @@ export function NotificationsBell() {
     setPending((prev) => prev.filter((x) => x.integration_id !== id))
   }
 
-  const badge = pending.length
+  // Badge = actionable pairings + unread events. Pairings always count (they
+  // need a decision); reads clear once the panel opens.
+  const badge = pending.length + unread
 
   return (
     <div ref={ref} className="relative">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        aria-label={badge > 0 ? `Notifications (${badge} pending)` : 'Notifications'}
+        aria-label={badge > 0 ? `Notifications (${badge} unread)` : 'Notifications'}
         aria-haspopup="menu"
         aria-expanded={open}
         className="relative h-9 w-9 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
@@ -134,7 +163,7 @@ export function NotificationsBell() {
         <Bell className="h-[18px] w-[18px]" />
         {badge > 0 && (
           <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-accent text-white text-[10px] font-semibold flex items-center justify-center ring-2 ring-background tabular-nums">
-            {badge}
+            {badge > 9 ? '9+' : badge}
           </span>
         )}
       </button>
@@ -189,7 +218,7 @@ export function NotificationsBell() {
             {activity.length === 0 ? (
               pending.length === 0 ? (
                 <div className="px-4 py-8 text-center text-[12px] text-muted-foreground/60">
-                  Nothing yet — connector events show up here.
+                  Nothing yet — skill changes, syncs, and pairings show up here.
                 </div>
               ) : null
             ) : (
@@ -214,11 +243,11 @@ export function NotificationsBell() {
 
           {/* The bell is short-lived/quick; the full history lives here. */}
           <Link
-            href="/settings/integrations/claude-ai/activity"
+            href="/notifications"
             onClick={() => setOpen(false)}
             className="block px-4 py-2.5 border-t border-border/60 text-center text-[12px] font-medium text-accent hover:bg-muted/30 transition-colors"
           >
-            View all activity
+            View all notifications
           </Link>
         </div>
       )}

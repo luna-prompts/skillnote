@@ -22,6 +22,13 @@
     "scripts": ["background.js"],
     "type": "module"
   },
+  "content_scripts": [
+    {
+      "matches": ["https://claude.ai/*", "https://claude.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
   "action": {
     "default_popup": "popup.html",
     "default_title": "SkillNote",

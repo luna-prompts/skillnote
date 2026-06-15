@@ -10,6 +10,7 @@ import {
   defaultBrowserLabel,
   deriveConnectionState,
   formatCountdown,
+  formatRelativeTime,
   hostOf,
   normalizeSkillnoteUrl,
 } from "./lib/view";
@@ -37,16 +38,35 @@ let teardownConfirm: (() => void) | null = null;
 // the "skillnote" key (matches storage.ts KEY) so unrelated writes don't
 // trigger spurious re-renders mid-interaction.
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "local" && changes.skillnote) void render();
+  if (area !== "local" || !changes.skillnote) return;
+  // Don't rebuild the page while someone is typing in the setup form — a
+  // background write (e.g. claude_theme sampled on open) would otherwise
+  // clobber the half-typed URL/label and steal focus.
+  const a = document.activeElement;
+  if (a instanceof HTMLInputElement || a instanceof HTMLTextAreaElement) return;
+  void render();
 });
 
 void render();
+
+// Live connection check on open — same as the popup. The worker pings the
+// SkillNote app and writes the result to storage, which re-renders this page
+// with fresh health dots.
+void chrome.runtime.sendMessage({ type: "skillnote.ping" }).catch(() => {});
 
 export async function render(): Promise<void> {
   clearCountdown();
   teardownConfirm?.();
   teardownConfirm = null;
   const cfg = await loadConfig();
+  // Match claude.ai's appearance (sampled by the background); fall back to OS.
+  let osDark = false;
+  try {
+    osDark = typeof matchMedia === "function" && matchMedia("(prefers-color-scheme: dark)").matches;
+  } catch {
+    /* matchMedia absent (test env) — default light */
+  }
+  document.documentElement.dataset.theme = cfg.claude_theme ?? (osDark ? "dark" : "light");
   const state = deriveConnectionState(cfg);
   if (state === "pairing") return renderPairing(cfg);
   if (state === "connected" || state === "needs_signin" || state === "error") {
@@ -139,17 +159,14 @@ function renderSetup(): void {
 
 function renderPairing(cfg: ExtensionConfig): void {
   const code = cfg.pairing?.pairing_code ?? "------";
-  // Only allow http(s) redemption URLs — the backend-supplied value goes into
-  // an <a href>; a javascript:/data: scheme would execute in this extension
-  // page (which holds the token). escapeHtml doesn't guard the URL scheme.
-  const rawUrl = cfg.pairing?.redemption_url ?? "#";
-  const url = /^https?:\/\//i.test(rawUrl) ? rawUrl : "#";
+  // No "Open SkillNote" deep link — the approval arrives via SkillNote's
+  // notification bell (it pops automatically), so we just point people there.
   root.innerHTML = `
     <div class="card stack">
       <div>
         <div class="pill info" style="margin-bottom:10px">Awaiting approval</div>
         <h2 style="font-size:16px; margin:0 0 4px; font-weight:650;">Approve this browser in SkillNote</h2>
-        <p class="muted" style="margin:0;">Open SkillNote and confirm the code below. The extension is polling — this page updates automatically once you approve.</p>
+        <p class="muted" style="margin:0;">In SkillNote, a notification (bell, top right) is waiting — approve it if the code matches the one below. The extension is polling; this page updates automatically once you approve.</p>
       </div>
       <div class="code-box">
         <div class="code" aria-label="Pairing code ${escapeHtml(spell(code))}">${escapeHtml(code)}</div>
@@ -157,9 +174,6 @@ function renderPairing(cfg: ExtensionConfig): void {
       </div>
       <div class="countdown" id="countdown"></div>
       <div class="actions">
-        <a href="${escapeHtml(url)}" target="_blank" rel="noopener" style="text-decoration:none">
-          <button class="btn btn-primary">${ICON.external}Open SkillNote to approve</button>
-        </a>
         <button class="btn btn-ghost" id="cancel">Cancel</button>
       </div>
     </div>
@@ -189,13 +203,38 @@ function renderConnected(cfg: ExtensionConfig, state: "connected" | "needs_signi
         ? `<div class="notice warn"><span class="ico">${ICON.alert}</span><div>${escapeHtml(cfg.last_error ?? "The last sync ran into a problem.")}</div></div>`
         : "";
 
+  // Connection details — the popup's main tab stays action-focused, so the
+  // plumbing (app host, claude.ai session, browser identity, last sync) lives
+  // here where someone debugging a connection actually looks.
+  const appOk = cfg.skillnote_reachable !== false;
+  const claudeOk = cfg.claude_session_active !== false;
+  const lastSync = cfg.last_sync_at ? formatRelativeTime(cfg.last_sync_at) : "never";
+
   root.innerHTML = `
     <div class="card stack">
-      <div>
-        <div class="meta-row">${pill}<strong style="font-size:15px;">${escapeHtml(host)}</strong></div>
-        <div class="browser-label">Browser: ${escapeHtml(cfg.browser_label ?? "(unnamed)")}</div>
-      </div>
+      <div class="meta-row">${pill}<strong style="font-size:15px;">${escapeHtml(host)}</strong></div>
       ${notice}
+      <div>
+        <p class="section-h">Connection</p>
+        <div class="conn">
+          <div class="conn-row">
+            <span class="k">SkillNote app</span>
+            <span class="v" title="${escapeHtml(cfg.skillnote_url ?? "")}"><span class="dot ${appOk ? "ok" : "err"}"></span>${appOk ? escapeHtml(host) : "Unreachable"}</span>
+          </div>
+          <div class="conn-row">
+            <span class="k">claude.ai</span>
+            <span class="v"><span class="dot ${claudeOk ? "ok" : "warn"}"></span>${claudeOk ? "Signed in" : "Signed out"}</span>
+          </div>
+          <div class="conn-row">
+            <span class="k">This browser</span>
+            <span class="v plain">${escapeHtml(cfg.browser_label ?? "(unnamed)")}</span>
+          </div>
+          <div class="conn-row">
+            <span class="k">Last synced</span>
+            <span class="v plain">${escapeHtml(lastSync)}</span>
+          </div>
+        </div>
+      </div>
       <div class="actions" id="primary-actions">
         <button class="btn" id="sync">${ICON.refresh}Sync now</button>
         <button class="btn btn-danger" id="disconnect">${ICON.unlink}Disconnect this browser</button>
@@ -303,6 +342,9 @@ function wireCopy(id: string, code: string): void {
       btn.classList.add("copied");
       btn.innerHTML = ICON.check;
       setTimeout(() => {
+        // A re-render may have replaced the DOM while we waited — don't
+        // mutate a detached node.
+        if (!btn.isConnected) return;
         btn.classList.remove("copied");
         btn.innerHTML = ICON.copy;
       }, 1400);

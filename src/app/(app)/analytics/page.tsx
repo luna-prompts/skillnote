@@ -727,7 +727,9 @@ function AnalyticsContent() {
         <TopBar showFab={false} />
 
         {/* ── Filter bar ──────────────────────────────────────────────────── */}
-        <div className="sticky top-0 z-30 border-b border-border/50 bg-background/90 backdrop-blur-sm relative">
+        {/* z-10: a page sub-header — sits below the global TopBar (z-20) so the
+            notifications bell dropdown is never covered by it. */}
+        <div className="sticky top-0 z-10 border-b border-border/50 bg-background/90 backdrop-blur-sm relative">
           <div className="px-6 py-2.5 flex items-center gap-2 flex-wrap">
             <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide mr-1">Filter:</span>
 

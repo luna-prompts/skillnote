@@ -255,6 +255,104 @@ export function buildClient(baseUrl: string, extensionToken?: string) {
         "/v1/integrations/claude-ai/extension/status",
       );
     },
+    /** Force a fresh publish_group reconcile (the manual "Sync now" path), so
+     *  the next tick always re-pushes the current published set — never a
+     *  silent no-op. Coalesces server-side. */
+    async reconcile(): Promise<{ enqueued: number }> {
+      return call<{ enqueued: number }>(
+        "/v1/integrations/claude-ai/extension/reconcile",
+        { method: "POST" },
+      );
+    },
+    /** Collections with their claude.ai publish state — drives the popup's
+     *  in-plugin collection picker. Always pass a limit: registries can hold
+     *  thousands of collections, and the popup must never pull them all.
+     *  `total` is the pre-limit count for the active filters (X-Total-Count).
+     *  `signal` lets a type-ahead search abort the previous in-flight query. */
+    async listCollections(opts: {
+      q?: string;
+      published?: boolean;
+      limit?: number;
+      signal?: AbortSignal;
+    } = {}): Promise<{
+      rows: { name: string; count: number; published_to_claude_ai: boolean }[];
+      total: number;
+    }> {
+      const params = new URLSearchParams();
+      if (opts.q) params.set("q", opts.q);
+      if (opts.published !== undefined) params.set("published", String(opts.published));
+      if (opts.limit) params.set("limit", String(opts.limit));
+      const qs = params.toString();
+      const headers = new Headers();
+      if (extensionToken) headers.set("Authorization", `Bearer ${extensionToken}`);
+      // Timeout so a hung backend can't freeze the panel's loading skeleton
+      // forever (matches the AbortController pattern the other fetches use).
+      // Also honor an external signal (type-ahead cancel) if one is passed.
+      const ctrl = new AbortController();
+      let timedOut = false;
+      const timer = setTimeout(() => {
+        timedOut = true;
+        ctrl.abort();
+      }, DEFAULT_TIMEOUT_MS);
+      if (opts.signal) opts.signal.addEventListener("abort", () => ctrl.abort(), { once: true });
+      let res: Response;
+      try {
+        res = await fetch(`${base}/v1/collections${qs ? `?${qs}` : ""}`, {
+          headers,
+          signal: ctrl.signal,
+        });
+      } catch (e) {
+        if ((e as Error).name === "AbortError") {
+          if (timedOut) throw new SkillNoteNetworkError(`SkillNote /v1/collections timed out`);
+          throw e; // external cancel (caller superseded the request)
+        }
+        throw new SkillNoteNetworkError(`Network error talking to SkillNote: ${(e as Error).message}`);
+      } finally {
+        clearTimeout(timer);
+      }
+      if (res.status === 401 || res.status === 403) {
+        throw new SkillNoteAuthError(`Auth error (${res.status})`);
+      }
+      if (!res.ok) throw new Error(`SkillNote /v1/collections returned ${res.status}`);
+      const rows = (await res.json()) as {
+        name: string;
+        count: number;
+        published_to_claude_ai: boolean;
+      }[];
+      const total = Number(res.headers.get("X-Total-Count") ?? rows.length);
+      return { rows, total };
+    },
+    /** Toggle one collection's claude.ai publish state. The backend enqueues
+     *  the group republish itself; the caller just needs to wake the sync. */
+    async setCollectionPublished(name: string, published: boolean): Promise<void> {
+      await call(`/v1/collections/${encodeURIComponent(name)}/claude-ai`, {
+        method: "PUT",
+        body: JSON.stringify({ published }),
+      });
+    },
+    /** claude.ai usage rollup for the panel's "this week" insight — how many
+     *  times the assistant actually invoked synced skills. agent=claude-ai
+     *  scopes it to THIS connector's value (skills may also run in Claude
+     *  Code; that's the app's analytics, not this panel's story). */
+    async fetchUsage(days = 7): Promise<{
+      total_calls: number;
+      unique_skills: number;
+      calls_today: number;
+      most_called: string | null;
+    }> {
+      const data = await call<{
+        total_calls?: number;
+        unique_skills?: number;
+        calls_today?: number;
+        most_called_skill?: string | null;
+      }>(`/v1/analytics/summary?agent=claude-ai&days=${days}`);
+      return {
+        total_calls: data.total_calls ?? 0,
+        unique_skills: data.unique_skills ?? 0,
+        calls_today: data.calls_today ?? 0,
+        most_called: data.most_called_skill ?? null,
+      };
+    },
     /** Reverse sync: get the claude.ai IDs SkillNote already knows about. */
     async listKnownClaudeAIIds(): Promise<string[]> {
       const data = await call<KnownSkillIdsResponse>(

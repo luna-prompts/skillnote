@@ -45,6 +45,24 @@ def _get_skill(slug: str, db: Session) -> Skill:
     return skill_row
 
 
+def _log_activity(db: Session, event: str, *, skill_id=None, detail: Optional[dict] = None) -> None:
+    """Append a general notification row (skill lifecycle, etc.) to the shared
+    activity log. The connector writes pairing/sync events to the same log, so
+    the Notifications feed is one unified stream — pairing is just one source.
+
+    Never raises: notifications must never block the CRUD they describe. The
+    row is added to the caller's session and committed with the main change.
+    """
+    try:
+        from app.services.claude_ai_sync import write_audit
+        write_audit(db, event=event, skill_id=skill_id, detail=detail or {})
+    except Exception:  # noqa: BLE001
+        import logging
+        logging.getLogger("skillnote.activity").exception(
+            "failed to record activity event %s", event
+        )
+
+
 def _build_origin(skill: Skill, source: Optional[ImportSource]) -> Optional[SkillOrigin]:
     """Compose a SkillOrigin payload from the import_source row + the per-skill fields.
 
@@ -336,6 +354,10 @@ def restore_version(
     # Create a new version snapshot for the restore
     _create_content_version(db, skill_row)
 
+    _log_activity(db, "skill_restored", skill_id=skill_row.id,
+                  detail={"slug": skill_row.slug, "name": skill_row.name,
+                          "restored_from_version": version})
+
     db.commit()
     db.refresh(skill_row)
     return SkillDetail(
@@ -437,6 +459,9 @@ def create_skill(
     # Create initial version (v1)
     _create_content_version(db, skill)
 
+    _log_activity(db, "skill_created", skill_id=skill.id,
+                  detail={"slug": skill.slug, "name": skill.name})
+
     # Notify MCP server of tool-list change (delivered on commit)
     db.execute(text("SELECT pg_notify('skillnote_skills_changed', 'created')"))
     db.commit()
@@ -536,6 +561,10 @@ def update_skill(
     # Auto-create a new content version on every save
     _create_content_version(db, skill_row)
 
+    _log_activity(db, "skill_updated", skill_id=skill_row.id,
+                  detail={"slug": skill_row.slug, "name": skill_row.name,
+                          "version": skill_row.current_version})
+
     # Notify MCP server of tool-list change (delivered on commit)
     db.execute(text("SELECT pg_notify('skillnote_skills_changed', 'updated')"))
     db.commit()
@@ -576,6 +605,12 @@ def delete_skill(
             "Failed to enqueue claude.ai delete op for skill %s; deleting anyway",
             skill_row.id,
         )
+
+    # Record the notification before the row vanishes. skill_id is left null
+    # (the FK SET-NULLs on delete anyway) and the slug/name live in detail so
+    # the feed can still name the deleted skill.
+    _log_activity(db, "skill_deleted",
+                  detail={"slug": skill_row.slug, "name": skill_row.name})
 
     db.delete(skill_row)
     # Notify MCP server of tool-list change (delivered on commit)

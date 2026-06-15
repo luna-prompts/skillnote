@@ -99,13 +99,39 @@ class TestExtensionSelfStatus:
         assert s == 200, body
         assert body["integration_id"] == integ_id
         assert body["status"] == "active"
-        # New integration with no skills + no ops yet.
-        assert body["linked_skill_count"] == 0
-        assert body["pending_op_count"] == 0
+        # `linked_skill_count` is the GLOBAL count of skills published to
+        # claude.ai (skills whose latest version is in a published collection),
+        # NOT a per-integration skill_links count — the named-group model never
+        # populates skill_links. So a brand-new integration still reports the
+        # workspace's current published total (whatever it is); just assert the
+        # field is a sane non-negative int. The global-ness is proven in
+        # test_self_status_counters_are_global below.
+        assert isinstance(body["linked_skill_count"], int)
+        assert body["linked_skill_count"] >= 0
+        # Ops are per-integration. A freshly-redeemed pairing enqueues ONE
+        # initial backfill publish_group op (so a new browser syncs right away),
+        # so pending is 0 or 1 — never more, and nothing failed yet.
+        assert body["pending_op_count"] in (0, 1)
         assert body["failed_op_count"] == 0
         assert body["last_error"] is None
         # browser_label is present and the user-supplied value round-trips.
         assert body["browser_label"] == "self-status-happy"
+
+    def test_self_status_counters_are_global_for_skills(self):
+        """linked_skill_count is a workspace-wide published total, so two
+        independent integrations report the SAME value (proves it's not a
+        per-integration skill_links count)."""
+        _, a_token = _pair_and_redeem("status-global-A")
+        _, b_token = _pair_and_redeem("status-global-B")
+        _, a = _get(
+            "/v1/integrations/claude-ai/extension/status",
+            headers={"Authorization": f"Bearer {a_token}"},
+        )
+        _, b = _get(
+            "/v1/integrations/claude-ai/extension/status",
+            headers={"Authorization": f"Bearer {b_token}"},
+        )
+        assert a["linked_skill_count"] == b["linked_skill_count"]
 
     def test_status_only_sees_own_integration(self):
         """Two integrations side by side; each token returns its own row."""

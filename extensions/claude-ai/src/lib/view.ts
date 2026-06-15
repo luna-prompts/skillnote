@@ -156,22 +156,45 @@ export function defaultBrowserLabel(ua: string): string {
   else if (/Firefox\//.test(ua)) browser = "Firefox";
   else if (/Safari\//.test(ua)) browser = "Safari";
 
+  // OS — order matters. Mobile + ChromeOS must be checked BEFORE the generic
+  // Mac/Linux/X11 tests: iOS UAs contain "Mac OS X", Android + ChromeOS UAs
+  // contain "Linux"/"X11", so the broad checks would otherwise mislabel them.
   let os = "";
-  if (/Mac/.test(ua)) os = " on macOS";
-  else if (/Win/.test(ua)) os = " on Windows";
+  if (/CrOS/.test(ua)) os = " on ChromeOS";
+  else if (/Android/.test(ua)) os = " on Android";
+  else if (/iPhone|iPad|iPod/.test(ua)) os = " on iOS";
+  else if (/Windows|Win64|Win32|WOW64/.test(ua)) os = " on Windows";
+  else if (/Macintosh|Mac OS X/.test(ua)) os = " on macOS";
   else if (/Linux|X11/.test(ua)) os = " on Linux";
   return `${browser}${os}`;
 }
 
-/** Normalize a user-entered SkillNote URL: trim, strip trailing slashes.
- *  Returns null if it can't be parsed as an http(s) URL. */
+/** Normalize a user-entered SkillNote URL to its bare ORIGIN
+ *  (scheme://host[:port]) — never a path/query/hash.
+ *
+ *  Why origin, not the raw string: people often paste the address bar while
+ *  on a SkillNote page (e.g. ".../collections"). If we kept that path, every
+ *  API call would become ".../collections/v1/..." and 404 — a confusing total
+ *  failure. Returning the origin makes "paste whatever URL you're looking at"
+ *  Just Work.
+ *
+ *  Also lenient about a missing scheme — "localhost:3000" or
+ *  "skillnote.acme.com" are common pastes. Loopback/LAN hosts default to
+ *  http; everything else to https (production should be TLS). Returns null if
+ *  it still can't be parsed as an http(s) URL. */
 export function normalizeSkillnoteUrl(raw: string): string | null {
-  const trimmed = raw.trim().replace(/\/+$/, "");
-  if (!trimmed) return null;
+  let s = raw.trim();
+  if (!s) return null;
+  // Prepend a scheme when the input has none ("://" absent). Pick http for
+  // local/loopback/LAN/IPv6-literal hosts, https otherwise.
+  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(s)) {
+    const local = /^(localhost|127\.|0\.0\.0\.0|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|\[)/i.test(s);
+    s = (local ? "http://" : "https://") + s;
+  }
   try {
-    const u = new URL(trimmed);
+    const u = new URL(s);
     if (u.protocol !== "http:" && u.protocol !== "https:") return null;
-    return trimmed;
+    return u.origin; // drops path/query/hash; lowercases scheme + host
   } catch {
     return null;
   }

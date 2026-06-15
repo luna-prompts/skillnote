@@ -181,7 +181,7 @@ app.include_router(claude_ai_router)
 # alongside the API means any deploy automatically picks up the schedule
 # without ops coordination.
 
-_CLEANUP_INTERVAL_SECONDS = 300  # 5 minutes
+_CLEANUP_INTERVAL_SECONDS = 120  # 2 minutes — reclaims killed-SW ops promptly
 
 
 async def _claude_ai_cleanup_loop() -> None:
@@ -189,6 +189,7 @@ async def _claude_ai_cleanup_loop() -> None:
     from app.db.session import SessionLocal
     from app.services.claude_ai_sync import (
         expire_stale_pairings,
+        prune_expired_activity,
         reclaim_stale_operations,
     )
 
@@ -202,11 +203,16 @@ async def _claude_ai_cleanup_loop() -> None:
                 # whose service worker died mid-sync — otherwise they'd stall
                 # forever, invisible to the queue counters.
                 reclaimed = reclaim_stale_operations(db)
+                # Notifications have a 3-day life — drop anything older so the
+                # feed stays a recent-activity surface, not an archive.
+                pruned = prune_expired_activity(db)
                 db.commit()
                 if expired > 0:
                     log.info("expired %d stale pending pairing(s)", expired)
                 if reclaimed > 0:
                     log.info("reclaimed %d stalled sync op(s)", reclaimed)
+                if pruned > 0:
+                    log.info("pruned %d expired notification(s)", pruned)
         except asyncio.CancelledError:
             log.info("cleanup loop cancelled")
             return

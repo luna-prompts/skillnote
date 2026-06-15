@@ -191,6 +191,48 @@ describe("defaultBrowserLabel", () => {
       "Firefox on Linux",
     );
   });
+
+  // ── Cross-platform UA matrix ─────────────────────────────────────────────
+  it("detects Chrome on Windows 11 (Windows NT 10.0; Win64)", () => {
+    const ua =
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36";
+    expect(defaultBrowserLabel(ua)).toBe("Chrome on Windows");
+  });
+  it("labels ChromeOS as ChromeOS, not Linux (CrOS UA also contains X11)", () => {
+    const ua =
+      "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36";
+    expect(defaultBrowserLabel(ua)).toBe("Chrome on ChromeOS");
+  });
+  it("labels Android as Android, not Linux", () => {
+    const ua =
+      "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36";
+    expect(defaultBrowserLabel(ua)).toBe("Chrome on Android");
+  });
+  it("labels iOS as iOS, not macOS (iPhone UA contains 'Mac OS X')", () => {
+    const ua =
+      "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1";
+    expect(defaultBrowserLabel(ua)).toBe("Safari on iOS");
+  });
+  it("detects Safari on macOS (no Chrome token)", () => {
+    const ua =
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15";
+    expect(defaultBrowserLabel(ua)).toBe("Safari on macOS");
+  });
+  it("detects Opera on Windows (OPR token)", () => {
+    const ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120 Safari/537.36 OPR/106.0";
+    expect(defaultBrowserLabel(ua)).toBe("Opera on Windows");
+  });
+  it("detects Firefox on Windows", () => {
+    expect(defaultBrowserLabel("Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0")).toBe(
+      "Firefox on Windows",
+    );
+  });
+  it("falls back gracefully on an unknown UA", () => {
+    expect(defaultBrowserLabel("some-random-agent/1.0")).toBe("Browser");
+  });
+  it("never throws on empty UA", () => {
+    expect(defaultBrowserLabel("")).toBe("Browser");
+  });
 });
 
 describe("normalizeSkillnoteUrl", () => {
@@ -205,5 +247,38 @@ describe("normalizeSkillnoteUrl", () => {
     expect(normalizeSkillnoteUrl("   ")).toBeNull();
     expect(normalizeSkillnoteUrl("ftp://s.io")).toBeNull();
     expect(normalizeSkillnoteUrl("javascript:alert(1)")).toBeNull();
+  });
+
+  // ── Corner cases that used to break every API call ───────────────────────
+  it("reduces a pasted URL-with-path to just the origin", () => {
+    // The big one: pasting the address bar while on a SkillNote page.
+    expect(normalizeSkillnoteUrl("http://localhost:3000/collections")).toBe(
+      "http://localhost:3000",
+    );
+    expect(normalizeSkillnoteUrl("https://skillnote.acme.com/settings/integrations/claude-ai")).toBe(
+      "https://skillnote.acme.com",
+    );
+  });
+  it("drops query and hash too", () => {
+    expect(normalizeSkillnoteUrl("https://s.io/x?a=1#frag")).toBe("https://s.io");
+  });
+  it("lowercases scheme and host", () => {
+    expect(normalizeSkillnoteUrl("HTTP://LocalHost:3000")).toBe("http://localhost:3000");
+  });
+  it("accepts scheme-less localhost (defaults to http)", () => {
+    expect(normalizeSkillnoteUrl("localhost:3000")).toBe("http://localhost:3000");
+  });
+  it("accepts scheme-less LAN IP (defaults to http)", () => {
+    expect(normalizeSkillnoteUrl("192.168.1.50:3000")).toBe("http://192.168.1.50:3000");
+    expect(normalizeSkillnoteUrl("10.0.0.5:8082")).toBe("http://10.0.0.5:8082");
+  });
+  it("accepts scheme-less public host (defaults to https)", () => {
+    expect(normalizeSkillnoteUrl("skillnote.acme.com")).toBe("https://skillnote.acme.com");
+  });
+  it("preserves non-default ports", () => {
+    expect(normalizeSkillnoteUrl("https://s.io:8443/")).toBe("https://s.io:8443");
+  });
+  it("handles IPv6 literals", () => {
+    expect(normalizeSkillnoteUrl("http://[::1]:3000/x")).toBe("http://[::1]:3000");
   });
 });

@@ -44,10 +44,27 @@ const ALARM_PAIR_POLL = "skillnote-pair-poll";
 void initialize();
 
 async function initialize(): Promise<void> {
+  // Toolbar icon opens the SIDE PANEL (native, full-height surface — same
+  // pattern as Claude in Chrome) instead of a cramped popup. Guarded: Firefox
+  // and older Chrome don't expose chrome.sidePanel; there the manifest keeps
+  // its popup/sidebar fallback.
+  try {
+    const sidePanel = (chrome as unknown as {
+      sidePanel?: { setPanelBehavior?: (o: { openPanelOnActionClick: boolean }) => Promise<void> };
+    }).sidePanel;
+    await sidePanel?.setPanelBehavior?.({ openPanelOnActionClick: true });
+  } catch (e) {
+    console.warn("sidePanel behavior unavailable", e);
+  }
   await chrome.alarms.create(ALARM_SYNC, { periodInMinutes: 1 });
   // Re-register the web→SW sync bridge on every worker start (idempotent), so
   // the SkillNote web app can trigger an immediate sync when already paired.
   void registerWebBridge();
+  // Attach the theme observer to ALREADY-OPEN claude.ai tabs. The static
+  // manifest content_scripts only covers FUTURE page loads, so without this a
+  // user who reloads the extension wouldn't get real-time theme until they
+  // refreshed claude.ai. The content script self-guards against double-init.
+  void injectIntoOpenClaudeTabs();
   // Drain any pending ops on worker start (reload / wake) rather than waiting
   // for the first 1-min alarm — `tick()` no-ops when unpaired and is guarded
   // against overlapping runs.
@@ -73,6 +90,62 @@ chrome.alarms.onAlarm.addListener(async ({ name }) => {
     await pollPairOnce();
   }
 });
+
+// Near-instant theme follow: re-sample the surrounding tab's appearance when a
+// relevant tab finishes loading or becomes active. "Relevant" = claude.ai OR
+// the paired SkillNote app — the two pages the panel docks beside and the two
+// origins we hold permission to read. detectSurroundingTheme is cheap and only
+// writes when the theme actually changed, so these events don't cause churn.
+chrome.tabs.onActivated.addListener(async ({ tabId }) => {
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    if (await _isThemeSource(tab.url)) void detectSurroundingTheme();
+  } catch {
+    /* tab gone — ignore */
+  }
+});
+chrome.tabs.onUpdated.addListener(async (_tabId, changeInfo, tab) => {
+  if (changeInfo.status === "complete" && (await _isThemeSource(tab.url))) {
+    void detectSurroundingTheme();
+  }
+});
+
+/** Inject content.js (theme observer) into open claude.ai tabs on worker
+ *  start — content_scripts only auto-inject on future loads, so this covers
+ *  tabs already open when the extension (re)loads. Self-guarded against
+ *  double-init in the page. */
+async function injectIntoOpenClaudeTabs(): Promise<void> {
+  if (!chrome.scripting?.executeScript) return;
+  try {
+    const tabs = await chrome.tabs.query({
+      url: ["https://claude.ai/*", "https://claude.com/*"],
+      status: "complete",
+    });
+    for (const t of tabs) {
+      if (t.id != null) {
+        chrome.scripting
+          .executeScript({ target: { tabId: t.id }, files: ["content.js"] })
+          .catch(() => {});
+      }
+    }
+  } catch {
+    /* no permission / no tabs — non-fatal */
+  }
+}
+
+/** A tab whose theme the panel should mirror + we have permission to read:
+ *  claude.ai/claude.com, or the paired SkillNote app's origin. */
+async function _isThemeSource(url?: string): Promise<boolean> {
+  if (!url) return false;
+  if (url.startsWith("https://claude.ai/") || url.startsWith("https://claude.com/")) return true;
+  const cfg = await loadConfig();
+  if (!cfg.skillnote_url) return false;
+  try {
+    return url.startsWith(new URL(cfg.skillnote_url).origin + "/");
+  } catch {
+    return false;
+  }
+}
 
 /** Register (idempotently) a content script on the paired SkillNote web origin
  *  that relays a "sync now" window-message from the web app to this worker.
@@ -273,16 +346,43 @@ let _ticking = false;
 async function tick(): Promise<void> {
   if (_ticking) return;
   _ticking = true;
+  // MV3 keepalive: a sync can span several claude.ai round-trips (marketplace
+  // ensure + per-group upload). Pinging a chrome API every 20s resets the
+  // service-worker idle timer so Chrome doesn't kill the worker mid-op — the
+  // exact failure that left ops stuck `in_progress` with no error.
+  const keepAlive = setInterval(() => {
+    void chrome.runtime.getPlatformInfo();
+  }, 20_000);
   try {
     await _runTick();
   } finally {
+    clearInterval(keepAlive);
     _ticking = false;
   }
+}
+
+/** Manual "Sync now": force a fresh reconcile op (so it's never a silent
+ *  no-op when the queue is empty), then run the tick to process it. */
+async function syncNow(): Promise<void> {
+  const cfg = await loadConfig();
+  if (cfg.skillnote_url && cfg.extension_token) {
+    try {
+      const client = buildClient(cfg.skillnote_url, cfg.extension_token);
+      await client.reconcile();
+    } catch (e) {
+      // Non-fatal — still tick (there may be other pending work, and the
+      // tick surfaces auth/network errors with a clear reason).
+      console.warn("[SkillNote] reconcile failed; ticking anyway", e);
+    }
+  }
+  await tick();
 }
 
 async function _runTick(): Promise<void> {
   const cfg = await loadConfig();
   if (!cfg.skillnote_url || !cfg.extension_token) return;
+  // Keep the panel's appearance in step with claude.ai (cheap; best-effort).
+  void detectSurroundingTheme();
   if (!(await isLoggedIn())) {
     // Signed out of claude.ai is a normal, recoverable state — not an error.
     // Record it as such and clear any stale error so the UI shows the calm
@@ -311,13 +411,30 @@ async function _runTick(): Promise<void> {
   }
   if (ops.length === 0) {
     // No pending work — but reaching this branch IS a successful tick.
-    // Clear any stale last_error from prior auth/network failures so
-    // the UI stops showing "claude.ai session expired" after the user
-    // has signed back in.
+    // Still pull self-status: a reaper-failed op (worker killed mid-sync)
+    // leaves 0 PENDING ops yet a non-zero failed count + a server-side reason.
+    // Surface it so the popup's error state fires instead of showing all-clear;
+    // otherwise we'd silently clear the very failure we need to report.
+    let failed = 0;
+    let failReason: string | undefined;
+    try {
+      const s = await client.fetchSelfStatus();
+      failed = s.failed_op_count ?? 0;
+      failReason = s.last_error ?? undefined;
+    } catch {
+      /* network blip — the next tick retries; don't fake a failure */
+    }
     await saveConfig({
       last_sync_at: new Date().toISOString(),
-      last_error: undefined,
+      last_error:
+        failed > 0
+          ? failReason || "A sync failed after several attempts. Use Retry."
+          : undefined,
       claude_session_active: true,
+      // Reaching here means fetchOperations succeeded → the app is reachable.
+      skillnote_reachable: true,
+      skillnote_checked_at: new Date().toISOString(),
+      failed_op_count: failed,
     });
     return;
   }
@@ -373,6 +490,7 @@ async function _runTick(): Promise<void> {
     pending_op_count: number;
     failed_op_count: number;
   }> = {};
+  let failReason: string | undefined;
   try {
     const status = await client.fetchSelfStatus();
     counterPatch = {
@@ -380,14 +498,23 @@ async function _runTick(): Promise<void> {
       pending_op_count: status.pending_op_count,
       failed_op_count: status.failed_op_count,
     };
+    failReason = status.last_error ?? undefined;
   } catch (e) {
     console.warn("fetchSelfStatus failed", e);
   }
 
+  // Surface a residual failure (e.g. a sibling op the reaper gave up on) even
+  // though THIS tick's ops succeeded — so "we tried and gave up" reaches the
+  // popup right after the attempts, instead of being cleared as all-clear.
+  const hasFailed = (counterPatch.failed_op_count ?? 0) > 0;
   await saveConfig({
     last_sync_at: new Date().toISOString(),
-    last_error: undefined,
+    last_error: hasFailed
+      ? failReason || "A sync failed after several attempts. Use Retry."
+      : undefined,
     claude_session_active: true,
+    skillnote_reachable: true,
+    skillnote_checked_at: new Date().toISOString(),
     ...counterPatch,
   });
 }
@@ -526,7 +653,11 @@ async function executeOp(
         await appendActivity({
           ts: new Date().toISOString(),
           kind: "push",
-          message: `SkillNote → claude.ai (${uploaded} group${uploaded === 1 ? "" : "s"}, ${totalSkills} skills)`,
+          // "(0 groups, 0 skills)" reads like a failure — say what it means.
+          message:
+            uploaded === 0
+              ? "Nothing selected to sync — pick collections in the popup"
+              : `SkillNote → claude.ai (${uploaded} group${uploaded === 1 ? "" : "s"}, ${totalSkills} skills)`,
         });
         break;
       }
@@ -649,10 +780,107 @@ async function handleSkillNoteError(e: unknown): Promise<void> {
     return;
   }
   if (e instanceof SkillNoteNetworkError) {
-    await saveConfig({ last_error: e.message });
+    // Can't reach the SkillNote APP (backend). Mark the connection down + give
+    // a fix-it message instead of a raw "network error" — the usual cause is
+    // the self-hosted app being stopped or the URL being wrong.
+    const cfg = await loadConfig();
+    await saveConfig({
+      skillnote_reachable: false,
+      last_error: `Can't reach the SkillNote app at ${cfg.skillnote_url ?? "your server"}. Make sure it's running and the URL is right, then Retry.`,
+    });
     return;
   }
   await saveConfig({ last_error: (e as Error).message });
+}
+
+/** Lightweight health ping (plugin → SkillNote app). Used by the popup on
+ *  open so the connection state is live, not up-to-60s stale. Only touches
+ *  the backend (fetchSelfStatus), never claude.ai, so it's cheap. */
+async function pingHealth(): Promise<void> {
+  // Match claude.ai's appearance — sample its theme whenever the panel opens.
+  void detectSurroundingTheme();
+  const cfg = await loadConfig();
+  if (!cfg.skillnote_url || !cfg.extension_token) return;
+  const client = buildClient(cfg.skillnote_url, cfg.extension_token);
+  try {
+    const s = await client.fetchSelfStatus();
+    await saveConfig({
+      skillnote_reachable: true,
+      skillnote_checked_at: new Date().toISOString(),
+      linked_skill_count: s.linked_skill_count,
+      pending_op_count: s.pending_op_count,
+      failed_op_count: s.failed_op_count,
+    });
+  } catch (e) {
+    if (e instanceof SkillNoteNetworkError) {
+      await saveConfig({ skillnote_reachable: false });
+    }
+    // Auth/other errors are handled by the full tick — don't clobber here.
+  }
+}
+
+/** Match the panel's light/dark to the page it's docked beside. The panel
+ *  can't read another page's DOM from its own context, but we hold permission
+ *  for claude.ai AND the paired SkillNote app — so sample whichever of those
+ *  is the ACTIVE tab (what the user actually sees next to the panel), reading
+ *  its rendered background luminance. Implementation-agnostic: it works no
+ *  matter how the page marks dark mode, because it reads the painted pixel.
+ *  Prefers the focused window's active tab; falls back to any loaded permitted
+ *  tab. Nothing readable → leaves the value alone (panel keeps last / OS). */
+async function detectSurroundingTheme(): Promise<void> {
+  if (!chrome.scripting?.executeScript) return;
+  try {
+    // Prefer the active tab of the focused window — that's what's beside the
+    // panel right now. Fall back to any loaded permitted tab.
+    const active = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    let tab: chrome.tabs.Tab | undefined;
+    if (active[0]?.id && active[0].status === "complete" && (await _isThemeSource(active[0].url))) {
+      tab = active[0];
+    } else {
+      const all = await chrome.tabs.query({ status: "complete" });
+      for (const t of all) {
+        if (t.id && (await _isThemeSource(t.url))) {
+          tab = t;
+          break;
+        }
+      }
+    }
+    if (!tab?.id) return;
+    const [res] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: () => {
+        // Walk up from body to the first element with a non-transparent
+        // background, then judge its perceived luminance.
+        let el: Element | null = document.body;
+        let rgb = "";
+        while (el) {
+          const bg = getComputedStyle(el).backgroundColor;
+          if (bg && bg !== "transparent" && !bg.startsWith("rgba(0, 0, 0, 0)")) {
+            rgb = bg;
+            break;
+          }
+          el = el.parentElement;
+        }
+        const m = rgb.match(/\d+(\.\d+)?/g);
+        if (!m || m.length < 3) {
+          // Fall back to the page's declared color-scheme.
+          return getComputedStyle(document.documentElement).colorScheme.includes("dark")
+            ? "dark"
+            : "light";
+        }
+        const [r = 255, g = 255, b = 255] = m.map(Number);
+        return 0.299 * r + 0.587 * g + 0.114 * b < 128 ? "dark" : "light";
+      },
+    });
+    const theme = res?.result === "dark" ? "dark" : res?.result === "light" ? "light" : undefined;
+    if (theme) {
+      const cfg = await loadConfig();
+      if (cfg.claude_theme !== theme) await saveConfig({ claude_theme: theme });
+    }
+  } catch (e) {
+    // Tab gone, permission lapsed, CSP — non-fatal; panel keeps its last theme.
+    console.warn("claude theme detect failed", e);
+  }
 }
 
 async function reportEndpointChange(msg: string): Promise<void> {
@@ -683,12 +911,31 @@ async function notify(title: string, message: string): Promise<void> {
 // ── Message bridge for the popup / options page ───────────────────────────────
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg?.type === "skillnote.theme") {
+    // Real-time theme push from a content script (claude.ai / paired app).
+    // Accept only from a FOREGROUND tab so the panel reflects the page the
+    // user is actually looking at next to it — a background tab flipping its
+    // theme shouldn't change the panel. Persist only on change (the content
+    // script already de-dups, but guard storage churn anyway).
+    const theme = msg.theme === "dark" ? "dark" : msg.theme === "light" ? "light" : null;
+    if (theme && _sender.tab?.active) {
+      void loadConfig().then((cfg) => {
+        if (cfg.claude_theme !== theme) void saveConfig({ claude_theme: theme });
+      });
+    }
+    return false; // no response needed
+  }
   if (msg?.type === "skillnote.sync-now") {
     // Visible in the service-worker console — confirms the web-bridge (or
     // popup) reached the worker and a sync is running.
-    console.info("[SkillNote] sync-now received → syncing");
-    void tick().then(() => sendResponse({ ok: true })).catch((e) => sendResponse({ ok: false, error: String(e) }));
+    console.info("[SkillNote] sync-now received → reconcile + sync");
+    void syncNow().then(() => sendResponse({ ok: true })).catch((e) => sendResponse({ ok: false, error: String(e) }));
     return true; // async response
+  }
+  if (msg?.type === "skillnote.ping") {
+    // Lightweight liveness check (plugin → app), fired when the popup opens.
+    void pingHealth().then(() => sendResponse({ ok: true })).catch(() => sendResponse({ ok: false }));
+    return true;
   }
   if (msg?.type === "skillnote.start-pair") {
     void startPairing(msg.skillnote_url, msg.browser_label)
@@ -697,15 +944,17 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     return true;
   }
   if (msg?.type === "skillnote.disconnect") {
-    void (async () => {
-      await saveConfig({
-        extension_token: undefined,
-        pairing: undefined,
-        recent_activity: [],
-      });
-      await chrome.alarms.clear(ALARM_PAIR_POLL);
-      sendResponse({ ok: true });
-    })();
+    // Promise-chain with a catch — the async-IIFE form could throw before
+    // sendResponse, leaving the caller's "Disconnecting…" spinner hung (or,
+    // worse, options.ts treats an undefined response as success).
+    void saveConfig({
+      extension_token: undefined,
+      pairing: undefined,
+      recent_activity: [],
+    })
+      .then(() => chrome.alarms.clear(ALARM_PAIR_POLL))
+      .then(() => sendResponse({ ok: true }))
+      .catch((e) => sendResponse({ ok: false, error: String(e) }));
     return true;
   }
   return false;

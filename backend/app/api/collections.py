@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
+from typing import Optional
 
-from fastapi import APIRouter, Depends, status as http_status
+from fastapi import APIRouter, Depends, Query, Response, status as http_status
 from sqlalchemy import func, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -19,35 +20,74 @@ router = APIRouter(prefix="/v1/collections", tags=["collections"])
 
 
 @router.get("")
-def list_collections(db: Session = Depends(get_db)):
+def list_collections(
+    response: Response,
+    db: Session = Depends(get_db),
+    q: Optional[str] = None,
+    published: Optional[bool] = None,
+    limit: int = Query(default=0, ge=0, le=500),
+):
     """Return collection names + skill counts + description.
 
     UNIONs collections-with-skills (derived from skills.collections arrays)
     with explicitly-created empty collections from the collections table.
     Uses LOWER() throughout so case variants are merged, not duplicated.
+
+    Scale knobs (all optional, additive — no params keeps the original
+    full-list behavior the web app relies on):
+    - ``q``         case-insensitive substring filter on the name
+    - ``published`` filter by claude.ai publish state (the extension popup
+                    fetches its enabled set with ``published=true``)
+    - ``limit``     cap returned rows (0 = no cap, max 500)
+
+    The TRUE total for the active filters (pre-limit) is returned in the
+    ``X-Total-Count`` header so pickers can render "N collections" without
+    ever pulling thousands of rows.
     """
+    base_sql = """
+        FROM (
+            SELECT name, COUNT(*) AS count FROM (
+                SELECT unnest(collections) AS name FROM skills
+                WHERE collections IS NOT NULL AND collections != '{}'
+            ) sub GROUP BY name
+            UNION
+            SELECT name, 0 AS count FROM collections
+            WHERE lower(name) NOT IN (
+                SELECT DISTINCT lower(unnest(collections)) FROM skills
+                WHERE collections IS NOT NULL AND collections != '{}'
+            )
+        ) u
+        LEFT JOIN collections c ON lower(c.name) = lower(u.name)
+    """
+    where: list[str] = []
+    params: dict = {}
+    if q:
+        where.append("lower(u.name) LIKE '%' || lower(:q) || '%'")
+        params["q"] = q
+    if published is not None:
+        where.append("COALESCE(c.published_to_claude_ai, false) = :published")
+        params["published"] = published
+    where_sql = (" WHERE " + " AND ".join(where)) if where else ""
+
+    total = db.execute(
+        text(f"SELECT COUNT(*) {base_sql}{where_sql}"), params
+    ).scalar_one()
+    response.headers["X-Total-Count"] = str(total)
+
+    limit_sql = " LIMIT :limit" if limit > 0 else ""
+    if limit > 0:
+        params["limit"] = limit
     rows = db.execute(
         text(
-            """
+            f"""
             SELECT u.name, u.count,
                    COALESCE(c.description, '') AS description,
                    COALESCE(c.published_to_claude_ai, false) AS published_to_claude_ai
-            FROM (
-                SELECT name, COUNT(*) AS count FROM (
-                    SELECT unnest(collections) AS name FROM skills
-                    WHERE collections IS NOT NULL AND collections != '{}'
-                ) sub GROUP BY name
-                UNION
-                SELECT name, 0 AS count FROM collections
-                WHERE lower(name) NOT IN (
-                    SELECT DISTINCT lower(unnest(collections)) FROM skills
-                    WHERE collections IS NOT NULL AND collections != '{}'
-                )
-            ) u
-            LEFT JOIN collections c ON lower(c.name) = lower(u.name)
-            ORDER BY u.name
+            {base_sql}{where_sql}
+            ORDER BY u.name{limit_sql}
             """
-        )
+        ),
+        params,
     ).mappings().all()
     return [
         {

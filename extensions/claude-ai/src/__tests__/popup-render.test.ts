@@ -75,11 +75,26 @@ function content() {
 }
 
 describe("popup render", () => {
-  it("setup state: prompts to connect", async () => {
+  it("setup state: renders the inline pairing form (no options-tab detour)", async () => {
     await renderWith({});
     expect(pill().textContent).toBe("Set up");
     expect(content()).toContain("Connect SkillNote");
-    expect(document.getElementById("open-options")).not.toBeNull();
+    // The whole pairing flow lives in the popup now: URL + label + Connect.
+    expect(document.getElementById("url")).not.toBeNull();
+    expect(document.getElementById("label")).not.toBeNull();
+    expect(document.getElementById("pair")).not.toBeNull();
+  });
+
+  it("setup state: rejects an empty URL inline without starting a pair", async () => {
+    await renderWith({});
+    sendMessage.mockClear(); // ignore the on-open health ping
+    (document.getElementById("pair") as HTMLButtonElement).click();
+    await Promise.resolve();
+    expect(document.getElementById("error")!.textContent).toMatch(/valid http/i);
+    const pairCalls = sendMessage.mock.calls.filter(
+      (c) => c[0]?.type === "skillnote.start-pair",
+    );
+    expect(pairCalls).toHaveLength(0);
   });
 
   it("pairing state: shows the code, a copy button, and a countdown", async () => {
@@ -101,7 +116,7 @@ describe("popup render", () => {
     expect(document.getElementById("cancel")).not.toBeNull();
   });
 
-  it("connected state: shows stats + an understated Sync now (not primary)", async () => {
+  it("connected state: usage hero + live list + demoted refresh + dashboard link", async () => {
     await renderWith({
       ...ACTIVE,
       claude_session_active: true,
@@ -111,14 +126,17 @@ describe("popup render", () => {
       last_sync_at: new Date("2026-05-30T11:59:00Z").toISOString(),
     });
     expect(pill().textContent).toBe("Connected");
-    expect(content()).toContain("Skills synced");
+    // Redesign: the proof-of-value usage hero leads (not two zero cards).
+    expect(content()).toContain("This week on claude.ai");
+    // A pending op surfaces the live syncing banner.
+    expect(content()).toContain("Syncing 1 change");
+    // Sync is now a demoted refresh affordance — NOT a hero primary button.
     const sync = document.getElementById("sync-now")!;
     expect(sync).not.toBeNull();
-    // Everyday action must be the subtle chip, not the prominent black CTA.
     expect(sync.className).not.toContain("btn-primary");
-    // Enhancement: a deep link back to the user's own SkillNote dashboard.
+    // Deep link back to the user's own SkillNote dashboard.
     const dash = Array.from(document.querySelectorAll("a")).find((a) =>
-      /SkillNote dashboard/i.test(a.textContent || ""),
+      /Dashboard/i.test(a.textContent || ""),
     ) as HTMLAnchorElement | undefined;
     expect(dash).toBeTruthy();
     expect(dash!.getAttribute("href")).toBe(
@@ -145,9 +163,90 @@ describe("popup render", () => {
     expect(document.getElementById("retry")).not.toBeNull();
   });
 
-  it("Get started opens the options page", async () => {
-    await renderWith({});
-    document.getElementById("open-options")!.click();
-    expect(openOptions).toHaveBeenCalledOnce();
+  it("connected state: the settings gear opens an IN-POPUP settings view (never a tab)", async () => {
+    await renderWith({ ...ACTIVE, claude_session_active: true });
+    document.getElementById("open-settings")!.click();
+    // The view swap re-renders async — flush microtasks.
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(openOptions).not.toHaveBeenCalled();
+    expect(content()).toContain("Settings");
+    expect(content()).toContain("SkillNote app");
+    expect(content()).toContain("claude.ai");
+    expect(document.getElementById("disconnect")).not.toBeNull();
+    // Back returns home.
+    document.getElementById("back")!.click();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(document.getElementById("sync-now")).not.toBeNull();
+  });
+
+  it("connected state: shows the read-only synced-collections section", async () => {
+    await renderWith({ ...ACTIVE, claude_session_active: true });
+    expect(content()).toContain("Live on claude.ai");
+    expect(document.getElementById("collections")).not.toBeNull();
+    // Read-only surface: NO toggles — sync is controlled from the SkillNote app.
+    expect(document.querySelector("input[data-col]")).toBeNull();
+  });
+
+  it("connected state: Activity is its own tab (feed not on Overview)", async () => {
+    await renderWith({
+      ...ACTIVE,
+      claude_session_active: true,
+      recent_activity: [
+        { ts: new Date().toISOString(), kind: "push", message: "conventions → claude.ai" },
+      ],
+    });
+    // Overview: tabs present, feed NOT rendered inline.
+    expect(document.getElementById("tab-activity")).not.toBeNull();
+    expect(content()).not.toContain("conventions → claude.ai");
+    // Switch to the Activity tab.
+    document.getElementById("tab-activity")!.click();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(content()).toContain("conventions → claude.ai");
+    // Deep link to the full history (the app's notifications page).
+    const link = Array.from(document.querySelectorAll("a")).find((a) =>
+      /Full history/i.test(a.textContent || ""),
+    );
+    expect(link?.getAttribute("href")).toBe("https://skillnote.acme.com/notifications");
+    // And back.
+    document.getElementById("tab-home")!.click();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(document.getElementById("sync-now")).not.toBeNull();
+  });
+});
+
+describe("popup theme matching", () => {
+  function theme() {
+    return document.documentElement.dataset.theme;
+  }
+
+  it("applies the sampled dark theme when connected", async () => {
+    await renderWith({ ...ACTIVE, claude_session_active: true, claude_theme: "dark" });
+    expect(theme()).toBe("dark");
+  });
+
+  it("applies the sampled light theme when connected", async () => {
+    await renderWith({ ...ACTIVE, claude_session_active: true, claude_theme: "light" });
+    expect(theme()).toBe("light");
+  });
+
+  it("uses the sampled theme even DURING SETUP (not the OS) — regression guard", async () => {
+    // The bug this pins: setup used to force the OS theme, so a light claude.ai
+    // showed a dark panel on a dark-OS machine. Setup must honor claude_theme.
+    await renderWith({ claude_theme: "light" });
+    expect(pill().textContent).toBe("Set up");
+    expect(theme()).toBe("light");
+    await renderWith({ claude_theme: "dark" });
+    expect(theme()).toBe("dark");
+  });
+
+  it("falls back to a concrete theme when nothing has been sampled", async () => {
+    // No claude_theme + matchMedia absent in jsdom → must still resolve to a
+    // valid theme (never undefined), so the panel is never unstyled.
+    await renderWith({ ...ACTIVE, claude_session_active: true });
+    expect(["light", "dark"]).toContain(theme());
   });
 });

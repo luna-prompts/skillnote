@@ -891,7 +891,13 @@ def complete_operation(
         if body.permanent or op.attempts >= 3:
             op.status = "failed"
             op.completed_at = now
-            integ.last_error = op.last_error
+            # Frame the surfaced message so the popup tells the user we tried
+            # (and how many times) before giving up — not just a bare error.
+            integ.last_error = (
+                f"Sync failed: {op.last_error}"
+                if body.permanent
+                else f"Sync failed after {op.attempts} attempts: {op.last_error}"
+            )
             write_audit(
                 db,
                 event="op_failed",
@@ -1100,6 +1106,49 @@ def extension_self_status(
         last_sync_at=integ.last_sync_at,
         last_error=integ.last_error,
     )
+
+
+@router.post("/extension/reconcile", status_code=202)
+def extension_reconcile(
+    integ: ClaudeAIIntegration = Depends(require_extension),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Force-enqueue a fresh publish_group reconcile for this integration.
+
+    The popup's "Sync now" calls this FIRST so a manual sync always re-pushes
+    the current published set — never a silent no-op when the queue happens to
+    be empty (the old behaviour: with nothing pending, "Sync now" did nothing,
+    which read as "broken"). Coalesces with any already-pending publish_group
+    op, so spamming it can't pile up duplicate work.
+    """
+    from sqlalchemy import update
+
+    from app.services.claude_ai_sync import enqueue_group_publish, write_audit
+
+    # Retry semantics: a manual sync clears prior failure. Reset this
+    # integration's failed publish_group ops back to pending (fresh budget) and
+    # clear the surfaced error, so the popup leaves its error state once the
+    # retry runs (otherwise the lingering failed op would keep it red).
+    db.execute(
+        update(ClaudeAISyncOperation)
+        .where(
+            ClaudeAISyncOperation.integration_id == integ.id,
+            ClaudeAISyncOperation.kind == "publish_group",
+            ClaudeAISyncOperation.status == "failed",
+        )
+        .values(status="pending", attempts=0, started_at=None, last_error=None)
+    )
+    integ.last_error = None
+
+    ops = enqueue_group_publish(db, [integ])
+    write_audit(
+        db,
+        event="sync_triggered",
+        integration_id=integ.id,
+        detail={"reason": "manual_reconcile", "enqueued": len(ops)},
+    )
+    db.commit()
+    return {"enqueued": len(ops)}
 
 
 @router.get("/extension/known-skill-ids", response_model=KnownSkillIdsResponse)
@@ -1422,6 +1471,13 @@ _VALID_AUDIT_EVENTS = frozenset(
         # everything.
         "op_retried",
         "sync_triggered",
+        # General (non-connector) notifications. The activity feed is a
+        # unified surface — skill lifecycle posts here too, pairing is just
+        # one source. These carry skill_id (except delete) + slug in detail.
+        "skill_created",
+        "skill_updated",
+        "skill_deleted",
+        "skill_restored",
     }
 )
 

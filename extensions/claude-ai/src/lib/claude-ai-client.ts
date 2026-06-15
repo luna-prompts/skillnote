@@ -543,16 +543,33 @@ export async function downloadSkillBundle(
     );
   } catch (e) {
     if ((e as Error)?.name === "AbortError") {
-      throw new ClaudeAIEndpointChangedError(
-        `claude.ai skill download for ${skillId} timed out`,
-      );
+      // A timeout is transient — NOT an endpoint change. Classifying it as
+      // EndpointChanged fired the "claude.ai changed, update the extension"
+      // alert + telemetry for what was just a slow response.
+      throw new Error(`claude.ai skill download for ${skillId} timed out`);
     }
     throw e;
   } finally {
     clearTimeout(timer);
   }
-  if (!res.ok) {
+  // Mirror call()'s status classification so the sync engine reacts right:
+  // signed-out pauses sync, scope errors surface their own message, and only
+  // a 404 means the endpoint actually moved.
+  if (res.status === 401) {
+    throw new ClaudeAINotLoggedInError("claude.ai session expired");
+  }
+  if (res.status === 403) {
+    throw new ClaudeAIAuthScopeError(
+      `claude.ai skill download for ${skillId} denied (403)`,
+    );
+  }
+  if (res.status === 404) {
     throw new ClaudeAIEndpointChangedError(
+      `claude.ai skill download endpoint returned 404 — likely renamed`,
+    );
+  }
+  if (!res.ok) {
+    throw new Error(
       `claude.ai skill download for ${skillId} returned ${res.status}`,
     );
   }

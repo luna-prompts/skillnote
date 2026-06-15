@@ -85,7 +85,11 @@ class TestReclaimStaleOperations:
         assert n == 1
         assert op.status == "failed"
         assert op.completed_at is not None
-        assert "imed out" in (op.last_error or "")
+        # Message states the attempt count + points the user at Retry (the
+        # reaper surfaces a clear "we tried N times and gave up" reason).
+        err = op.last_error or ""
+        assert "Sync failed after" in err and "attempts" in err
+        assert "Retry" in err
 
     def test_leaves_fresh_in_progress_op_alone(self, db_session):
         from app.services.claude_ai_sync import reclaim_stale_operations

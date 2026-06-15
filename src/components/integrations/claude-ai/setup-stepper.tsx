@@ -586,7 +586,11 @@ function Step1Body({
 
 function Step2Body() {
   const [url, setUrl] = useState('')
-  useEffect(() => setUrl(getApiBaseUrl()), [])
+  // Pair with the URL the user is already looking at — the web/UI origin, NOT
+  // the backend API port. The web app proxies /v1/* to the backend, so this
+  // works, and "localhost:8082" reads as a confusing wrong address to
+  // non-technical users. window.location.origin is exactly what they typed in.
+  useEffect(() => setUrl(window.location.origin), [])
   const copy = useCallback(() => {
     void navigator.clipboard.writeText(url)
     toast.success('URL copied')

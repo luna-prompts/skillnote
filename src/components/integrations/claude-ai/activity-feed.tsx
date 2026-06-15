@@ -8,23 +8,24 @@ import {
   CheckCircle2,
   ChevronRight,
   Cookie,
+  FilePlus2,
   GitCommit,
+  History,
   KeyRound,
   LinkIcon,
   Loader2,
+  PencilLine,
   PlugZap,
   ShieldAlert,
   Trash2,
   XCircle,
 } from 'lucide-react'
 import {
-  activityExportUrl,
   listActivity,
   type AuditEvent,
   type AuditEventOut,
 } from '@/lib/api/claude-ai'
 import { ActivityRowSkeleton } from './skeleton'
-import { Download } from 'lucide-react'
 import { friendlyIntegrationError } from '@/lib/claude-ai-errors'
 
 interface Props {
@@ -56,6 +57,11 @@ const EVENT_META: Record<AuditEvent, { label: string; icon: React.ElementType; t
   cookie_expired: { label: 'claude.ai session expired', icon: Cookie, tone: 'text-amber-500' },
   op_retried: { label: 'Sync op retried', icon: ArrowUpFromLine, tone: 'text-blue-500' },
   sync_triggered: { label: 'Manual sync requested', icon: ArrowUpFromLine, tone: 'text-muted-foreground' },
+  // General (non-connector) notifications — skill lifecycle.
+  skill_created: { label: 'Skill created', icon: FilePlus2, tone: 'text-emerald-500' },
+  skill_updated: { label: 'Skill updated', icon: PencilLine, tone: 'text-blue-500' },
+  skill_deleted: { label: 'Skill deleted', icon: Trash2, tone: 'text-muted-foreground' },
+  skill_restored: { label: 'Skill restored', icon: History, tone: 'text-violet-500' },
 }
 
 export function ActivityFeed({
@@ -66,25 +72,16 @@ export function ActivityFeed({
   compact = false,
 }: Props) {
   const [events, setEvents] = useState<AuditEventOut[] | null>(null)
-  const [eventFilter, setEventFilter] = useState<AuditEvent | ''>('')
-  const [search, setSearch] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [hasMore, setHasMore] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
-  // Date range filters. Empty string means "no bound". datetime-local
-  // inputs serialize as "YYYY-MM-DDTHH:mm" — convert to ISO at query time.
-  const [since, setSince] = useState('')
-  const [until, setUntil] = useState('')
 
+  // Notifications are a short-lived recent-activity surface (3-day life,
+  // enforced server-side) — a plain reverse-chron stream, no filters or
+  // search; the list is short enough to scan.
   const baseFilters = useMemo(
-    () => ({
-      integration_id,
-      skill_id,
-      event: (eventFilter || undefined) as AuditEvent | undefined,
-      since: since ? new Date(since).toISOString() : undefined,
-      until: until ? new Date(until).toISOString() : undefined,
-    }),
-    [integration_id, skill_id, eventFilter, since, until],
+    () => ({ integration_id, skill_id }),
+    [integration_id, skill_id],
   )
 
   // Once the user loads older pages, pause the poll so it doesn't wipe the
@@ -136,126 +133,20 @@ export function ActivityFeed({
     return () => clearInterval(id)
   }, [load, pollIntervalMs])
 
-  const visible = useMemo(() => {
-    if (!events) return null
-    if (!search.trim()) return events
-    const needle = search.toLowerCase()
-    return events.filter(
-      (e) =>
-        e.event.toLowerCase().includes(needle) ||
-        JSON.stringify(e.detail).toLowerCase().includes(needle),
-    )
-  }, [events, search])
+  const visible = events
 
   return (
     <div>
-      {!compact && (
-        <>
-          {skill_id && (
-            <div
-              className="mb-3 inline-flex items-center gap-2 rounded-md bg-muted/40 px-2.5 py-1 text-[11.5px] text-muted-foreground"
-              data-testid="activity-skill-filter-chip"
-            >
-              <span>Filtered to skill</span>
-              <code className="rounded bg-background px-1.5 py-0.5 text-[10px] font-mono text-foreground">
-                {skill_id.slice(0, 8)}…
-              </code>
-            </div>
-          )}
-          <div
-            className="mb-3 grid gap-2 sm:grid-cols-[1fr_auto_auto] items-stretch"
-            data-testid="activity-toolbar"
-          >
-            <label className="sr-only" htmlFor="activity-search">
-              Search activity
-            </label>
-            <input
-              id="activity-search"
-              type="search"
-              placeholder="Search activity…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="rounded-md border border-border bg-background px-3 py-1.5 text-[12px] focus:border-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-foreground/30"
-              aria-controls="activity-list"
-            />
-            <a
-              href={activityExportUrl(baseFilters)}
-              className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-3 py-1.5 text-[12px] text-foreground hover:bg-muted transition-colors"
-              data-testid="activity-export-button"
-              download
-              aria-label="Export filtered activity as CSV"
-            >
-              <Download className="h-3.5 w-3.5" />
-              Export CSV
-            </a>
-          </div>
-          <div className="mb-3 grid gap-2 sm:grid-cols-3 items-end">
-            <div>
-              <label
-                htmlFor="activity-since"
-                className="block text-[10.5px] uppercase tracking-wider text-muted-foreground/70 mb-1"
-              >
-                From
-              </label>
-              <input
-                id="activity-since"
-                type="datetime-local"
-                value={since}
-                onChange={(e) => setSince(e.target.value)}
-                className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-[12px] focus:outline-none focus-visible:ring-2 focus-visible:ring-foreground/30"
-              />
-            </div>
-            <div>
-              <label
-                htmlFor="activity-until"
-                className="block text-[10.5px] uppercase tracking-wider text-muted-foreground/70 mb-1"
-              >
-                To
-              </label>
-              <input
-                id="activity-until"
-                type="datetime-local"
-                value={until}
-                onChange={(e) => setUntil(e.target.value)}
-                className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-[12px] focus:outline-none focus-visible:ring-2 focus-visible:ring-foreground/30"
-              />
-            </div>
-            <div className="flex items-end gap-2">
-              <label className="sr-only" htmlFor="activity-event-filter-mobile">
-                Filter by event type
-              </label>
-              <select
-                id="activity-event-filter-mobile"
-                value={eventFilter}
-                onChange={(e) => setEventFilter(e.target.value as AuditEvent | '')}
-                className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-[12px] focus:outline-none focus-visible:ring-2 focus-visible:ring-foreground/30"
-                aria-controls="activity-list"
-              >
-                <option value="">All events</option>
-                {(Object.keys(EVENT_META) as AuditEvent[]).map((k) => (
-                  <option key={k} value={k}>
-                    {EVENT_META[k].label}
-                  </option>
-                ))}
-              </select>
-              {(since || until || eventFilter || search) && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSince('')
-                    setUntil('')
-                    setEventFilter('')
-                    setSearch('')
-                  }}
-                  className="shrink-0 rounded-md border border-border bg-background px-2 py-1.5 text-[11.5px] text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-                  data-testid="activity-clear-filters"
-                >
-                  Clear
-                </button>
-              )}
-            </div>
-          </div>
-        </>
+      {!compact && skill_id && (
+        <div
+          className="mb-3 inline-flex items-center gap-2 rounded-md bg-muted/40 px-2.5 py-1 text-[11.5px] text-muted-foreground"
+          data-testid="activity-skill-filter-chip"
+        >
+          <span>Filtered to skill</span>
+          <code className="rounded bg-background px-1.5 py-0.5 text-[10px] font-mono text-foreground">
+            {skill_id.slice(0, 8)}…
+          </code>
+        </div>
       )}
 
       {error && (
@@ -277,10 +168,8 @@ export function ActivityFeed({
             ))}
           </div>
         ) : visible.length === 0 ? (
-          <div className={`px-4 py-8 text-center text-[13px] text-muted-foreground ${compact ? '' : ''}`}>
-            {events && events.length === 0
-              ? 'No activity yet. Pair a browser and publish a skill to see events here.'
-              : 'No events match the current filters.'}
+          <div className="px-4 py-8 text-center text-[13px] text-muted-foreground">
+            Nothing yet — skill changes, syncs, and pairings show up here.
           </div>
         ) : (
           <ul className="divide-y divide-border" role="list">
@@ -293,10 +182,10 @@ export function ActivityFeed({
       {compact && events && events.length === pageSize && (
         <div className="mt-3 flex justify-center">
           <Link
-            href="/settings/integrations/claude-ai/activity"
+            href="/notifications"
             className="inline-flex items-center gap-1 text-[12px] text-muted-foreground hover:text-foreground"
           >
-            View full activity log <ChevronRight className="h-3.5 w-3.5" />
+            View all notifications <ChevronRight className="h-3.5 w-3.5" />
           </Link>
         </div>
       )}
@@ -313,7 +202,7 @@ export function ActivityFeed({
                 <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading older…
               </>
             ) : (
-              <>Load older events</>
+              <>Load older</>
             )}
           </button>
         </div>
@@ -418,6 +307,22 @@ function renderDetail(e: AuditEventOut): string | null {
     if (e.skill_slug) return e.skill_slug
     const result = d.result as Record<string, unknown> | undefined
     if (result?.claude_ai_skill_id) return String(result.claude_ai_skill_id)
+  }
+  if (
+    e.event === 'skill_created' ||
+    e.event === 'skill_updated' ||
+    e.event === 'skill_deleted' ||
+    e.event === 'skill_restored'
+  ) {
+    // The deleted skill is gone, so skill_slug won't resolve — fall back to
+    // the slug captured in detail at delete time.
+    const slug = e.skill_slug || (d.slug ? String(d.slug) : null)
+    if (e.event === 'skill_restored' && d.restored_from_version != null) {
+      return slug
+        ? `${slug} · from v${d.restored_from_version}`
+        : `from v${d.restored_from_version}`
+    }
+    return slug
   }
   return null
 }
