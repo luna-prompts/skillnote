@@ -109,7 +109,24 @@ developer, productivity
 ### `notifications`
 
 > Surfaces critical sync issues (session expired, endpoint changed)
-> when the user isn't actively viewing the popup.
+> when the user isn't actively viewing the panel.
+
+### `sidePanel`
+
+> The extension's entire UI is a side panel (opened from the toolbar
+> icon) rather than a popup — a persistent, full-height surface that
+> stays visible beside claude.ai while the user works. No data access;
+> it only controls where the extension's own page renders.
+
+### `scripting`
+
+> Two narrow uses, both on origins the user already granted host access
+> to (claude.ai and the user's own SkillNote URL): (1) inject a small
+> content script that relays a "sync now" signal from the SkillNote web
+> app and reports the page's light/dark theme so the panel can match it;
+> (2) read the active page's rendered background color to detect that
+> theme. No remote code is ever executed — only the extension's own
+> bundled `content.js`.
 
 ### `host_permissions: https://claude.ai/*`
 
@@ -126,16 +143,21 @@ developer, productivity
 
 ## Screenshots required (Chrome Web Store: at least 1, 1280×800)
 
-1. **Hero shot** — extension popup showing "Connected · 12 skills synced".
-2. **Pairing approval** — SkillNote tab showing the approval code.
-3. **In claude.ai** — claude.ai's Customize → Skills section with
-   skills synced from SkillNote (visible badge or just the standard UI
-   with skills present).
-4. **Settings page** — extension's full settings page.
-5. **SkillNote integration page** — the connected-browsers list in
-   SkillNote.
+1. **Hero shot** — the side panel **Connected**, showing the "This week
+   on claude.ai" usage card + the live collections. A standalone render
+   is in `docs/screenshots/claude-ai-connector.png`; for the store,
+   capture it docked beside claude.ai at 1280×800.
+2. **Pairing** — the side panel showing the 6-char code, next to the
+   SkillNote notifications-bell approval popover.
+3. **In claude.ai** — claude.ai's **Customize → Plugins** with the
+   "SkillNote: <collection>" plugin group synced from SkillNote.
+4. **Collection sync** — a SkillNote collection's **Sync ▾ → claude.ai**
+   toggle (where the user chooses what syncs).
+5. **Settings** — the panel's in-panel Settings view (connection health
+   + disconnect).
 
-TODO: capture these. Recommended 1280×800 PNG, no transparent background.
+Recommended 1280×800 PNG, no transparent background. Item 1's standalone
+render is committed; the rest are TODO (need a live claude.ai session).
 
 ## Promotional images (Chrome Web Store optional but recommended)
 

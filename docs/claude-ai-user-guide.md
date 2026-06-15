@@ -29,33 +29,39 @@ This guide walks you through setup. **One-time, ~60 seconds.**
 
 ### 2. Connect the extension to your SkillNote
 
-1. Click the SkillNote extension icon in your browser toolbar.
-2. Click **Open settings** if it's not your first time, or just paste
-   directly: your SkillNote URL (e.g. `https://skillnote.acme.com`).
-3. The extension prompts for permission to talk to that URL — click
-   **Allow**.
-4. Click **Connect**.
+1. Click the SkillNote icon in your browser toolbar — it opens the
+   SkillNote **side panel** on the right (it stays open beside claude.ai
+   while you work).
+2. In the panel, enter your **SkillNote URL** — the same address you
+   open in your browser (e.g. `http://localhost:3000` or
+   `https://skillnote.acme.com`) — and a label for this browser.
+3. Click **Connect**. Chrome asks once for permission to reach that
+   address — click **Allow**. (It only ever connects to that URL.)
 
-A new tab opens showing a 6-character pairing code.
+The panel then shows a 6-character **pairing code** — right there, no new
+tab.
 
 ### 3. Approve the pairing in SkillNote
 
-The pairing page in SkillNote shows the same 6-character code that the
-extension displayed.
+Open SkillNote in another tab. The **notifications bell** (top-right)
+pops a pairing request showing the same 6-character code.
 
 **Verify the codes match**, then click **Approve**.
 
-Within a second, the extension is connected. The new tab redirects you
-to the claude.ai connector settings page, where you'll see your browser
-listed under **Connected browsers**.
+Within a second the panel flips to **Connected** — no redirects, no
+settings page to hunt for.
 
 ## What happens next
 
-- Skills you publish or edit in SkillNote now appear in your
-  claude.ai **Customize → Skills** section within a minute.
+- Pick what to sync: on any **collection** in SkillNote, open
+  **Sync ▾ → claude.ai**. Those skills appear in your claude.ai
+  **Customize → Plugins** (as a "SkillNote: &lt;collection&gt;" plugin
+  group) within seconds, and re-sync automatically on every change.
 - Skills you author directly in claude.ai are pulled back into SkillNote
-  on the next reverse-sync cycle (every ~15 minutes when claude.ai is
-  open in your browser).
+  on the next reverse-sync cycle (when claude.ai is open in your browser).
+- The panel shows **how often your skills get used** on claude.ai this
+  week, and which collections are currently live.
+- It matches claude.ai's **light/dark** appearance in real time.
 - The extension reads your existing claude.ai session cookies — it
   never asks for a separate API key.
 
@@ -80,11 +86,15 @@ three options per skill:
 - **Keep claude.ai** — overwrites SkillNote with the claude.ai version.
 - **Skip** — clear the warning; you can resolve manually later.
 
-### Activity feed
+### Notifications & activity
 
 Every action the connector takes (pairings, pushes, imports, conflicts,
-errors) is logged. Visit **Settings → claude.ai → View all activity** to
-see the full history with search and filter.
+errors) — plus skill create/edit/delete — is logged. See it three ways:
+
+- The extension panel's **Activity** tab — recent events at a glance.
+- The **notifications bell** in SkillNote (top-right) — a quick popover.
+- The full, searchable history at **Notifications** in the SkillNote
+  sidebar. Entries are kept for 3 days.
 
 ## Common issues
 

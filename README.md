@@ -198,17 +198,29 @@ npx skillnote connect openclaw
 
 ### claude.ai (web app)
 
-Two-way sync between SkillNote and your claude.ai account through a small browser extension. Skills pushed in SkillNote appear in claude.ai; skills authored in claude.ai are imported back into SkillNote — no copy-paste either way.
+A small Chrome extension syncs your SkillNote collections to your claude.ai account as plugin groups — skills you publish in SkillNote appear in claude.ai's **Customize → Plugins**, and claude.ai-authored skills import back. No copy-paste either way. The extension opens as a **side panel** beside claude.ai, matches its light/dark theme, and shows how often your skills actually get used.
+
+<div align="center">
+  <img src="docs/screenshots/claude-ai-connector.png" width="360" alt="SkillNote claude.ai connector side panel: Connected status, a 'This week on claude.ai' usage card (42 skill uses, most used code-review-checklist), and the collections currently live on claude.ai" />
+</div>
+
+**Install** (Chrome Web Store listing pending review — load unpacked for now):
 
 ```bash
-# Install the extension unpacked (Web Store / AMO listings pending review)
 cd extensions/claude-ai && npm install && npm run build
-# Then in chrome://extensions, enable Developer mode → Load unpacked → dist/
+# chrome://extensions → enable Developer mode → Load unpacked → select dist/
 ```
 
-Open the extension, paste your SkillNote URL, and approve the pairing code at `<your-skillnote>/settings/integrations/claude-ai`. Sync runs every minute while you're signed in to claude.ai. The extension reads your claude.ai session cookies locally — they never leave your machine.
+**Connect** — everything happens in the panel, no separate tab:
 
-Connector docs: [`docs/claude-ai-integration.md`](docs/claude-ai-integration.md) · admin runbook: [`docs/claude-ai-admin-runbook.md`](docs/claude-ai-admin-runbook.md).
+1. Click the SkillNote toolbar icon to open the side panel.
+2. Enter your SkillNote URL — the same address you open in your browser (e.g. `http://localhost:3000`) — and click **Connect**. (Chrome asks once for permission to reach that address.)
+3. In SkillNote, the **notifications bell** (top-right) shows the pairing request — confirm the code matches and click **Approve**.
+4. Choose what to sync: on any collection in SkillNote, open **Sync ▾ → claude.ai**. Those skills appear in claude.ai within seconds, and re-sync automatically.
+
+Sync runs automatically while you're signed in to claude.ai. The extension reads your claude.ai session cookies **locally only** — they never leave your machine, and it only ever talks to claude.ai and the SkillNote URL you entered.
+
+Full walkthrough: [`docs/claude-ai-user-guide.md`](docs/claude-ai-user-guide.md) · architecture: [`docs/claude-ai-integration.md`](docs/claude-ai-integration.md) · admin runbook: [`docs/claude-ai-admin-runbook.md`](docs/claude-ai-admin-runbook.md) · privacy: [`extensions/claude-ai/PRIVACY.md`](extensions/claude-ai/PRIVACY.md).
 
 > Cursor, Codex, Antigravity, and OpenHands are on the roadmap. [Open an issue](https://github.com/luna-prompts/skillnote/issues) if you want to help build an adapter.
 
