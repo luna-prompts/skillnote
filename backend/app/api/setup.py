@@ -18,8 +18,8 @@ router = APIRouter(tags=["setup"])
 
 # Agents the Connect page understands. Keep the canonical names in sync
 # with the frontend's `AgentId` union and with the install scripts below.
-SUPPORTED_AGENTS = ("claude-code", "openclaw", "claude-ai")
-AgentLiteral = Literal["claude-code", "openclaw", "claude-ai"]
+SUPPORTED_AGENTS = ("claude-code", "openclaw", "codex", "claude-ai")
+AgentLiteral = Literal["claude-code", "openclaw", "codex", "claude-ai"]
 
 # Buckets for the per-agent state machine on the Connect page.
 ACTIVE_WINDOW_HOURS = 24
@@ -27,6 +27,7 @@ IDLE_WINDOW_DAYS = 30
 
 _PLUGIN_DIR = Path("/plugin") if Path("/plugin/.claude-plugin").is_dir() else Path(__file__).resolve().parent.parent.parent.parent / "plugin"
 _OPENCLAW_DIR = Path("/openclaw") if Path("/openclaw").is_dir() else Path(__file__).resolve().parent.parent.parent.parent / "plugin-openclaw"
+_CODEX_DIR = Path("/codex") if Path("/codex/.codex-plugin").is_dir() else Path(__file__).resolve().parent.parent.parent.parent / "plugin-codex"
 
 
 import re as _re
@@ -71,6 +72,41 @@ def get_plugin_zip(request: Request):
                                .replace("${CLAUDE_PLUGIN_OPTION_HOST}", f"${{CLAUDE_PLUGIN_OPTION_HOST:-{host}}}")
                                .replace("http://localhost:8082", api_url)
                                .replace("http://localhost:8083/mcp", mcp_url)
+                               .replace("http://localhost:3000", web_url))
+                    zf.writestr(str(rel), content)
+    buf.seek(0)
+    return Response(content=buf.read(), media_type="application/zip")
+
+
+@router.get("/v1/codex-bundle.zip")
+def get_codex_bundle_zip(request: Request):
+    """Serve the Codex plugin bundle as a ZIP with host URLs baked in.
+
+    Mirrors /v1/plugin.zip: the install script (/setup/codex) downloads this,
+    extracts it into a local marketplace root, and registers it with
+    `codex plugin marketplace add`.
+    """
+    urls = _derive_urls(request)
+    api_url = urls["api"]
+    web_url = urls["web"]
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        if _CODEX_DIR.is_dir():
+            for fpath in _CODEX_DIR.rglob("*"):
+                if not fpath.is_file():
+                    continue
+                if "__pycache__" in str(fpath) or "/tests/" in str(fpath):
+                    continue
+                rel = fpath.relative_to(_CODEX_DIR)
+                # Binary assets (logo/icon) are copied verbatim; text files get
+                # host URLs substituted so the bundle is self-contained offline.
+                if fpath.suffix.lower() in {".png", ".jpg", ".jpeg", ".gif", ".ico", ".webp"}:
+                    zf.writestr(str(rel), fpath.read_bytes())
+                else:
+                    content = fpath.read_text(errors="replace")
+                    content = (content
+                               .replace("http://localhost:8082", api_url)
                                .replace("http://localhost:3000", web_url))
                     zf.writestr(str(rel), content)
     buf.seek(0)
@@ -548,6 +584,256 @@ def get_openclaw_setup_script(request: Request):
     return PlainTextResponse(script, media_type="text/plain")
 
 
+_CODEX_SETUP_SCRIPT = r'''#!/bin/bash
+set -euo pipefail
+
+API_URL="__API_URL__"
+WEB_URL="__WEB_URL__"
+SKILLNOTE_HOME="$HOME/.skillnote"
+CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
+MKT_DIR="$SKILLNOTE_HOME/codex/marketplace"
+PLUGIN_SRC="$MKT_DIR/plugins/skillnote"
+
+echo ""
+echo "  S K I L L N O T E   ->   C O D E X"
+echo ""
+
+# ── prerequisites ────────────────────────────────────────────────────────────
+command -v curl &>/dev/null    || { echo "Error: curl required.";    exit 1; }
+command -v unzip &>/dev/null   || { echo "Error: unzip required.";   exit 1; }
+command -v python3 &>/dev/null  || { echo "Error: python3 required."; exit 1; }
+
+HAVE_CODEX=1
+command -v codex &>/dev/null || HAVE_CODEX=0
+if [ "$HAVE_CODEX" -eq 0 ]; then
+    echo "  Note: 'codex' CLI not found on PATH. Installing the plugin files"
+    echo "        anyway; register the marketplace yourself once Codex is set up:"
+    echo "          codex plugin marketplace add $MKT_DIR"
+    echo ""
+fi
+
+# ── idempotent clean install of the local marketplace ────────────────────────
+rm -rf "$MKT_DIR"
+mkdir -p "$MKT_DIR/plugins" "$PLUGIN_SRC" "$SKILLNOTE_HOME/bin"
+
+# ── download the Codex plugin bundle ─────────────────────────────────────────
+TMP_ZIP=$(mktemp -t skillnote-codex.XXXXXX.zip) || { echo "Error: mktemp failed."; exit 1; }
+PICK_ZIP=$(mktemp -t skillnote-pick.XXXXXX.zip) || { echo "Error: mktemp failed."; exit 1; }
+trap 'rm -f "$TMP_ZIP" "$PICK_ZIP"' EXIT
+curl -sf --connect-timeout 10 --max-time 30 "$API_URL/v1/codex-bundle.zip" -o "$TMP_ZIP" || {
+    echo "Error: Could not download $API_URL/v1/codex-bundle.zip"
+    exit 1
+}
+
+# ── refuse symlink and path-traversal entries ────────────────────────────────
+if unzip -Z "$TMP_ZIP" 2>/dev/null | awk '{print $1}' | grep -q '^l'; then
+    echo "Error: bundle contains symbolic link entries; refusing to extract."
+    exit 1
+fi
+if unzip -l "$TMP_ZIP" 2>/dev/null | awk 'NR>3 && $1 ~ /^[0-9]+$/ {print $NF}' | grep -qE '^(/|\.\./|.*/\.\./)'; then
+    echo "Error: bundle contains absolute or parent-directory paths; refusing to extract."
+    exit 1
+fi
+
+unzip -qo "$TMP_ZIP" -d "$PLUGIN_SRC"
+chmod +x "$PLUGIN_SRC/hooks/handlers/"*.sh 2>/dev/null || true
+
+# ── write the local marketplace manifest ─────────────────────────────────────
+# Codex looks for the manifest at <root>/.agents/plugins/marketplace.json; the
+# plugin `source.path` is relative to <root>. INSTALLED_BY_DEFAULT marks the
+# plugin enabled when the marketplace is added; `codex plugin add` below then
+# materializes it into the plugin cache. (No `authentication` key: only
+# ON_INSTALL/ON_USE are valid, and our plugin needs no auth — omit it.)
+mkdir -p "$MKT_DIR/.agents/plugins"
+cat > "$MKT_DIR/.agents/plugins/marketplace.json" << 'MKTEOF'
+{
+  "name": "skillnote-local",
+  "interface": { "displayName": "SkillNote" },
+  "plugins": [
+    {
+      "name": "skillnote",
+      "source": { "source": "local", "path": "./plugins/skillnote" },
+      "policy": { "installation": "INSTALLED_BY_DEFAULT" },
+      "category": "Developer Tools"
+    }
+  ]
+}
+MKTEOF
+
+# ── register marketplace + install the plugin ────────────────────────────────
+# `marketplace add` registers the source and writes the enabled flag +
+# [marketplaces.*] block into config.toml itself (so we must NOT also hand-edit
+# config.toml — a duplicate table would break TOML parsing). `plugin add` then
+# installs the plugin into the cache where Codex loads its skills + hooks.
+if [ "$HAVE_CODEX" -eq 1 ]; then
+    # Codex refuses to run if CODEX_HOME doesn't exist yet (fresh machine).
+    mkdir -p "$CODEX_HOME"
+    codex plugin remove skillnote@skillnote-local &>/dev/null || true
+    codex plugin marketplace remove skillnote-local &>/dev/null || true
+    if codex plugin marketplace add "$MKT_DIR" &>/dev/null; then
+        codex plugin add skillnote@skillnote-local &>/dev/null || {
+            echo "  Warning: 'codex plugin add' failed. Try manually:"
+            echo "    codex plugin add skillnote@skillnote-local"
+        }
+    else
+        echo "  Warning: 'codex plugin marketplace add' failed. Try manually:"
+        echo "    codex plugin marketplace add $MKT_DIR"
+        echo "    codex plugin add skillnote@skillnote-local"
+    fi
+fi
+
+# ── install the shared collection picker (from the Claude Code plugin bundle) ──
+# skillnote-pick is agent-agnostic — it writes .skillnote.json. We install it to
+# the shared ~/.skillnote/bin so Codex and Claude Code reuse one picker.
+if curl -sf --connect-timeout 10 --max-time 30 "$API_URL/v1/plugin.zip" -o "$PICK_ZIP"; then
+    PICK_TMP=$(mktemp -d -t skillnote-pickdir.XXXXXX) || PICK_TMP=""
+    if [ -n "$PICK_TMP" ]; then
+        unzip -qo "$PICK_ZIP" "bin/skillnote-pick" -d "$PICK_TMP" 2>/dev/null || true
+        if [ -f "$PICK_TMP/bin/skillnote-pick" ]; then
+            cp "$PICK_TMP/bin/skillnote-pick" "$SKILLNOTE_HOME/bin/skillnote-pick"
+            chmod +x "$SKILLNOTE_HOME/bin/skillnote-pick"
+        fi
+        rm -rf "$PICK_TMP"
+    fi
+fi
+
+# Save the host for hooks + picker to read at runtime
+SKILL_HOST=$(echo "$API_URL" | sed -E 's|https?://||;s|:.*||')
+echo "$SKILL_HOST" > "$SKILLNOTE_HOME/host"
+PICKER_PATH="$SKILLNOTE_HOME/bin/skillnote-pick"
+# Stable (un-versioned) path to the sync handler in the marketplace source. The
+# wrapper runs this right after the picker so skills are synced into the project
+# BEFORE codex starts — this works even before the user has trusted the plugin's
+# hooks (Codex gates hooks behind a first-run trust prompt). The bundled
+# SessionStart/UserPromptSubmit hooks then keep skills fresh mid-session.
+SYNC_PATH="$PLUGIN_SRC/hooks/handlers/sync.sh"
+
+# ── shell wrapper: run the collection picker before launching codex ──────────
+SHELL_RC=""
+case "$(basename "${SHELL:-/bin/sh}")" in
+  zsh)  SHELL_RC="$HOME/.zshrc" ;;
+  bash) if [ -f "$HOME/.bashrc" ]; then SHELL_RC="$HOME/.bashrc"
+        elif [ -f "$HOME/.bash_profile" ]; then SHELL_RC="$HOME/.bash_profile"
+        else SHELL_RC="$HOME/.bashrc"; fi ;;
+  fish) SHELL_RC="$HOME/.config/fish/config.fish" ;;
+  *)    for rc in "$HOME/.bashrc" "$HOME/.bash_profile" "$HOME/.zshrc" "$HOME/.profile"; do
+            if [ -f "$rc" ]; then SHELL_RC="$rc"; break; fi
+        done ;;
+esac
+
+# Remove any previous SkillNote Codex wrapper before re-adding (clean updates)
+if [ -n "$SHELL_RC" ] && [ -f "$SHELL_RC" ]; then
+    SHELL_RC_PATH="$SHELL_RC" python3 - << 'WRAPCLEAN_EOF' 2>/dev/null || true
+import os, re
+path = os.environ.get("SHELL_RC_PATH", "")
+if not path or not os.path.isfile(path):
+    raise SystemExit(0)
+content = open(path).read()
+content = re.sub(r'\n?# >>> SKILLNOTE CODEX WRAPPER BEGIN.*?# <<< SKILLNOTE CODEX WRAPPER END\n?',
+                 '', content, flags=re.DOTALL)
+content = re.sub(r'\n{3,}', '\n\n', content)
+open(path, 'w').write(content)
+WRAPCLEAN_EOF
+fi
+
+if [ -n "$SHELL_RC" ] && [ -f "$PICKER_PATH" ]; then
+    case "$SHELL_RC" in
+      *config.fish)
+        cat >> "$SHELL_RC" << WRAPEOF
+
+# >>> SKILLNOTE CODEX WRAPPER BEGIN (do not edit; managed by skillnote setup)
+function codex
+  if isatty stdin; and isatty stdout
+    "$PICKER_PATH"; or true
+    test -x "$SYNC_PATH"; and "$SYNC_PATH" 2>/dev/null; or true
+  end
+  command codex \$argv
+end
+# <<< SKILLNOTE CODEX WRAPPER END
+WRAPEOF
+        ;;
+      *)
+        cat >> "$SHELL_RC" << WRAPEOF
+
+# >>> SKILLNOTE CODEX WRAPPER BEGIN (do not edit; managed by skillnote setup)
+codex() {
+  if [ -t 0 ] && [ -t 1 ]; then
+    "$PICKER_PATH" || true
+    [ -x "$SYNC_PATH" ] && "$SYNC_PATH" 2>/dev/null || true
+  fi
+  command codex "\$@"
+}
+# <<< SKILLNOTE CODEX WRAPPER END
+WRAPEOF
+        ;;
+    esac
+    echo "  Shell wrapper added to $SHELL_RC"
+else
+    echo "  Note: collection picker not wired into your shell."
+    echo "        Run $PICKER_PATH manually before 'codex' to pick a collection."
+fi
+
+# ── ping backend so the Connect page knows we installed ─────────────────────
+MACHINE_HASH=$(printf '%s' "${HOSTNAME:-host}-${USER:-user}" \
+    | shasum -a 256 2>/dev/null \
+    | awk '{print $1}' \
+    || echo "")
+curl -sf --max-time 5 --retry 3 --retry-delay 2 --retry-connrefused \
+    -X POST "$API_URL/v1/setup/installs" \
+    -H "Content-Type: application/json" \
+    -d "{\"agent\":\"codex\",\"machine_id_hash\":\"$MACHINE_HASH\"}" \
+    >/dev/null 2>&1 || true
+
+echo ""
+echo "  Installed:"
+echo "    $PLUGIN_SRC/                 (Codex plugin: skills + sync hooks)"
+echo "    $MKT_DIR/marketplace.json    (local marketplace)"
+echo "    $SKILLNOTE_HOME/bin/skillnote-pick  (collection picker)"
+echo "    $SKILLNOTE_HOME/host         (host: $SKILL_HOST)"
+echo ""
+echo "  Web:  $WEB_URL"
+echo "  API:  $API_URL"
+echo ""
+python3 -c "
+rc = '$SHELL_RC'
+bw = 60
+def row(text=''):
+    print('  |' + text.ljust(bw - 2) + '|')
+print('  +-- Getting started ' + '-' * (bw - 21) + '+')
+row()
+row('  1. Quit any running Codex sessions')
+row()
+if rc:
+    row('  2. source ' + rc + '  (or open a new terminal)')
+else:
+    row('  2. Open a new terminal')
+row()
+row('  3. codex')
+row('     the collection picker appears; pick a collection,')
+row('     then your skills sync into ./.codex/skills/')
+row()
+row('  4. In Codex, type /skills to use your synced skills')
+row()
+row('  Tip: approve the SkillNote hooks when Codex asks (once)')
+row('  to enable live mid-session skill updates.')
+row()
+print('  +' + '-' * (bw - 2) + '+')
+" 2>/dev/null
+echo ""
+echo "  * github.com/luna-prompts/skillnote — Star us!"
+echo ""
+'''
+
+
+@router.get("/setup/codex")
+def get_codex_setup_script(request: Request):
+    urls = _derive_urls(request)
+    script = (_CODEX_SETUP_SCRIPT
+              .replace("__API_URL__", urls["api"])
+              .replace("__WEB_URL__", urls["web"]))
+    return PlainTextResponse(script, media_type="text/plain")
+
+
 _CLAUDE_AI_SETUP_SCRIPT = r'''#!/bin/bash
 set -euo pipefail
 
@@ -656,6 +942,7 @@ Usage:
 Supported agents:
   claude-code   Install the SkillNote plugin for Claude Code
   openclaw      Install the SkillNote skill for OpenClaw
+  codex         Install the SkillNote plugin for OpenAI Codex
 
 Example:
   curl -sf $API_URL/setup/agent | bash -s -- --agent openclaw
@@ -680,6 +967,7 @@ if [ -z "$AGENT" ]; then
     echo "Supported agents:"
     echo "  claude-code   Install the SkillNote plugin for Claude Code"
     echo "  openclaw      Install the SkillNote skill for OpenClaw"
+    echo "  codex         Install the SkillNote plugin for OpenAI Codex"
     exit 2
 fi
 
@@ -692,6 +980,10 @@ case "$AGENT" in
         TARGET_PATH="/setup/openclaw"
         AGENT_LABEL="OpenClaw"
         ;;
+    codex|cx)
+        TARGET_PATH="/setup/codex"
+        AGENT_LABEL="Codex"
+        ;;
     claude-ai|claude_ai|claudeai|ca)
         TARGET_PATH="/setup/claude-ai"
         AGENT_LABEL="claude.ai (browser)"
@@ -699,7 +991,7 @@ case "$AGENT" in
     *)
         echo "Error: unknown agent '$AGENT'."
         echo ""
-        echo "Supported agents: claude-code, openclaw, claude-ai"
+        echo "Supported agents: claude-code, openclaw, codex, claude-ai"
         exit 2
         ;;
 esac
@@ -808,9 +1100,43 @@ Please do the full install yourself — don't ask me to run commands.
 Don't ask for confirmation between steps. Just run the commands and report results.
 """
 
+_CODEX_AGENT_PROMPT = """Set up SkillNote for me in Codex. My SkillNote backend is at __API_URL__.
+
+Please do the full install yourself — don't ask me to run commands.
+
+1. **Verify the SkillNote backend is reachable:**
+   ```bash
+   curl -sf __API_URL__/health
+   ```
+   If this fails, tell me to first run:
+   ```bash
+   git clone https://github.com/luna-prompts/skillnote.git
+   cd skillnote
+   ./install.sh
+   ```
+
+2. **Install the Codex plugin:**
+   ```bash
+   curl -sf __API_URL__/setup/agent | bash -s -- --agent codex
+   ```
+
+3. **Reload my shell** (so the `codex` collection-picker wrapper gets picked up):
+   ```bash
+   source ~/.zshrc 2>/dev/null || source ~/.bashrc 2>/dev/null || true
+   ```
+
+4. **Verify everything works** and report back:
+   - Marketplace registered: `codex plugin marketplace list 2>/dev/null | grep -i skillnote`
+   - Plugin files present: `ls ~/.skillnote/codex/marketplace/plugins/skillnote/`
+   - Tell me what collection picker options I'd see when I run `codex`, and remind me I can browse synced skills with `/skills`.
+
+Don't ask for confirmation between steps. Just run the commands and report results.
+"""
+
 _AGENT_PROMPTS = {
     "openclaw": _OPENCLAW_AGENT_PROMPT,
     "claude-code": _CLAUDE_AGENT_PROMPT,
+    "codex": _CODEX_AGENT_PROMPT,
 }
 
 
@@ -834,6 +1160,7 @@ def get_agent_prompt(
         "openclaw": "openclaw", "oc": "openclaw", "open-claw": "openclaw",
         "claude-code": "claude-code", "cc": "claude-code",
         "claude": "claude-code", "claude_code": "claude-code",
+        "codex": "codex", "cx": "codex",
     }
     canonical = alias_map.get(agent_normalized)
     if canonical is None:
@@ -957,8 +1284,10 @@ def _agent_status(agent: AgentLiteral, db: Session) -> AgentStatus:
     # actually flips the agent back to pending instead of staying "active"
     # forever from pre-disconnect activity.
     floor_clause = "AND created_at > :floor" if activity_floor is not None else ""
-    if agent == "claude-code":
-        params = {"agent": "claude-code"}
+    if agent in ("claude-code", "codex"):
+        # Both log one row per skill call to skill_call_events (track-usage hook
+        # posts to /v1/hooks/skill-used with the agent's name).
+        params = {"agent": agent}
         if activity_floor is not None:
             params["floor"] = activity_floor  # type: ignore[assignment]
         last_active = db.execute(

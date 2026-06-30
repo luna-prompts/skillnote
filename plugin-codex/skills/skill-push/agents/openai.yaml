@@ -1,0 +1,8 @@
+interface:
+  display_name: "SkillNote: Push Skill"
+  short_description: Create and push a reusable skill to SkillNote.
+  brand_color: "#06b6d4"
+  default_prompt:
+    - Save this pattern as a SkillNote skill.
+policy:
+  allow_implicit_invocation: true

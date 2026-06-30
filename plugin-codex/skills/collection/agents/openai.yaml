@@ -1,0 +1,8 @@
+interface:
+  display_name: "SkillNote: Collection"
+  short_description: Choose which SkillNote collection syncs into this project.
+  brand_color: "#06b6d4"
+  default_prompt:
+    - Change my SkillNote collection for this project.
+policy:
+  allow_implicit_invocation: true

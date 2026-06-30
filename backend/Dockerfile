@@ -24,13 +24,15 @@ RUN pip install --no-cache-dir -q -U pip \
 # Copy backend source.
 COPY backend /app
 
-# Copy the agent bundle source dirs. Setup endpoints look for /openclaw and
-# /plugin first (Docker), then fall back to a sibling repo path (dev tests).
+# Copy the agent bundle source dirs. Setup endpoints look for /openclaw,
+# /plugin and /codex first (Docker), then fall back to a sibling repo path
+# (dev tests).
 COPY plugin-openclaw /openclaw
 COPY plugin /plugin
+COPY plugin-codex /codex
 
 RUN addgroup --system app && adduser --system --ingroup app app \
-    && chown -R app:app /app /openclaw /plugin
+    && chown -R app:app /app /openclaw /plugin /codex
 
 USER app
 EXPOSE 8080

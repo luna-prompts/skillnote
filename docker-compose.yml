@@ -59,6 +59,7 @@ services:
       - bundles:/app/data/bundles
       - ./plugin:/plugin:ro
       - ./plugin-openclaw:/openclaw:ro
+      - ./plugin-codex:/codex:ro
     depends_on:
       postgres:
         condition: service_healthy

@@ -1,0 +1,31 @@
+{
+  "name": "skillnote",
+  "version": "0.1.0",
+  "description": "Self-hosted skill registry for AI coding agents. Auto-sync versioned SKILL.md collections into Codex, with a session picker, the native /skills menu, and usage analytics.",
+  "author": {
+    "name": "Luna Prompts",
+    "email": "contact@lunaprompts.com",
+    "url": "https://lunaprompts.com"
+  },
+  "homepage": "https://github.com/luna-prompts/skillnote",
+  "repository": "https://github.com/luna-prompts/skillnote",
+  "license": "MIT",
+  "keywords": ["skills", "registry", "sync", "analytics", "collections", "hooks", "offline-first"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "SkillNote",
+    "shortDescription": "Self-hosted skill registry that syncs SKILL.md collections into Codex.",
+    "longDescription": "SkillNote is a self-hosted registry for reusable agent skills. Connect Codex to your SkillNote server and the skills in your active collection sync into Codex automatically — pick a collection at session start, browse them with /skills, and create or update skills without leaving Codex. Skills sync mid-session too, so collection changes show up without a restart.",
+    "developerName": "Luna Prompts",
+    "category": "Developer Tools",
+    "capabilities": ["Read", "Write"],
+    "websiteURL": "https://github.com/luna-prompts/skillnote",
+    "defaultPrompt": [
+      "Show my active SkillNote collection and the skills it synced.",
+      "Change my SkillNote collection for this project.",
+      "Create a new SkillNote skill from the pattern we just used."
+    ],
+    "brandColor": "#06b6d4",
+    "logo": "./assets/logo.png"
+  }
+}
