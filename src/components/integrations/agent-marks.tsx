@@ -57,6 +57,36 @@ export function OpenClawMark({ size = 56 }: { size?: number }) {
   )
 }
 
+export function CodexMark({ size = 56 }: { size?: number }) {
+  // OpenAI Codex — a terminal-native coding agent, so its mark is a monochrome
+  // `>_` shell-prompt glyph on a rounded plate. Unlike the brand-art img marks
+  // above, this is an inline SVG drawn in currentColor so it themes with the
+  // neutral card chrome (dark plate in light mode, light plate in dark mode)
+  // instead of carrying a fixed brand color.
+  return (
+    <span
+      className="flex items-center justify-center rounded-lg bg-foreground text-background"
+      style={{ width: size, height: size }}
+    >
+      <svg
+        viewBox="0 0 24 24"
+        width={Math.round(size * 0.52)}
+        height={Math.round(size * 0.52)}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={2.2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        {/* chevron prompt + cursor underscore */}
+        <path d="m6 8 4 4-4 4" />
+        <path d="M13 16h5" />
+      </svg>
+    </span>
+  )
+}
+
 export function OpenAIMark({ size = 56 }: { size?: number }) {
   // OpenAI's monochrome "blossom" knot logomark on a white plate. Used as a
   // "coming soon" placeholder for a future OpenAI sync surface — rendered at

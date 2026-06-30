@@ -11,7 +11,7 @@
 import { test, expect, type Page } from '@playwright/test'
 
 interface AgentRow {
-  agent: 'claude-code' | 'openclaw'
+  agent: 'claude-code' | 'openclaw' | 'codex'
   state: 'pending' | 'active' | 'idle'
   installed_at: string | null
   last_active_at: string | null
@@ -126,9 +126,41 @@ test.describe('/integrations — Browse cards + Connected rows', () => {
     // Default tab is Connected when ≥1 wired — switch back to Browse manually
     await page.getByRole('tab', { name: /Browse/ }).click()
 
-    // Claude's card shows "Connected" in the footer; OpenClaw's shows "Install"
+    // Claude's card shows "Connected" in the footer; the other catalog cards
+    // (OpenClaw, Codex) show "Install" — use .first() since there are now
+    // multiple Install affordances in the catalog.
     await expect(page.getByText('Connected', { exact: true }).first()).toBeVisible()
-    await expect(page.getByText('Install', { exact: true })).toBeVisible()
+    await expect(page.getByText('Install', { exact: true }).first()).toBeVisible()
+  })
+
+  test('Browse tab includes the Codex card with an Install affordance', async ({ page }) => {
+    await mockSetup(page, [
+      { agent: 'claude-code', state: 'pending', installed_at: null, last_active_at: null, calls_24h: 0, calls_7d: 0 },
+      { agent: 'openclaw', state: 'pending', installed_at: null, last_active_at: null, calls_24h: 0, calls_7d: 0 },
+      { agent: 'codex', state: 'pending', installed_at: null, last_active_at: null, calls_24h: 0, calls_7d: 0 },
+    ])
+    await page.goto('/integrations')
+    await page.getByRole('tab', { name: /Browse/ }).click()
+
+    // The Codex catalog card is present alongside the others.
+    await expect(page.getByText('Codex', { exact: true }).first()).toBeVisible()
+    // Three browse cards → at least three Install affordances.
+    expect(await page.getByText('Install', { exact: true }).count()).toBeGreaterThanOrEqual(3)
+  })
+
+  test('Codex card swaps to Connected footer when active', async ({ page }) => {
+    const recent = new Date(Date.now() - 60_000).toISOString()
+    await mockSetup(page, [
+      { agent: 'claude-code', state: 'pending', installed_at: null, last_active_at: null, calls_24h: 0, calls_7d: 0 },
+      { agent: 'openclaw', state: 'pending', installed_at: null, last_active_at: null, calls_24h: 0, calls_7d: 0 },
+      { agent: 'codex', state: 'active', installed_at: recent, last_active_at: recent, calls_24h: 3, calls_7d: 3 },
+    ])
+    await page.goto('/integrations')
+    await page.getByRole('tab', { name: /Browse/ }).click()
+
+    // Codex shows "Connected"; the two pending agents still show "Install".
+    await expect(page.getByText('Connected', { exact: true }).first()).toBeVisible()
+    await expect(page.getByText('Install', { exact: true }).first()).toBeVisible()
   })
 
   test('Connected row click expands to wire diagram + Reinstall/Disconnect', async ({ page }) => {

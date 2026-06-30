@@ -13,7 +13,7 @@ export type PlatformCommands = Record<PlatformId, string>
 
 interface Props {
   state: ConnectionState
-  agentId: 'claude-code' | 'openclaw'
+  agentId: 'claude-code' | 'openclaw' | 'codex'
   agentLabel: string
   installCommand: string
   /** Install command per platform; shown in the Advanced drawer's platform tabs. */
@@ -217,7 +217,7 @@ function AdvancedDrawer({
   platformCommands,
   installManifest,
 }: {
-  agentId: 'claude-code' | 'openclaw'
+  agentId: 'claude-code' | 'openclaw' | 'codex'
   platformCommands: PlatformCommands
   installManifest: string[]
 }) {

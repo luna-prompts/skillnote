@@ -9,7 +9,7 @@ import { AgentCard } from '@/components/integrations/agent-card'
 import { AgentListRow } from '@/components/integrations/agent-list-row'
 import { ConnectModal } from '@/components/integrations/connect-modal'
 import { DisconnectModal } from '@/components/integrations/disconnect-modal'
-import { ClaudeCodeMark, OpenClawMark } from '@/components/integrations/agent-marks'
+import { ClaudeCodeMark, OpenClawMark, CodexMark } from '@/components/integrations/agent-marks'
 import {
   ClaudeAICard,
   ClaudeAIConnectedRow,
@@ -19,7 +19,7 @@ import type { ConnectionState } from '@/components/integrations/connector'
 import { getApiBaseUrl } from '@/lib/api/client'
 import { dispatchJob, useJobPolling, type JobAgent } from '@/lib/cli-jobs'
 
-type AgentId = 'claude-code' | 'openclaw'
+type AgentId = 'claude-code' | 'openclaw' | 'codex'
 
 interface AgentSnapshot {
   id: AgentId
@@ -84,6 +84,20 @@ const AGENTS: AgentMeta[] = [
       'Try a task; the log-watcher reports which skills the agent used.',
     ],
   },
+  {
+    id: 'codex',
+    label: 'Codex',
+    sublabel: 'OpenAI CLI',
+    description:
+      'Auto-sync SkillNote collections into Codex with a session picker and the native /skills menu.',
+    platforms: ['macOS', 'Linux', 'Windows'],
+    badge: 'new',
+    usageSteps: [
+      'Open a new shell or source your rc file so the wrapper picks up.',
+      'Run `codex` and pick a collection in the picker.',
+      'Type `/skills` in Codex to use your skills.',
+    ],
+  },
 ]
 
 const ALL_STATES: ConnectionState[] = ['pending', 'connecting', 'active', 'idle']
@@ -102,6 +116,7 @@ export default function IntegrationsPage() {
   const [snapshots, setSnapshots] = useState<Record<AgentId, AgentSnapshot>>({
     'claude-code': { id: 'claude-code', state: 'pending' },
     openclaw: { id: 'openclaw', state: 'pending' },
+    codex: { id: 'codex', state: 'pending' },
   })
   // Flips true after the first successful /v1/setup/agents fetch so the
   // default-tab resolver below doesn't race the network.
@@ -248,6 +263,7 @@ export default function IntegrationsPage() {
     return {
       'claude-code': apply(snapshots['claude-code']),
       openclaw: apply(snapshots.openclaw),
+      codex: apply(snapshots.codex),
     } as Record<AgentId, AgentSnapshot>
   }, [snapshots, overrides])
 
@@ -255,10 +271,16 @@ export default function IntegrationsPage() {
   // Canonical bash one-liner per agent. macOS + Linux execute it directly;
   // Windows prefixes `wsl ` because the install scripts only run inside a
   // POSIX shell. The Advanced drawer explains the WSL caveat to the user.
-  const baseCmd = (id: AgentId) =>
-    id === 'claude-code'
-      ? `curl -sf ${base}/setup/agent | bash -s -- --agent claude-code`
-      : `curl -sf ${base}/setup/openclaw | bash`
+  const baseCmd = (id: AgentId) => {
+    switch (id) {
+      case 'claude-code':
+        return `curl -sf ${base}/setup/agent | bash -s -- --agent claude-code`
+      case 'codex':
+        return `curl -sf ${base}/setup/agent | bash -s -- --agent codex`
+      case 'openclaw':
+        return `curl -sf ${base}/setup/openclaw | bash`
+    }
+  }
 
   const installCmd = (id: AgentId) => baseCmd(id)
 
@@ -274,9 +296,10 @@ export default function IntegrationsPage() {
   // Each entry MUST follow `<label> — <value>` so the modal can parse it into
   // a two-column row. Keep labels short (2-4 words); values can be paths or
   // short descriptive strings.
-  const installManifest = (id: AgentId): string[] =>
-    id === 'claude-code'
-      ? [
+  const installManifest = (id: AgentId): string[] => {
+    switch (id) {
+      case 'claude-code':
+        return [
           'Plugin root — ~/.claude/plugins/marketplaces/skillnote-local/',
           'Marketplace manifest — ~/.claude/plugins/marketplaces/skillnote-local/marketplace.json',
           'Skill loader plugin — ~/.claude/plugins/skillnote/',
@@ -284,13 +307,25 @@ export default function IntegrationsPage() {
           'Shell wrapper — appended to ~/.zshrc or ~/.bashrc',
           `Bridge daemon — ${base}`,
         ]
-      : [
+      case 'codex':
+        return [
+          'Skill root — ~/.codex/skills/skillnote/',
+          'Session picker — ~/.codex/skills/skillnote/picker.sh',
+          'Refresh hook — ~/.codex/skills/skillnote/sync.sh',
+          'Shell wrapper — appended to ~/.zshrc or ~/.bashrc',
+          `Host config — ~/.codex/skills/skillnote/config.json`,
+          `Bridge daemon — ${base}`,
+        ]
+      case 'openclaw':
+        return [
           'Skill root — ~/.openclaw/skills/skillnote/',
           'Refresh hook — ~/.openclaw/skills/skillnote/sync.sh',
           'Analytics agent — ~/.openclaw/skills/skillnote/log-watcher.py',
           `Host config — ~/.openclaw/skills/skillnote/config.json`,
           `Bridge daemon — ${base}`,
         ]
+    }
+  }
 
   const handleReinstall = (id: AgentId) => {
     toast.info(`Re-running the install for ${labelOf(id)}…`)
@@ -326,8 +361,16 @@ export default function IntegrationsPage() {
     [base],
   )
 
-  const markFor = (id: AgentId) =>
-    id === 'claude-code' ? <ClaudeCodeMark /> : <OpenClawMark />
+  const markFor = (id: AgentId) => {
+    switch (id) {
+      case 'claude-code':
+        return <ClaudeCodeMark />
+      case 'codex':
+        return <CodexMark />
+      case 'openclaw':
+        return <OpenClawMark />
+    }
+  }
 
   // Connected = agents in active or idle state. Everything else is browseable.
   const connected = AGENTS.filter((a) => {
@@ -537,7 +580,14 @@ export default function IntegrationsPage() {
 }
 
 function labelOf(id: AgentId): string {
-  return id === 'claude-code' ? 'Claude Code' : 'OpenClaw'
+  switch (id) {
+    case 'claude-code':
+      return 'Claude Code'
+    case 'codex':
+      return 'Codex'
+    case 'openclaw':
+      return 'OpenClaw'
+  }
 }
 
 // ─── Empty state for the Connected tab ────────────────────────────────────
@@ -654,6 +704,7 @@ function DevCycler({
       </p>
       <Btn id="claude-code" label="claude" />
       <Btn id="openclaw" label="openclaw" />
+      <Btn id="codex" label="codex" />
     </div>
   )
 }
