@@ -5,7 +5,7 @@ import { UserFacingError, prettyError } from '../ui/errors.js'
 import { c } from '../ui/theme.js'
 
 // Supported agent identifiers, matching the backend's /setup/agent dispatcher.
-export const SUPPORTED_AGENTS = ['claude-code', 'openclaw', 'claude-ai'] as const
+export const SUPPORTED_AGENTS = ['claude-code', 'openclaw', 'codex', 'claude-ai'] as const
 export type SupportedAgent = (typeof SUPPORTED_AGENTS)[number]
 
 export interface ConnectOptions {
@@ -15,6 +15,7 @@ export interface ConnectOptions {
 const displayNames: Record<SupportedAgent, string> = {
   'claude-code': 'Claude Code',
   openclaw: 'OpenClaw',
+  codex: 'Codex',
   'claude-ai': 'claude.ai (browser)',
 }
 
@@ -95,6 +96,17 @@ export async function connectCommand(agent: string, _opts: ConnectOptions = {}):
           `  2. Paste this SkillNote URL into the extension:  ${apiBase}`,
           '  3. Approve the pairing code in SkillNote',
           '  4. Sign in to claude.ai (the extension reads the session cookies)',
+        ].join('\n'),
+      )
+    } else if (agent === 'codex') {
+      log.info(
+        [
+          'Next:',
+          '  1. Quit any running Codex sessions',
+          '  2. Open a new shell (or run `source ~/.zshrc`)',
+          '  3. Run `codex`',
+          '  4. The skill collection picker appears; pick a collection',
+          '  5. In Codex, type `/skills` to see your synced SkillNote skills',
         ].join('\n'),
       )
     }

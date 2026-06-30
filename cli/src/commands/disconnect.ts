@@ -30,6 +30,8 @@ export async function disconnectCommand(
       await disconnectOpenClaw(opts)
     } else if (agent === 'claude-code') {
       await disconnectClaudeCode(opts)
+    } else if (agent === 'codex') {
+      await disconnectCodex(opts)
     }
 
     outro(`${c.ok('Done.')} Run ${c.brand('skillnote status')} to confirm.`)
@@ -74,6 +76,26 @@ async function disconnectClaudeCode(_opts: DisconnectOptions): Promise<void> {
       '       # >>> SKILLNOTE WRAPPER BEGIN',
       '       # <<< SKILLNOTE WRAPPER END',
       '  5. Open a new shell so the changes take effect.',
+    ].join('\n'),
+  )
+}
+
+async function disconnectCodex(_opts: DisconnectOptions): Promise<void> {
+  // Codex's install touches the Codex plugin marketplace + a shell wrapper.
+  // Reverting it programmatically is risky — surfacing manual instructions is
+  // safer until we have proper rollback metadata.
+  log.warn('Disconnecting Codex is currently a guided manual process.')
+  log.info(
+    [
+      'To fully disconnect Codex:',
+      '  1. Remove the SkillNote plugin marketplace:',
+      '       codex plugin marketplace remove skillnote-local',
+      '  2. Run: rm -rf ~/.skillnote/codex',
+      '  3. Edit your shell rc file (~/.zshrc or ~/.bashrc) and delete the block',
+      '     between the markers:',
+      '       # >>> SKILLNOTE CODEX WRAPPER BEGIN',
+      '       # <<< SKILLNOTE CODEX WRAPPER END',
+      '  4. Open a new shell so the changes take effect.',
     ].join('\n'),
   )
 }
