@@ -3,6 +3,46 @@
 All notable changes to SkillNote will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.7.0] - 2026-06-30
+
+**Codex integration.** SkillNote now connects to the OpenAI Codex CLI with the
+same experience as Claude Code: a session collection picker, automatic skill
+sync (including mid-session), the native `/skills` menu, and SkillNote
+branding. `skillnote connect codex` installs a real Codex plugin via a local
+marketplace — no copy-paste.
+
+Minor version bump (not a patch): this adds a new distribution surface
+(`plugin-codex/`), a new backend bundle + install endpoints, and CLI/UI wiring.
+No breaking changes to existing skill/collection/version APIs.
+
+### Added
+
+- **Codex plugin** (`plugin-codex/`, versioned `0.1.0`). Delivered through
+  Codex's native plugin marketplace: `codex plugin marketplace add` +
+  `codex plugin add`, with the plugin marked `INSTALLED_BY_DEFAULT`. Ships
+  bundled `SessionStart` / `UserPromptSubmit` / `PostToolUse` hooks, four
+  control skills (`skillnote`, `collection`, `skill-push`, `complete-skill`),
+  per-skill `agents/openai.yaml` branding, and SkillNote logo/brand-color in
+  the plugin `interface` block.
+- **Automatic skill sync into the project's `.codex/skills/`.** The active
+  collection's skills materialize as `skillnote-<slug>/SKILL.md`. A
+  `SessionStart` hook syncs at session start and a throttled `UserPromptSubmit`
+  hook keeps them fresh **mid-session** (no restart). Offline-first.
+- **Pre-trust sync via the `codex()` shell wrapper.** Because Codex gates hooks
+  behind a first-run trust prompt, the wrapper runs the shared collection
+  picker (`skillnote-pick`) **and an initial sync** before launching Codex —
+  so skills are present even before hooks are trusted.
+- **Backend endpoints:** `GET /v1/codex-bundle.zip` (host-baked plugin bundle)
+  and `GET /setup/codex` (install script). `codex` added to the unified
+  `/setup/agent` dispatcher, the `/v1/setup/agents` state machine, and the
+  agent-install prompt map.
+- **`skillnote connect codex` / `disconnect codex`** in the CLI, and a **Codex
+  card** on the Connect page (catalog entry + `>_` agent mark).
+- Tests: backend bundle/script/dispatcher integration tests, CLI allowlist
+  tests, and Connect-page e2e coverage. Verified end-to-end against
+  `codex-cli 0.142.3` (install → marketplace/plugin registration → skill sync →
+  mid-session collection swap → usage analytics).
+
 ## [0.6.0] - 2026-06-15
 
 **The claude.ai connector.** SkillNote now syncs your collections to your

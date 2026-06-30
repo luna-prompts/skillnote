@@ -1,6 +1,6 @@
 {
     "name": "skillnote",
-    "version": "0.6.0",
+    "version": "0.7.0",
     "private": true,
     "overrides": {
         "hono": "4.12.25",
