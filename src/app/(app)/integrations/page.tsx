@@ -309,12 +309,12 @@ export default function IntegrationsPage() {
         ]
       case 'codex':
         return [
-          'Skill root — ~/.codex/skills/skillnote/',
-          'Session picker — ~/.codex/skills/skillnote/picker.sh',
-          'Refresh hook — ~/.codex/skills/skillnote/sync.sh',
-          'Shell wrapper — appended to ~/.zshrc or ~/.bashrc',
-          `Host config — ~/.codex/skills/skillnote/config.json`,
-          `Bridge daemon — ${base}`,
+          'Local plugin marketplace — ~/.skillnote/codex/marketplace/',
+          'Codex plugin (skills + sync hooks) — registered via `codex plugin add`',
+          'Collection picker — ~/.skillnote/bin/skillnote-pick',
+          'Shell wrapper — codex() appended to ~/.zshrc or ~/.bashrc',
+          'Plugin enabled — ~/.codex/config.toml',
+          'Server address — ~/.skillnote/host',
         ]
       case 'openclaw':
         return [
