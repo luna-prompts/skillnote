@@ -1,5 +1,5 @@
 ---
-name: skillnote-collection
+name: collection
 description: Choose which SkillNote skill collection is active for this Codex project. Use when the user says "change collection", "switch skills", "use frontend skills", or "show collections".
 ---
 

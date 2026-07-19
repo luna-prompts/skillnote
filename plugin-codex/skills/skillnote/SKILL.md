@@ -34,8 +34,8 @@ Show a compact summary:
   Web UI:      <WEB>/collections
 
   • Type /skills to invoke any synced skill
-  • Say "change collection" to switch     (skillnote-collection)
-  • Say "create a skill" to push a new one (skillnote-skill-push)
+  • Say "change collection" to switch     ($skillnote:collection)
+  • Say "create a skill" to push a new one ($skillnote:skill-push)
 ```
 
 If `.skillnote.json` is missing, tell the user no collection is active yet and that the picker runs automatically when they start `codex` (or they can say "change collection" now).

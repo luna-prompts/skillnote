@@ -1,5 +1,5 @@
 ---
-name: skillnote-skill-push
+name: skill-push
 description: Create and push reusable skills to SkillNote from Codex when repeated instructions are detected or the user says "create a skill", "save this pattern", "push a skill". Guides drafting, review, collection selection, and publishing.
 ---
 

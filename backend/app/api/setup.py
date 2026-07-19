@@ -86,6 +86,11 @@ def get_codex_bundle_zip(request: Request):
     extracts it into a local marketplace root, and registers it with
     `codex plugin marketplace add`.
     """
+    if not _CODEX_DIR.is_dir():
+        # Fail loudly rather than serving a valid-but-empty ZIP that makes the
+        # installer die with a cryptic "zipfile is empty" under set -e.
+        raise HTTPException(status_code=404, detail="codex bundle not available")
+
     urls = _derive_urls(request)
     api_url = urls["api"]
     web_url = urls["web"]
@@ -686,14 +691,19 @@ fi
 # skillnote-pick is agent-agnostic — it writes .skillnote.json. We install it to
 # the shared ~/.skillnote/bin so Codex and Claude Code reuse one picker.
 if curl -sf --connect-timeout 10 --max-time 30 "$API_URL/v1/plugin.zip" -o "$PICK_ZIP"; then
-    PICK_TMP=$(mktemp -d -t skillnote-pickdir.XXXXXX) || PICK_TMP=""
-    if [ -n "$PICK_TMP" ]; then
-        unzip -qo "$PICK_ZIP" "bin/skillnote-pick" -d "$PICK_TMP" 2>/dev/null || true
-        if [ -f "$PICK_TMP/bin/skillnote-pick" ]; then
-            cp "$PICK_TMP/bin/skillnote-pick" "$SKILLNOTE_HOME/bin/skillnote-pick"
-            chmod +x "$SKILLNOTE_HOME/bin/skillnote-pick"
+    # Refuse symlink entries before extracting (cp would follow a link target).
+    if unzip -Z "$PICK_ZIP" 2>/dev/null | awk '{print $1}' | grep -q '^l'; then
+        echo "  Warning: picker bundle contains symlinks; skipping picker install."
+    else
+        PICK_TMP=$(mktemp -d -t skillnote-pickdir.XXXXXX) || PICK_TMP=""
+        if [ -n "$PICK_TMP" ]; then
+            unzip -qo "$PICK_ZIP" "bin/skillnote-pick" -d "$PICK_TMP" 2>/dev/null || true
+            if [ -f "$PICK_TMP/bin/skillnote-pick" ] && [ ! -L "$PICK_TMP/bin/skillnote-pick" ]; then
+                cp "$PICK_TMP/bin/skillnote-pick" "$SKILLNOTE_HOME/bin/skillnote-pick"
+                chmod +x "$SKILLNOTE_HOME/bin/skillnote-pick"
+            fi
+            rm -rf "$PICK_TMP"
         fi
-        rm -rf "$PICK_TMP"
     fi
 fi
 
@@ -743,9 +753,21 @@ if [ -n "$SHELL_RC" ] && [ -f "$PICKER_PATH" ]; then
 
 # >>> SKILLNOTE CODEX WRAPPER BEGIN (do not edit; managed by skillnote setup)
 function codex
+  # Picker/sync only when launching the interactive TUI (no subcommand);
+  # 'codex resume' re-syncs without re-prompting; exec/plugin/etc. run clean.
+  set -l first
+  if set -q argv[1]
+    set first \$argv[1]
+  end
   if isatty stdin; and isatty stdout
-    "$PICKER_PATH"; or true
-    test -x "$SYNC_PATH"; and "$SYNC_PATH" 2>/dev/null; or true
+    if not contains -- "\$first" --version -V --help -h
+      if test -z "\$first"; or string match -q -- '-*' "\$first"; or test "\$first" = resume
+        if test "\$first" != resume
+          "$PICKER_PATH"; or true
+        end
+        test -x "$SYNC_PATH"; and "$SYNC_PATH"; or true
+      end
+    end
   end
   command codex \$argv
 end
@@ -757,9 +779,16 @@ WRAPEOF
 
 # >>> SKILLNOTE CODEX WRAPPER BEGIN (do not edit; managed by skillnote setup)
 codex() {
+  # Picker/sync only when launching the interactive TUI (no subcommand);
+  # 'codex resume' re-syncs without re-prompting; exec/plugin/etc. run clean.
   if [ -t 0 ] && [ -t 1 ]; then
-    "$PICKER_PATH" || true
-    [ -x "$SYNC_PATH" ] && "$SYNC_PATH" 2>/dev/null || true
+    case "\${1:-}" in
+      --version|-V|--help|-h) ;;
+      ""|-*|resume)
+        [ "\${1:-}" = resume ] || "$PICKER_PATH" || true
+        [ -x "$SYNC_PATH" ] && "$SYNC_PATH" || true
+        ;;
+    esac
   fi
   command codex "\$@"
 }
@@ -787,7 +816,7 @@ curl -sf --max-time 5 --retry 3 --retry-delay 2 --retry-connrefused \
 echo ""
 echo "  Installed:"
 echo "    $PLUGIN_SRC/                 (Codex plugin: skills + sync hooks)"
-echo "    $MKT_DIR/marketplace.json    (local marketplace)"
+echo "    $MKT_DIR/.agents/plugins/marketplace.json  (local marketplace)"
 echo "    $SKILLNOTE_HOME/bin/skillnote-pick  (collection picker)"
 echo "    $SKILLNOTE_HOME/host         (host: $SKILL_HOST)"
 echo ""
@@ -1284,23 +1313,25 @@ def _agent_status(agent: AgentLiteral, db: Session) -> AgentStatus:
     # actually flips the agent back to pending instead of staying "active"
     # forever from pre-disconnect activity.
     floor_clause = "AND created_at > :floor" if activity_floor is not None else ""
-    if agent in ("claude-code", "codex"):
-        # Both log one row per skill call to skill_call_events (track-usage hook
-        # posts to /v1/hooks/skill-used with the agent's name).
+    if agent in ("claude-code", "codex", "claude-ai"):
+        # All three log one row per skill call to skill_call_events with their
+        # own agent_name (claude-code/codex via the /v1/hooks/skill-used hook;
+        # claude-ai via the connector). Filter event_type='called' so future
+        # non-'called' rows (e.g. session evals) can't inflate the counts.
         params = {"agent": agent}
         if activity_floor is not None:
             params["floor"] = activity_floor  # type: ignore[assignment]
         last_active = db.execute(
             text(
                 f"SELECT MAX(created_at) FROM skill_call_events "
-                f"WHERE agent_name = :agent {floor_clause}"
+                f"WHERE agent_name = :agent AND event_type = 'called' {floor_clause}"
             ),
             params,
         ).scalar()
         calls_24h = db.execute(
             text(
                 f"SELECT COUNT(*) FROM skill_call_events "
-                f"WHERE agent_name = :agent {floor_clause} "
+                f"WHERE agent_name = :agent AND event_type = 'called' {floor_clause} "
                 f"AND created_at >= now() - interval '24 hours'"
             ),
             params,
@@ -1308,7 +1339,7 @@ def _agent_status(agent: AgentLiteral, db: Session) -> AgentStatus:
         calls_7d = db.execute(
             text(
                 f"SELECT COUNT(*) FROM skill_call_events "
-                f"WHERE agent_name = :agent {floor_clause} "
+                f"WHERE agent_name = :agent AND event_type = 'called' {floor_clause} "
                 f"AND created_at >= now() - interval '7 days'"
             ),
             params,

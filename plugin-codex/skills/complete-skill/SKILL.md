@@ -1,5 +1,5 @@
 ---
-name: skillnote-complete-skill
+name: complete-skill
 description: Rate a SkillNote skill after using it in Codex. Called after applying a skill to record a 1-5 rating and outcome.
 ---
 

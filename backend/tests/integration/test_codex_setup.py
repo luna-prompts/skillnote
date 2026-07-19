@@ -52,6 +52,22 @@ def test_codex_bundle_returns_valid_archive(client):
     assert "assets/logo.png" in names
 
 
+def test_codex_sync_does_not_interpolate_untrusted_input(client):
+    """Regression guard for the SessionStart RCE: collection names (from a
+    repo-local .skillnote.json) and skill fields must reach Python via the
+    environment / files, never string-interpolated into Python source.
+    """
+    zf = zipfile.ZipFile(io.BytesIO(client.get("/v1/codex-bundle.zip").content))
+    sync = zf.read("hooks/handlers/sync.sh").decode("utf-8")
+    # The old, vulnerable pattern interpolated shell vars into Python literals.
+    assert "'$COLLECTIONS'" not in sync
+    assert "'$SKILLS_DIR'" not in sync
+    assert "'$API_URL'" not in sync
+    # The hardened version reads everything from os.environ and validates slugs.
+    assert "os.environ" in sync
+    assert "SLUG_RE" in sync or "re.compile" in sync
+
+
 def test_codex_plugin_manifest_is_valid_and_branded(client):
     r = client.get("/v1/codex-bundle.zip")
     zf = zipfile.ZipFile(io.BytesIO(r.content))
