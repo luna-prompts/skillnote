@@ -6,10 +6,11 @@ import { cn } from '@/lib/utils'
 import { ConnectionDiagram } from './connection-diagram'
 import { ActionPanel, type PlatformCommands } from './action-panel'
 import type { ConnectionState } from './connector'
+import type { JobAgent } from '@/lib/cli-jobs'
 
 interface Props {
   state: ConnectionState
-  agentId: 'claude-code' | 'openclaw'
+  agentId: JobAgent
   agentLabel: string
   agentSublabel?: string
   agentMark: React.ReactNode

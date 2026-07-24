@@ -89,3 +89,16 @@ export function ClaudeAIMark({ size = 56 }: { size?: number }) {
     />
   )
 }
+
+export function CodexMark({ size = 56 }: { size?: number }) {
+  return (
+    <img
+      src="/codex-mark.svg"
+      alt="OpenAI Codex"
+      width={size}
+      height={size}
+      className="block rounded-lg"
+      draggable={false}
+    />
+  )
+}

@@ -11,7 +11,7 @@
 import { test, expect, type Page } from '@playwright/test'
 
 interface AgentRow {
-  agent: 'claude-code' | 'openclaw'
+  agent: 'claude-code' | 'codex' | 'openclaw' | 'claude-ai'
   state: 'pending' | 'active' | 'idle'
   installed_at: string | null
   last_active_at: string | null
@@ -114,6 +114,20 @@ test.describe('/integrations — Browse cards + Connected rows', () => {
     // Each card has an "Install" affordance (the role-button div in the footer)
     const installButtons = page.getByText('Install', { exact: true })
     await expect(installButtons.first()).toBeVisible()
+  })
+
+  test('Browse includes a Codex CLI connection', async ({ page }) => {
+    await mockSetup(page, [
+      { agent: 'claude-code', state: 'pending', installed_at: null, last_active_at: null, calls_24h: 0, calls_7d: 0 },
+      { agent: 'codex', state: 'pending', installed_at: null, last_active_at: null, calls_24h: 0, calls_7d: 0 },
+      { agent: 'openclaw', state: 'pending', installed_at: null, last_active_at: null, calls_24h: 0, calls_7d: 0 },
+    ])
+    await page.goto('/integrations')
+    await page.getByRole('tab', { name: /Browse/ }).click()
+
+    await expect(page.getByText('Codex CLI', { exact: true })).toBeVisible()
+    await expect(page.getByText('OpenAI coding agent', { exact: true })).toBeVisible()
+    await expect(page.getByRole('tab', { name: /Browse 3/ })).toBeVisible()
   })
 
   test('Browse cards swap to "Connected" footer state when agent is active', async ({ page }) => {

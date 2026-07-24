@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="OpenAI Codex">
+  <rect width="64" height="64" rx="12" fill="#101010"/>
+  <path d="M20 20.5 9 32l11 11.5M44 20.5 55 32 44 43.5" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="m36.5 15-9 34" stroke="#7ee2b8" stroke-width="4" stroke-linecap="round"/>
+</svg>

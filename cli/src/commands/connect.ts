@@ -5,7 +5,7 @@ import { UserFacingError, prettyError } from '../ui/errors.js'
 import { c } from '../ui/theme.js'
 
 // Supported agent identifiers, matching the backend's /setup/agent dispatcher.
-export const SUPPORTED_AGENTS = ['claude-code', 'openclaw', 'claude-ai'] as const
+export const SUPPORTED_AGENTS = ['claude-code', 'codex', 'openclaw', 'claude-ai'] as const
 export type SupportedAgent = (typeof SUPPORTED_AGENTS)[number]
 
 export interface ConnectOptions {
@@ -14,6 +14,7 @@ export interface ConnectOptions {
 
 const displayNames: Record<SupportedAgent, string> = {
   'claude-code': 'Claude Code',
+  codex: 'Codex CLI',
   openclaw: 'OpenClaw',
   'claude-ai': 'claude.ai (browser)',
 }
@@ -82,6 +83,15 @@ export async function connectCommand(agent: string, _opts: ConnectOptions = {}):
           '  1. Open a new shell (or run `source ~/.zshrc`)',
           '  2. Run `claude`',
           '  3. The skill picker appears',
+        ].join('\n'),
+      )
+    } else if (agent === 'codex') {
+      log.info(
+        [
+          'Next:',
+          '  1. Start a new Codex session with `codex`',
+          '  2. In the terminal Codex CLI, run `/hooks` once and trust the SkillNote refresh hook',
+          '  3. Run `/skills` or type `$` to browse SkillNote skills',
         ].join('\n'),
       )
     } else if (agent === 'openclaw') {

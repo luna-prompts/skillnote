@@ -18,8 +18,8 @@ router = APIRouter(tags=["setup"])
 
 # Agents the Connect page understands. Keep the canonical names in sync
 # with the frontend's `AgentId` union and with the install scripts below.
-SUPPORTED_AGENTS = ("claude-code", "openclaw", "claude-ai")
-AgentLiteral = Literal["claude-code", "openclaw", "claude-ai"]
+SUPPORTED_AGENTS = ("claude-code", "codex", "openclaw", "claude-ai")
+AgentLiteral = Literal["claude-code", "codex", "openclaw", "claude-ai"]
 
 # Buckets for the per-agent state machine on the Connect page.
 ACTIVE_WINDOW_HOURS = 24
@@ -622,6 +622,317 @@ def get_claude_ai_setup_script(request: Request):
     return PlainTextResponse(script, media_type="text/plain")
 
 
+_CODEX_SYNC_SCRIPT = r'''#!/usr/bin/env python3
+"""Refresh SkillNote-managed skills in Codex's global skill directory."""
+import json
+import os
+import re
+import shutil
+import stat
+import sys
+import tempfile
+import urllib.parse
+import urllib.request
+import zipfile
+
+
+def main():
+    quiet = "--quiet" in sys.argv
+    args = [arg for arg in sys.argv[1:] if arg != "--quiet"]
+    if len(args) != 3:
+        print("usage: sync.py [--quiet] API_URL SKILLS_DIR MANIFEST", file=sys.stderr)
+        return 2
+
+    api_url, skills_dir, manifest_path = args
+    source_slug_re = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+    local_slug_re = re.compile(r"^[a-z0-9][a-z0-9-]{0,127}$")
+
+    def local_slug(source_slug):
+        value = re.sub(r"[^a-z0-9-]+", "-", source_slug.lower())
+        value = re.sub(r"-+", "-", value).strip("-")
+        return value
+
+    def get_json(url):
+        with urllib.request.urlopen(url, timeout=10) as response:
+            return json.load(response)
+
+    def safe_extract(bundle, destination):
+        with zipfile.ZipFile(bundle) as archive:
+            root = os.path.realpath(destination)
+            for entry in archive.infolist():
+                name = entry.filename.replace("\\", "/")
+                target = os.path.realpath(os.path.join(root, name))
+                mode = (entry.external_attr >> 16) & 0o170000
+                if name.startswith("/") or (target != root and not target.startswith(root + os.sep)):
+                    raise RuntimeError("bundle contains an unsafe path")
+                if mode == stat.S_IFLNK:
+                    raise RuntimeError("bundle contains a symbolic link")
+            archive.extractall(root)
+
+    try:
+        with open(manifest_path, encoding="utf-8") as handle:
+            previous = json.load(handle)
+    except (OSError, ValueError):
+        previous = {}
+    previous_slugs = set(previous.get("skills", []))
+
+    try:
+        catalog = get_json(api_url.rstrip("/") + "/v1/skills")
+    except Exception as exc:
+        if not quiet:
+            print("  SkillNote sync failed: %s" % exc, file=sys.stderr)
+        return 0 if quiet else 1
+
+    os.makedirs(skills_dir, exist_ok=True)
+    os.makedirs(os.path.dirname(manifest_path), exist_ok=True)
+    installed = []
+    failed = []
+    for skill in catalog:
+        source_slug = str(skill.get("slug", ""))
+        slug = local_slug(source_slug)
+        published_version = skill.get("latestVersion")
+        content_version = int(skill.get("currentVersion") or 0)
+        if not source_slug_re.fullmatch(source_slug) or not local_slug_re.fullmatch(slug):
+            continue
+        encoded_slug = urllib.parse.quote(source_slug, safe="")
+        # Published, unedited skills retain their complete stored bundle
+        # (including scripts/references). Imported or UI-authored/edited skills
+        # may have no published SkillVersion, so bundle their current DB content.
+        if published_version and content_version == 0:
+            version = published_version
+            url = "%s/v1/skills/%s/%s/download" % (
+                api_url.rstrip("/"), encoded_slug, published_version,
+            )
+        else:
+            version = "current-%d" % content_version
+            url = "%s/v1/skills/%s/current/download" % (
+                api_url.rstrip("/"), encoded_slug,
+            )
+        try:
+            with tempfile.TemporaryDirectory(prefix="skillnote-codex-") as staging:
+                bundle = os.path.join(staging, "bundle.zip")
+                extracted = os.path.join(staging, "skill")
+                os.makedirs(extracted)
+                urllib.request.urlretrieve(url, bundle)
+                safe_extract(bundle, extracted)
+                skill_md = os.path.join(extracted, "SKILL.md")
+                if not os.path.isfile(skill_md):
+                    raise RuntimeError("bundle has no root SKILL.md")
+                # Some imported registries use names such as `ckm:brand`.
+                # Keep the API slug for fetching, but normalize the local
+                # directory/frontmatter name for Windows and Codex portability.
+                with open(skill_md, encoding="utf-8") as handle:
+                    skill_text = handle.read()
+                skill_text, replacements = re.subn(
+                    r"(?m)^name:\s*.*$",
+                    "name: " + json.dumps(slug, ensure_ascii=False),
+                    skill_text,
+                    count=1,
+                )
+                if replacements != 1:
+                    raise RuntimeError("SKILL.md has no frontmatter name")
+                with open(skill_md, "w", encoding="utf-8", newline="\n") as handle:
+                    handle.write(skill_text)
+                destination = os.path.join(skills_dir, slug)
+                if os.path.exists(destination) and slug not in previous_slugs:
+                    raise RuntimeError("destination already exists and is not managed by SkillNote")
+                replacement = destination + ".skillnote-new"
+                shutil.rmtree(replacement, ignore_errors=True)
+                shutil.copytree(extracted, replacement)
+                shutil.rmtree(destination, ignore_errors=True)
+                os.replace(replacement, destination)
+            installed.append(slug)
+            if not quiet:
+                alias = " as %s" % slug if source_slug != slug else ""
+                print("  Installed %s@%s%s" % (source_slug, version, alias))
+        except Exception as exc:
+            failed.append(slug)
+            if not quiet:
+                print("  Warning: %s could not be installed: %s" % (source_slug, exc), file=sys.stderr)
+
+    retained = previous_slugs.intersection(failed)
+    managed = set(installed).union(retained)
+    for slug in previous_slugs - managed:
+        if isinstance(slug, str) and local_slug_re.fullmatch(slug):
+            shutil.rmtree(os.path.join(skills_dir, slug), ignore_errors=True)
+
+    manifest = {"api_url": api_url.rstrip("/"), "skills": sorted(managed)}
+    tmp_manifest = manifest_path + ".tmp"
+    with open(tmp_manifest, "w", encoding="utf-8") as handle:
+        json.dump(manifest, handle, indent=2)
+    os.replace(tmp_manifest, manifest_path)
+
+    if not quiet:
+        print("")
+        print("  Synced %d skill(s) into %s" % (len(installed), skills_dir))
+        if failed:
+            print("  %d skill(s) failed; rerun the installer to retry." % len(failed), file=sys.stderr)
+    return 1 if failed and not installed and catalog else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+'''
+
+
+@router.get("/setup/codex-sync.py")
+def get_codex_sync_script():
+    return PlainTextResponse(_CODEX_SYNC_SCRIPT, media_type="text/x-python")
+
+
+_CODEX_SETUP_SCRIPT = r'''#!/bin/bash
+set -euo pipefail
+
+API_URL="__API_URL__"
+MCP_URL="__MCP_URL__"
+WEB_URL="__WEB_URL__"
+SKILLS_DIR="$HOME/.agents/skills"
+STATE_DIR="$HOME/.skillnote/codex"
+MANIFEST="$STATE_DIR/manifest.json"
+SYNC_SCRIPT="$STATE_DIR/sync.py"
+CODEX_DIR="$HOME/.codex"
+HOOKS_FILE="$CODEX_DIR/hooks.json"
+
+echo ""
+echo "  S K I L L N O T E   ->   C O D E X"
+echo ""
+
+# Windows commonly exposes a non-functional Microsoft Store `python3` alias.
+# Probe the interpreter instead of trusting `command -v`, then fall back to
+# the standard Windows `py -3` launcher when available.
+PYTHON_CMD=""
+PYTHON3_PATH=$(command -v python3 2>/dev/null || true)
+PYTHON_PATH=$(command -v python 2>/dev/null || true)
+case "$PYTHON3_PATH" in *WindowsApps*|*windowsapps*) PYTHON3_PATH="" ;; esac
+case "$PYTHON_PATH" in *WindowsApps*|*windowsapps*) PYTHON_PATH="" ;; esac
+
+if [ -n "$PYTHON3_PATH" ] && python3 -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 8) else 1)' &>/dev/null; then
+    PYTHON_CMD="python3"
+elif [ -n "$PYTHON_PATH" ] && python -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 8) else 1)' &>/dev/null; then
+    PYTHON_CMD="python"
+elif command -v py &>/dev/null && py -3 -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 8) else 1)' &>/dev/null; then
+    PYTHON_CMD="py -3"
+else
+    echo "Error: Python 3.8 or newer is required."
+    exit 1
+fi
+mkdir -p "$SKILLS_DIR" "$STATE_DIR" "$CODEX_DIR"
+
+# Keep the refresher on disk so Codex can run it at session start. It only
+# replaces folders recorded in SkillNote's manifest; personal skills remain
+# untouched.
+curl -sf "$API_URL/setup/codex-sync.py" -o "$SYNC_SCRIPT"
+$PYTHON_CMD "$SYNC_SCRIPT" "$API_URL" "$SKILLS_DIR" "$MANIFEST"
+
+# Merge a SessionStart hook into the user's existing hooks.json. Codex asks
+# the user to review/trust new local hooks before it runs them.
+$PYTHON_CMD - "$HOOKS_FILE" "$PYTHON_CMD" "$SYNC_SCRIPT" "$API_URL" "$SKILLS_DIR" "$MANIFEST" <<'PYEOF'
+import json
+import os
+import shlex
+import subprocess
+import sys
+
+hooks_path, python_cmd, sync_script, api_url, skills_dir, manifest = sys.argv[1:]
+command_args = shlex.split(python_cmd) + [
+    sync_script, "--quiet", api_url, skills_dir, manifest,
+]
+command = (subprocess.list2cmdline(command_args) if os.name == "nt"
+           else shlex.join(command_args))
+try:
+    with open(hooks_path, encoding="utf-8") as handle:
+        root = json.load(handle)
+except FileNotFoundError:
+    root = {}
+except (OSError, ValueError) as exc:
+    print("  Warning: could not update %s: %s" % (hooks_path, exc), file=sys.stderr)
+    raise SystemExit(0)
+
+if not isinstance(root, dict):
+    print("  Warning: %s is not a JSON object; refresh hook was not installed." % hooks_path, file=sys.stderr)
+    raise SystemExit(0)
+events = root.setdefault("hooks", {})
+if not isinstance(events, dict):
+    print("  Warning: %s has an invalid hooks field; refresh hook was not installed." % hooks_path, file=sys.stderr)
+    raise SystemExit(0)
+groups = events.setdefault("SessionStart", [])
+if not isinstance(groups, list):
+    print("  Warning: %s has an invalid SessionStart field; refresh hook was not installed." % hooks_path, file=sys.stderr)
+    raise SystemExit(0)
+
+def is_skillnote_group(group):
+    if not isinstance(group, dict):
+        return False
+    return any(
+        isinstance(handler, dict)
+        and "skillnote/codex/sync.py" in str(handler.get("command", "")).replace("\\", "/")
+        for handler in group.get("hooks", [])
+    )
+
+groups[:] = [group for group in groups if not is_skillnote_group(group)]
+groups.append({
+    "matcher": "startup|resume|clear|compact",
+    "hooks": [{
+        "type": "command",
+        "command": command,
+        "timeout": 20,
+        "statusMessage": "Refreshing SkillNote skills",
+    }],
+})
+tmp_path = hooks_path + ".tmp"
+with open(tmp_path, "w", encoding="utf-8") as handle:
+    json.dump(root, handle, indent=2)
+    handle.write("\n")
+os.replace(tmp_path, hooks_path)
+PYEOF
+
+MACHINE_HASH=$(printf '%s' "${HOSTNAME:-host}-${USER:-user}" \
+    | shasum -a 256 2>/dev/null \
+    | awk '{print $1}' \
+    || echo "")
+$PYTHON_CMD - "$API_URL" "$MACHINE_HASH" <<'PYEOF' || true
+import json, sys, urllib.request
+url, machine_hash = sys.argv[1:]
+body = json.dumps({"agent": "codex", "machine_id_hash": machine_hash}).encode()
+request = urllib.request.Request(
+    url.rstrip("/") + "/v1/setup/installs",
+    data=body,
+    headers={"Content-Type": "application/json"},
+    method="POST",
+)
+urllib.request.urlopen(request, timeout=10).read()
+PYEOF
+
+echo ""
+if command -v codex &>/dev/null; then
+    codex mcp remove skillnote >/dev/null 2>&1 || true
+    if codex mcp add skillnote --url "$MCP_URL" >/dev/null 2>&1; then
+        echo "  Connected the SkillNote MCP server at $MCP_URL"
+    else
+        echo "  Warning: skills installed, but the SkillNote MCP server could not be configured."
+    fi
+    echo "  Codex CLI found. Start a new session and run /skills to browse."
+    echo "  In the terminal Codex CLI, run /hooks once and trust the SkillNote refresh hook."
+else
+    echo "  Skills are ready. Install Codex CLI, then start a session and run /skills."
+fi
+echo "  SkillNote will refresh managed skills whenever Codex starts or resumes."
+echo "  Web: $WEB_URL"
+echo ""
+'''
+
+
+@router.get("/setup/codex")
+def get_codex_setup_script(request: Request):
+    """Install the latest SkillNote registry skills for Codex CLI globally."""
+    urls = _derive_urls(request)
+    script = (_CODEX_SETUP_SCRIPT
+              .replace("__API_URL__", urls["api"])
+              .replace("__MCP_URL__", urls["mcp"])
+              .replace("__WEB_URL__", urls["web"]))
+    return PlainTextResponse(script, media_type="text/plain")
+
+
 # Unified entry point: parses --agent <name> from $@ and delegates to the
 # right per-agent installer. Keeps each installer's logic isolated (they
 # touch different home dirs, ship different bundles) while giving users one
@@ -629,6 +940,7 @@ def get_claude_ai_setup_script(request: Request):
 #
 #   curl -sf <host>/setup/agent | bash -s -- --agent openclaw
 #   curl -sf <host>/setup/agent | bash -s -- --agent claude-code
+#   curl -sf <host>/setup/agent | bash -s -- --agent codex
 _AGENT_DISPATCH_SCRIPT = r'''#!/bin/bash
 set -euo pipefail
 
@@ -655,7 +967,9 @@ Usage:
 
 Supported agents:
   claude-code   Install the SkillNote plugin for Claude Code
+  codex         Install registry skills globally for Codex CLI
   openclaw      Install the SkillNote skill for OpenClaw
+  claude-ai     Connect SkillNote to claude.ai in the browser
 
 Example:
   curl -sf $API_URL/setup/agent | bash -s -- --agent openclaw
@@ -679,7 +993,9 @@ if [ -z "$AGENT" ]; then
     echo ""
     echo "Supported agents:"
     echo "  claude-code   Install the SkillNote plugin for Claude Code"
+    echo "  codex         Install registry skills globally for Codex CLI"
     echo "  openclaw      Install the SkillNote skill for OpenClaw"
+    echo "  claude-ai     Connect SkillNote to claude.ai in the browser"
     exit 2
 fi
 
@@ -687,6 +1003,10 @@ case "$AGENT" in
     claude-code|claude_code|claude|cc)
         TARGET_PATH="/setup"
         AGENT_LABEL="Claude Code"
+        ;;
+    codex|codex-cli|codex_cli)
+        TARGET_PATH="/setup/codex"
+        AGENT_LABEL="Codex CLI"
         ;;
     openclaw|open-claw|oc)
         TARGET_PATH="/setup/openclaw"
@@ -699,7 +1019,7 @@ case "$AGENT" in
     *)
         echo "Error: unknown agent '$AGENT'."
         echo ""
-        echo "Supported agents: claude-code, openclaw, claude-ai"
+        echo "Supported agents: claude-code, codex, openclaw, claude-ai"
         exit 2
         ;;
 esac
@@ -808,16 +1128,35 @@ Please do the full install yourself — don't ask me to run commands.
 Don't ask for confirmation between steps. Just run the commands and report results.
 """
 
+_CODEX_AGENT_PROMPT = """Connect this Codex CLI installation to SkillNote at __API_URL__.
+
+Please do the setup yourself:
+
+1. Run the official SkillNote Codex installer:
+   ```bash
+   curl -sf __API_URL__/setup/agent | bash -s -- --agent codex
+   ```
+2. Verify that `~/.agents/skills/` contains the installed registry skills,
+   `~/.skillnote/codex/manifest.json` lists them, `~/.codex/hooks.json` has the
+   SkillNote `SessionStart` refresh hook, and `codex mcp list` shows the
+   `skillnote` server.
+3. Tell me to run `/hooks` once in the terminal Codex CLI (not the desktop app)
+   and trust the SkillNote refresh hook.
+4. Report how many skills were installed. If the current session does not see
+   them yet, remind me to start a new Codex session and run `/skills`.
+"""
+
 _AGENT_PROMPTS = {
     "openclaw": _OPENCLAW_AGENT_PROMPT,
     "claude-code": _CLAUDE_AGENT_PROMPT,
+    "codex": _CODEX_AGENT_PROMPT,
 }
 
 
 @router.get("/setup/agent-prompt")
 def get_agent_prompt(
     request: Request,
-    agent: str = Query(..., description="Target agent: openclaw or claude-code"),
+    agent: str = Query(..., description="Target agent: openclaw, claude-code, or codex"),
 ):
     """Returns a personalized install prompt with the user's host baked in.
 
@@ -834,6 +1173,7 @@ def get_agent_prompt(
         "openclaw": "openclaw", "oc": "openclaw", "open-claw": "openclaw",
         "claude-code": "claude-code", "cc": "claude-code",
         "claude": "claude-code", "claude_code": "claude-code",
+        "codex": "codex", "codex-cli": "codex", "codex_cli": "codex",
     }
     canonical = alias_map.get(agent_normalized)
     if canonical is None:
@@ -951,14 +1291,14 @@ def _agent_status(agent: AgentLiteral, db: Session) -> AgentStatus:
     # Both tables answer "when did this agent last call a skill?", but live
     # in different shapes — Claude Code logs to skill_call_events (one row
     # per skill call), OpenClaw logs to skill_usage_events (one row per
-    # session). We dispatch on agent name to pick the right source.
+    # session). Claude Code and Codex therefore share the same query shape.
     # `activity_floor` (from agent_disconnects) excludes any events at or
     # before the user's last explicit disconnect, so clicking Disconnect
     # actually flips the agent back to pending instead of staying "active"
     # forever from pre-disconnect activity.
     floor_clause = "AND created_at > :floor" if activity_floor is not None else ""
-    if agent == "claude-code":
-        params = {"agent": "claude-code"}
+    if agent in ("claude-code", "codex"):
+        params = {"agent": agent}
         if activity_floor is not None:
             params["floor"] = activity_floor  # type: ignore[assignment]
         last_active = db.execute(

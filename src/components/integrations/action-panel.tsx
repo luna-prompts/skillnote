@@ -7,13 +7,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { getApiBaseUrl } from '@/lib/api/client'
 import { cn } from '@/lib/utils'
 import type { ConnectionState } from './connector'
+import type { JobAgent } from '@/lib/cli-jobs'
 
 export type PlatformId = 'macos' | 'linux' | 'windows'
 export type PlatformCommands = Record<PlatformId, string>
 
 interface Props {
   state: ConnectionState
-  agentId: 'claude-code' | 'openclaw'
+  agentId: JobAgent
   agentLabel: string
   installCommand: string
   /** Install command per platform; shown in the Advanced drawer's platform tabs. */
@@ -217,7 +218,7 @@ function AdvancedDrawer({
   platformCommands,
   installManifest,
 }: {
-  agentId: 'claude-code' | 'openclaw'
+  agentId: JobAgent
   platformCommands: PlatformCommands
   installManifest: string[]
 }) {

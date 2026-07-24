@@ -9,7 +9,7 @@ import { AgentCard } from '@/components/integrations/agent-card'
 import { AgentListRow } from '@/components/integrations/agent-list-row'
 import { ConnectModal } from '@/components/integrations/connect-modal'
 import { DisconnectModal } from '@/components/integrations/disconnect-modal'
-import { ClaudeCodeMark, OpenClawMark } from '@/components/integrations/agent-marks'
+import { ClaudeCodeMark, CodexMark, OpenClawMark } from '@/components/integrations/agent-marks'
 import {
   ClaudeAICard,
   ClaudeAIConnectedRow,
@@ -19,7 +19,9 @@ import type { ConnectionState } from '@/components/integrations/connector'
 import { getApiBaseUrl } from '@/lib/api/client'
 import { dispatchJob, useJobPolling, type JobAgent } from '@/lib/cli-jobs'
 
-type AgentId = 'claude-code' | 'openclaw'
+// claude.ai uses the browser-extension pairing flow below rather than the
+// CLI job/snapshot lifecycle shared by installed agents.
+type AgentId = Exclude<JobAgent, 'claude-ai'>
 
 interface AgentSnapshot {
   id: AgentId
@@ -71,6 +73,21 @@ const AGENTS: AgentMeta[] = [
     ],
   },
   {
+    id: 'codex',
+    label: 'Codex CLI',
+    sublabel: 'OpenAI coding agent',
+    description:
+      'OpenAI\'s terminal coding agent. SkillNote installs your registry skills globally so they are available in every Codex workspace.',
+    platforms: ['macOS', 'Linux', 'Windows'],
+    badge: 'official',
+    usageSteps: [
+      'Start a new Codex session with `codex`.',
+      'In the terminal Codex CLI, run `/hooks` once and trust the SkillNote refresh hook (the desktop app does not expose this command).',
+      'Run `/skills` or type `$` to browse your SkillNote skills.',
+      'New and edited skills refresh whenever Codex starts or resumes.',
+    ],
+  },
+  {
     id: 'openclaw',
     label: 'OpenClaw',
     sublabel: 'Open-source agent runtime',
@@ -101,6 +118,7 @@ export default function IntegrationsPage() {
   const [overrides, setOverrides] = useState<Partial<Record<AgentId, ConnectionState>>>({})
   const [snapshots, setSnapshots] = useState<Record<AgentId, AgentSnapshot>>({
     'claude-code': { id: 'claude-code', state: 'pending' },
+    codex: { id: 'codex', state: 'pending' },
     openclaw: { id: 'openclaw', state: 'pending' },
   })
   // Flips true after the first successful /v1/setup/agents fetch so the
@@ -247,6 +265,7 @@ export default function IntegrationsPage() {
     }
     return {
       'claude-code': apply(snapshots['claude-code']),
+      codex: apply(snapshots.codex),
       openclaw: apply(snapshots.openclaw),
     } as Record<AgentId, AgentSnapshot>
   }, [snapshots, overrides])
@@ -256,9 +275,9 @@ export default function IntegrationsPage() {
   // Windows prefixes `wsl ` because the install scripts only run inside a
   // POSIX shell. The Advanced drawer explains the WSL caveat to the user.
   const baseCmd = (id: AgentId) =>
-    id === 'claude-code'
-      ? `curl -sf ${base}/setup/agent | bash -s -- --agent claude-code`
-      : `curl -sf ${base}/setup/openclaw | bash`
+    id === 'openclaw'
+      ? `curl -sf ${base}/setup/openclaw | bash`
+      : `curl -sf ${base}/setup/agent | bash -s -- --agent ${id}`
 
   const installCmd = (id: AgentId) => baseCmd(id)
 
@@ -284,7 +303,16 @@ export default function IntegrationsPage() {
           'Shell wrapper — appended to ~/.zshrc or ~/.bashrc',
           `Bridge daemon — ${base}`,
         ]
-      : [
+      : id === 'codex'
+        ? [
+          'Global skill root — ~/.agents/skills/',
+          'Managed-skill manifest — ~/.skillnote/codex/manifest.json',
+          'Refresh hook — ~/.codex/hooks.json (SessionStart)',
+          'MCP server — ~/.codex/config.toml (skillnote)',
+          'Registry source — latest active SkillNote versions',
+          `Bridge daemon — ${base}`,
+        ]
+        : [
           'Skill root — ~/.openclaw/skills/skillnote/',
           'Refresh hook — ~/.openclaw/skills/skillnote/sync.sh',
           'Analytics agent — ~/.openclaw/skills/skillnote/log-watcher.py',
@@ -327,7 +355,7 @@ export default function IntegrationsPage() {
   )
 
   const markFor = (id: AgentId) =>
-    id === 'claude-code' ? <ClaudeCodeMark /> : <OpenClawMark />
+    id === 'claude-code' ? <ClaudeCodeMark /> : id === 'codex' ? <CodexMark /> : <OpenClawMark />
 
   // Connected = agents in active or idle state. Everything else is browseable.
   const connected = AGENTS.filter((a) => {
@@ -537,7 +565,9 @@ export default function IntegrationsPage() {
 }
 
 function labelOf(id: AgentId): string {
-  return id === 'claude-code' ? 'Claude Code' : 'OpenClaw'
+  if (id === 'claude-code') return 'Claude Code'
+  if (id === 'codex') return 'Codex CLI'
+  return 'OpenClaw'
 }
 
 // ─── Empty state for the Connected tab ────────────────────────────────────
@@ -566,7 +596,7 @@ function EmptyConnected({ onBrowse }: { onBrowse: () => void }) {
         No agents connected yet
       </p>
       <p className="mx-auto mt-1.5 max-w-sm text-[12.5px] text-muted-foreground/85 leading-relaxed">
-        Wire in Claude Code or OpenClaw and SkillNote will sync your skills,
+        Wire in Claude Code, Codex CLI, or OpenClaw and SkillNote will sync your skills,
         stream usage analytics, and let you publish skills with one command.
       </p>
       <div className="mt-5 flex items-center justify-center gap-2">
@@ -653,6 +683,7 @@ function DevCycler({
         Dev state cycler
       </p>
       <Btn id="claude-code" label="claude" />
+      <Btn id="codex" label="codex" />
       <Btn id="openclaw" label="openclaw" />
     </div>
   )

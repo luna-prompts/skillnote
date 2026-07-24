@@ -104,13 +104,13 @@ program
 
 program
   .command('connect <agent>')
-  .description('Connect an agent (claude-code, openclaw) to SkillNote')
+  .description('Connect an agent (claude-code, codex, openclaw) to SkillNote')
   .option('-y, --yes', 'Skip confirmation prompts')
   .action((agent, opts) => connectCommand(agent, opts))
 
 program
   .command('disconnect <agent>')
-  .description('Disconnect an agent (claude-code, openclaw)')
+  .description('Disconnect an agent (claude-code, codex, openclaw)')
   .option('-y, --yes', 'Skip confirmation prompts')
   .action((agent, opts) => disconnectCommand(agent, opts))
 

@@ -30,7 +30,7 @@ class AgentInstall(Base):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     # Canonical agent name. Constrained at the application layer to the
-    # union we currently support (claude-code, openclaw); kept as TEXT in
+    # union we currently support (claude-code, codex, openclaw, claude-ai); kept as TEXT in
     # the DB so we can add agents without a schema migration.
     agent: Mapped[str] = mapped_column(Text, nullable=False, index=True)
     # SHA-256 hex digest of a stable per-machine identifier — never the raw

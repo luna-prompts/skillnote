@@ -6,13 +6,13 @@ export class CodexAdapter implements AgentAdapter {
   name = 'codex'
   displayName = 'Codex'
 
-  constructor(private projectDir: string) {}
+  constructor(private homeDir: string) {}
 
   detect(): boolean {
-    return fs.existsSync(path.join(this.projectDir, '.codex'))
+    return fs.existsSync(path.join(this.homeDir, '.codex'))
   }
 
   skillDir(slug: string): string {
-    return path.join(this.projectDir, '.codex', 'skills', slug)
+    return path.join(this.homeDir, '.agents', 'skills', slug)
   }
 }
