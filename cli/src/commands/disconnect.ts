@@ -1,4 +1,4 @@
-import { readFile, rm, writeFile } from 'node:fs/promises'
+import { readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { confirm, intro, log, outro, spinner } from '@clack/prompts'
@@ -94,20 +94,45 @@ async function disconnectCodex(opts: DisconnectOptions): Promise<void> {
   const s = spinner()
   s.start('Disconnecting Codex')
   // Let codex itself unregister the plugin and marketplace — it owns
-  // config.toml and hand-editing it risks a broken TOML. Each step is
-  // best-effort so a missing codex binary or already-removed entry can't
-  // strand the rest of the teardown.
-  const codexArgs = [
+  // config.toml and hand-editing it risks a broken TOML.
+  const unregistered = await runCodex([
     ['plugin', 'remove', 'skillnote@skillnote-local'],
     ['plugin', 'marketplace', 'remove', 'skillnote-local'],
-  ]
-  for (const args of codexArgs) {
-    await execa('codex', args, { reject: false }).catch(() => undefined)
-  }
+  ])
 
-  await removeCodexWrapper()
-  await rm(join(homedir(), '.skillnote', 'codex'), { recursive: true, force: true })
-  s.stop('Removed the Codex plugin, marketplace, and shell wrapper')
+  const wrapperRemoved = await removeCodexWrapper()
+
+  // Only destroy the marketplace directory once codex has stopped pointing
+  // at it. Deleting it while config.toml still references the plugin leaves
+  // codex loading hooks from its own cache — a "disconnect" that disconnects
+  // nothing, plus a marketplace entry aimed at a path that no longer exists.
+  if (unregistered) {
+    await rm(join(homedir(), '.skillnote', 'codex'), { recursive: true, force: true })
+  }
+  s.stop(
+    unregistered
+      ? 'Removed the Codex plugin, marketplace, and shell wrapper'
+      : 'Removed the shell wrapper',
+  )
+
+  if (!unregistered) {
+    log.warn('Could not run `codex` to unregister the plugin.')
+    log.info(
+      [
+        'The plugin is still installed and its hooks will keep syncing.',
+        'Finish the disconnect once Codex is on your PATH:',
+        '  codex plugin remove skillnote@skillnote-local',
+        '  codex plugin marketplace remove skillnote-local',
+        '  rm -rf ~/.skillnote/codex',
+      ].join('\n'),
+    )
+  }
+  if (!wrapperRemoved) {
+    log.warn(
+      'Could not edit your shell rc file; remove the block between the ' +
+        '"# >>> SKILLNOTE CODEX WRAPPER BEGIN/END" markers by hand.',
+    )
+  }
   log.info(
     [
       'Left in place:',
@@ -118,7 +143,27 @@ async function disconnectCodex(opts: DisconnectOptions): Promise<void> {
   )
 }
 
-async function removeCodexWrapper(): Promise<void> {
+/**
+ * Run a sequence of `codex` subcommands, reporting whether the CLI was
+ * actually usable. A missing binary resolves (execa's `reject: false`) rather
+ * than throwing, so the exit code is the only honest signal. "Already
+ * removed" is success: codex exits non-zero, but there is nothing left to do.
+ */
+async function runCodex(argSets: string[][]): Promise<boolean> {
+  let sawBinary = false
+  for (const args of argSets) {
+    try {
+      const result = await execa('codex', args, { reject: false })
+      // ENOENT surfaces as a failed result with no exit code.
+      if (typeof result.exitCode === 'number') sawBinary = true
+    } catch {
+      // Spawn failure (missing binary, permission denied) — nothing ran.
+    }
+  }
+  return sawBinary
+}
+
+async function removeCodexWrapper(): Promise<boolean> {
   const home = homedir()
   const rcFiles = [
     join(home, '.zshrc'),
@@ -127,19 +172,31 @@ async function removeCodexWrapper(): Promise<void> {
     join(home, '.profile'),
     join(home, '.config', 'fish', 'config.fish'),
   ]
+  let ok = true
   for (const rc of rcFiles) {
     try {
       const content = await readFile(rc, 'utf8')
-      const cleaned = content
-        .replace(/\n?# >>> SKILLNOTE CODEX WRAPPER BEGIN[\s\S]*?# <<< SKILLNOTE CODEX WRAPPER END\n?/g, '')
-        .replace(/\n{3,}/g, '\n\n')
-      if (cleaned !== content) await writeFile(rc, cleaned, 'utf8')
+      // Collapse only the blank lines the removal itself leaves behind. A
+      // global /\n{3,}/ squeeze would silently reformat unrelated parts of
+      // the user's shell config.
+      const cleaned = content.replace(
+        /\n*# >>> SKILLNOTE CODEX WRAPPER BEGIN[\s\S]*?# <<< SKILLNOTE CODEX WRAPPER END\n*/g,
+        '\n\n',
+      )
+      if (cleaned === content) continue
+      // Write via a temp file + rename: a truncating write that dies midway
+      // would leave the user without a shell config.
+      const tmp = `${rc}.skillnote-tmp`
+      await writeFile(tmp, cleaned, 'utf8')
+      await rename(tmp, rc)
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+        ok = false
         log.warn(`Could not clean the SkillNote wrapper from ${rc}.`)
       }
     }
   }
+  return ok
 }
 
 async function confirmIfNeeded(yes: boolean | undefined, message: string): Promise<boolean> {

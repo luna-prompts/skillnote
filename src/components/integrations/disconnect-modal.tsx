@@ -110,7 +110,8 @@ export function DisconnectModal({
                 Disconnect {agentLabel}?
               </h2>
               <p className="mt-1 text-[12.5px] text-muted-foreground leading-relaxed">
-                SkillNote will stop syncing skills to {agentLabel}.
+                SkillNote will stop syncing skills to {agentLabel} and remove the
+                install below from this machine.
               </p>
             </div>
           </div>
@@ -185,7 +186,7 @@ export function DisconnectModal({
                   showManifest && 'rotate-90',
                 )}
               />
-              <span>What gets disconnected</span>
+              <span>What gets removed</span>
               <span className="text-muted-foreground/70">{rows.length} items</span>
             </button>
 

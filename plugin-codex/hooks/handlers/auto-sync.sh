@@ -23,6 +23,10 @@ NOW=$(date +%s)
 if [ -f "$LAST_SYNC_FILE" ]; then
     LAST=$(cat "$LAST_SYNC_FILE" 2>/dev/null || echo 0)
     case "$LAST" in ''|*[!0-9]*) LAST=0 ;; esac
+    # A stamp in the future means the clock was stepped back (DST, NTP
+    # correction, VM resume). Treat it as "never synced" rather than
+    # suppressing every auto-sync until wall-clock catches up.
+    [ "$LAST" -gt "$NOW" ] && LAST=0
     [ "$((NOW - LAST))" -lt "$SYNC_INTERVAL" ] && exit 0
 fi
 

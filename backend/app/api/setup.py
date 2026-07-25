@@ -304,6 +304,10 @@ cp "$PLUGIN_SRC/bin/skillnote-statusline" "$SKILLNOTE_HOME/bin/skillnote-statusl
 chmod +x "$SKILLNOTE_HOME/bin/skillnote-pick" "$SKILLNOTE_HOME/bin/skillnote-statusline"
 # Save host for the picker to read at runtime
 echo "$SKILL_HOST" > "$SKILLNOTE_HOME/host"
+# The bare host loses the scheme and port, which breaks every self-hosted
+# deployment behind HTTPS, a reverse proxy, or a non-default port. Record the
+# full base URL too; hooks prefer this and fall back to the host file.
+printf '%s\n' "$API_URL" > "$SKILLNOTE_HOME/api-url"
 PICKER_PATH="$SKILLNOTE_HOME/bin/skillnote-pick"
 # Remove any old wrapper first (handles updates cleanly). Uses explicit
 # BEGIN/END markers so future format changes can still be detected and
@@ -372,8 +376,11 @@ fi
 # page in "pending" indefinitely. We still tolerate complete failure — the
 # Connect page falls back to "active" detection via skill_call_events once the
 # user runs their first task. Hash hostname+user so we don't ship raw PII.
+# shasum is a perl tool and is absent from Alpine/slim images; coreutils
+# ships sha256sum there. Without a fallback every such machine reports an
+# empty hash and all their installs collapse into one indistinguishable row.
 MACHINE_HASH=$(printf '%s' "${HOSTNAME:-host}-${USER:-user}" \
-    | shasum -a 256 2>/dev/null \
+    | { shasum -a 256 2>/dev/null || sha256sum 2>/dev/null; } \
     | awk '{print $1}' \
     || echo "")
 curl -sf --max-time 5 --retry 3 --retry-delay 2 --retry-connrefused \
@@ -412,6 +419,9 @@ echo ""
 @router.get("/setup")
 def get_setup_script(request: Request):
     urls = _derive_urls(request)
+    # __MCP_URL__ no longer appears in the Claude Code script, but the
+    # substitution is kept so reintroducing the placeholder can't ship a
+    # literal token to users.
     script = (_SETUP_SCRIPT
               .replace("__API_URL__", urls["api"])
               .replace("__MCP_URL__", urls["mcp"])
@@ -557,8 +567,11 @@ fi
 # ── ping backend so the Connect page knows we installed ─────────────────────
 # Same pattern as the claude-code installer — retry briefly so a transient
 # backend hiccup doesn't strand the Connect page in pending forever.
+# shasum is a perl tool and is absent from Alpine/slim images; coreutils
+# ships sha256sum there. Without a fallback every such machine reports an
+# empty hash and all their installs collapse into one indistinguishable row.
 MACHINE_HASH=$(printf '%s' "${HOSTNAME:-host}-${USER:-user}" \
-    | shasum -a 256 2>/dev/null \
+    | { shasum -a 256 2>/dev/null || sha256sum 2>/dev/null; } \
     | awk '{print $1}' \
     || echo "")
 curl -sf --max-time 5 --retry 3 --retry-delay 2 --retry-connrefused \
@@ -617,14 +630,14 @@ if [ "$HAVE_CODEX" -eq 0 ]; then
     echo ""
 fi
 
-# ── idempotent clean install of the local marketplace ────────────────────────
-rm -rf "$MKT_DIR"
-mkdir -p "$MKT_DIR/plugins" "$PLUGIN_SRC" "$SKILLNOTE_HOME/bin"
-
 # ── download the Codex plugin bundle ─────────────────────────────────────────
+# Download and validate BEFORE touching the existing install: a reinstall over
+# a flaky network must not leave the user with no marketplace at all.
+mkdir -p "$SKILLNOTE_HOME/bin"
 TMP_ZIP=$(mktemp -t skillnote-codex.XXXXXX.zip) || { echo "Error: mktemp failed."; exit 1; }
 PICK_ZIP=$(mktemp -t skillnote-pick.XXXXXX.zip) || { echo "Error: mktemp failed."; exit 1; }
-trap 'rm -f "$TMP_ZIP" "$PICK_ZIP"' EXIT
+STAGE_DIR=$(mktemp -d -t skillnote-codexstage.XXXXXX) || { echo "Error: mktemp failed."; exit 1; }
+trap 'rm -f "$TMP_ZIP" "$PICK_ZIP"; rm -rf "$STAGE_DIR"' EXIT
 curl -sf --connect-timeout 10 --max-time 30 "$API_URL/v1/codex-bundle.zip" -o "$TMP_ZIP" || {
     echo "Error: Could not download $API_URL/v1/codex-bundle.zip"
     exit 1
@@ -635,12 +648,24 @@ if unzip -Z "$TMP_ZIP" 2>/dev/null | awk '{print $1}' | grep -q '^l'; then
     echo "Error: bundle contains symbolic link entries; refusing to extract."
     exit 1
 fi
-if unzip -l "$TMP_ZIP" 2>/dev/null | awk 'NR>3 && $1 ~ /^[0-9]+$/ {print $NF}' | grep -qE '^(/|\.\./|.*/\.\./)'; then
+# -Z1 prints one bare name per line. Parsing `unzip -l` columns with $NF would
+# read only the last whitespace-separated token, so an entry named "../x y"
+# would slip through the traversal check.
+if unzip -Z1 "$TMP_ZIP" 2>/dev/null | grep -qE '^(/|\.\./|.*/\.\./)'; then
     echo "Error: bundle contains absolute or parent-directory paths; refusing to extract."
     exit 1
 fi
 
-unzip -qo "$TMP_ZIP" -d "$PLUGIN_SRC"
+unzip -qo "$TMP_ZIP" -d "$STAGE_DIR"
+if [ ! -f "$STAGE_DIR/.codex-plugin/plugin.json" ]; then
+    echo "Error: bundle is missing .codex-plugin/plugin.json; refusing to install."
+    exit 1
+fi
+
+# ── swap the validated bundle into place ─────────────────────────────────────
+rm -rf "$MKT_DIR"
+mkdir -p "$MKT_DIR/plugins"
+mv "$STAGE_DIR" "$PLUGIN_SRC" 2>/dev/null || { mkdir -p "$PLUGIN_SRC"; cp -R "$STAGE_DIR/." "$PLUGIN_SRC/"; }
 chmod +x "$PLUGIN_SRC/hooks/handlers/"*.sh 2>/dev/null || true
 
 # ── write the local marketplace manifest ─────────────────────────────────────
@@ -717,6 +742,10 @@ fi
 # Save the host for hooks + picker to read at runtime
 SKILL_HOST=$(echo "$API_URL" | sed -E 's|https?://||;s|:.*||')
 echo "$SKILL_HOST" > "$SKILLNOTE_HOME/host"
+# The bare host loses the scheme and port, which breaks every self-hosted
+# deployment behind HTTPS, a reverse proxy, or a non-default port. Record the
+# full base URL too; hooks prefer this and fall back to the host file.
+printf '%s\n' "$API_URL" > "$SKILLNOTE_HOME/api-url"
 PICKER_PATH="$SKILLNOTE_HOME/bin/skillnote-pick"
 # Stable (un-versioned) path to the sync handler in the marketplace source. The
 # wrapper runs this right after the picker so skills are synced into the project
@@ -729,7 +758,11 @@ SYNC_PATH="$PLUGIN_SRC/hooks/handlers/sync.sh"
 SHELL_RC=""
 case "$(basename "${SHELL:-/bin/sh}")" in
   zsh)  SHELL_RC="$HOME/.zshrc" ;;
-  bash) if [ -f "$HOME/.bashrc" ]; then SHELL_RC="$HOME/.bashrc"
+  bash) # macOS bash login shells read ONLY .bash_profile, so a wrapper written
+        # to .bashrc there never loads. Prefer .bash_profile on Darwin.
+        if [ "$(uname -s 2>/dev/null)" = "Darwin" ] && [ -f "$HOME/.bash_profile" ]; then
+            SHELL_RC="$HOME/.bash_profile"
+        elif [ -f "$HOME/.bashrc" ]; then SHELL_RC="$HOME/.bashrc"
         elif [ -f "$HOME/.bash_profile" ]; then SHELL_RC="$HOME/.bash_profile"
         else SHELL_RC="$HOME/.bashrc"; fi ;;
   fish) SHELL_RC="$HOME/.config/fish/config.fish" ;;
@@ -745,11 +778,20 @@ import os, re
 path = os.environ.get("SHELL_RC_PATH", "")
 if not path or not os.path.isfile(path):
     raise SystemExit(0)
-content = open(path).read()
-content = re.sub(r'\n?# >>> SKILLNOTE CODEX WRAPPER BEGIN.*?# <<< SKILLNOTE CODEX WRAPPER END\n?',
-                 '', content, flags=re.DOTALL)
-content = re.sub(r'\n{3,}', '\n\n', content)
-open(path, 'w').write(content)
+# Explicit encoding: under a non-UTF-8 locale a shell rc containing any
+# non-ASCII byte would raise here, the block would never be removed, and
+# repeated installs would stack duplicate wrappers.
+with open(path, encoding="utf-8", errors="surrogateescape") as f:
+    content = f.read()
+# Collapse only the blank lines the removal itself created — a global
+# \n{3,} squeeze would silently reformat unrelated parts of the user's
+# shell config.
+content = re.sub(
+    r'\n*# >>> SKILLNOTE CODEX WRAPPER BEGIN.*?# <<< SKILLNOTE CODEX WRAPPER END\n*',
+    '\n\n', content, flags=re.DOTALL)
+content = content.lstrip('\n') if content.startswith('\n\n') else content
+with open(path, 'w', encoding="utf-8", errors="surrogateescape") as f:
+    f.write(content)
 WRAPCLEAN_EOF
 fi
 
@@ -810,8 +852,11 @@ else
 fi
 
 # ── ping backend so the Connect page knows we installed ─────────────────────
+# shasum is a perl tool and is absent from Alpine/slim images; coreutils
+# ships sha256sum there. Without a fallback every such machine reports an
+# empty hash and all their installs collapse into one indistinguishable row.
 MACHINE_HASH=$(printf '%s' "${HOSTNAME:-host}-${USER:-user}" \
-    | shasum -a 256 2>/dev/null \
+    | { shasum -a 256 2>/dev/null || sha256sum 2>/dev/null; } \
     | awk '{print $1}' \
     || echo "")
 curl -sf --max-time 5 --retry 3 --retry-delay 2 --retry-connrefused \
@@ -919,8 +964,11 @@ cat <<EOF
 EOF
 
 # ── ping backend so the Connect page tracks the user kicked off this flow ───
+# shasum is a perl tool and is absent from Alpine/slim images; coreutils
+# ships sha256sum there. Without a fallback every such machine reports an
+# empty hash and all their installs collapse into one indistinguishable row.
 MACHINE_HASH=$(printf '%s' "${HOSTNAME:-host}-${USER:-user}" \
-    | shasum -a 256 2>/dev/null \
+    | { shasum -a 256 2>/dev/null || sha256sum 2>/dev/null; } \
     | awk '{print $1}' \
     || echo "")
 curl -sf --max-time 5 --retry 2 --retry-delay 1 \
@@ -979,6 +1027,7 @@ Supported agents:
   claude-code   Install the SkillNote plugin for Claude Code
   openclaw      Install the SkillNote skill for OpenClaw
   codex         Install the SkillNote plugin for OpenAI Codex
+  claude-ai     Connect SkillNote to claude.ai in the browser
 
 Example:
   curl -sf $API_URL/setup/agent | bash -s -- --agent openclaw
@@ -1004,6 +1053,7 @@ if [ -z "$AGENT" ]; then
     echo "  claude-code   Install the SkillNote plugin for Claude Code"
     echo "  openclaw      Install the SkillNote skill for OpenClaw"
     echo "  codex         Install the SkillNote plugin for OpenAI Codex"
+    echo "  claude-ai     Connect SkillNote to claude.ai in the browser"
     exit 2
 fi
 
