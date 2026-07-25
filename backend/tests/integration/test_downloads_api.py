@@ -251,6 +251,75 @@ def test_download_current_builds_bundle_from_db_content(db):
         _cleanup_skill(db, slug)
 
 
+def test_download_current_refuses_a_fully_disabled_skill(db):
+    """Disabling every version is the only kill switch operators have, and
+    the versioned route enforces it with 403. The current-content route must
+    not become a way around it."""
+    slug = f"dl-test-{uuid.uuid4().hex[:8]}"
+    sid = _make_skill(db, slug)
+    _make_version(db, sid, "1.0.0", status="disabled")
+    try:
+        status, body = _get(f"/v1/skills/{slug}/current/download")
+        assert status == 403
+        assert body["error"]["code"] == "SKILL_WITHDRAWN"
+    finally:
+        _cleanup_skill(db, slug)
+
+
+def test_download_current_allowed_while_an_active_version_exists(db):
+    """A skill with an active version still serves its draft content — the
+    gate above targets withdrawal, not ordinary editing."""
+    slug = f"dl-test-{uuid.uuid4().hex[:8]}"
+    sid = _make_skill(db, slug)
+    _make_version(db, sid, "1.0.0", status="active")
+    try:
+        status, _ = _get(f"/v1/skills/{slug}/current/download")
+        assert status == 200
+    finally:
+        _cleanup_skill(db, slug)
+
+
+def test_download_current_is_byte_stable_across_calls(db):
+    """`skillnote update` no-ops on an unchanged checksum, so identical
+    content must produce identical bytes (hence ZIP_STORED, not deflate)."""
+    slug = f"dl-test-{uuid.uuid4().hex[:8]}"
+    _make_skill(db, slug)
+    try:
+        first = _get(f"/v1/skills/{slug}/current/download")[1]
+        second = _get(f"/v1/skills/{slug}/current/download")[1]
+        assert bytes(first) == bytes(second)
+    finally:
+        _cleanup_skill(db, slug)
+
+
+def test_download_current_neutralizes_extra_frontmatter_injection(db):
+    """extra_frontmatter is author-controlled; it must not be able to close
+    the frontmatter early, inject body text, or redeclare `name`."""
+    import io
+    import zipfile
+
+    slug = f"dl-test-{uuid.uuid4().hex[:8]}"
+    _make_skill(db, slug)
+    db.execute(
+        text("UPDATE skills SET extra_frontmatter = :fm WHERE slug = :s"),
+        {
+            "fm": "license: MIT\nname: hijacked\n---\n# INJECTED BODY\nevil: true",
+            "s": slug,
+        },
+    )
+    db.commit()
+    try:
+        status, payload = _get(f"/v1/skills/{slug}/current/download")
+        assert status == 200
+        skill_md = zipfile.ZipFile(io.BytesIO(bytes(payload))).read("SKILL.md").decode()
+        assert f'name: "{slug}"' in skill_md
+        assert "hijacked" not in skill_md
+        assert "INJECTED BODY" not in skill_md
+        assert skill_md.count("\n---\n") == 1
+    finally:
+        _cleanup_skill(db, slug)
+
+
 def test_download_happy_path_returns_zip(db):
     """End-to-end: real file on disk + correct checksum → 200 + ZIP bytes."""
     if not os.path.isdir(BUNDLE_DIR) or not os.access(BUNDLE_DIR, os.W_OK):
