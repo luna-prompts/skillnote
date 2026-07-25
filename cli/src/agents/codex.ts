@@ -5,6 +5,9 @@ import type { AgentAdapter } from './types.js'
 export class CodexAdapter implements AgentAdapter {
   name = 'codex'
   displayName = 'Codex'
+  // One shared directory for every project on the machine — see the
+  // reference counting in ../manifest/global-registry.ts.
+  scope = 'user' as const
 
   constructor(private homeDir: string) {}
 
