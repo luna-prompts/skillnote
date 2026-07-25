@@ -1,6 +1,5 @@
 import hashlib
 import io
-import json
 import zipfile
 
 from fastapi import APIRouter, Depends
@@ -10,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.core.errors import api_error
 from app.db.models import Skill, SkillVersion
 from app.db.session import get_db
+from app.services.skill_markdown import build_skill_md
 from app.services.storage_service import storage
 
 router = APIRouter(prefix="/v1/skills", tags=["downloads"])
@@ -31,33 +31,44 @@ def download_current_skill_bundle(
     if not skill_row:
         raise api_error(404, "SKILL_NOT_FOUND", "Skill not found")
 
-    # JSON string/list syntax is valid YAML and safely handles colons, quotes,
-    # newlines, and non-ASCII text without adding a PyYAML formatting dependency
-    # to the download path.
-    frontmatter = [
-        f"name: {json.dumps(skill_row.slug, ensure_ascii=False)}",
-        f"description: {json.dumps(skill_row.description or '', ensure_ascii=False)}",
-    ]
-    if skill_row.collections:
-        frontmatter.append(
-            f"collections: {json.dumps(skill_row.collections, ensure_ascii=False)}"
+    # Disabling every published version is the only lever an operator has to
+    # pull a skill out of distribution, and the versioned route enforces it
+    # with 403 VERSION_DISABLED. Honour the same kill switch here: a skill
+    # that has versions but none active is withdrawn, not draft. Skills that
+    # were never published have no versions at all and stay downloadable —
+    # that is the whole point of this route.
+    version_count = (
+        db.query(SkillVersion).filter(SkillVersion.skill_id == skill_row.id).count()
+    )
+    if version_count:
+        has_active = (
+            db.query(SkillVersion)
+            .filter(SkillVersion.skill_id == skill_row.id, SkillVersion.status == "active")
+            .first()
         )
-    if skill_row.extra_frontmatter and skill_row.extra_frontmatter.strip():
-        frontmatter.append(skill_row.extra_frontmatter.strip())
+        if not has_active:
+            raise api_error(
+                403,
+                "SKILL_WITHDRAWN",
+                "Every published version of this skill is disabled",
+            )
 
-    content = (
-        "---\n"
-        + "\n".join(frontmatter)
-        + "\n---\n\n"
-        + (skill_row.content_md or "")
+    content = build_skill_md(
+        name=skill_row.slug,
+        description=skill_row.description or "",
+        collections=skill_row.collections or [],
+        extra_frontmatter=skill_row.extra_frontmatter,
+        content_md=skill_row.content_md or "",
     ).encode("utf-8")
     bundle = io.BytesIO()
-    with zipfile.ZipFile(bundle, "w", zipfile.ZIP_DEFLATED) as archive:
-        # Fixed timestamp + perms keep the archive byte-identical for
-        # identical content, so clients can no-op on an unchanged checksum.
+    # ZIP_STORED, not DEFLATE: the checksum clients diff against is taken
+    # over these bytes, and deflate output is only stable for a given zlib
+    # build. Storing uncompressed keeps identical content byte-identical
+    # across server upgrades, so `skillnote update` can't churn spuriously.
+    with zipfile.ZipFile(bundle, "w", zipfile.ZIP_STORED) as archive:
         info = zipfile.ZipInfo("SKILL.md", date_time=(1980, 1, 1, 0, 0, 0))
         info.external_attr = 0o644 << 16
-        archive.writestr(info, content, compress_type=zipfile.ZIP_DEFLATED)
+        archive.writestr(info, content, compress_type=zipfile.ZIP_STORED)
     payload = bundle.getvalue()
     checksum = hashlib.sha256(payload).hexdigest()
     current_version = str(skill_row.current_version or 0)

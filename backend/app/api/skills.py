@@ -12,7 +12,14 @@ from sqlalchemy.orm import Session
 from app.db.models import Skill, SkillVersion, SkillContentVersion
 from app.db.models.import_source import ImportSource
 from app.db.session import get_db
-from app.schemas.skill import SkillListItem, SkillDetail, SkillCreate, SkillUpdate, SkillOrigin
+from app.schemas.skill import (
+    SkillListItem,
+    SkillListItemWithContent,
+    SkillDetail,
+    SkillCreate,
+    SkillUpdate,
+    SkillOrigin,
+)
 from app.schemas.version import SkillVersionItem, ContentVersionItem
 from app.validators.skill_validator import (
     canonicalize_collection_names,
@@ -180,11 +187,15 @@ def _create_content_version(db: Session, skill: Skill) -> SkillContentVersion:
     return cv
 
 
-@router.get("", response_model=list[SkillListItem])
+@router.get("", response_model=None)
 def list_skills(
     collections: Optional[str] = Query(None, description="Comma-separated collection names to filter by"),
+    include: Optional[str] = Query(
+        None,
+        description="Comma-separated extras to embed. 'content' adds content_md (SKILL.md body).",
+    ),
     db: Session = Depends(get_db),
-):
+) -> list[SkillListItem] | list[SkillListItemWithContent]:
     query = db.query(Skill)
     if collections:
         col_list = [c.strip() for c in collections.split(",") if c.strip()]
@@ -201,7 +212,11 @@ def list_skills(
     rows = query.order_by(Skill.slug.asc()).all()
     sources_by_id = _load_sources_for_skills(db, rows)
 
-    out: list[SkillListItem] = []
+    extras = {e.strip().lower() for e in (include or "").split(",") if e.strip()}
+    with_content = "content" in extras
+    item_cls = SkillListItemWithContent if with_content else SkillListItem
+
+    out: list = []
     for skill in rows:
         latest = (
             db.query(SkillVersion)
@@ -209,21 +224,22 @@ def list_skills(
             .order_by(SkillVersion.published_at.desc())
             .first()
         )
-        out.append(
-            SkillListItem(
-                id=skill.id,
-                name=skill.name,
-                slug=skill.slug,
-                description=skill.description,
-                collections=skill.collections or [],
-                latestVersion=latest.version if latest else None,
-                status=latest.status if latest else None,
-                channel=latest.channel if latest else None,
-                currentVersion=skill.current_version or 0,
-                extra_frontmatter=skill.extra_frontmatter,
-                origin=_build_origin(skill, sources_by_id.get(skill.import_source_id)) if skill.import_source_id else None,
-            )
+        fields = dict(
+            id=skill.id,
+            name=skill.name,
+            slug=skill.slug,
+            description=skill.description,
+            collections=skill.collections or [],
+            latestVersion=latest.version if latest else None,
+            status=latest.status if latest else None,
+            channel=latest.channel if latest else None,
+            currentVersion=skill.current_version or 0,
+            extra_frontmatter=skill.extra_frontmatter,
+            origin=_build_origin(skill, sources_by_id.get(skill.import_source_id)) if skill.import_source_id else None,
         )
+        if with_content:
+            fields["content_md"] = skill.content_md or ""
+        out.append(item_cls(**fields))
 
     return out
 

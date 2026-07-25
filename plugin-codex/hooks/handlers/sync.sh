@@ -28,8 +28,20 @@ elif [ -n "$SKILLNOTE_CALLER" ]; then MODE=prog
 else MODE=hook; fi
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-HOST=$("$SCRIPT_DIR/resolve-host.sh")
-API_URL="http://${HOST}:8082"
+# Prefer the full base URL the installer recorded: a self-hosted SkillNote may
+# be behind HTTPS, a reverse proxy, or a non-default port, and rebuilding
+# "http://<host>:8082" from a bare hostname would silently point every request
+# at a dead endpoint. Fall back to the legacy host file for installs that
+# predate api-url.
+API_URL=""
+if [ -r "$HOME/.skillnote/api-url" ]; then
+    API_URL=$(head -n 1 "$HOME/.skillnote/api-url" 2>/dev/null | tr -d ' \t\r\n')
+fi
+case "$API_URL" in
+    http://*|https://*) ;;
+    *) HOST=$("$SCRIPT_DIR/resolve-host.sh"); API_URL="http://${HOST}:8082" ;;
+esac
+API_URL="${API_URL%/}"
 PROJECT_DIR="${PWD:-.}"
 CONFIG_PATH="${PROJECT_DIR}/.skillnote.json"
 
@@ -66,22 +78,6 @@ print("__NONE__" if not cols else ",".join(cols))
 PY
 )
 
-case "$COLLECTIONS" in
-    __ERROR__) echo "SkillNote: invalid .skillnote.json" >&2; exit 0 ;;
-    __NONE__)  exit 0 ;;
-    __ALL__)   COLLECTIONS="" ;;
-esac
-
-# ── build fetch URL (URL-encode the filter via env, not interpolation) ───────
-if [ -n "$COLLECTIONS" ]; then
-    ENCODED=$(COLLECTIONS="$COLLECTIONS" python3 -c 'import os,urllib.parse; print(urllib.parse.quote(os.environ["COLLECTIONS"]))')
-    FETCH_URL="${API_URL}/v1/skills?collections=${ENCODED}"
-else
-    FETCH_URL="${API_URL}/v1/skills"
-fi
-
-mkdir -p "$SKILLS_DIR" "$MANIFEST_DIR"
-
 # ── no-op exit ───────────────────────────────────────────────────────────────
 # prog callers (auto-sync) must distinguish "synced successfully" (0) from
 # "did nothing this run" (4) so the throttle only advances after a real sync —
@@ -92,15 +88,45 @@ bail_noop() {
     exit 0
 }
 
+case "$COLLECTIONS" in
+    # Nothing was synced in either case, so prog callers must not stamp the
+    # throttle — an unfixable config shouldn't look like a successful sync.
+    __ERROR__) echo "SkillNote: invalid .skillnote.json" >&2; bail_noop ;;
+    __NONE__)  bail_noop ;;
+    __ALL__)   COLLECTIONS="" ;;
+esac
+
+# ── build fetch URL (URL-encode the filter via env, not interpolation) ───────
+# include=content asks the registry to embed each SKILL.md body. The default
+# list response omits bodies (the web app caches it in localStorage), and
+# without this every file we write would be a frontmatter-only stub.
+if [ -n "$COLLECTIONS" ]; then
+    ENCODED=$(COLLECTIONS="$COLLECTIONS" python3 -c 'import os,urllib.parse; print(urllib.parse.quote(os.environ["COLLECTIONS"]))')
+    FETCH_URL="${API_URL}/v1/skills?include=content&collections=${ENCODED}"
+else
+    FETCH_URL="${API_URL}/v1/skills?include=content"
+fi
+
+mkdir -p "$SKILLS_DIR" "$MANIFEST_DIR"
+
 # ── single-writer lock (portable mkdir lock + stale reap) ────────────────────
 # SessionStart, the codex() wrapper, and auto-sync can all fire concurrently on
 # one project. Serialize them so the manifest and SKILL.md files never interleave.
 LOCK="${MANIFEST_DIR}/.skillnote-sync.lock"
 if ! mkdir "$LOCK" 2>/dev/null; then
-    # Steal the lock only if it's stale (owner crashed >2min ago).
+    # Steal the lock only if it's stale (owner crashed >2min ago). The steal
+    # is a rename, not rmdir+mkdir: renaming is atomic, so of two racers that
+    # both see the same stale lock exactly one succeeds — with rmdir+mkdir
+    # both could end up "holding" it and interleave writes, which is the
+    # corruption this lock exists to prevent.
     if [ -z "$(find "$LOCK" -maxdepth 0 -mmin -2 2>/dev/null)" ]; then
-        rmdir "$LOCK" 2>/dev/null || true
-        mkdir "$LOCK" 2>/dev/null || bail_noop
+        REAPED="${LOCK}.reap.$$"
+        if mv "$LOCK" "$REAPED" 2>/dev/null; then
+            rmdir "$REAPED" 2>/dev/null || true
+            mkdir "$LOCK" 2>/dev/null || bail_noop
+        else
+            bail_noop  # lost the race to reap; the winner is syncing
+        fi
     else
         bail_noop  # another sync (this project) in progress — don't stamp for it
     fi
@@ -171,6 +197,56 @@ def atomic_write(path, text):
     os.replace(tmp, path)
 
 
+# Keys the registry owns; free-form extras must never redefine them.
+RESERVED_FM_KEYS = ("name", "description", "collections")
+KEY_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
+
+
+def safe_extra_frontmatter(raw):
+    """Render a skill's free-form extra frontmatter as safe `key: value` lines.
+
+    The value is authored upstream (imported skills carry whatever their
+    author wrote), so appending it verbatim would let it close the
+    frontmatter early with a `---` fence and inject arbitrary text into the
+    document body the agent reads, or redeclare `name` so the skill shadows
+    another one. Parse it, keep only a top-level mapping, drop reserved
+    keys, and re-emit through the JSON encoder (JSON is valid YAML).
+    PyYAML isn't guaranteed present in the user's python3, so fall back to a
+    conservative line parser that accepts only simple scalars.
+    """
+    if not isinstance(raw, str) or not raw.strip():
+        return []
+    parsed = None
+    try:
+        import yaml  # noqa: PLC0415 — optional, resolved per call
+        parsed = yaml.safe_load(raw)
+    except ImportError:
+        parsed = {}
+        for line in raw.splitlines():
+            if not line.strip() or line.lstrip() != line or ":" not in line:
+                continue  # blank, nested, or not a key: value line
+            key, _, value = line.partition(":")
+            parsed[key.strip()] = value.strip()
+    except Exception:
+        return []
+    if not isinstance(parsed, dict):
+        return []
+
+    out = []
+    for key, value in parsed.items():
+        if not isinstance(key, str):
+            continue
+        key = key.strip()
+        if not key or key.lower() in RESERVED_FM_KEYS or not KEY_RE.match(key):
+            continue
+        try:
+            encoded = json.dumps(value, ensure_ascii=False, default=str)
+        except (TypeError, ValueError):
+            encoded = json.dumps(str(value), ensure_ascii=False)
+        out.append(f"{key}: {encoded}")
+    return out
+
+
 try:
     with open(os.environ["SKILLS_FILE"], encoding="utf-8") as f:
         skills = json.load(f)
@@ -202,7 +278,11 @@ if not skills and old_managed:
     sys.exit(4)
 
 local_names = set()
-created = updated = deleted = 0
+# Skills the server listed but couldn't give us content for: still legitimate
+# installs, so they must survive the stale-sweep below even though nothing
+# was written for them this run.
+protected = set()
+created = updated = deleted = skipped_empty = 0
 visible_slugs = []
 
 for skill in skills:
@@ -213,14 +293,11 @@ for skill in skills:
         continue  # skip malformed / hostile slug (never write it to disk)
     if slug in plugin_provided:
         continue
-    visible_slugs.append(slug)
 
     local_name = f"skillnote-{slug}"
-    local_names.add(local_name)
     skill_dir = os.path.join(skills_dir, local_name)
     if not contained(skill_dir):
         continue
-    os.makedirs(skill_dir, exist_ok=True)
 
     desc = skill.get("description")
     if not isinstance(desc, str):
@@ -238,13 +315,23 @@ for skill in skills:
           f"description: {json.dumps(desc, ensure_ascii=False)}"]
     if colls:
         fm.append("collections: " + json.dumps(colls, ensure_ascii=False))
-    extra = skill.get("extra_frontmatter")
-    if isinstance(extra, str) and extra.strip():
-        fm.append(extra.strip())
+    fm.extend(safe_extra_frontmatter(skill.get("extra_frontmatter")))
 
     body = skill.get("content_md")
     if not isinstance(body, str):
         body = ""
+    # The registry only embeds bodies when asked (?include=content). Against a
+    # server that predates that parameter every body arrives empty — writing
+    # those would silently replace good skills on disk with instruction-less
+    # stubs, so skip the skill entirely and keep whatever is already there.
+    if not body.strip():
+        skipped_empty += 1
+        protected.add(local_name)
+        continue
+
+    visible_slugs.append(slug)
+    local_names.add(local_name)
+    os.makedirs(skill_dir, exist_ok=True)
     host = api_url.split("://")[1].split(":")[0] if "://" in api_url else "localhost"
     web_url = f"http://{host}:3000"
     body = body.replace("{{API_URL}}", api_url).replace("{{WEB_URL}}", web_url)
@@ -263,13 +350,26 @@ for skill in skills:
         created += 1
     atomic_write(filepath, content)
 
+# A response where every skill lacked a body means the server can't give us
+# content (too old for ?include=content, or a partial outage). We wrote
+# nothing; deleting on top of that would strip a working install down to
+# nothing on the strength of a degraded response. Leave the disk untouched.
+if skipped_empty and not local_names:
+    print(
+        "SkillNote: server returned no skill content (keeping cached skills)",
+        file=sys.stderr,
+    )
+    sys.exit(4)
+
 # Delete skills no longer in the collection. Sources: manifest (validated) and
 # an on-disk scan (catches orphans). Every candidate is re-validated + contained
 # before removal so a tampered manifest can't delete outside skills_dir.
-stale = set(old_managed) - local_names
+# Skills skipped for missing content are NOT in local_names, so they'd look
+# stale — but they're still valid installs, so exclude them from deletion.
+stale = set(old_managed) - local_names - protected
 if os.path.isdir(skills_dir):
     for entry in os.listdir(skills_dir):
-        if NAME_RE.match(entry) and entry not in local_names:
+        if NAME_RE.match(entry) and entry not in local_names and entry not in protected:
             stale.add(entry)
 for name in sorted(stale):
     if not NAME_RE.match(name):
@@ -285,7 +385,10 @@ for name in sorted(stale):
     except OSError:
         pass
 
-atomic_write(manifest_path, json.dumps({"skills": sorted(local_names)}, indent=2))
+atomic_write(
+    manifest_path,
+    json.dumps({"skills": sorted(local_names | protected)}, indent=2),
+)
 
 # ── change summary (only when something changed; capped for large sets) ─────
 parts = []

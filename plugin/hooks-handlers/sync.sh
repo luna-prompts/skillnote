@@ -8,8 +8,19 @@ export PYTHONIOENCODING=utf-8
 
 # Resolve host
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-HOST=$("$SCRIPT_DIR/resolve-host.sh")
-API_URL="http://${HOST}:8082"
+# Prefer the full base URL the installer recorded — a self-hosted SkillNote may
+# be behind HTTPS, a reverse proxy, or a non-default port, and rebuilding
+# "http://<host>:8082" from a bare hostname would point every request at a dead
+# endpoint. Fall back to the legacy host file for installs that predate api-url.
+API_URL=""
+if [ -r "$HOME/.skillnote/api-url" ]; then
+    API_URL=$(head -n 1 "$HOME/.skillnote/api-url" 2>/dev/null | tr -d ' \t\r\n')
+fi
+case "$API_URL" in
+    http://*|https://*) ;;
+    *) HOST=$("$SCRIPT_DIR/resolve-host.sh"); API_URL="http://${HOST}:8082" ;;
+esac
+API_URL="${API_URL%/}"
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-.}"
 PROJECT_CONFIG="${PROJECT_DIR}/.skillnote.json"
 
@@ -53,11 +64,14 @@ fi
 MANIFEST="${MANIFEST_DIR}/.skillnote-manifest.json"
 
 # Build fetch URL with optional collection filter (URL-encode for safety)
+# include=content asks the registry to embed each SKILL.md body — the default
+# list response omits it, and without this every file we write would be a
+# frontmatter-only stub.
 if [ -n "$COLLECTIONS" ]; then
     ENCODED=$(python3 -c "import urllib.parse; print(urllib.parse.quote('${COLLECTIONS}'))" 2>/dev/null || echo "$COLLECTIONS")
-    FETCH_URL="${API_URL}/v1/skills?collections=${ENCODED}"
+    FETCH_URL="${API_URL}/v1/skills?include=content&collections=${ENCODED}"
 else
-    FETCH_URL="${API_URL}/v1/skills"
+    FETCH_URL="${API_URL}/v1/skills?include=content"
 fi
 
 # Fetch skills from API
@@ -96,6 +110,9 @@ if not skills and has_filter and old_managed:
     sys.exit(0)
 
 created, updated, deleted = 0, 0, 0
+skipped_empty = 0
+protected = set()   # listed by the API but bodyless — keep whatever is on disk
+visible_slugs = []  # slugs we actually wrote this run
 
 for skill in skills:
     slug = skill['slug']
@@ -105,7 +122,19 @@ for skill in skills:
 
     # Prefix with skillnote- so all skills group under /skillnote in autocomplete
     local_name = f'skillnote-{slug}'
+
+    raw_body = skill.get('content_md') or ''
+    # The registry only embeds bodies when asked (?include=content). Against a
+    # server that predates that parameter every body arrives empty — writing
+    # those would replace good skills on disk with instruction-less stubs, so
+    # skip the skill entirely and keep whatever is already there.
+    if not raw_body.strip():
+        skipped_empty += 1
+        protected.add(local_name)
+        continue
+
     local_names.add(local_name)
+    visible_slugs.append(slug)
     skill_dir = os.path.join(skills_dir, local_name)
     os.makedirs(skill_dir, exist_ok=True)
 
@@ -121,7 +150,6 @@ for skill in skills:
     if extra.strip():
         fm_lines.append(extra.strip())
 
-    raw_body = skill.get('content_md') or ''
     # Substitute URL placeholders
     api_url = '$API_URL'
     host = api_url.split('://')[1].split(':')[0] if '://' in api_url else 'localhost'
@@ -142,12 +170,22 @@ for skill in skills:
     with open(filepath, 'w') as f:
         f.write(content)
 
+# A response where every skill lacked a body means the server can't give us
+# content (too old for ?include=content, or a partial outage). We wrote nothing;
+# deleting on top of that would strip a working install bare on the strength of
+# a degraded response. Leave the disk untouched.
+if skipped_empty and not local_names:
+    print('SkillNote: server returned no skill content (keeping cached skills)')
+    sys.exit(0)
+
 # Delete skills not in current collection
 # Check manifest (tracked skills) AND scan disk (catches orphans from before manifest existed)
-stale = old_managed - local_names
+# Skills skipped for a missing body aren't in local_names, so they'd look stale —
+# but they're still valid installs, so exclude them from deletion.
+stale = old_managed - local_names - protected
 if os.path.isdir(skills_dir):
     for entry in os.listdir(skills_dir):
-        if entry.startswith('skillnote-') and entry not in local_names:
+        if entry.startswith('skillnote-') and entry not in local_names and entry not in protected:
             stale.add(entry)
 for name in sorted(stale):
     skill_dir = os.path.join(skills_dir, name)
@@ -162,8 +200,9 @@ for name in sorted(stale):
         pass  # permission error — skip
 
 # Write updated manifest (uses local_names for directory tracking)
+# Bodyless skills stay in the manifest so a degraded response never orphans them.
 with open(manifest_path, 'w') as f:
-    json.dump({'skills': sorted(local_names)}, f, indent=2)
+    json.dump({'skills': sorted(local_names | protected)}, f, indent=2)
 
 # Build output
 total = len(skills)
@@ -175,8 +214,9 @@ if deleted: parts.append(str(deleted) + ' removed')
 detail = ', '.join(parts) if parts else 'all current'
 col_name = '$COLLECTIONS' if '$COLLECTIONS' else 'all'
 
-vis = [s for s in skills if s['slug'] not in plugin_provided]
-slugs = [s['slug'] for s in vis]
+# Only the skills we actually wrote — one skipped for an empty body isn't
+# something this run put on disk, so don't advertise it.
+slugs = visible_slugs
 
 import os as _os
 skills_path = _os.path.abspath('$SKILLS_DIR')
@@ -221,7 +261,7 @@ if slugs:
         fill = dash * max(0, inner - _vis_len(prefix))
         print(f'    {D}{chr(9584)}{prefix}{fill}{chr(9583)}{R}')
 
-    border_top(f'{R}{B}{col_name}{R}{D} {dash}{dash} {G}{str(len(vis))} skills ({detail}){R}{D}')
+    border_top(f'{R}{B}{col_name}{R}{D} {dash}{dash} {G}{str(len(slugs))} skills ({detail}){R}{D}')
     row_empty()
 
     for i in range(0, len(slugs), 2):
@@ -239,7 +279,7 @@ if slugs:
 
     border_bot(f'{R}{C}/skillnote{R}{D} {chr(183)} {C}/skillnote:collection{R}{D}')
 else:
-    print(f'    {C}{col_name}{R} {D}{chr(183)}{R} {str(len(vis))} skills ({detail})')
+    print(f'    {C}{col_name}{R} {D}{chr(183)}{R} {str(len(slugs))} skills ({detail})')
 
 print()
 " 2>/dev/null) || exit 0
