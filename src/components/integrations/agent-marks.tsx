@@ -60,12 +60,18 @@ export function OpenClawMark({ size = 56 }: { size?: number }) {
 export function CodexMark({ size = 56 }: { size?: number }) {
   // OpenAI Codex — the official logomark, verbatim from the header of
   // developers.openai.com/codex (the OpenAI "blossom" knot Codex ships
-  // under). Rendered in currentColor on the themed plate — light-mode shows
-  // the white-blossom-on-dark treatment of the actual Codex app icon, and it
-  // stays visually distinct from OpenAIMark (blossom on a white plate).
+  // under). The real Codex app icon is a WHITE blossom on a near-black
+  // plate, so the plate and glyph are pinned to literal colors rather than
+  // the `foreground`/`background` theme tokens: theme tokens flipped the
+  // mark in dark mode into a black-blossom-on-white plate, which is both the
+  // inverse of the real icon and a collision with OpenAIMark (which *is*
+  // blossom-on-white). Pinned colors keep it correct — and distinct from
+  // OpenAIMark — in both themes.
   return (
     <span
-      className="flex items-center justify-center rounded-lg bg-foreground text-background"
+      role="img"
+      aria-label="OpenAI Codex"
+      className="flex items-center justify-center rounded-lg bg-[#0d0d0d] text-white"
       style={{ width: size, height: size }}
     >
       <svg

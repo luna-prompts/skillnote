@@ -21,6 +21,19 @@ import { dispatchJob, useJobPolling, type JobAgent } from '@/lib/cli-jobs'
 
 type AgentId = 'claude-code' | 'openclaw' | 'codex'
 
+// Every agent the backend reports on. `claude-ai` is deliberately NOT an
+// `AgentId`: it pairs through the browser extension (see ClaudeAICard /
+// `listIntegrations`), not through this page's install/snapshot lifecycle.
+// It still comes back from /v1/setup/agents, so the wire type has to name it
+// and the reducer has to filter it out.
+type SetupAgentId = AgentId | 'claude-ai'
+
+const AGENT_IDS: readonly AgentId[] = ['claude-code', 'openclaw', 'codex']
+
+function isAgentId(id: SetupAgentId): id is AgentId {
+  return (AGENT_IDS as readonly string[]).includes(id)
+}
+
 interface AgentSnapshot {
   id: AgentId
   state: ConnectionState
@@ -33,7 +46,9 @@ interface AgentSnapshot {
 }
 
 interface SetupAgentStatus {
-  agent: AgentId
+  /** Wire shape mirrors the backend's SUPPORTED_AGENTS, which includes
+   *  `claude-ai`. Narrow with `isAgentId` before touching `snapshots`. */
+  agent: SetupAgentId
   state: 'pending' | 'active' | 'idle'
   installed_at: string | null
   last_active_at: string | null
@@ -177,6 +192,10 @@ export default function IntegrationsPage() {
           const next = { ...prev }
           const now = Date.now()
           for (const row of rows) {
+            // Skip `claude-ai` — it's paired via the browser extension and
+            // tracked by `claudeAIConnectedCount`, so letting it through
+            // would insert a phantom key into the AgentId-keyed record.
+            if (!isAgentId(row.agent)) continue
             const local = prev[row.agent]
             // Don't overwrite an in-flight install — UNLESS the local
             // `connecting` is older than CONNECTING_STALE_AFTER_MS. Without
@@ -342,13 +361,33 @@ export default function IntegrationsPage() {
   const confirmDisconnect = useCallback(
     async (id: AgentId) => {
       try {
+        // Ask the local bridge to actually undo the install (plugin,
+        // marketplace, shell wrapper). Clearing only the server-side record
+        // would leave every local file in place and the agent still syncing,
+        // so the row would flip back to Connected on its next skill call.
+        // Best-effort: the bridge may not be running, and the server-side
+        // record must be cleared either way.
+        let teardownDispatched = false
+        try {
+          await dispatchJob({ type: 'disconnect', agent: id as JobAgent })
+          teardownDispatched = true
+        } catch {
+          // No bridge daemon — fall through to the record-only path below.
+        }
+
         const res = await fetch(`${base}/v1/setup/installs/${id}`, { method: 'DELETE' })
         if (!res.ok && res.status !== 204) throw new Error(`HTTP ${res.status}`)
         setSnapshots((prev) => ({
           ...prev,
           [id]: { id, state: 'pending', installedAt: undefined, lastCallAt: undefined },
         }))
-        toast.success(`${labelOf(id)} disconnected`)
+        if (teardownDispatched) {
+          toast.success(`${labelOf(id)} disconnected`)
+        } else {
+          toast.success(`${labelOf(id)} removed from SkillNote`, {
+            description: `Run \`skillnote disconnect ${id}\` on that machine to remove the local files.`,
+          })
+        }
         // Stay on Connected tab — switching to Browse on every disconnect
         // disorients users who are working through multiple agents.
       } catch (err) {
@@ -616,8 +655,9 @@ function EmptyConnected({ onBrowse }: { onBrowse: () => void }) {
         No agents connected yet
       </p>
       <p className="mx-auto mt-1.5 max-w-sm text-[12.5px] text-muted-foreground/85 leading-relaxed">
-        Wire in Claude Code or OpenClaw and SkillNote will sync your skills,
-        stream usage analytics, and let you publish skills with one command.
+        Wire in Claude Code, Codex, or OpenClaw and SkillNote will sync your
+        skills, stream usage analytics, and let you publish skills with one
+        command.
       </p>
       <div className="mt-5 flex items-center justify-center gap-2">
         <button

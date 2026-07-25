@@ -1,7 +1,13 @@
 # SkillNote × Codex CLI Integration — Design
 
-**Status**: Approved, in implementation
-**Branch**: `feat/codex-integration`
+> **Status note (historical document).** This is the original design spec and
+> is **superseded by the `[0.7.0]` entry in `CHANGELOG.md`**, which describes
+> what actually shipped. It is kept for the design rationale; where the two
+> disagree, the CHANGELOG wins. Points that drifted during implementation are
+> annotated inline below with **Shipped:** callouts.
+
+**Status**: Shipped in 0.7.0
+**Branch**: `feat/codex-plugin` (design was drafted on `feat/codex-integration`)
 **Created**: 2026-06-30
 **Goal**: Bring OpenAI Codex CLI to full parity with the Claude Code integration — collection picker, mid-session skill auto-sync, SkillNote branding, and end-to-end install via `skillnote connect codex`.
 
@@ -9,9 +15,11 @@
 
 SkillNote already ships a polished Claude Code integration: a plugin (installed via a local marketplace), a pre-launch collection **picker** (`skillnote-pick`), **auto-sync** of the active collection's skills into `PROJECT/.claude/skills/` on `SessionStart` and (throttled) on `UserPromptSubmit`, usage **analytics**, and consistent **branding**.
 
-Codex (verified locally: `codex-cli 0.142.3`) supports the same primitives:
+Codex (drafted against `codex-cli 0.142.3`; the shipped integration was
+verified end-to-end on `codex-cli 0.144.6`) supports the same primitives:
 
-- **Skills**: `SKILL.md` bundles read from `~/.codex/skills/` (personal) and `<repo>/.codex/skills/` (project) — identical format to SkillNote's output. Native picker via `/skills` and `$skill-name`.
+- **Skills**: `SKILL.md` bundles read from a user-global skill root and `<repo>/.codex/skills/` (project) — identical format to SkillNote's output. Native picker via `/skills` and `$skill-name`.
+  **Shipped:** the personal root named here, `~/.codex/skills/`, is deprecated upstream; the CLI adapter (`skillnote add --agent codex`) targets **`~/.agents/skills/`** instead. Codex presence is still detected via `~/.codex`. The plugin's own sync path is unaffected — it only ever writes the project-scoped `.codex/skills/`.
 - **Plugins + local marketplace**: `codex plugin marketplace add <local-path>` registers a marketplace; a plugin marked `INSTALLED_BY_DEFAULT` auto-installs. Mirrors `claude plugin marketplace add` / `claude plugin install`.
 - **Bundled lifecycle hooks**: a plugin's `hooks/hooks.json` is auto-loaded when enabled, with `${PLUGIN_ROOT}` / `${PLUGIN_DATA}` — the direct analog of Claude Code's `${CLAUDE_PLUGIN_ROOT}`. Events: `SessionStart`, `UserPromptSubmit`, `PostToolUse`, `PreCompact`, `SubagentStart`, `Stop`, etc.
 - **Branding**: the `interface{}` block in `.codex-plugin/plugin.json` (`displayName`, `brandColor`, `logo`) + `assets/`.
@@ -62,6 +70,7 @@ Key adaptations from the Claude Code plugin:
 
 - Add `'codex'` to `SUPPORTED_AGENTS` + `displayNames` + a Codex "Next:" hint.
 - `disconnect codex`: guided manual steps (`codex plugin marketplace remove`, remove wrapper block, `rm ~/.skillnote/host`).
+  **Shipped: fully automated, not guided.** `disconnect codex` runs `codex plugin remove` + `codex plugin marketplace remove` itself, strips the shell-wrapper block, and removes `~/.skillnote/codex`. The manual command list is only printed as a fallback when the `codex` binary can't be run.
 
 ### 4. Frontend Connect page (`src/app/(app)/integrations/page.tsx`)
 
@@ -89,7 +98,7 @@ The pre-launch collection picker stays a **shell wrapper** (`codex()` → runs `
 - **Backend**: unit/integration for `/setup/codex`, `/v1/codex-bundle.zip` (valid ZIP, host baked in, no symlinks), `codex` in `/v1/setup/agents`, install-ping → status `active`.
 - **CLI**: vitest — `connect codex` validates against `SUPPORTED_AGENTS`, fetches `/setup/agent?agent=codex`, prints the Codex next-steps.
 - **E2E (Playwright)**: Connect page shows the Codex card; connect flow renders the install command.
-- **Real-codex E2E**: run `/setup/codex` against the installed `codex 0.142.3` — confirm `codex plugin marketplace add` registers, skills sync into `.codex/skills/`, mid-session auto-sync picks up a collection change, and `codex plugin list` shows SkillNote with branding.
+- **Real-codex E2E**: run `/setup/codex` against the installed `codex` CLI (shipped verification ran on **0.144.6**) — confirm `codex plugin marketplace add` registers, skills sync into `.codex/skills/`, mid-session auto-sync picks up a collection change, and `codex plugin list` shows SkillNote with branding.
 
 ## Out of scope (this cycle)
 
