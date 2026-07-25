@@ -3,6 +3,75 @@
 All notable changes to SkillNote will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.7.1] - 2026-07-25
+
+**Skill bodies were missing from every synced file.** Fixes a regression that
+had been shipping since 0.5.x, plus the security and correctness issues found
+in a full adversarial review of the Codex integration.
+
+### Fixed
+
+- **Synced skills had no content (all agents).** `GET /v1/skills` stopped
+  returning `content_md` when bodies were dropped to keep the web app's
+  localStorage cache under quota. All three sync plugins (Claude Code, Codex,
+  OpenClaw) read bodies from that response, so every `SKILL.md` they wrote was
+  frontmatter with an empty body — and their change-detection then replaced
+  previously-good files with those stubs. The list endpoint now takes an opt-in
+  `?include=content`, which the plugins use; the default payload is unchanged.
+  Each sync additionally **refuses to write a body-less skill** and **skips the
+  stale-sweep entirely** when a response carries no content, so a degraded or
+  out-of-date server can never delete a working install.
+- **`extra_frontmatter` could hijack a generated `SKILL.md`.** The field is
+  author-controlled (imported skills carry whatever upstream wrote) and was
+  appended verbatim, so it could smuggle a `---` fence to close the frontmatter
+  early and inject text into the body an agent reads as instructions, or
+  redeclare `name` to shadow another skill. It is now parsed, restricted to a
+  top-level mapping, stripped of registry-owned keys, and re-emitted
+  JSON-encoded. Shared renderer in `app/services/skill_markdown.py`.
+- **Disabling every version no longer stops distribution.** `add`/`update`
+  fell back to current-content for any skill with no *active* version, which
+  routed around the only kill switch operators have.
+  `/v1/skills/{slug}/current/download` now returns `403 SKILL_WITHDRAWN` in
+  that case, and the CLI reports it instead of installing the draft.
+- **Self-hosted deployments on HTTPS, a reverse proxy, or a custom port were
+  permanently "offline".** Installers recorded only a bare hostname and hooks
+  rebuilt `http://<host>:8082` from it. They now record and prefer the full
+  base URL (`~/.skillnote/api-url`), falling back to the legacy host file.
+- **`skillnote disconnect codex` reported success even when it did nothing.**
+  It ignored `codex`'s exit status, so with the binary missing the plugin
+  stayed installed and syncing while the marketplace directory it points at was
+  deleted. It now checks each command, keeps the directory when unregistration
+  fails, and says what actually happened.
+- **Disconnecting from the web left everything installed.** The button cleared
+  only the server-side record while the modal listed the full install manifest
+  as what gets removed; the agent kept syncing and the row flipped back to
+  Connected. It now dispatches the real teardown through the local bridge and
+  tells you how to finish manually when no bridge is running.
+- **Removing a skill in one project deleted it from others.** Codex installs
+  into a shared `~/.agents/skills`, so `skillnote remove` destroyed files other
+  projects still listed. Global installs are now reference-counted per project.
+  `skillnote update` also cleans up copies left at the old project-local Codex
+  path instead of leaving a stale skill that Codex keeps loading.
+- Analytics no longer block the session: the Codex usage POST runs detached
+  (it previously added up to 3s to every skill read when the host was
+  unreachable). Skills named `skillnote-*` are no longer mis-keyed.
+- `skillnote check` now reports drift for unpublished (`current`) skills and
+  flags withdrawn ones instead of always claiming "up to date".
+- Install hardening: `sha256sum` fallback where `shasum` is absent (Alpine and
+  slim images), bundle downloaded and validated before the existing install is
+  replaced, traversal check no longer fooled by entry names containing spaces,
+  atomic stale-lock reaping, shell-rc edits that no longer reformat unrelated
+  parts of the file and are written atomically, `.bash_profile` preferred on
+  macOS (where login shells never read `.bashrc`), and auto-sync recovers from
+  a clock stepped backwards.
+- Bundles built from current content use stored (not deflated) entries, so
+  identical content stays byte-identical across server upgrades and
+  `skillnote update` can't churn.
+
+### Changed
+
+- CLI version synced to the app version (was still reporting 0.6.0).
+
 ## [0.7.0] - 2026-06-30
 
 **Codex integration.** SkillNote now connects to the OpenAI Codex CLI with the
