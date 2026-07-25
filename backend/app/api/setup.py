@@ -687,6 +687,13 @@ if [ "$HAVE_CODEX" -eq 1 ]; then
     fi
 fi
 
+# Deliberately NO MCP server registration: skills are delivered as native
+# Codex file-skills (plugin + sync hooks). Registering the SkillNote MCP
+# server here would duplicate every skill as a tool AND make each Codex
+# session boot an HTTP MCP connection to the SkillNote host — which shows
+# errors every session whenever the server is offline. The plugin hooks
+# already handle live mid-session sync and usage analytics offline-first.
+
 # ── install the shared collection picker (from the Claude Code plugin bundle) ──
 # skillnote-pick is agent-agnostic — it writes .skillnote.json. We install it to
 # the shared ~/.skillnote/bin so Codex and Claude Code reuse one picker.

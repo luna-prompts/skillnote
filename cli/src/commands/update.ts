@@ -75,19 +75,24 @@ export async function updateCommand(
       continue
     }
 
+    // Skills installed from never-published content carry version 'current';
+    // they have no published version to compare, so re-fetch the current
+    // bundle and diff by checksum instead.
     const latest = versions.find((v) => v.status === 'active')
-    if (!latest || latest.version === entry.version) {
+    const wasCurrent = entry.version === 'current'
+    if ((!latest && !wasCurrent) || (latest && latest.version === entry.version)) {
       spin.stop()
       ui.info(`${slug} is up to date (${entry.version})`)
       skipped++
       continue
     }
+    const versionLabel = latest ? latest.version : 'current'
 
-    spin.text = `Downloading ${slug}@${latest.version}...`
+    spin.text = `Downloading ${slug}@${versionLabel}...`
     let buffer: Buffer
     let serverChecksum: string
     try {
-      const dl = await client.downloadBundle(slug, latest.version)
+      const dl = await client.downloadBundle(slug, versionLabel)
       buffer = dl.buffer
       serverChecksum = dl.checksum
     } catch (err: any) {
@@ -104,8 +109,14 @@ export async function updateCommand(
       failed++
       continue
     }
+    if (versionLabel === 'current' && localChecksum === entry.checksum) {
+      spin.stop()
+      ui.info(`${slug} is up to date (current)`)
+      skipped++
+      continue
+    }
 
-    spin.text = `Extracting ${slug}@${latest.version}...`
+    spin.text = `Extracting ${slug}@${versionLabel}...`
     const tmpDir = path.join(
       os.tmpdir(),
       `skillnote-${Date.now()}-${Math.random().toString(36).slice(2)}`,
@@ -139,7 +150,7 @@ export async function updateCommand(
     fs.rmSync(tmpDir, { recursive: true, force: true })
 
     manifest.skills[slug] = {
-      version: latest.version,
+      version: versionLabel,
       checksum: localChecksum,
       installedAt: new Date().toISOString(),
       agents: agents.map((a) => a.name),
@@ -147,7 +158,11 @@ export async function updateCommand(
     saveManifest(projectDir, manifest)
 
     spin.stop()
-    ui.success(`${slug}: ${entry.version} → ${latest.version}`)
+    if (versionLabel === 'current') {
+      ui.success(`${slug}: current content refreshed`)
+    } else {
+      ui.success(`${slug}: ${entry.version} → ${versionLabel}`)
+    }
     updated++
   }
 

@@ -1,7 +1,10 @@
 import hashlib
+import io
+import json
+import zipfile
 
 from fastapi import APIRouter, Depends
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from sqlalchemy.orm import Session
 
 from app.core.errors import api_error
@@ -10,6 +13,64 @@ from app.db.session import get_db
 from app.services.storage_service import storage
 
 router = APIRouter(prefix="/v1/skills", tags=["downloads"])
+
+
+# Declared before the versioned route so "current" is never captured as a
+# {version} path parameter.
+@router.get("/{skill}/current/download")
+def download_current_skill_bundle(
+    skill: str,
+    db: Session = Depends(get_db),
+):
+    """Build a bundle from the current UI content, even when it was never published."""
+    skill_row = (
+        db.query(Skill)
+        .filter((Skill.slug == skill) | (Skill.name == skill))
+        .first()
+    )
+    if not skill_row:
+        raise api_error(404, "SKILL_NOT_FOUND", "Skill not found")
+
+    # JSON string/list syntax is valid YAML and safely handles colons, quotes,
+    # newlines, and non-ASCII text without adding a PyYAML formatting dependency
+    # to the download path.
+    frontmatter = [
+        f"name: {json.dumps(skill_row.slug, ensure_ascii=False)}",
+        f"description: {json.dumps(skill_row.description or '', ensure_ascii=False)}",
+    ]
+    if skill_row.collections:
+        frontmatter.append(
+            f"collections: {json.dumps(skill_row.collections, ensure_ascii=False)}"
+        )
+    if skill_row.extra_frontmatter and skill_row.extra_frontmatter.strip():
+        frontmatter.append(skill_row.extra_frontmatter.strip())
+
+    content = (
+        "---\n"
+        + "\n".join(frontmatter)
+        + "\n---\n\n"
+        + (skill_row.content_md or "")
+    ).encode("utf-8")
+    bundle = io.BytesIO()
+    with zipfile.ZipFile(bundle, "w", zipfile.ZIP_DEFLATED) as archive:
+        # Fixed timestamp + perms keep the archive byte-identical for
+        # identical content, so clients can no-op on an unchanged checksum.
+        info = zipfile.ZipInfo("SKILL.md", date_time=(1980, 1, 1, 0, 0, 0))
+        info.external_attr = 0o644 << 16
+        archive.writestr(info, content, compress_type=zipfile.ZIP_DEFLATED)
+    payload = bundle.getvalue()
+    checksum = hashlib.sha256(payload).hexdigest()
+    current_version = str(skill_row.current_version or 0)
+    return Response(
+        content=payload,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{skill_row.slug}-current.zip"',
+            "X-Skill-Name": skill_row.slug,
+            "X-Skill-Version": f"current-{current_version}",
+            "X-Checksum-Sha256": checksum,
+        },
+    )
 
 
 @router.get("/{skill}/{version}/download")

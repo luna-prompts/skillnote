@@ -37,11 +37,30 @@ No breaking changes to existing skill/collection/version APIs.
   `/setup/agent` dispatcher, the `/v1/setup/agents` state machine, and the
   agent-install prompt map.
 - **`skillnote connect codex` / `disconnect codex`** in the CLI, and a **Codex
-  card** on the Connect page (catalog entry + `>_` agent mark).
+  card** on the Connect page (catalog entry + the official Codex logomark).
+  `disconnect codex` is fully automated: it unregisters the plugin and
+  marketplace via `codex` itself, strips the shell wrapper, and removes
+  `~/.skillnote/codex`.
+- **`GET /v1/skills/{slug}/current/download`** builds a bundle from a skill's
+  *current* content even when it was never published, so UI-authored and
+  imported skills install everywhere. `skillnote add`/`update` fall back to it
+  automatically when a skill has no published version (`<slug>@current`).
+- **CLI Codex adapter targets `~/.agents/skills/`** (Codex's user-global skill
+  root — `~/.codex/skills` is deprecated upstream) and detects Codex per-user
+  via `~/.codex`, so `skillnote add --agent codex` works from any directory.
 - Tests: backend bundle/script/dispatcher integration tests, CLI allowlist
   tests, and Connect-page e2e coverage. Verified end-to-end against
-  `codex-cli 0.142.3` (install → marketplace/plugin registration → skill sync →
-  mid-session collection swap → usage analytics).
+  `codex-cli 0.144.6` (install → marketplace/plugin registration → skill sync
+  → mid-session collection swap → usage analytics).
+
+Deliberately **no MCP server registration for Codex**: skills are delivered as
+native Codex file-skills, and a globally registered HTTP MCP server would boot
+(and visibly fail) on every session whenever the self-hosted server is
+offline — breaking the integration's offline-first design.
+
+Parts of this release incorporate and extend PR #75 by Anand Sarolkar
+(@Riseonelimit): the current-content download endpoint, the global
+`~/.agents/skills` CLI target, and the automated disconnect flow.
 
 ## [0.6.0] - 2026-06-15
 

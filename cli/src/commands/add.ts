@@ -45,18 +45,17 @@ async function installSkill(
     return false
   }
 
+  // UI-authored or imported skills may have no published SkillVersion yet;
+  // the registry can still bundle their current content on the fly via
+  // /v1/skills/{slug}/current/download.
   const latest = pickLatestActive(versions)
-  if (!latest) {
-    spin.stop()
-    ui.fail(`${slug}: no active version found`)
-    return false
-  }
+  const versionLabel = latest ? latest.version : 'current'
 
-  spin.text = `Downloading ${slug}@${latest.version}...`
+  spin.text = `Downloading ${slug}@${versionLabel}...`
   let buffer: Buffer
   let serverChecksum: string
   try {
-    const dl = await client.downloadBundle(slug, latest.version)
+    const dl = await client.downloadBundle(slug, versionLabel)
     buffer = dl.buffer
     serverChecksum = dl.checksum
   } catch (err: any) {
@@ -101,7 +100,7 @@ async function installSkill(
 
   const manifest = loadManifest(projectDir)
   manifest.skills[slug] = {
-    version: latest.version,
+    version: versionLabel,
     checksum: localChecksum,
     installedAt: new Date().toISOString(),
     agents: agentNames,
@@ -109,7 +108,7 @@ async function installSkill(
   saveManifest(projectDir, manifest)
 
   spin.stop()
-  ui.success(`${ui.bold(slug)}@${latest.version} installed to ${agentNames.join(', ')}`)
+  ui.success(`${ui.bold(slug)}@${versionLabel} installed to ${agentNames.join(', ')}`)
   return true
 }
 

@@ -131,6 +131,16 @@ def test_setup_codex_substitutes_urls(client):
     assert 'WEB_URL="http://' in body
 
 
+def test_setup_codex_does_not_register_mcp_server(client):
+    """Deliberate design decision: Codex gets native file-skills via the
+    plugin, NOT an MCP server. Registering one would duplicate every skill
+    as a tool and make each Codex session boot an HTTP connection to the
+    SkillNote host — visibly failing every session while the server is
+    offline, which breaks the integration's offline-first contract."""
+    body = client.get("/setup/codex").text
+    assert "codex mcp add" not in body
+
+
 def test_setup_codex_script_is_valid_bash(client):
     r = client.get("/setup/codex")
     result = subprocess.run(["bash", "-n"], input=r.text, capture_output=True, text=True)

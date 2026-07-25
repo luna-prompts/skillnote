@@ -14,7 +14,7 @@ export function allAdapters(projectDir: string, homeDir?: string): AgentAdapter[
   return [
     new ClaudeAdapter(projectDir),
     new CursorAdapter(projectDir),
-    new CodexAdapter(projectDir),
+    new CodexAdapter(home),
     new OpenClawAdapter(projectDir, home),
     new OpenHandsAdapter(projectDir),
     new UniversalAdapter(projectDir),
