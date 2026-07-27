@@ -1,0 +1,6 @@
+interface:
+  display_name: "SkillNote: Rate Skill"
+  short_description: Record a 1-5 rating after using a SkillNote skill.
+  brand_color: "#06b6d4"
+policy:
+  allow_implicit_invocation: false

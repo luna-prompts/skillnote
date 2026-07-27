@@ -18,8 +18,8 @@ router = APIRouter(tags=["setup"])
 
 # Agents the Connect page understands. Keep the canonical names in sync
 # with the frontend's `AgentId` union and with the install scripts below.
-SUPPORTED_AGENTS = ("claude-code", "openclaw", "claude-ai")
-AgentLiteral = Literal["claude-code", "openclaw", "claude-ai"]
+SUPPORTED_AGENTS = ("claude-code", "openclaw", "codex", "claude-ai")
+AgentLiteral = Literal["claude-code", "openclaw", "codex", "claude-ai"]
 
 # Buckets for the per-agent state machine on the Connect page.
 ACTIVE_WINDOW_HOURS = 24
@@ -27,6 +27,7 @@ IDLE_WINDOW_DAYS = 30
 
 _PLUGIN_DIR = Path("/plugin") if Path("/plugin/.claude-plugin").is_dir() else Path(__file__).resolve().parent.parent.parent.parent / "plugin"
 _OPENCLAW_DIR = Path("/openclaw") if Path("/openclaw").is_dir() else Path(__file__).resolve().parent.parent.parent.parent / "plugin-openclaw"
+_CODEX_DIR = Path("/codex") if Path("/codex/.codex-plugin").is_dir() else Path(__file__).resolve().parent.parent.parent.parent / "plugin-codex"
 
 
 import re as _re
@@ -71,6 +72,46 @@ def get_plugin_zip(request: Request):
                                .replace("${CLAUDE_PLUGIN_OPTION_HOST}", f"${{CLAUDE_PLUGIN_OPTION_HOST:-{host}}}")
                                .replace("http://localhost:8082", api_url)
                                .replace("http://localhost:8083/mcp", mcp_url)
+                               .replace("http://localhost:3000", web_url))
+                    zf.writestr(str(rel), content)
+    buf.seek(0)
+    return Response(content=buf.read(), media_type="application/zip")
+
+
+@router.get("/v1/codex-bundle.zip")
+def get_codex_bundle_zip(request: Request):
+    """Serve the Codex plugin bundle as a ZIP with host URLs baked in.
+
+    Mirrors /v1/plugin.zip: the install script (/setup/codex) downloads this,
+    extracts it into a local marketplace root, and registers it with
+    `codex plugin marketplace add`.
+    """
+    if not _CODEX_DIR.is_dir():
+        # Fail loudly rather than serving a valid-but-empty ZIP that makes the
+        # installer die with a cryptic "zipfile is empty" under set -e.
+        raise HTTPException(status_code=404, detail="codex bundle not available")
+
+    urls = _derive_urls(request)
+    api_url = urls["api"]
+    web_url = urls["web"]
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        if _CODEX_DIR.is_dir():
+            for fpath in _CODEX_DIR.rglob("*"):
+                if not fpath.is_file():
+                    continue
+                if "__pycache__" in str(fpath) or "/tests/" in str(fpath):
+                    continue
+                rel = fpath.relative_to(_CODEX_DIR)
+                # Binary assets (logo/icon) are copied verbatim; text files get
+                # host URLs substituted so the bundle is self-contained offline.
+                if fpath.suffix.lower() in {".png", ".jpg", ".jpeg", ".gif", ".ico", ".webp"}:
+                    zf.writestr(str(rel), fpath.read_bytes())
+                else:
+                    content = fpath.read_text(errors="replace")
+                    content = (content
+                               .replace("http://localhost:8082", api_url)
                                .replace("http://localhost:3000", web_url))
                     zf.writestr(str(rel), content)
     buf.seek(0)
@@ -263,6 +304,10 @@ cp "$PLUGIN_SRC/bin/skillnote-statusline" "$SKILLNOTE_HOME/bin/skillnote-statusl
 chmod +x "$SKILLNOTE_HOME/bin/skillnote-pick" "$SKILLNOTE_HOME/bin/skillnote-statusline"
 # Save host for the picker to read at runtime
 echo "$SKILL_HOST" > "$SKILLNOTE_HOME/host"
+# The bare host loses the scheme and port, which breaks every self-hosted
+# deployment behind HTTPS, a reverse proxy, or a non-default port. Record the
+# full base URL too; hooks prefer this and fall back to the host file.
+printf '%s\n' "$API_URL" > "$SKILLNOTE_HOME/api-url"
 PICKER_PATH="$SKILLNOTE_HOME/bin/skillnote-pick"
 # Remove any old wrapper first (handles updates cleanly). Uses explicit
 # BEGIN/END markers so future format changes can still be detected and
@@ -331,8 +376,11 @@ fi
 # page in "pending" indefinitely. We still tolerate complete failure — the
 # Connect page falls back to "active" detection via skill_call_events once the
 # user runs their first task. Hash hostname+user so we don't ship raw PII.
+# shasum is a perl tool and is absent from Alpine/slim images; coreutils
+# ships sha256sum there. Without a fallback every such machine reports an
+# empty hash and all their installs collapse into one indistinguishable row.
 MACHINE_HASH=$(printf '%s' "${HOSTNAME:-host}-${USER:-user}" \
-    | shasum -a 256 2>/dev/null \
+    | { shasum -a 256 2>/dev/null || sha256sum 2>/dev/null; } \
     | awk '{print $1}' \
     || echo "")
 curl -sf --max-time 5 --retry 3 --retry-delay 2 --retry-connrefused \
@@ -371,6 +419,9 @@ echo ""
 @router.get("/setup")
 def get_setup_script(request: Request):
     urls = _derive_urls(request)
+    # __MCP_URL__ no longer appears in the Claude Code script, but the
+    # substitution is kept so reintroducing the placeholder can't ship a
+    # literal token to users.
     script = (_SETUP_SCRIPT
               .replace("__API_URL__", urls["api"])
               .replace("__MCP_URL__", urls["mcp"])
@@ -516,8 +567,11 @@ fi
 # ── ping backend so the Connect page knows we installed ─────────────────────
 # Same pattern as the claude-code installer — retry briefly so a transient
 # backend hiccup doesn't strand the Connect page in pending forever.
+# shasum is a perl tool and is absent from Alpine/slim images; coreutils
+# ships sha256sum there. Without a fallback every such machine reports an
+# empty hash and all their installs collapse into one indistinguishable row.
 MACHINE_HASH=$(printf '%s' "${HOSTNAME:-host}-${USER:-user}" \
-    | shasum -a 256 2>/dev/null \
+    | { shasum -a 256 2>/dev/null || sha256sum 2>/dev/null; } \
     | awk '{print $1}' \
     || echo "")
 curl -sf --max-time 5 --retry 3 --retry-delay 2 --retry-connrefused \
@@ -543,6 +597,319 @@ echo ""
 def get_openclaw_setup_script(request: Request):
     urls = _derive_urls(request)
     script = (_OPENCLAW_SETUP_SCRIPT
+              .replace("__API_URL__", urls["api"])
+              .replace("__WEB_URL__", urls["web"]))
+    return PlainTextResponse(script, media_type="text/plain")
+
+
+_CODEX_SETUP_SCRIPT = r'''#!/bin/bash
+set -euo pipefail
+
+API_URL="__API_URL__"
+WEB_URL="__WEB_URL__"
+SKILLNOTE_HOME="$HOME/.skillnote"
+CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
+MKT_DIR="$SKILLNOTE_HOME/codex/marketplace"
+PLUGIN_SRC="$MKT_DIR/plugins/skillnote"
+
+echo ""
+echo "  S K I L L N O T E   ->   C O D E X"
+echo ""
+
+# ── prerequisites ────────────────────────────────────────────────────────────
+command -v curl &>/dev/null    || { echo "Error: curl required.";    exit 1; }
+command -v unzip &>/dev/null   || { echo "Error: unzip required.";   exit 1; }
+command -v python3 &>/dev/null  || { echo "Error: python3 required."; exit 1; }
+
+HAVE_CODEX=1
+command -v codex &>/dev/null || HAVE_CODEX=0
+if [ "$HAVE_CODEX" -eq 0 ]; then
+    echo "  Note: 'codex' CLI not found on PATH. Installing the plugin files"
+    echo "        anyway; register the marketplace yourself once Codex is set up:"
+    echo "          codex plugin marketplace add $MKT_DIR"
+    echo ""
+fi
+
+# ── download the Codex plugin bundle ─────────────────────────────────────────
+# Download and validate BEFORE touching the existing install: a reinstall over
+# a flaky network must not leave the user with no marketplace at all.
+mkdir -p "$SKILLNOTE_HOME/bin"
+TMP_ZIP=$(mktemp -t skillnote-codex.XXXXXX.zip) || { echo "Error: mktemp failed."; exit 1; }
+PICK_ZIP=$(mktemp -t skillnote-pick.XXXXXX.zip) || { echo "Error: mktemp failed."; exit 1; }
+STAGE_DIR=$(mktemp -d -t skillnote-codexstage.XXXXXX) || { echo "Error: mktemp failed."; exit 1; }
+trap 'rm -f "$TMP_ZIP" "$PICK_ZIP"; rm -rf "$STAGE_DIR"' EXIT
+curl -sf --connect-timeout 10 --max-time 30 "$API_URL/v1/codex-bundle.zip" -o "$TMP_ZIP" || {
+    echo "Error: Could not download $API_URL/v1/codex-bundle.zip"
+    exit 1
+}
+
+# ── refuse symlink and path-traversal entries ────────────────────────────────
+if unzip -Z "$TMP_ZIP" 2>/dev/null | awk '{print $1}' | grep -q '^l'; then
+    echo "Error: bundle contains symbolic link entries; refusing to extract."
+    exit 1
+fi
+# -Z1 prints one bare name per line. Parsing `unzip -l` columns with $NF would
+# read only the last whitespace-separated token, so an entry named "../x y"
+# would slip through the traversal check.
+if unzip -Z1 "$TMP_ZIP" 2>/dev/null | grep -qE '^(/|\.\./|.*/\.\./)'; then
+    echo "Error: bundle contains absolute or parent-directory paths; refusing to extract."
+    exit 1
+fi
+
+unzip -qo "$TMP_ZIP" -d "$STAGE_DIR"
+if [ ! -f "$STAGE_DIR/.codex-plugin/plugin.json" ]; then
+    echo "Error: bundle is missing .codex-plugin/plugin.json; refusing to install."
+    exit 1
+fi
+
+# ── swap the validated bundle into place ─────────────────────────────────────
+rm -rf "$MKT_DIR"
+mkdir -p "$MKT_DIR/plugins"
+mv "$STAGE_DIR" "$PLUGIN_SRC" 2>/dev/null || { mkdir -p "$PLUGIN_SRC"; cp -R "$STAGE_DIR/." "$PLUGIN_SRC/"; }
+chmod +x "$PLUGIN_SRC/hooks/handlers/"*.sh 2>/dev/null || true
+
+# ── write the local marketplace manifest ─────────────────────────────────────
+# Codex looks for the manifest at <root>/.agents/plugins/marketplace.json; the
+# plugin `source.path` is relative to <root>. INSTALLED_BY_DEFAULT marks the
+# plugin enabled when the marketplace is added; `codex plugin add` below then
+# materializes it into the plugin cache. (No `authentication` key: only
+# ON_INSTALL/ON_USE are valid, and our plugin needs no auth — omit it.)
+mkdir -p "$MKT_DIR/.agents/plugins"
+cat > "$MKT_DIR/.agents/plugins/marketplace.json" << 'MKTEOF'
+{
+  "name": "skillnote-local",
+  "interface": { "displayName": "SkillNote" },
+  "plugins": [
+    {
+      "name": "skillnote",
+      "source": { "source": "local", "path": "./plugins/skillnote" },
+      "policy": { "installation": "INSTALLED_BY_DEFAULT" },
+      "category": "Developer Tools"
+    }
+  ]
+}
+MKTEOF
+
+# ── register marketplace + install the plugin ────────────────────────────────
+# `marketplace add` registers the source and writes the enabled flag +
+# [marketplaces.*] block into config.toml itself (so we must NOT also hand-edit
+# config.toml — a duplicate table would break TOML parsing). `plugin add` then
+# installs the plugin into the cache where Codex loads its skills + hooks.
+if [ "$HAVE_CODEX" -eq 1 ]; then
+    # Codex refuses to run if CODEX_HOME doesn't exist yet (fresh machine).
+    mkdir -p "$CODEX_HOME"
+    codex plugin remove skillnote@skillnote-local &>/dev/null || true
+    codex plugin marketplace remove skillnote-local &>/dev/null || true
+    if codex plugin marketplace add "$MKT_DIR" &>/dev/null; then
+        codex plugin add skillnote@skillnote-local &>/dev/null || {
+            echo "  Warning: 'codex plugin add' failed. Try manually:"
+            echo "    codex plugin add skillnote@skillnote-local"
+        }
+    else
+        echo "  Warning: 'codex plugin marketplace add' failed. Try manually:"
+        echo "    codex plugin marketplace add $MKT_DIR"
+        echo "    codex plugin add skillnote@skillnote-local"
+    fi
+fi
+
+# Deliberately NO MCP server registration: skills are delivered as native
+# Codex file-skills (plugin + sync hooks). Registering the SkillNote MCP
+# server here would duplicate every skill as a tool AND make each Codex
+# session boot an HTTP MCP connection to the SkillNote host — which shows
+# errors every session whenever the server is offline. The plugin hooks
+# already handle live mid-session sync and usage analytics offline-first.
+
+# ── install the shared collection picker (from the Claude Code plugin bundle) ──
+# skillnote-pick is agent-agnostic — it writes .skillnote.json. We install it to
+# the shared ~/.skillnote/bin so Codex and Claude Code reuse one picker.
+if curl -sf --connect-timeout 10 --max-time 30 "$API_URL/v1/plugin.zip" -o "$PICK_ZIP"; then
+    # Refuse symlink entries before extracting (cp would follow a link target).
+    if unzip -Z "$PICK_ZIP" 2>/dev/null | awk '{print $1}' | grep -q '^l'; then
+        echo "  Warning: picker bundle contains symlinks; skipping picker install."
+    else
+        PICK_TMP=$(mktemp -d -t skillnote-pickdir.XXXXXX) || PICK_TMP=""
+        if [ -n "$PICK_TMP" ]; then
+            unzip -qo "$PICK_ZIP" "bin/skillnote-pick" -d "$PICK_TMP" 2>/dev/null || true
+            if [ -f "$PICK_TMP/bin/skillnote-pick" ] && [ ! -L "$PICK_TMP/bin/skillnote-pick" ]; then
+                cp "$PICK_TMP/bin/skillnote-pick" "$SKILLNOTE_HOME/bin/skillnote-pick"
+                chmod +x "$SKILLNOTE_HOME/bin/skillnote-pick"
+            fi
+            rm -rf "$PICK_TMP"
+        fi
+    fi
+fi
+
+# Save the host for hooks + picker to read at runtime
+SKILL_HOST=$(echo "$API_URL" | sed -E 's|https?://||;s|:.*||')
+echo "$SKILL_HOST" > "$SKILLNOTE_HOME/host"
+# The bare host loses the scheme and port, which breaks every self-hosted
+# deployment behind HTTPS, a reverse proxy, or a non-default port. Record the
+# full base URL too; hooks prefer this and fall back to the host file.
+printf '%s\n' "$API_URL" > "$SKILLNOTE_HOME/api-url"
+PICKER_PATH="$SKILLNOTE_HOME/bin/skillnote-pick"
+# Stable (un-versioned) path to the sync handler in the marketplace source. The
+# wrapper runs this right after the picker so skills are synced into the project
+# BEFORE codex starts — this works even before the user has trusted the plugin's
+# hooks (Codex gates hooks behind a first-run trust prompt). The bundled
+# SessionStart/UserPromptSubmit hooks then keep skills fresh mid-session.
+SYNC_PATH="$PLUGIN_SRC/hooks/handlers/sync.sh"
+
+# ── shell wrapper: run the collection picker before launching codex ──────────
+SHELL_RC=""
+case "$(basename "${SHELL:-/bin/sh}")" in
+  zsh)  SHELL_RC="$HOME/.zshrc" ;;
+  bash) # macOS bash login shells read ONLY .bash_profile, so a wrapper written
+        # to .bashrc there never loads. Prefer .bash_profile on Darwin.
+        if [ "$(uname -s 2>/dev/null)" = "Darwin" ] && [ -f "$HOME/.bash_profile" ]; then
+            SHELL_RC="$HOME/.bash_profile"
+        elif [ -f "$HOME/.bashrc" ]; then SHELL_RC="$HOME/.bashrc"
+        elif [ -f "$HOME/.bash_profile" ]; then SHELL_RC="$HOME/.bash_profile"
+        else SHELL_RC="$HOME/.bashrc"; fi ;;
+  fish) SHELL_RC="$HOME/.config/fish/config.fish" ;;
+  *)    for rc in "$HOME/.bashrc" "$HOME/.bash_profile" "$HOME/.zshrc" "$HOME/.profile"; do
+            if [ -f "$rc" ]; then SHELL_RC="$rc"; break; fi
+        done ;;
+esac
+
+# Remove any previous SkillNote Codex wrapper before re-adding (clean updates)
+if [ -n "$SHELL_RC" ] && [ -f "$SHELL_RC" ]; then
+    SHELL_RC_PATH="$SHELL_RC" python3 - << 'WRAPCLEAN_EOF' 2>/dev/null || true
+import os, re
+path = os.environ.get("SHELL_RC_PATH", "")
+if not path or not os.path.isfile(path):
+    raise SystemExit(0)
+# Explicit encoding: under a non-UTF-8 locale a shell rc containing any
+# non-ASCII byte would raise here, the block would never be removed, and
+# repeated installs would stack duplicate wrappers.
+with open(path, encoding="utf-8", errors="surrogateescape") as f:
+    content = f.read()
+# Collapse only the blank lines the removal itself created — a global
+# \n{3,} squeeze would silently reformat unrelated parts of the user's
+# shell config.
+content = re.sub(
+    r'\n*# >>> SKILLNOTE CODEX WRAPPER BEGIN.*?# <<< SKILLNOTE CODEX WRAPPER END\n*',
+    '\n\n', content, flags=re.DOTALL)
+content = content.lstrip('\n') if content.startswith('\n\n') else content
+with open(path, 'w', encoding="utf-8", errors="surrogateescape") as f:
+    f.write(content)
+WRAPCLEAN_EOF
+fi
+
+if [ -n "$SHELL_RC" ] && [ -f "$PICKER_PATH" ]; then
+    case "$SHELL_RC" in
+      *config.fish)
+        cat >> "$SHELL_RC" << WRAPEOF
+
+# >>> SKILLNOTE CODEX WRAPPER BEGIN (do not edit; managed by skillnote setup)
+function codex
+  # Picker/sync only when launching the interactive TUI (no subcommand);
+  # 'codex resume' re-syncs without re-prompting; exec/plugin/etc. run clean.
+  set -l first
+  if set -q argv[1]
+    set first \$argv[1]
+  end
+  if isatty stdin; and isatty stdout
+    if not contains -- "\$first" --version -V --help -h
+      if test -z "\$first"; or string match -q -- '-*' "\$first"; or test "\$first" = resume
+        if test "\$first" != resume
+          "$PICKER_PATH"; or true
+        end
+        test -x "$SYNC_PATH"; and "$SYNC_PATH"; or true
+      end
+    end
+  end
+  command codex \$argv
+end
+# <<< SKILLNOTE CODEX WRAPPER END
+WRAPEOF
+        ;;
+      *)
+        cat >> "$SHELL_RC" << WRAPEOF
+
+# >>> SKILLNOTE CODEX WRAPPER BEGIN (do not edit; managed by skillnote setup)
+codex() {
+  # Picker/sync only when launching the interactive TUI (no subcommand);
+  # 'codex resume' re-syncs without re-prompting; exec/plugin/etc. run clean.
+  if [ -t 0 ] && [ -t 1 ]; then
+    case "\${1:-}" in
+      --version|-V|--help|-h) ;;
+      ""|-*|resume)
+        [ "\${1:-}" = resume ] || "$PICKER_PATH" || true
+        [ -x "$SYNC_PATH" ] && "$SYNC_PATH" || true
+        ;;
+    esac
+  fi
+  command codex "\$@"
+}
+# <<< SKILLNOTE CODEX WRAPPER END
+WRAPEOF
+        ;;
+    esac
+    echo "  Shell wrapper added to $SHELL_RC"
+else
+    echo "  Note: collection picker not wired into your shell."
+    echo "        Run $PICKER_PATH manually before 'codex' to pick a collection."
+fi
+
+# ── ping backend so the Connect page knows we installed ─────────────────────
+# shasum is a perl tool and is absent from Alpine/slim images; coreutils
+# ships sha256sum there. Without a fallback every such machine reports an
+# empty hash and all their installs collapse into one indistinguishable row.
+MACHINE_HASH=$(printf '%s' "${HOSTNAME:-host}-${USER:-user}" \
+    | { shasum -a 256 2>/dev/null || sha256sum 2>/dev/null; } \
+    | awk '{print $1}' \
+    || echo "")
+curl -sf --max-time 5 --retry 3 --retry-delay 2 --retry-connrefused \
+    -X POST "$API_URL/v1/setup/installs" \
+    -H "Content-Type: application/json" \
+    -d "{\"agent\":\"codex\",\"machine_id_hash\":\"$MACHINE_HASH\"}" \
+    >/dev/null 2>&1 || true
+
+echo ""
+echo "  Installed:"
+echo "    $PLUGIN_SRC/                 (Codex plugin: skills + sync hooks)"
+echo "    $MKT_DIR/.agents/plugins/marketplace.json  (local marketplace)"
+echo "    $SKILLNOTE_HOME/bin/skillnote-pick  (collection picker)"
+echo "    $SKILLNOTE_HOME/host         (host: $SKILL_HOST)"
+echo ""
+echo "  Web:  $WEB_URL"
+echo "  API:  $API_URL"
+echo ""
+python3 -c "
+rc = '$SHELL_RC'
+bw = 60
+def row(text=''):
+    print('  |' + text.ljust(bw - 2) + '|')
+print('  +-- Getting started ' + '-' * (bw - 21) + '+')
+row()
+row('  1. Quit any running Codex sessions')
+row()
+if rc:
+    row('  2. source ' + rc + '  (or open a new terminal)')
+else:
+    row('  2. Open a new terminal')
+row()
+row('  3. codex')
+row('     the collection picker appears; pick a collection,')
+row('     then your skills sync into ./.codex/skills/')
+row()
+row('  4. In Codex, type /skills to use your synced skills')
+row()
+row('  Tip: approve the SkillNote hooks when Codex asks (once)')
+row('  to enable live mid-session skill updates.')
+row()
+print('  +' + '-' * (bw - 2) + '+')
+" 2>/dev/null
+echo ""
+echo "  * github.com/luna-prompts/skillnote — Star us!"
+echo ""
+'''
+
+
+@router.get("/setup/codex")
+def get_codex_setup_script(request: Request):
+    urls = _derive_urls(request)
+    script = (_CODEX_SETUP_SCRIPT
               .replace("__API_URL__", urls["api"])
               .replace("__WEB_URL__", urls["web"]))
     return PlainTextResponse(script, media_type="text/plain")
@@ -597,8 +964,11 @@ cat <<EOF
 EOF
 
 # ── ping backend so the Connect page tracks the user kicked off this flow ───
+# shasum is a perl tool and is absent from Alpine/slim images; coreutils
+# ships sha256sum there. Without a fallback every such machine reports an
+# empty hash and all their installs collapse into one indistinguishable row.
 MACHINE_HASH=$(printf '%s' "${HOSTNAME:-host}-${USER:-user}" \
-    | shasum -a 256 2>/dev/null \
+    | { shasum -a 256 2>/dev/null || sha256sum 2>/dev/null; } \
     | awk '{print $1}' \
     || echo "")
 curl -sf --max-time 5 --retry 2 --retry-delay 1 \
@@ -656,6 +1026,8 @@ Usage:
 Supported agents:
   claude-code   Install the SkillNote plugin for Claude Code
   openclaw      Install the SkillNote skill for OpenClaw
+  codex         Install the SkillNote plugin for OpenAI Codex
+  claude-ai     Connect SkillNote to claude.ai in the browser
 
 Example:
   curl -sf $API_URL/setup/agent | bash -s -- --agent openclaw
@@ -680,6 +1052,8 @@ if [ -z "$AGENT" ]; then
     echo "Supported agents:"
     echo "  claude-code   Install the SkillNote plugin for Claude Code"
     echo "  openclaw      Install the SkillNote skill for OpenClaw"
+    echo "  codex         Install the SkillNote plugin for OpenAI Codex"
+    echo "  claude-ai     Connect SkillNote to claude.ai in the browser"
     exit 2
 fi
 
@@ -692,6 +1066,10 @@ case "$AGENT" in
         TARGET_PATH="/setup/openclaw"
         AGENT_LABEL="OpenClaw"
         ;;
+    codex|cx)
+        TARGET_PATH="/setup/codex"
+        AGENT_LABEL="Codex"
+        ;;
     claude-ai|claude_ai|claudeai|ca)
         TARGET_PATH="/setup/claude-ai"
         AGENT_LABEL="claude.ai (browser)"
@@ -699,7 +1077,7 @@ case "$AGENT" in
     *)
         echo "Error: unknown agent '$AGENT'."
         echo ""
-        echo "Supported agents: claude-code, openclaw, claude-ai"
+        echo "Supported agents: claude-code, openclaw, codex, claude-ai"
         exit 2
         ;;
 esac
@@ -808,9 +1186,43 @@ Please do the full install yourself — don't ask me to run commands.
 Don't ask for confirmation between steps. Just run the commands and report results.
 """
 
+_CODEX_AGENT_PROMPT = """Set up SkillNote for me in Codex. My SkillNote backend is at __API_URL__.
+
+Please do the full install yourself — don't ask me to run commands.
+
+1. **Verify the SkillNote backend is reachable:**
+   ```bash
+   curl -sf __API_URL__/health
+   ```
+   If this fails, tell me to first run:
+   ```bash
+   git clone https://github.com/luna-prompts/skillnote.git
+   cd skillnote
+   ./install.sh
+   ```
+
+2. **Install the Codex plugin:**
+   ```bash
+   curl -sf __API_URL__/setup/agent | bash -s -- --agent codex
+   ```
+
+3. **Reload my shell** (so the `codex` collection-picker wrapper gets picked up):
+   ```bash
+   source ~/.zshrc 2>/dev/null || source ~/.bashrc 2>/dev/null || true
+   ```
+
+4. **Verify everything works** and report back:
+   - Marketplace registered: `codex plugin marketplace list 2>/dev/null | grep -i skillnote`
+   - Plugin files present: `ls ~/.skillnote/codex/marketplace/plugins/skillnote/`
+   - Tell me what collection picker options I'd see when I run `codex`, and remind me I can browse synced skills with `/skills`.
+
+Don't ask for confirmation between steps. Just run the commands and report results.
+"""
+
 _AGENT_PROMPTS = {
     "openclaw": _OPENCLAW_AGENT_PROMPT,
     "claude-code": _CLAUDE_AGENT_PROMPT,
+    "codex": _CODEX_AGENT_PROMPT,
 }
 
 
@@ -834,6 +1246,7 @@ def get_agent_prompt(
         "openclaw": "openclaw", "oc": "openclaw", "open-claw": "openclaw",
         "claude-code": "claude-code", "cc": "claude-code",
         "claude": "claude-code", "claude_code": "claude-code",
+        "codex": "codex", "cx": "codex",
     }
     canonical = alias_map.get(agent_normalized)
     if canonical is None:
@@ -957,21 +1370,25 @@ def _agent_status(agent: AgentLiteral, db: Session) -> AgentStatus:
     # actually flips the agent back to pending instead of staying "active"
     # forever from pre-disconnect activity.
     floor_clause = "AND created_at > :floor" if activity_floor is not None else ""
-    if agent == "claude-code":
-        params = {"agent": "claude-code"}
+    if agent in ("claude-code", "codex", "claude-ai"):
+        # All three log one row per skill call to skill_call_events with their
+        # own agent_name (claude-code/codex via the /v1/hooks/skill-used hook;
+        # claude-ai via the connector). Filter event_type='called' so future
+        # non-'called' rows (e.g. session evals) can't inflate the counts.
+        params = {"agent": agent}
         if activity_floor is not None:
             params["floor"] = activity_floor  # type: ignore[assignment]
         last_active = db.execute(
             text(
                 f"SELECT MAX(created_at) FROM skill_call_events "
-                f"WHERE agent_name = :agent {floor_clause}"
+                f"WHERE agent_name = :agent AND event_type = 'called' {floor_clause}"
             ),
             params,
         ).scalar()
         calls_24h = db.execute(
             text(
                 f"SELECT COUNT(*) FROM skill_call_events "
-                f"WHERE agent_name = :agent {floor_clause} "
+                f"WHERE agent_name = :agent AND event_type = 'called' {floor_clause} "
                 f"AND created_at >= now() - interval '24 hours'"
             ),
             params,
@@ -979,7 +1396,7 @@ def _agent_status(agent: AgentLiteral, db: Session) -> AgentStatus:
         calls_7d = db.execute(
             text(
                 f"SELECT COUNT(*) FROM skill_call_events "
-                f"WHERE agent_name = :agent {floor_clause} "
+                f"WHERE agent_name = :agent AND event_type = 'called' {floor_clause} "
                 f"AND created_at >= now() - interval '7 days'"
             ),
             params,

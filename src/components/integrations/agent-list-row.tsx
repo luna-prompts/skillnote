@@ -9,7 +9,7 @@ import type { ConnectionState } from './connector'
 
 interface Props {
   state: ConnectionState
-  agentId: 'claude-code' | 'openclaw'
+  agentId: 'claude-code' | 'openclaw' | 'codex'
   agentLabel: string
   agentSublabel?: string
   agentMark: React.ReactNode

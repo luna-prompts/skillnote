@@ -75,19 +75,34 @@ export async function updateCommand(
       continue
     }
 
+    // Skills installed from never-published content carry version 'current';
+    // they have no published version to compare, so re-fetch the current
+    // bundle and diff by checksum instead.
     const latest = versions.find((v) => v.status === 'active')
-    if (!latest || latest.version === entry.version) {
+    const wasCurrent = entry.version === 'current'
+    // Versions exist but none is active: the skill was withdrawn, not
+    // drafted. Say so instead of reporting it as up to date — and never
+    // reach for the current-content fallback, which would defeat the
+    // withdrawal (`add` and the server agree on this rule).
+    if (!latest && versions.length > 0) {
+      spin.stop()
+      ui.warn(`${slug}: no active version (all published versions are disabled)`)
+      skipped++
+      continue
+    }
+    if ((!latest && !wasCurrent) || (latest && latest.version === entry.version)) {
       spin.stop()
       ui.info(`${slug} is up to date (${entry.version})`)
       skipped++
       continue
     }
+    const versionLabel = latest ? latest.version : 'current'
 
-    spin.text = `Downloading ${slug}@${latest.version}...`
+    spin.text = `Downloading ${slug}@${versionLabel}...`
     let buffer: Buffer
     let serverChecksum: string
     try {
-      const dl = await client.downloadBundle(slug, latest.version)
+      const dl = await client.downloadBundle(slug, versionLabel)
       buffer = dl.buffer
       serverChecksum = dl.checksum
     } catch (err: any) {
@@ -104,8 +119,14 @@ export async function updateCommand(
       failed++
       continue
     }
+    if (versionLabel === 'current' && localChecksum === entry.checksum) {
+      spin.stop()
+      ui.info(`${slug} is up to date (current)`)
+      skipped++
+      continue
+    }
 
-    spin.text = `Extracting ${slug}@${latest.version}...`
+    spin.text = `Extracting ${slug}@${versionLabel}...`
     const tmpDir = path.join(
       os.tmpdir(),
       `skillnote-${Date.now()}-${Math.random().toString(36).slice(2)}`,
@@ -129,6 +150,16 @@ export async function updateCommand(
     }
 
     for (const agent of agents) {
+      // Codex skills used to install into <project>/.codex/skills; they now
+      // go to the user-global ~/.agents/skills. Without cleaning the old
+      // path, an "updated" skill leaves a stale copy behind that Codex still
+      // loads, so the user keeps getting the version they just replaced.
+      if (agent.name === 'codex') {
+        const legacy = path.join(projectDir, '.codex', 'skills', slug)
+        if (legacy !== agent.skillDir(slug) && fs.existsSync(legacy)) {
+          fs.rmSync(legacy, { recursive: true, force: true })
+        }
+      }
       const dest = agent.skillDir(slug)
       if (fs.existsSync(dest)) fs.rmSync(dest, { recursive: true })
       fs.mkdirSync(dest, { recursive: true })
@@ -139,7 +170,7 @@ export async function updateCommand(
     fs.rmSync(tmpDir, { recursive: true, force: true })
 
     manifest.skills[slug] = {
-      version: latest.version,
+      version: versionLabel,
       checksum: localChecksum,
       installedAt: new Date().toISOString(),
       agents: agents.map((a) => a.name),
@@ -147,7 +178,11 @@ export async function updateCommand(
     saveManifest(projectDir, manifest)
 
     spin.stop()
-    ui.success(`${slug}: ${entry.version} → ${latest.version}`)
+    if (versionLabel === 'current') {
+      ui.success(`${slug}: current content refreshed`)
+    } else {
+      ui.success(`${slug}: ${entry.version} → ${versionLabel}`)
+    }
     updated++
   }
 

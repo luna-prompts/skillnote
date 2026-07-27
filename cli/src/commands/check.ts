@@ -1,6 +1,7 @@
 import { ApiClient } from '../api/client.js'
 import { defaultConfigDir, resolveAuth } from '../config/index.js'
 import { loadManifest } from '../manifest/index.js'
+import { computeSha256 } from '../util/checksum.js'
 import * as ui from '../util/ui.js'
 
 export async function checkCommand(): Promise<void> {
@@ -32,6 +33,21 @@ export async function checkCommand(): Promise<void> {
       if (latest && latest.version !== installed.version) {
         rows.push([slug, `${installed.version} → ${latest.version}`, 'update available'])
         updatesAvailable++
+      } else if (!latest && versions.length > 0) {
+        rows.push([slug, installed.version, 'withdrawn (no active version)'])
+      } else if (installed.version === 'current') {
+        // Unpublished skills have no version to compare, so drift is only
+        // visible by re-fetching the bundle and diffing the checksum —
+        // otherwise `check` would always claim they're up to date and the
+        // advertised check-then-update flow would never flag them.
+        try {
+          const dl = await client.downloadBundle(slug, 'current')
+          const changed = computeSha256(dl.buffer) !== installed.checksum
+          rows.push([slug, 'current', changed ? 'content changed' : 'up to date'])
+          if (changed) updatesAvailable++
+        } catch {
+          rows.push([slug, 'current', 'error checking'])
+        }
       } else {
         rows.push([slug, installed.version, 'up to date'])
       }

@@ -1,0 +1,8 @@
+interface:
+  display_name: SkillNote
+  short_description: Show the active SkillNote collection and synced skills.
+  brand_color: "#06b6d4"
+  default_prompt:
+    - Show my active SkillNote collection and synced skills.
+policy:
+  allow_implicit_invocation: true

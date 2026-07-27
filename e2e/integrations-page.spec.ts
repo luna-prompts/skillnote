@@ -11,7 +11,7 @@
 import { test, expect, type Page } from '@playwright/test'
 
 interface AgentRow {
-  agent: 'claude-code' | 'openclaw'
+  agent: 'claude-code' | 'openclaw' | 'codex'
   state: 'pending' | 'active' | 'idle'
   installed_at: string | null
   last_active_at: string | null
@@ -33,6 +33,20 @@ async function mockSetup(page: Page, rows: AgentRow[]) {
   await page.route('**/v1/openclaw/usage**', (route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: '{"events":[]}' }),
   )
+}
+
+/**
+ * Scope a locator to ONE Browse card.
+ *
+ * Every catalog card is rendered inside its own `<li>`, and the agent name
+ * lives in a `<p>` whose text is exactly the label — so `has: exact text`
+ * picks out a single card without matching another card's description prose
+ * (e.g. Codex's description also contains the word "Codex"). Without this,
+ * page-wide `getByText('Connected')` assertions would pass even if the state
+ * were painted onto the wrong agent's card.
+ */
+function browseCard(page: Page, label: string) {
+  return page.locator('li').filter({ has: page.getByText(label, { exact: true }) })
 }
 
 test.describe('/integrations — Browse cards + Connected rows', () => {
@@ -126,9 +140,85 @@ test.describe('/integrations — Browse cards + Connected rows', () => {
     // Default tab is Connected when ≥1 wired — switch back to Browse manually
     await page.getByRole('tab', { name: /Browse/ }).click()
 
-    // Claude's card shows "Connected" in the footer; OpenClaw's shows "Install"
+    // Claude's card shows "Connected" in the footer; the other catalog cards
+    // (OpenClaw, Codex) show "Install" — use .first() since there are now
+    // multiple Install affordances in the catalog.
     await expect(page.getByText('Connected', { exact: true }).first()).toBeVisible()
-    await expect(page.getByText('Install', { exact: true })).toBeVisible()
+    await expect(page.getByText('Install', { exact: true }).first()).toBeVisible()
+  })
+
+  test('Browse tab includes the Codex card with an Install affordance', async ({ page }) => {
+    await mockSetup(page, [
+      { agent: 'claude-code', state: 'pending', installed_at: null, last_active_at: null, calls_24h: 0, calls_7d: 0 },
+      { agent: 'openclaw', state: 'pending', installed_at: null, last_active_at: null, calls_24h: 0, calls_7d: 0 },
+      { agent: 'codex', state: 'pending', installed_at: null, last_active_at: null, calls_24h: 0, calls_7d: 0 },
+    ])
+    await page.goto('/integrations')
+    await page.getByRole('tab', { name: /Browse/ }).click()
+
+    // The Codex catalog card is present alongside the others.
+    await expect(page.getByText('Codex', { exact: true }).first()).toBeVisible()
+    // Three browse cards → at least three Install affordances.
+    expect(await page.getByText('Install', { exact: true }).count()).toBeGreaterThanOrEqual(3)
+  })
+
+  test('Codex card swaps to Connected footer when active', async ({ page }) => {
+    const recent = new Date(Date.now() - 60_000).toISOString()
+    await mockSetup(page, [
+      { agent: 'claude-code', state: 'pending', installed_at: null, last_active_at: null, calls_24h: 0, calls_7d: 0 },
+      { agent: 'openclaw', state: 'pending', installed_at: null, last_active_at: null, calls_24h: 0, calls_7d: 0 },
+      { agent: 'codex', state: 'active', installed_at: recent, last_active_at: recent, calls_24h: 3, calls_7d: 3 },
+    ])
+    await page.goto('/integrations')
+    await page.getByRole('tab', { name: /Browse/ }).click()
+
+    // Scoped per card: "Connected" must be on the CODEX card specifically.
+    // A page-wide `.first()` assertion would still pass if the active state
+    // were cross-wired onto Claude Code's card, so assert both directions.
+    await expect(
+      browseCard(page, 'Codex').getByText('Connected', { exact: true }),
+    ).toBeVisible()
+    await expect(
+      browseCard(page, 'Claude Code').getByText('Install', { exact: true }),
+    ).toBeVisible()
+    await expect(
+      browseCard(page, 'OpenClaw').getByText('Install', { exact: true }),
+    ).toBeVisible()
+    // …and no other card leaked the connected state. (A page-wide count
+    // would over-match: the "Connected" TAB TRIGGER also has a bare
+    // "Connected" text node — which is precisely why the unscoped
+    // `getByText('Connected').first()` assertion was weak.)
+    await expect(
+      browseCard(page, 'Claude Code').getByText('Connected', { exact: true }),
+    ).toHaveCount(0)
+    await expect(
+      browseCard(page, 'OpenClaw').getByText('Connected', { exact: true }),
+    ).toHaveCount(0)
+  })
+
+  test('Codex install flow renders the `--agent codex` command', async ({ page }) => {
+    await mockSetup(page, [
+      { agent: 'claude-code', state: 'pending', installed_at: null, last_active_at: null, calls_24h: 0, calls_7d: 0 },
+      { agent: 'openclaw', state: 'pending', installed_at: null, last_active_at: null, calls_24h: 0, calls_7d: 0 },
+      { agent: 'codex', state: 'pending', installed_at: null, last_active_at: null, calls_24h: 0, calls_7d: 0 },
+    ])
+    await page.goto('/integrations')
+    await page.getByRole('tab', { name: /Browse/ }).click()
+
+    // Install on the Codex card opens the ConnectModal at its confirm step.
+    // `exact` is required: the card's own <button> wrapper takes its
+    // accessible name from its contents, so it matches /Install/ too.
+    await browseCard(page, 'Codex')
+      .getByRole('button', { name: 'Install', exact: true })
+      .click()
+    const modal = page.getByRole('dialog', { name: 'Install Codex' })
+    await expect(modal).toBeVisible()
+
+    // "Manual install" reveals the copy-paste one-liner. It must target the
+    // codex agent — a wrong `--agent` value would silently install the wrong
+    // plugin for anyone who copies the command instead of using the bridge.
+    await modal.getByRole('button', { name: /Manual install/ }).click()
+    await expect(modal.locator('code').first()).toContainText('--agent codex')
   })
 
   test('Connected row click expands to wire diagram + Reinstall/Disconnect', async ({ page }) => {

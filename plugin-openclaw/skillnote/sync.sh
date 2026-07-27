@@ -87,7 +87,10 @@ SKILLS_DIR="$HOME/.openclaw/skills"
 MANIFEST="$SKILLNOTE_DIR/.skillnote-manifest.json"
 
 TMPFILE=$(mktemp /tmp/skillnote-sync-XXXXXX.json)
-curl -sf --connect-timeout 5 --max-time 10 "$HOST/v1/skills" > "$TMPFILE" 2>/dev/null || {
+# include=content asks the registry to embed each SKILL.md body — the plain list
+# response omits it, and without this every file we write would be a
+# frontmatter-only stub.
+curl -sf --connect-timeout 5 --max-time 10 "$HOST/v1/skills?include=content" > "$TMPFILE" 2>/dev/null || {
     rm -f "$TMPFILE"
     exit 0
 }
@@ -110,8 +113,18 @@ if os.path.exists(manifest_path):
     except Exception:
         pass
 
+# A transient empty 200 (server restarting mid-request, collection briefly
+# empty) must not be read as "the user removed everything". With skills
+# already on disk, keep them and retry on the next tick — exit 4 leaves the
+# throttle unstamped so that retry happens immediately.
+if not skills and old_managed:
+    print('SkillNote: empty response from server (keeping cached skills)', file=sys.stderr)
+    sys.exit(4)
+
 local_names = set()
+protected = set()  # listed by the server but bodyless — keep what's on disk
 created, updated, deleted = 0, 0, 0
+skipped_empty = 0
 
 for skill in skills:
     slug = skill.get('slug', '')
@@ -119,6 +132,17 @@ for skill in skills:
         continue
 
     local_name = f'sn-{slug}'
+
+    body = skill.get('content_md') or ''
+    # The registry only embeds bodies when asked (?include=content). Against a
+    # server that predates that parameter every body arrives empty — writing one
+    # would replace a good SKILL.md with an instruction-less stub, so skip the
+    # skill entirely and keep whatever is already there.
+    if not body.strip():
+        skipped_empty += 1
+        protected.add(local_name)
+        continue
+
     local_names.add(local_name)
     skill_dir = os.path.join(skills_dir, local_name)
     os.makedirs(skill_dir, exist_ok=True)
@@ -126,7 +150,6 @@ for skill in skills:
     skill_id = skill.get('id') or ''
     desc = skill.get('description') or ''
     colls = skill.get('collections') or []
-    body = skill.get('content_md') or ''
 
     fm_lines = [f'name: {local_name}', f'description: {desc}']
     if skill_id:
@@ -166,10 +189,21 @@ for skill in skills:
     with open(filepath, 'w') as f:
         f.write(content)
 
-stale = old_managed - local_names
+# Every skill came back bodyless: the server can't give us content (too old for
+# ?include=content, or a partial outage). We wrote nothing, so sweeping here
+# would delete a working install on the strength of a degraded response. Bail
+# before touching disk. The non-zero exit leaves .last-sync-time unstamped so
+# the next 60s tick retries instead of treating this as a successful sync.
+if skipped_empty and not local_names:
+    print('SkillNote: server returned no skill content (keeping cached skills)', file=sys.stderr)
+    sys.exit(4)
+
+# Skills skipped for a missing body aren't in local_names, so they'd look stale —
+# but they're still valid installs, so exclude them from the sweep.
+stale = old_managed - local_names - protected
 if os.path.isdir(skills_dir):
     for entry in os.listdir(skills_dir):
-        if entry.startswith('sn-') and entry not in local_names:
+        if entry.startswith('sn-') and entry not in local_names and entry not in protected:
             stale.add(entry)
 
 for name in sorted(stale):
@@ -192,7 +226,8 @@ import tempfile
 fd, tmp_path = tempfile.mkstemp(dir=manifest_dir, prefix='.manifest-', suffix='.json.tmp')
 try:
     with os.fdopen(fd, 'w') as f:
-        json.dump({'skills': sorted(local_names)}, f, indent=2)
+        # Bodyless skills stay tracked so a degraded response never orphans them.
+        json.dump({'skills': sorted(local_names | protected)}, f, indent=2)
     os.replace(tmp_path, manifest_path)
 except Exception:
     try: os.unlink(tmp_path)

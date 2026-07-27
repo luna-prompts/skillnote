@@ -20,6 +20,7 @@ afterEach(() => {
 describe('SUPPORTED_AGENTS', () => {
   it('exports the canonical list', () => {
     expect(SUPPORTED_AGENTS).toContain('claude-code')
+    expect(SUPPORTED_AGENTS).toContain('codex')
     expect(SUPPORTED_AGENTS).toContain('openclaw')
   })
 })

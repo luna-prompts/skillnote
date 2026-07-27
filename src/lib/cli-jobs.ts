@@ -14,7 +14,7 @@ import { apiRequest } from '@/lib/api/client'
 
 export type JobStatus = 'pending' | 'running' | 'succeeded' | 'failed' | 'cancelled'
 export type JobType = 'connect' | 'disconnect' | 'reconnect' | 'open'
-export type JobAgent = 'claude-code' | 'openclaw'
+export type JobAgent = 'claude-code' | 'openclaw' | 'codex'
 
 export type CliJob = {
   id: string

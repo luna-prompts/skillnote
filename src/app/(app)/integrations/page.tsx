@@ -9,7 +9,7 @@ import { AgentCard } from '@/components/integrations/agent-card'
 import { AgentListRow } from '@/components/integrations/agent-list-row'
 import { ConnectModal } from '@/components/integrations/connect-modal'
 import { DisconnectModal } from '@/components/integrations/disconnect-modal'
-import { ClaudeCodeMark, OpenClawMark } from '@/components/integrations/agent-marks'
+import { ClaudeCodeMark, OpenClawMark, CodexMark } from '@/components/integrations/agent-marks'
 import {
   ClaudeAICard,
   ClaudeAIConnectedRow,
@@ -19,7 +19,20 @@ import type { ConnectionState } from '@/components/integrations/connector'
 import { getApiBaseUrl } from '@/lib/api/client'
 import { dispatchJob, useJobPolling, type JobAgent } from '@/lib/cli-jobs'
 
-type AgentId = 'claude-code' | 'openclaw'
+type AgentId = 'claude-code' | 'openclaw' | 'codex'
+
+// Every agent the backend reports on. `claude-ai` is deliberately NOT an
+// `AgentId`: it pairs through the browser extension (see ClaudeAICard /
+// `listIntegrations`), not through this page's install/snapshot lifecycle.
+// It still comes back from /v1/setup/agents, so the wire type has to name it
+// and the reducer has to filter it out.
+type SetupAgentId = AgentId | 'claude-ai'
+
+const AGENT_IDS: readonly AgentId[] = ['claude-code', 'openclaw', 'codex']
+
+function isAgentId(id: SetupAgentId): id is AgentId {
+  return (AGENT_IDS as readonly string[]).includes(id)
+}
 
 interface AgentSnapshot {
   id: AgentId
@@ -33,7 +46,9 @@ interface AgentSnapshot {
 }
 
 interface SetupAgentStatus {
-  agent: AgentId
+  /** Wire shape mirrors the backend's SUPPORTED_AGENTS, which includes
+   *  `claude-ai`. Narrow with `isAgentId` before touching `snapshots`. */
+  agent: SetupAgentId
   state: 'pending' | 'active' | 'idle'
   installed_at: string | null
   last_active_at: string | null
@@ -84,6 +99,20 @@ const AGENTS: AgentMeta[] = [
       'Try a task; the log-watcher reports which skills the agent used.',
     ],
   },
+  {
+    id: 'codex',
+    label: 'Codex',
+    sublabel: 'OpenAI CLI',
+    description:
+      'Auto-sync SkillNote collections into Codex with a session picker and the native /skills menu.',
+    platforms: ['macOS', 'Linux', 'Windows'],
+    badge: 'new',
+    usageSteps: [
+      'Open a new shell or source your rc file so the wrapper picks up.',
+      'Run `codex` and pick a collection in the picker.',
+      'Type `/skills` in Codex to use your skills.',
+    ],
+  },
 ]
 
 const ALL_STATES: ConnectionState[] = ['pending', 'connecting', 'active', 'idle']
@@ -102,6 +131,7 @@ export default function IntegrationsPage() {
   const [snapshots, setSnapshots] = useState<Record<AgentId, AgentSnapshot>>({
     'claude-code': { id: 'claude-code', state: 'pending' },
     openclaw: { id: 'openclaw', state: 'pending' },
+    codex: { id: 'codex', state: 'pending' },
   })
   // Flips true after the first successful /v1/setup/agents fetch so the
   // default-tab resolver below doesn't race the network.
@@ -162,6 +192,10 @@ export default function IntegrationsPage() {
           const next = { ...prev }
           const now = Date.now()
           for (const row of rows) {
+            // Skip `claude-ai` — it's paired via the browser extension and
+            // tracked by `claudeAIConnectedCount`, so letting it through
+            // would insert a phantom key into the AgentId-keyed record.
+            if (!isAgentId(row.agent)) continue
             const local = prev[row.agent]
             // Don't overwrite an in-flight install — UNLESS the local
             // `connecting` is older than CONNECTING_STALE_AFTER_MS. Without
@@ -248,6 +282,7 @@ export default function IntegrationsPage() {
     return {
       'claude-code': apply(snapshots['claude-code']),
       openclaw: apply(snapshots.openclaw),
+      codex: apply(snapshots.codex),
     } as Record<AgentId, AgentSnapshot>
   }, [snapshots, overrides])
 
@@ -255,10 +290,16 @@ export default function IntegrationsPage() {
   // Canonical bash one-liner per agent. macOS + Linux execute it directly;
   // Windows prefixes `wsl ` because the install scripts only run inside a
   // POSIX shell. The Advanced drawer explains the WSL caveat to the user.
-  const baseCmd = (id: AgentId) =>
-    id === 'claude-code'
-      ? `curl -sf ${base}/setup/agent | bash -s -- --agent claude-code`
-      : `curl -sf ${base}/setup/openclaw | bash`
+  const baseCmd = (id: AgentId) => {
+    switch (id) {
+      case 'claude-code':
+        return `curl -sf ${base}/setup/agent | bash -s -- --agent claude-code`
+      case 'codex':
+        return `curl -sf ${base}/setup/agent | bash -s -- --agent codex`
+      case 'openclaw':
+        return `curl -sf ${base}/setup/openclaw | bash`
+    }
+  }
 
   const installCmd = (id: AgentId) => baseCmd(id)
 
@@ -274,9 +315,10 @@ export default function IntegrationsPage() {
   // Each entry MUST follow `<label> — <value>` so the modal can parse it into
   // a two-column row. Keep labels short (2-4 words); values can be paths or
   // short descriptive strings.
-  const installManifest = (id: AgentId): string[] =>
-    id === 'claude-code'
-      ? [
+  const installManifest = (id: AgentId): string[] => {
+    switch (id) {
+      case 'claude-code':
+        return [
           'Plugin root — ~/.claude/plugins/marketplaces/skillnote-local/',
           'Marketplace manifest — ~/.claude/plugins/marketplaces/skillnote-local/marketplace.json',
           'Skill loader plugin — ~/.claude/plugins/skillnote/',
@@ -284,13 +326,25 @@ export default function IntegrationsPage() {
           'Shell wrapper — appended to ~/.zshrc or ~/.bashrc',
           `Bridge daemon — ${base}`,
         ]
-      : [
+      case 'codex':
+        return [
+          'Local plugin marketplace — ~/.skillnote/codex/marketplace/',
+          'Codex plugin (skills + sync hooks) — registered via `codex plugin add`',
+          'Collection picker — ~/.skillnote/bin/skillnote-pick',
+          'Shell wrapper — codex() appended to ~/.zshrc or ~/.bashrc',
+          'Plugin enabled — ~/.codex/config.toml',
+          'Server address — ~/.skillnote/host',
+        ]
+      case 'openclaw':
+        return [
           'Skill root — ~/.openclaw/skills/skillnote/',
           'Refresh hook — ~/.openclaw/skills/skillnote/sync.sh',
           'Analytics agent — ~/.openclaw/skills/skillnote/log-watcher.py',
           `Host config — ~/.openclaw/skills/skillnote/config.json`,
           `Bridge daemon — ${base}`,
         ]
+    }
+  }
 
   const handleReinstall = (id: AgentId) => {
     toast.info(`Re-running the install for ${labelOf(id)}…`)
@@ -307,13 +361,33 @@ export default function IntegrationsPage() {
   const confirmDisconnect = useCallback(
     async (id: AgentId) => {
       try {
+        // Ask the local bridge to actually undo the install (plugin,
+        // marketplace, shell wrapper). Clearing only the server-side record
+        // would leave every local file in place and the agent still syncing,
+        // so the row would flip back to Connected on its next skill call.
+        // Best-effort: the bridge may not be running, and the server-side
+        // record must be cleared either way.
+        let teardownDispatched = false
+        try {
+          await dispatchJob({ type: 'disconnect', agent: id as JobAgent })
+          teardownDispatched = true
+        } catch {
+          // No bridge daemon — fall through to the record-only path below.
+        }
+
         const res = await fetch(`${base}/v1/setup/installs/${id}`, { method: 'DELETE' })
         if (!res.ok && res.status !== 204) throw new Error(`HTTP ${res.status}`)
         setSnapshots((prev) => ({
           ...prev,
           [id]: { id, state: 'pending', installedAt: undefined, lastCallAt: undefined },
         }))
-        toast.success(`${labelOf(id)} disconnected`)
+        if (teardownDispatched) {
+          toast.success(`${labelOf(id)} disconnected`)
+        } else {
+          toast.success(`${labelOf(id)} removed from SkillNote`, {
+            description: `Run \`skillnote disconnect ${id}\` on that machine to remove the local files.`,
+          })
+        }
         // Stay on Connected tab — switching to Browse on every disconnect
         // disorients users who are working through multiple agents.
       } catch (err) {
@@ -326,8 +400,16 @@ export default function IntegrationsPage() {
     [base],
   )
 
-  const markFor = (id: AgentId) =>
-    id === 'claude-code' ? <ClaudeCodeMark /> : <OpenClawMark />
+  const markFor = (id: AgentId) => {
+    switch (id) {
+      case 'claude-code':
+        return <ClaudeCodeMark />
+      case 'codex':
+        return <CodexMark />
+      case 'openclaw':
+        return <OpenClawMark />
+    }
+  }
 
   // Connected = agents in active or idle state. Everything else is browseable.
   const connected = AGENTS.filter((a) => {
@@ -537,7 +619,14 @@ export default function IntegrationsPage() {
 }
 
 function labelOf(id: AgentId): string {
-  return id === 'claude-code' ? 'Claude Code' : 'OpenClaw'
+  switch (id) {
+    case 'claude-code':
+      return 'Claude Code'
+    case 'codex':
+      return 'Codex'
+    case 'openclaw':
+      return 'OpenClaw'
+  }
 }
 
 // ─── Empty state for the Connected tab ────────────────────────────────────
@@ -566,8 +655,9 @@ function EmptyConnected({ onBrowse }: { onBrowse: () => void }) {
         No agents connected yet
       </p>
       <p className="mx-auto mt-1.5 max-w-sm text-[12.5px] text-muted-foreground/85 leading-relaxed">
-        Wire in Claude Code or OpenClaw and SkillNote will sync your skills,
-        stream usage analytics, and let you publish skills with one command.
+        Wire in Claude Code, Codex, or OpenClaw and SkillNote will sync your
+        skills, stream usage analytics, and let you publish skills with one
+        command.
       </p>
       <div className="mt-5 flex items-center justify-center gap-2">
         <button
@@ -654,6 +744,7 @@ function DevCycler({
       </p>
       <Btn id="claude-code" label="claude" />
       <Btn id="openclaw" label="openclaw" />
+      <Btn id="codex" label="codex" />
     </div>
   )
 }

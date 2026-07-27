@@ -46,6 +46,18 @@ describe('agent adapters', () => {
     expect(adapter.skillDir('my-skill')).toBe(path.join(tmpDir, 'skills', 'my-skill'))
   })
 
+  it('detects Codex per-user and installs skills to the global .agents root', async () => {
+    const { CodexAdapter } = await import('../agents/codex.js')
+    const adapter = new CodexAdapter(tmpDir)
+    expect(adapter.detect()).toBe(false)
+
+    fs.mkdirSync(path.join(tmpDir, '.codex'))
+    expect(adapter.detect()).toBe(true)
+    expect(adapter.skillDir('my-skill')).toBe(
+      path.join(tmpDir, '.agents', 'skills', 'my-skill'),
+    )
+  })
+
   it('detectAll returns only detected agents', async () => {
     const { detectAgents } = await import('../agents/index.js')
     fs.mkdirSync(path.join(tmpDir, '.claude'))

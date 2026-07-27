@@ -20,10 +20,15 @@ describe('connect command — claude-ai agent', () => {
   it('SUPPORTED_AGENTS is a frozen tuple (readonly)', async () => {
     // The tuple is declared `as const`; assigning to it should be a TS error.
     // At runtime it's still a plain array, so this test just verifies the
-    // shape is preserved (3 known names, no surprises).
+    // shape is preserved (4 known names, no surprises).
     const { SUPPORTED_AGENTS } = await import('../commands/connect.js')
-    expect(SUPPORTED_AGENTS).toHaveLength(3)
+    expect(SUPPORTED_AGENTS).toHaveLength(4)
     const names = new Set(SUPPORTED_AGENTS)
-    expect(names).toEqual(new Set(['claude-code', 'openclaw', 'claude-ai']))
+    expect(names).toEqual(new Set(['claude-code', 'openclaw', 'codex', 'claude-ai']))
+  })
+
+  it('SUPPORTED_AGENTS includes codex', async () => {
+    const { SUPPORTED_AGENTS } = await import('../commands/connect.js')
+    expect(SUPPORTED_AGENTS).toContain('codex')
   })
 })

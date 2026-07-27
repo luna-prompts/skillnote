@@ -4,6 +4,7 @@ import path from 'node:path'
 import { detectAgents, getAdapter } from '../agents/index.js'
 import { ApiClient, type SkillVersionItem } from '../api/client.js'
 import { defaultConfigDir, resolveAuth } from '../config/index.js'
+import { recordGlobalInstall } from '../manifest/global-registry.js'
 import { loadManifest, saveManifest } from '../manifest/index.js'
 import { computeSha256 } from '../util/checksum.js'
 import * as ui from '../util/ui.js'
@@ -45,18 +46,25 @@ async function installSkill(
     return false
   }
 
+  // UI-authored or imported skills may have no published SkillVersion yet;
+  // the registry bundles their current content on the fly via
+  // /v1/skills/{slug}/current/download. Only *unpublished* skills qualify:
+  // a skill whose versions exist but are all disabled has been deliberately
+  // withdrawn, and falling back to its draft would route around the only
+  // kill switch operators have. (The server enforces this too.)
   const latest = pickLatestActive(versions)
-  if (!latest) {
+  if (!latest && versions.length > 0) {
     spin.stop()
-    ui.fail(`${slug}: no active version found`)
+    ui.fail(`${slug}: no active version (all published versions are disabled)`)
     return false
   }
+  const versionLabel = latest ? latest.version : 'current'
 
-  spin.text = `Downloading ${slug}@${latest.version}...`
+  spin.text = `Downloading ${slug}@${versionLabel}...`
   let buffer: Buffer
   let serverChecksum: string
   try {
-    const dl = await client.downloadBundle(slug, latest.version)
+    const dl = await client.downloadBundle(slug, versionLabel)
     buffer = dl.buffer
     serverChecksum = dl.checksum
   } catch (err: any) {
@@ -94,6 +102,9 @@ async function installSkill(
     fs.mkdirSync(dest, { recursive: true })
     copyDirSync(tmpDir, dest)
     agent.postInstall?.(slug)
+    // Claim a share of the user-global directory so a later `remove` in
+    // another project can't delete files this one still depends on.
+    if (agent.scope === 'user') recordGlobalInstall(agent.name, slug, projectDir)
     agentNames.push(agent.name)
   }
 
@@ -101,7 +112,7 @@ async function installSkill(
 
   const manifest = loadManifest(projectDir)
   manifest.skills[slug] = {
-    version: latest.version,
+    version: versionLabel,
     checksum: localChecksum,
     installedAt: new Date().toISOString(),
     agents: agentNames,
@@ -109,7 +120,7 @@ async function installSkill(
   saveManifest(projectDir, manifest)
 
   spin.stop()
-  ui.success(`${ui.bold(slug)}@${latest.version} installed to ${agentNames.join(', ')}`)
+  ui.success(`${ui.bold(slug)}@${versionLabel} installed to ${agentNames.join(', ')}`)
   return true
 }
 

@@ -37,6 +37,20 @@ class SkillListItem(BaseModel):
     origin: Optional[SkillOrigin] = None
 
 
+class SkillListItemWithContent(SkillListItem):
+    """List item plus the SKILL.md body.
+
+    Bodies are omitted from the default list response because the web app
+    caches it in localStorage and full bodies blow the quota (issue #65).
+    File-syncing agents (the Claude Code / Codex / OpenClaw plugins) write
+    SKILL.md to disk and need the body, so they opt in with
+    `?include=content`. Keeping it a separate model means the default
+    payload stays byte-for-byte unchanged.
+    """
+
+    content_md: str = ""
+
+
 class SkillDetail(BaseModel):
     id: uuid.UUID
     name: str
