@@ -7,7 +7,12 @@ vi.mock('execa', () => ({
 }))
 
 import { execa } from 'execa'
-import { isDockerRunning, isProjectRunning, requireDocker } from '../../src/docker/inspect.js'
+import {
+  composeVersion,
+  isDockerRunning,
+  isProjectRunning,
+  requireDocker,
+} from '../../src/docker/inspect.js'
 
 afterEach(() => {
   vi.clearAllMocks()
@@ -119,5 +124,35 @@ describe('isProjectRunning', () => {
     const callArgs = vi.mocked(execa).mock.calls[0]
     expect(callArgs[0]).toBe('docker')
     expect(callArgs[1]).toContain('label=com.docker.compose.project=custom-project')
+  })
+})
+
+describe('composeVersion', () => {
+  it('test_composeVersion_returns_trimmed_version_on_success', async () => {
+    vi.mocked(execa).mockResolvedValueOnce({
+      exitCode: 0,
+      stdout: '2.35.1\n',
+      stderr: '',
+      // biome-ignore lint/suspicious/noExplicitAny: minimal mock shape
+    } as any)
+
+    await expect(composeVersion()).resolves.toBe('2.35.1')
+  })
+
+  it('test_composeVersion_returns_null_on_nonzero_exit', async () => {
+    vi.mocked(execa).mockResolvedValueOnce({
+      exitCode: 1,
+      stdout: '',
+      stderr: 'docker compose is unavailable',
+      // biome-ignore lint/suspicious/noExplicitAny: minimal mock shape
+    } as any)
+
+    await expect(composeVersion()).resolves.toBeNull()
+  })
+
+  it('test_composeVersion_returns_null_when_docker_throws', async () => {
+    vi.mocked(execa).mockRejectedValueOnce(new Error('command not found: docker'))
+
+    await expect(composeVersion()).resolves.toBeNull()
   })
 })
