@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   dockerInstallUrl,
   dockerStartHint,
@@ -47,12 +47,35 @@ describe('isInteractive', () => {
 })
 
 describe('isCI', () => {
-  it('returns true when CI env var is set', () => {
-    const original = process.env.CI
-    process.env.CI = 'true'
+  const ciEnvVars = [
+    'CI',
+    'CONTINUOUS_INTEGRATION',
+    'GITHUB_ACTIONS',
+    'GITLAB_CI',
+    'CIRCLECI',
+    'BUILDKITE',
+  ] as const
+  const originals = new Map(ciEnvVars.map((key) => [key, process.env[key]]))
+
+  beforeEach(() => {
+    for (const key of ciEnvVars) delete process.env[key]
+  })
+
+  afterEach(() => {
+    for (const key of ciEnvVars) {
+      const value = originals.get(key)
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+  })
+
+  it('test_isCI_returns_false_without_ci_environment', () => {
+    expect(isCI()).toBe(false)
+  })
+
+  it.each(ciEnvVars)('test_isCI_detects_%s', (key) => {
+    process.env[key] = 'true'
     expect(isCI()).toBe(true)
-    if (original === undefined) process.env.CI = undefined
-    else process.env.CI = original
   })
 })
 
