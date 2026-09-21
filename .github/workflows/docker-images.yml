@@ -32,8 +32,15 @@ jobs:
           - name: web
             context: .
             dockerfile: Dockerfile
+            # SKILLNOTE_API_PROXY_TARGET must be set at BUILD time: next.config.ts
+            # resolves rewrites() during `next build`, so the /v1/* proxy destination
+            # is baked into the image's routes-manifest. Both docker-compose.yml and
+            # the CLI's compose template run the backend as service `api` on :8080.
+            # Without this arg the proxy targets localhost:8082 — the web container
+            # itself — and every /v1/* request through the web origin 500s.
             build_args: |
               NEXT_PUBLIC_API_BASE_URL=http://localhost:8082
+              SKILLNOTE_API_PROXY_TARGET=http://api:8080
     steps:
       - uses: actions/checkout@v4
 
