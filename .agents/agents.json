@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 4,
+  "instructions": {
+    "path": "AGENTS.md"
+  },
+  "integrations": {
+    "enabled": [
+      "codex",
+      "claude",
+      "cursor"
+    ],
+    "options": {
+      "cursorAutoApprove": false,
+      "antigravityGlobalSync": false,
+      "claudeScope": "project",
+      "copilotCliPath": ".mcp.json"
+    }
+  },
+  "syncMode": "commit-generated",
+  "mcp": {
+    "servers": {}
+  },
+  "workspace": {
+    "vscode": {
+      "hideGenerated": false,
+      "hiddenPaths": []
+    }
+  },
+  "lastSync": null,
+  "lastSyncSourceHash": null
+}

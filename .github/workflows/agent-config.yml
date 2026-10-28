@@ -1,0 +1,52 @@
+name: Agent configuration
+on:
+  pull_request:
+    paths:
+      - 'AGENTS.md'
+      - 'CLAUDE.md'
+      - '.agents/**'
+      - '.claude/skills/**'
+      - '.codex/**'
+      - '.cursor/**'
+      - '.mcp.json'
+      - '.gitignore'
+      - 'scripts/luna-agents.sh'
+      - '.github/workflows/agent-config.yml'
+  push:
+    branches: [main, master, chore/luna-agents-baseline]
+    paths:
+      - 'AGENTS.md'
+      - 'CLAUDE.md'
+      - '.agents/**'
+      - '.claude/skills/**'
+      - '.codex/**'
+      - '.cursor/**'
+      - '.mcp.json'
+      - '.gitignore'
+      - 'scripts/luna-agents.sh'
+      - '.github/workflows/agent-config.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Regenerate and verify idempotency
+        run: |
+          sh scripts/luna-agents.sh sync
+          sh scripts/luna-agents.sh sync --check
+      - name: Reject committed or untracked config drift
+        shell: bash
+        run: |
+          state=$(git status --porcelain -- AGENTS.md CLAUDE.md .agents .claude/skills .codex .cursor .mcp.json .gitignore)
+          if [ -n "$state" ]; then
+            printf '%s\n' "$state"
+            echo 'Run sh scripts/luna-agents.sh sync and commit the generated changes.'
+            exit 1
+          fi

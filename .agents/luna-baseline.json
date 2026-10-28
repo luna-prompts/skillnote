@@ -1,0 +1,10 @@
+{
+  "version": "1.0.0",
+  "source": "luna-prompts/skills",
+  "sourceDirectory": "skills/engineering",
+  "cliVersion": "0.9.2",
+  "skillsSha256": {
+    "luna-reviewing-changes": "9264f60321b4af7200011e30fbc3ead94285a82ac2a687ef0cfc8044ab073828",
+    "luna-debugging-issues": "4123e60306f228c6038f144fa1ec8da75dac3c3f05e1579aaa37bc38bad17c70"
+  }
+}
