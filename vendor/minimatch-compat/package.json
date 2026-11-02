@@ -1,0 +1,17 @@
+{
+  "name": "minimatch",
+  "version": "11.0.3-skillnote.1",
+  "private": true,
+  "description": "Callable CommonJS compatibility adapter for patched minimatch",
+  "main": "index.cjs",
+  "license": "MIT",
+  "scripts": {
+    "test": "node test-legacy-api.cjs && node test-esm-api.mjs"
+  },
+  "engines": {
+    "node": "20 || >=22"
+  },
+  "dependencies": {
+    "minimatch-modern": "npm:minimatch@11.0.3"
+  }
+}
